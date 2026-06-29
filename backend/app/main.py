@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.messages import router as messages_router
 from app.api.rooms import router as rooms_router
 from app.core.redis import close_redis, redis_client
 
@@ -25,6 +26,7 @@ app = FastAPI(title="Platform API", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(rooms_router)
+app.include_router(messages_router)
 
 
 @app.get("/api/health")

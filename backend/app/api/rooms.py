@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
+from app.models.message import Message
 from app.models.room import Room, RoomMember
 from app.models.user import User
 from app.schemas.room import AddMemberRequest, CreateRoomRequest, MemberOut, RoomOut
@@ -111,8 +112,12 @@ async def create_room(
 async def list_rooms(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[Room]:
-    """Комнаты юзера: его dm/группы (по членству) + все каналы (видны всем, вариант А)."""
+) -> list[RoomOut]:
+    """Комнаты юзера: его dm/группы (по членству) + все каналы (видны всем, вариант А).
+
+    На каждую комнату — счётчик непрочитанных: живые чужие сообщения с
+    id > last_read_message_id (статусы прочтения, CLAUDE.md п.4).
+    """
     member_rooms = select(RoomMember.room_id).where(
         RoomMember.user_id == current_user.id
     )
@@ -121,7 +126,39 @@ async def list_rooms(
         .where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
         .order_by(Room.created_at)
     )
-    return list(result.scalars().all())
+    rooms = list(result.scalars().all())
+    if not rooms:
+        return []
+
+    # Непрочитанные по всем комнатам одним запросом (без N+1). LEFT JOIN на членство
+    # текущего юзера: для каналов без строки last_read = NULL → считается от 0.
+    room_ids = [room.id for room in rooms]
+    unread_rows = await session.execute(
+        select(Message.room_id, func.count())
+        .select_from(Message)
+        .outerjoin(
+            RoomMember,
+            (RoomMember.room_id == Message.room_id)
+            & (RoomMember.user_id == current_user.id),
+        )
+        .where(
+            Message.room_id.in_(room_ids),
+            Message.deleted_at.is_(None),
+            Message.sender_id != current_user.id,
+            Message.id > func.coalesce(RoomMember.last_read_message_id, 0),
+        )
+        .group_by(Message.room_id)
+    )
+    unread: dict[int, int] = {
+        room_id: count for room_id, count in unread_rows.all()
+    }
+
+    out: list[RoomOut] = []
+    for room in rooms:
+        item = RoomOut.model_validate(room)
+        item.unread_count = unread.get(room.id, 0)
+        out.append(item)
+    return out
 
 
 async def _load_group(session: AsyncSession, room_id: int) -> Room:
