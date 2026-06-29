@@ -1,4 +1,5 @@
 """Админские эндпоинты. Платформа закрытая — пользователей заводит только админ."""
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,7 +10,16 @@ from app.api.deps import require_admin
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.user import User
-from app.schemas.user import AdminCreateUserRequest, AdminCreateUserResponse
+from app.schemas.user import (
+    AdminCreateUserRequest,
+    AdminCreateUserResponse,
+    AdminUpdateUserRequest,
+    UserOut,
+)
+
+# Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
+# сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
+_PATCHABLE_FIELDS = {"can_create_groups"}
 
 # Весь роутер под require_admin — каждый запрос проверяет роль на сервере (п.1).
 router = APIRouter(
@@ -51,3 +61,24 @@ async def create_user(
         username=user.username,
         one_time_password=one_time_password,
     )
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+async def update_user(
+    user_id: int,
+    body: AdminUpdateUserRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> User:
+    """Частичное обновление юзера: применяем только переданные whitelisted-поля."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    changes = body.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        if field in _PATCHABLE_FIELDS:
+            setattr(user, field, value)
+    if changes:
+        user.updated_at = datetime.now(UTC)
+    await session.flush()
+    return user

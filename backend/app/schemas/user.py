@@ -23,6 +23,18 @@ class AdminCreateUserResponse(BaseModel):
     one_time_password: str
 
 
+class AdminUpdateUserRequest(BaseModel):
+    """Частичное обновление юзера админом. Применяются только переданные поля.
+
+    Заложено под расширение: будущие правки (бан, смена роли) добавляются полем
+    здесь и в whitelist эндпоинта — без переписывания обработчика.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    can_create_groups: bool | None = None
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -32,3 +44,4 @@ class UserOut(BaseModel):
     display_name: str
     role: str
     must_change_password: bool
+    can_create_groups: bool

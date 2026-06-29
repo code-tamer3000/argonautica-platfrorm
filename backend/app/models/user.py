@@ -28,6 +28,10 @@ class User(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Право создавать группы (по умолчанию у всех; админ может отнять).
+    can_create_groups: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"
