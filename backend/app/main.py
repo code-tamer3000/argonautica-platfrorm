@@ -3,21 +3,25 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.media import router as media_router
 from app.api.messages import router as messages_router
 from app.api.rooms import router as rooms_router
 from app.core.redis import close_redis, redis_client
+from app.services.media import ensure_buckets
 from app.ws.chat import router as ws_router
 from app.ws.pubsub import ensure_listener_started, stop_listener
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # Проверяем доступность Redis на старте (fail-fast), поднимаем pub/sub-слушателя
-    # реалтайма, на остановке — гасим его и закрываем пул.
+    # Проверяем доступность Redis на старте (fail-fast), создаём бакеты MinIO,
+    # поднимаем pub/sub-слушателя реалтайма; на остановке — гасим его и закрываем пул.
     await redis_client.ping()
+    await run_in_threadpool(ensure_buckets)
     await ensure_listener_started()
     try:
         yield
@@ -32,6 +36,7 @@ app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(rooms_router)
 app.include_router(messages_router)
+app.include_router(media_router)
 app.include_router(ws_router)
 
 

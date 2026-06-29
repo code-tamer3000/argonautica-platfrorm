@@ -49,6 +49,111 @@
 
 ---
 
+## Стадия 2 — Auth & Admin (2026-06-29) ✅
+
+Аутентификация и закрытое заведение пользователей (регистрации нет — юзеров создаёт админ).
+
+### Реализовано
+- **Auth** — [backend/app/api/auth.py](../backend/app/api/auth.py): `login`
+  (anti-enumeration: одинаковый ответ на «нет юзера»/«неверный пароль», прозрачный
+  argon2-rehash), `refresh` (ротация: гасим предъявленный jti, выдаём новую пару),
+  `logout` (идемпотентный отзыв), `change-password` (доступен при
+  `must_change_password`), `GET /me`.
+- **Сессии в Redis** — [backend/app/services/auth.py](../backend/app/services/auth.py):
+  `issue_token_pair`/`refresh_is_valid`/`revoke_refresh` — refresh-`jti` хранится в
+  Redis (отзыв/логаут устройств), access stateless.
+- **Admin** — [backend/app/api/admin.py](../backend/app/api/admin.py): весь роутер под
+  `require_admin`. `create_user` (сервер генерит одноразовый пароль, отдаёт один раз;
+  `must_change_password=true`), `PATCH /users/{id}` (только whitelisted-поля).
+- **Зависимости авторизации** — [backend/app/api/deps.py](../backend/app/api/deps.py):
+  `get_current_user → get_current_active_user → require_admin`.
+
+### Проверено
+- Тесты: `test_auth.py`, `test_admin.py`. `ruff`/`mypy` — чисто.
+
+---
+
+## Стадия 3 — Комнаты и участники (2026-06-29) ✅
+
+### Реализовано
+- [backend/app/api/rooms.py](../backend/app/api/rooms.py): создание `dm` (дедуп по
+  `dm_key`, гонки через `IntegrityError`), `group` (создатель — owner), `channel`
+  (только admin, строк членства не плодим — вариант А); список комнат (каналы видны
+  всем); управление участниками (add/remove, права owner/admin, идемпотентность,
+  защита единственного owner).
+- Схемы — [backend/app/schemas/room.py](../backend/app/schemas/room.py).
+
+### Проверено
+- Тесты: `test_rooms_create.py`, `test_rooms_members.py`.
+
+---
+
+## Стадия 4 — Сообщения и треды (2026-06-29) ✅
+
+### Реализовано
+- [backend/app/api/messages.py](../backend/app/api/messages.py) +
+  [schemas/message.py](../backend/app/schemas/message.py) +
+  [services/rooms.py](../backend/app/services/rooms.py) (единая проверка доступа
+  `load_room`/`assert_room_access` + ленивое членство канала):
+  - отправка (текст/стикер/вложения; сообщение должно нести хоть что-то),
+  - лента комнаты (`thread_root_id IS NULL`, без удалённых, курсор по id),
+  - **плоские треды** (привязка к корню) + denorm `reply_count`/`last_reply_at`,
+  - открытый тред (корень + ответы),
+  - мягкое удаление (автор/admin),
+  - прочтения через `last_read_message_id` (только вперёд; для канала строка
+    создаётся лениво), `unread_count` в списке комнат.
+
+### Проверено
+- Тест: `test_messages.py`. Миграции не потребовались (схема была заложена в Стадии 1).
+
+---
+
+## Стадия 5 — Реалтайм через WebSocket (2026-06-29) ✅
+
+### Реализовано
+- [backend/app/ws/](../backend/app/ws/): `pubsub.py` (мост Redis pub/sub,
+  самостартующий слушатель `room:*`/`presence`), `manager.py` (реестр соединений,
+  fanout/broadcast), `chat.py` (эндпоинт `/ws`: JWT-рукопожатие через `?token=`,
+  presence через refcount в Redis, команды subscribe/unsubscribe/typing/ping,
+  подписка с проверкой доступа), `schemas.py` (контракт событий).
+- Интеграция: [api/messages.py](../backend/app/api/messages.py) публикует
+  `message.new`/`message.deleted`/`read` в комнату. Доставка всегда через Redis
+  pub/sub — слой не зависит от числа воркеров (SPEC §3.3).
+
+### Проверено
+- Тест: `test_ws.py` (через `httpx-ws`). `conftest` гасит слушателя между тестами.
+- ⚠️ Прод: в nginx нужен `Upgrade`/`Connection` для `/ws` (инфра, вне кода).
+
+---
+
+## Стадия 6 — Загрузка медиа (presigned) (2026-06-29) ✅
+
+### Реализовано
+- [backend/app/api/media.py](../backend/app/api/media.py) +
+  [schemas/media.py](../backend/app/schemas/media.py) +
+  [services/media.py](../backend/app/services/media.py):
+  - `POST /api/media/uploads` — валидация типа/размера (§6.4) → presigned-PUT;
+    намерение загрузки в Redis (TTL 15м),
+  - `POST /api/media/assets` — подтверждение: размер берётся из MinIO (`head_object`),
+    не от клиента; создаётся `media_assets`,
+  - `GET /api/media/{id}` — presigned-GET после `assert_media_access` (владелец или
+    участник комнаты с привязанным сообщением).
+- Привязка вложений в `send_message` ужесточена: прикрепить можно только свои ассеты.
+- Бакеты создаются в `lifespan` (`ensure_buckets`). Лимит размера —
+  `MEDIA_MAX_UPLOAD_BYTES` (100 МБ).
+
+### Проверено
+- Тест: `test_media.py` (включая реальный presigned round-trip в поднятый MinIO).
+
+### Ещё НЕ сделано (следующие стадии)
+- Rate-limiting входа/отправки/загрузок (Redis, §6.6).
+- Закрепления (`pinned_messages`), редактирование сообщений (`edited_at`).
+- База знаний (`kb_items`), календарь (`calendar_events`).
+- CI (GitHub Actions, зелёный — обязателен для PR), `backend/Dockerfile` (прод).
+- nginx (blue/green, `/ws` upgrade, раздача статики/медиа), frontend (React PWA).
+
+---
+
 ## Окружения: dev vs prod ⚠️
 
 **Принцип.** Код один. Отличается только `.env` на конкретном сервере. **Имена**

@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     minio_root_password: str
     minio_bucket_media: str = "chat-media"
     minio_bucket_kb: str = "kb-media"
+    # Максимальный размер загружаемого файла (байты). Лимит вшивается в presigned-PUT
+    # и перепроверяется по факту (HEAD объекта) при подтверждении загрузки.
+    media_max_upload_bytes: int = 104_857_600  # 100 МБ
 
     # --- JWT ---
     jwt_secret: str
