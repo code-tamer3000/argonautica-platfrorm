@@ -49,6 +49,42 @@
 
 ---
 
+## Стадия 7 — Закрепления и редактирование сообщений (2026-06-29) ✅
+
+Доменная модель чата стала функционально полной: две фичи из SPEC, под которые в
+Стадии 1 уже были заложены таблица и колонка, получили API. **Миграций не требует** —
+схема (`pinned_messages`, `messages.edited_at`) лежит с Стадии 1, `alembic check`
+остаётся чистым.
+
+### Реализовано
+- **Закрепления (SPEC §4.7)** — [backend/app/api/messages.py](../backend/app/api/messages.py):
+  `POST /api/rooms/{room_id}/messages/{message_id}/pin` (идемпотентно),
+  `DELETE …/pin`, `GET /api/rooms/{room_id}/pins`. Право закрепления —
+  `assert_can_pin` в [services/rooms.py](../backend/app/services/rooms.py): owner
+  группы / platform-admin, для dm — любой из двух участников; в канале — только admin.
+  Удалённое сообщение снимается с закрепления (целостность). Список — без N+1
+  (`_attachments_map`), удалённые не показываются.
+- **Редактирование (SPEC §4.3)** — `PATCH /api/rooms/{room_id}/messages/{message_id}`:
+  правит текст **только автор** (admin чужой текст не переписывает — в отличие от
+  удаления); стикер/вложение-only править нечего → 400; проставляется `edited_at`.
+- **WS-события** — [ws/schemas.py](../backend/app/ws/schemas.py): `message.edited`,
+  `pin.added`, `pin.removed`; публикуются в Redis pub/sub комнаты (как `message.new`).
+- Доступ к комнате проверяется на КАЖДОМ действии (CLAUDE.md п.1) через
+  `load_room` + `assert_room_access`.
+
+### Проверено
+- Тесты: [tests/test_pins.py](../backend/tests/test_pins.py) (право owner/admin,
+  dm-участник, идемпотентность, 404 на удалённое/несуществующее, снятие закрепления
+  при удалении) + раздел редактирования в
+  [tests/test_messages.py](../backend/tests/test_messages.py). `pytest -q` — 60 passed.
+- `alembic check` → *No new upgrade operations* (фича не трогает БД).
+- `ruff check` — чисто; `mypy app` (strict) — чисто.
+
+> CI (lint/typecheck/test) уже настроен — [.github/workflows/ci.yml](../.github/workflows/ci.yml)
+> (триггер на PR в `develop`/`main`). Пометка «CI не сделан» в Стадии 1 устарела.
+
+---
+
 ## Окружения: dev vs prod ⚠️
 
 **Принцип.** Код один. Отличается только `.env` на конкретном сервере. **Имена**
