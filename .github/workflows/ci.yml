@@ -1,0 +1,95 @@
+name: CI
+
+# Зелёный CI обязателен для merge (CLAUDE.md, Git-процесс). Гоняем на каждый PR
+# в develop и main: линт, типы, тесты бэкенда.
+on:
+  pull_request:
+    branches: [develop, main]
+
+# Не держим устаревшие прогоны: новый push в ветку PR отменяет предыдущий.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+
+  typecheck:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      # mypy не исполняет код модулей — сервисы/реальные значения env не нужны.
+      - run: mypy app
+
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+
+    # Сервисы нужны тестам: lifespan пингует Redis; alembic применяет схему в Postgres.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: platform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d platform"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    # Сервисы проброшены на localhost runner-а. Значения — CI-заглушки (не секреты).
+    env:
+      DATABASE_URL: postgresql+asyncpg://app:change_me@localhost:5432/platform
+      REDIS_URL: redis://localhost:6379/0
+      MINIO_ENDPOINT: http://localhost:9000
+      MINIO_PUBLIC_ENDPOINT: http://localhost:9000
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: change_me_too
+      JWT_SECRET: ci_dummy_secret_not_for_prod_0123456789abcdef
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e ".[dev]"
+      # Применяем миграции к чистой БД — заодно проверяем их на каждом PR.
+      - run: alembic upgrade head
+      - run: pytest -q

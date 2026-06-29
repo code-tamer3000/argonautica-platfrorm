@@ -17,6 +17,14 @@ dependencies = [
     "boto3",            # S3-клиент для MinIO (и будущего managed-S3)
 ]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+# Пакет приложения — только `app/`. `alembic/` и `tests/` не упаковываем.
+packages = ["app"]
+
 [project.optional-dependencies]
 dev = [
     "pytest",
@@ -28,3 +36,29 @@ dev = [
 
 # Версии не запинены сознательно — зафиксировать при первой установке
 # (pip install -e ".[dev]" затем pip freeze, или uv lock).
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Автогенерируемые миграции: длинные строки из имён FK-constraint — не переносим.
+"alembic/versions/*" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+# boto3/botocore не поставляют типовые стабы (py.typed). Полные стабы (boto3-stubs)
+# тяжёлые и для пары вызовов presigned-URL избыточны — игнорируем импорт.
+[[tool.mypy.overrides]]
+module = ["boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true
