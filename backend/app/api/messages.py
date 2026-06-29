@@ -30,6 +30,8 @@ from app.services.rooms import (
     get_or_create_channel_membership,
     load_room,
 )
+from app.ws import schemas as ws_schemas
+from app.ws.pubsub import publish_room_event
 
 router = APIRouter(prefix="/api/rooms", tags=["messages"])
 
@@ -116,7 +118,10 @@ async def send_message(
 
     await session.flush()
     await session.refresh(message)
-    return _to_out(message, list(body.attachment_ids))
+    out = _to_out(message, list(body.attachment_ids))
+    # Живая доставка подписчикам комнаты (payload самодостаточный).
+    await publish_room_event(room_id, ws_schemas.message_new_event(out))
+    return out
 
 
 @router.get("/{room_id}/messages", response_model=list[MessageOut])
@@ -225,6 +230,9 @@ async def delete_message(
             .values(reply_count=func.greatest(Message.reply_count - 1, 0))
         )
     await session.flush()
+    await publish_room_event(
+        room_id, ws_schemas.message_deleted_event(room_id, message_id)
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -271,6 +279,13 @@ async def mark_read(
 
     unread = await _unread_count(
         session, room_id, current_user, membership.last_read_message_id
+    )
+    # Read-receipt: подписчики комнаты узнают, до какого места дочитал юзер.
+    await publish_room_event(
+        room_id,
+        ws_schemas.read_event(
+            room_id, current_user.id, membership.last_read_message_id
+        ),
     )
     return ReadStateOut(
         room_id=room_id,
