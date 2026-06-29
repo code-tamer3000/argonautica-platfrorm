@@ -1,22 +1,127 @@
-"""Управление участниками групп (type='group').
+"""Создание комнат, список комнат юзера и управление участниками групп.
 
-Членство и роль в комнате проверяются на сервере на КАЖДОМ действии (CLAUDE.md п.1,
-IDOR — угроза №1). Только для групп: в dm состав фиксирован, у каналов доступ неявный
-(вариант А — строки членства лениво, ими так не управляют).
+Доступ проверяется на сервере на КАЖДОМ действии (CLAUDE.md п.1, IDOR — угроза №1).
+Типы: dm (состав фиксирован, дедуп по dm_key), group (членство явное, есть owner),
+channel (доступ неявный — вариант А: строк членства на всех не плодим, видны всем).
 """
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
 from app.models.room import Room, RoomMember
 from app.models.user import User
-from app.schemas.room import AddMemberRequest, MemberOut
+from app.schemas.room import AddMemberRequest, CreateRoomRequest, MemberOut, RoomOut
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
+
+
+def _dm_key(a: int, b: int) -> str:
+    """Канонический ключ пары для дедупа личных чатов: 'minId:maxId'."""
+    lo, hi = sorted((a, b))
+    return f"{lo}:{hi}"
+
+
+async def _create_dm(
+    session: AsyncSession, current: User, peer_id: int | None, response: Response
+) -> Room:
+    if peer_id is None or peer_id == current.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valid peer_id required for dm")
+    if await session.get(User, peer_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Peer user not found")
+
+    dm_key = _dm_key(current.id, peer_id)
+    existing = (
+        await session.execute(select(Room).where(Room.dm_key == dm_key))
+    ).scalar_one_or_none()
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK  # дедуп — не плодим
+        return existing
+
+    room = Room(type="dm", dm_key=dm_key, created_by=current.id)
+    session.add(room)
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Гонка: кто-то создал тот же dm параллельно — вернуть существующую.
+        await session.rollback()
+        existing = (
+            await session.execute(select(Room).where(Room.dm_key == dm_key))
+        ).scalar_one()
+        response.status_code = status.HTTP_200_OK
+        return existing
+
+    session.add_all(
+        [
+            RoomMember(room_id=room.id, user_id=current.id, role_in_room="member"),
+            RoomMember(room_id=room.id, user_id=peer_id, role_in_room="member"),
+        ]
+    )
+    await session.flush()
+    response.status_code = status.HTTP_201_CREATED
+    return room
+
+
+@router.post("", response_model=RoomOut)
+async def create_room(
+    body: CreateRoomRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    response: Response,
+) -> Room:
+    """Создать комнату. Правила доступа зависят от типа (см. модуль)."""
+    if body.type == "dm":
+        return await _create_dm(session, current_user, body.peer_id, response)
+
+    # group/channel требуют имя.
+    if not body.name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
+
+    if body.type == "group":
+        if not current_user.can_create_groups:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Not allowed to create groups"
+            )
+        room = Room(type="group", name=body.name, created_by=current_user.id)
+        session.add(room)
+        await session.flush()
+        # Создатель группы — owner.
+        session.add(
+            RoomMember(room_id=room.id, user_id=current_user.id, role_in_room="owner")
+        )
+        await session.flush()
+        response.status_code = status.HTTP_201_CREATED
+        return room
+
+    # channel — только admin; членских строк не создаём (вариант А).
+    if current_user.role != "admin":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
+    room = Room(type="channel", name=body.name, created_by=current_user.id)
+    session.add(room)
+    await session.flush()
+    response.status_code = status.HTTP_201_CREATED
+    return room
+
+
+@router.get("", response_model=list[RoomOut])
+async def list_rooms(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[Room]:
+    """Комнаты юзера: его dm/группы (по членству) + все каналы (видны всем, вариант А)."""
+    member_rooms = select(RoomMember.room_id).where(
+        RoomMember.user_id == current_user.id
+    )
+    result = await session.execute(
+        select(Room)
+        .where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
+        .order_by(Room.created_at)
+    )
+    return list(result.scalars().all())
 
 
 async def _load_group(session: AsyncSession, room_id: int) -> Room:
