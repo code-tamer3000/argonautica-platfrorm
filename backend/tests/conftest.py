@@ -18,6 +18,7 @@ from app.db.session import SessionLocal, engine
 from app.main import app
 from app.models.room import Room, RoomMember
 from app.models.user import User
+from app.ws.pubsub import stop_listener
 
 MakeUser = Callable[..., Awaitable[User]]
 MakeRoom = Callable[..., Awaitable[Room]]
@@ -33,6 +34,8 @@ async def _reset_pools() -> AsyncIterator[None]:
     новом loop'е получил свежие, а не «Event loop is closed».
     """
     yield
+    # Гасим pub/sub-слушателя реалтайма — он привязан к loop'у теста.
+    await stop_listener()
     await engine.dispose()
     await redis_client.connection_pool.disconnect()
 

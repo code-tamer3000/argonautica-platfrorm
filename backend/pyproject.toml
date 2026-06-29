@@ -30,6 +30,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "httpx",
+    "httpx-ws",          # тестирование WebSocket поверх ASGITransport
     "ruff",
     "mypy",
 ]
