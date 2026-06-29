@@ -16,9 +16,12 @@ from app.core.redis import redis_client
 from app.core.security import hash_password
 from app.db.session import SessionLocal, engine
 from app.main import app
+from app.models.room import Room, RoomMember
 from app.models.user import User
 
 MakeUser = Callable[..., Awaitable[User]]
+MakeRoom = Callable[..., Awaitable[Room]]
+AddMembership = Callable[..., Awaitable[RoomMember]]
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -73,6 +76,44 @@ async def make_user(session: AsyncSession) -> MakeUser:
         return user
 
     return _make
+
+
+@pytest_asyncio.fixture
+async def make_room(session: AsyncSession) -> MakeRoom:
+    """Фабрика комнат. По умолчанию группа; для dm задаём уникальный dm_key."""
+
+    async def _make(
+        *,
+        created_by: int,
+        type: str = "group",
+        name: str | None = "Test Group",
+        dm_key: str | None = None,
+    ) -> Room:
+        if type == "dm" and dm_key is None:
+            dm_key = f"dm_{uuid.uuid4().hex[:12]}"
+        room = Room(type=type, name=name, dm_key=dm_key, created_by=created_by)
+        session.add(room)
+        await session.commit()
+        await session.refresh(room)
+        return room
+
+    return _make
+
+
+@pytest_asyncio.fixture
+async def add_membership(session: AsyncSession) -> AddMembership:
+    """Фабрика членства в комнате."""
+
+    async def _add(
+        room_id: int, user_id: int, role: str = "member"
+    ) -> RoomMember:
+        membership = RoomMember(room_id=room_id, user_id=user_id, role_in_room=role)
+        session.add(membership)
+        await session.commit()
+        await session.refresh(membership)
+        return membership
+
+    return _add
 
 
 async def login(client: AsyncClient, username: str, password: str) -> dict[str, str]:
