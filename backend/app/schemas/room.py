@@ -1,7 +1,30 @@
 """Pydantic-схемы комнат и членства."""
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+RoomType = Literal["dm", "group", "channel"]
+
+
+class CreateRoomRequest(BaseModel):
+    """Создание комнаты. Поля зависят от типа (валидируются в эндпоинте):
+    dm → peer_id; group/channel → name.
+    """
+
+    type: RoomType
+    name: str | None = None
+    peer_id: int | None = None
+
+
+class RoomOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    name: str | None
+    avatar_url: str | None
+    created_at: datetime
 
 
 class AddMemberRequest(BaseModel):
