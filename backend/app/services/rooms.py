@@ -36,6 +36,22 @@ async def assert_room_access(
     return membership
 
 
+def assert_can_pin(room: Room, user: User, membership: RoomMember | None) -> None:
+    """Право закрепления (SPEC §4.7): owner комнаты / admin, с учётом типа комнаты.
+
+    Вызывать ПОСЛЕ `assert_room_access` (членство уже проверено). platform-admin —
+    всегда; group — только owner; dm — любой из двух участников (owner-роли нет, оба
+    равны); канал и прочее для не-admin — 403.
+    """
+    if user.role == "admin":
+        return
+    if room.type == "group" and membership is not None and membership.role_in_room == "owner":
+        return
+    if room.type == "dm" and membership is not None:
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to pin in this room")
+
+
 async def get_or_create_channel_membership(
     session: AsyncSession, room: Room, user: User
 ) -> RoomMember:

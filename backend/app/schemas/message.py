@@ -45,6 +45,28 @@ class ThreadOut(BaseModel):
     replies: list[MessageOut]
 
 
+class EditMessageRequest(BaseModel):
+    """Правка текста сообщения. Пустой текст недопустим (для очистки — удаление)."""
+
+    content: str
+
+    @model_validator(mode="after")
+    def _not_blank(self) -> "EditMessageRequest":
+        if not self.content.strip():
+            raise ValueError("content must not be blank")
+        return self
+
+
+class PinnedOut(BaseModel):
+    """Закрепление вместе с полезной нагрузкой сообщения."""
+
+    room_id: int
+    message_id: int
+    pinned_by: int
+    pinned_at: datetime
+    message: MessageOut
+
+
 class ReadRequest(BaseModel):
     last_read_message_id: int
 

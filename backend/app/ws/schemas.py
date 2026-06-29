@@ -12,7 +12,10 @@ from app.schemas.message import MessageOut
 
 # Типы исходящих событий.
 EVENT_MESSAGE_NEW = "message.new"
+EVENT_MESSAGE_EDITED = "message.edited"
 EVENT_MESSAGE_DELETED = "message.deleted"
+EVENT_PIN_ADDED = "pin.added"
+EVENT_PIN_REMOVED = "pin.removed"
 EVENT_READ = "read"
 EVENT_TYPING = "typing"
 EVENT_PRESENCE = "presence"
@@ -26,8 +29,25 @@ def message_new_event(message: MessageOut) -> dict[str, Any]:
     return {"type": EVENT_MESSAGE_NEW, "message": message.model_dump(mode="json")}
 
 
+def message_edited_event(message: MessageOut) -> dict[str, Any]:
+    return {"type": EVENT_MESSAGE_EDITED, "message": message.model_dump(mode="json")}
+
+
 def message_deleted_event(room_id: int, message_id: int) -> dict[str, Any]:
     return {"type": EVENT_MESSAGE_DELETED, "room_id": room_id, "message_id": message_id}
+
+
+def pin_added_event(room_id: int, message_id: int, pinned_by: int) -> dict[str, Any]:
+    return {
+        "type": EVENT_PIN_ADDED,
+        "room_id": room_id,
+        "message_id": message_id,
+        "pinned_by": pinned_by,
+    }
+
+
+def pin_removed_event(room_id: int, message_id: int) -> dict[str, Any]:
+    return {"type": EVENT_PIN_REMOVED, "room_id": room_id, "message_id": message_id}
 
 
 def read_event(room_id: int, user_id: int, last_read_message_id: int | None) -> dict[str, Any]:

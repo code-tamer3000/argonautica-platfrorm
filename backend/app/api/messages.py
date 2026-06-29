@@ -15,17 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
 from app.models.media import MediaAsset
-from app.models.message import Message, MessageAttachment
+from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.sticker import Sticker
 from app.models.user import User
 from app.schemas.message import (
+    EditMessageRequest,
     MessageOut,
+    PinnedOut,
     ReadRequest,
     ReadStateOut,
     SendMessageRequest,
     ThreadOut,
 )
 from app.services.rooms import (
+    assert_can_pin,
     assert_room_access,
     get_or_create_channel_membership,
     load_room,
@@ -57,6 +60,18 @@ def _to_out(message: Message, attachment_ids: list[int]) -> MessageOut:
     out = MessageOut.model_validate(message)
     out.attachment_ids = attachment_ids
     return out
+
+
+def _pinned_out(
+    pin: PinnedMessage, message: Message, attachment_ids: list[int]
+) -> PinnedOut:
+    return PinnedOut(
+        room_id=pin.room_id,
+        message_id=pin.message_id,
+        pinned_by=pin.pinned_by,
+        pinned_at=pin.pinned_at,
+        message=_to_out(message, attachment_ids),
+    )
 
 
 @router.post("/{room_id}/messages", response_model=MessageOut, status_code=201)
@@ -199,6 +214,45 @@ async def get_thread(
     )
 
 
+@router.patch("/{room_id}/messages/{message_id}", response_model=MessageOut)
+async def edit_message(
+    room_id: int,
+    message_id: int,
+    body: EditMessageRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> MessageOut:
+    """Правка текста: ТОЛЬКО автор (admin чужой текст не переписывает — в отличие от
+    удаления). Стикер/вложение-only править нечего → 400. Удалённое → 404."""
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+
+    message = await session.get(Message, message_id)
+    if (
+        message is None
+        or message.room_id != room_id
+        or message.deleted_at is not None
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    if message.sender_id != current_user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot edit this message")
+    if message.content is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Only text messages can be edited"
+        )
+
+    message.content = body.content
+    message.edited_at = datetime.now(UTC)
+    await session.flush()
+    await session.refresh(message)
+
+    attachments = await _attachments_map(session, [message.id])
+    out = _to_out(message, attachments.get(message.id, []))
+    await publish_room_event(room_id, ws_schemas.message_edited_event(out))
+    return out
+
+
 @router.delete("/{room_id}/messages/{message_id}", status_code=204)
 async def delete_message(
     room_id: int,
@@ -229,7 +283,15 @@ async def delete_message(
             .where(Message.id == message.thread_root_id)
             .values(reply_count=func.greatest(Message.reply_count - 1, 0))
         )
+    # Целостность: удалённое сообщение не должно оставаться закреплённым.
+    pin = await session.get(PinnedMessage, (room_id, message_id))
+    if pin is not None:
+        await session.delete(pin)
     await session.flush()
+    if pin is not None:
+        await publish_room_event(
+            room_id, ws_schemas.pin_removed_event(room_id, message_id)
+        )
     await publish_room_event(
         room_id, ws_schemas.message_deleted_event(room_id, message_id)
     )
@@ -292,3 +354,102 @@ async def mark_read(
         last_read_message_id=membership.last_read_message_id,
         unread_count=unread,
     )
+
+
+# --- закрепления (pins, SPEC §4.7) -----------------------------------------
+
+
+@router.post(
+    "/{room_id}/messages/{message_id}/pin",
+    response_model=PinnedOut,
+    status_code=201,
+)
+async def pin_message(
+    room_id: int,
+    message_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    response: Response,
+) -> PinnedOut:
+    """Закрепить сообщение. Право — owner/admin (для dm — любой участник). Идемпотентно."""
+    room = await load_room(session, room_id)
+    membership = await assert_room_access(session, room, current_user)
+    assert_can_pin(room, current_user, membership)
+
+    message = await session.get(Message, message_id)
+    if (
+        message is None
+        or message.room_id != room_id
+        or message.deleted_at is not None
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    pin = await session.get(PinnedMessage, (room_id, message_id))
+    if pin is not None:
+        response.status_code = status.HTTP_200_OK  # уже закреплено — не дублим
+    else:
+        pin = PinnedMessage(
+            room_id=room_id, message_id=message_id, pinned_by=current_user.id
+        )
+        session.add(pin)
+        await session.flush()
+        await session.refresh(pin)
+        response.status_code = status.HTTP_201_CREATED
+        await publish_room_event(
+            room_id,
+            ws_schemas.pin_added_event(room_id, message_id, current_user.id),
+        )
+
+    attachments = await _attachments_map(session, [message.id])
+    return _pinned_out(pin, message, attachments.get(message.id, []))
+
+
+@router.delete(
+    "/{room_id}/messages/{message_id}/pin",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def unpin_message(
+    room_id: int,
+    message_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Открепить сообщение. Право — то же, что и для закрепления."""
+    room = await load_room(session, room_id)
+    membership = await assert_room_access(session, room, current_user)
+    assert_can_pin(room, current_user, membership)
+
+    pin = await session.get(PinnedMessage, (room_id, message_id))
+    if pin is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pin not found")
+
+    await session.delete(pin)
+    await session.flush()
+    await publish_room_event(
+        room_id, ws_schemas.pin_removed_event(room_id, message_id)
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{room_id}/pins", response_model=list[PinnedOut])
+async def list_pins(
+    room_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[PinnedOut]:
+    """Список закреплённых (любой участник комнаты). Удалённые не показываем."""
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+
+    rows = await session.execute(
+        select(PinnedMessage, Message)
+        .join(Message, Message.id == PinnedMessage.message_id)
+        .where(
+            PinnedMessage.room_id == room_id,
+            Message.deleted_at.is_(None),
+        )
+        .order_by(PinnedMessage.pinned_at.desc())
+    )
+    pairs = list(rows.all())
+    attachments = await _attachments_map(session, [m.id for _, m in pairs])
+    return [_pinned_out(p, m, attachments.get(m.id, [])) for p, m in pairs]

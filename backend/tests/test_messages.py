@@ -345,3 +345,123 @@ async def test_sticker_and_attachment_message(
     # Сообщение с вложением.
     att = await _send(client, headers, room.id, attachment_ids=[asset.id])
     assert att["attachment_ids"] == [asset.id]
+
+
+# --- редактирование --------------------------------------------------------
+
+
+async def test_author_edits_own_text(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    msg = await _send(client, headers, room.id, content="typo")
+    assert msg["edited_at"] is None
+
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"content": "fixed"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["content"] == "fixed"
+    assert body["edited_at"] is not None
+
+
+async def test_non_author_cannot_edit(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    admin = await make_user(role="admin")
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    await add_membership(room.id, admin.id, "member")
+
+    msg = await _send(client, await _headers(client, owner), room.id, content="mine")
+
+    # Даже admin не переписывает чужой текст (в отличие от удаления).
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=await _headers(client, admin),
+        json={"content": "hijack"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_edit_sticker_only_message_rejected(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    pack = Stickerpack(name="pack", created_by=owner.id)
+    session.add(pack)
+    await session.flush()
+    sticker = Sticker(pack_id=pack.id, image_url="http://x/s.png")
+    session.add(sticker)
+    await session.commit()
+
+    msg = await _send(client, headers, room.id, sticker_id=sticker.id)
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"content": "now text"},
+    )
+    assert resp.status_code == 400  # править нечего — нет текста
+
+
+async def test_edit_deleted_message_404(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    msg = await _send(client, headers, room.id, content="bye")
+    await client.delete(f"/api/rooms/{room.id}/messages/{msg['id']}", headers=headers)
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"content": "back"},
+    )
+    assert resp.status_code == 404
+
+
+async def test_edit_blank_content_rejected(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    msg = await _send(client, headers, room.id, content="keep")
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"content": "   "},
+    )
+    assert resp.status_code == 422  # пустой текст не проходит валидацию
