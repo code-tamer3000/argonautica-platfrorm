@@ -25,6 +25,7 @@ class RoomOut(BaseModel):
     name: str | None
     avatar_url: str | None
     created_at: datetime
+    unread_count: int = 0
 
 
 class AddMemberRequest(BaseModel):
