@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.admin import router as admin_router
+from app.api.auth import router as auth_router
 from app.core.redis import close_redis, redis_client
 
 
@@ -19,13 +21,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Platform API", lifespan=lifespan)
 
+app.include_router(auth_router)
+app.include_router(admin_router)
+
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# TODO (фундамент готов — дальше эндпоинты фич):
-#   - app/api/               — REST-роутеры, подключить через include_router
+# TODO (дальше эндпоинты фич):
+#   - app/api/               — чат/комнаты/база знаний (поверх auth-фундамента)
 #   - app/ws/                — WebSocket-эндпоинты + интеграция с Redis pub/sub
-#   - app/schemas/           — Pydantic-схемы запросов/ответов

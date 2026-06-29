@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Text, func
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,12 +16,18 @@ class User(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # Логин = TG-аккаунт. Платформа закрытая, регистрации нет — заводит админ.
+    username: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    email: Mapped[str | None] = mapped_column(Text, unique=True)  # опционален
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text)
     bio: Mapped[str | None] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text, nullable=False, server_default="participant")
+    # Временный (одноразовый) пароль выдан админом — юзер обязан сменить при входе.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

@@ -4,6 +4,7 @@ Access-токены stateless (нигде не хранятся). Refresh-ток
 чтобы реализовать отзыв/логаут устройств через Redis (эфемерное состояние, п.5).
 Сам отзыв — логика фич; здесь только генерация и декод.
 """
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -24,6 +25,14 @@ REFRESH_TOKEN_TYPE = "refresh"
 
 def hash_password(password: str) -> str:
     return _hasher.hash(password)
+
+
+def generate_one_time_password() -> str:
+    """Криптостойкий одноразовый пароль для заведения юзера админом.
+
+    Хранится только argon2-хешем; plaintext отдаётся админу один раз.
+    """
+    return secrets.token_urlsafe(9)  # ~12 символов из безопасного алфавита
 
 
 def verify_password(password_hash: str, password: str) -> bool:

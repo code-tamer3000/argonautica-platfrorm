@@ -1,0 +1,53 @@
+"""Админские эндпоинты. Платформа закрытая — пользователей заводит только админ."""
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import require_admin
+from app.core.security import generate_one_time_password, hash_password
+from app.db.session import get_session
+from app.models.user import User
+from app.schemas.user import AdminCreateUserRequest, AdminCreateUserResponse
+
+# Весь роутер под require_admin — каждый запрос проверяет роль на сервере (п.1).
+router = APIRouter(
+    prefix="/api/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin)],
+)
+
+
+@router.post(
+    "/users",
+    response_model=AdminCreateUserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_user(
+    body: AdminCreateUserRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AdminCreateUserResponse:
+    """Создать юзера. Сервер генерит одноразовый пароль и отдаёт его ОДИН раз."""
+    one_time_password = generate_one_time_password()
+    user = User(
+        username=body.username,
+        display_name=body.display_name,
+        email=body.email,
+        role=body.role,
+        password_hash=hash_password(one_time_password),
+        must_change_password=True,
+    )
+    session.add(user)
+    try:
+        await session.flush()  # получаем id и ловим конфликт уникальности
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email already exists",
+        ) from exc
+    return AdminCreateUserResponse(
+        id=user.id,
+        username=user.username,
+        one_time_password=one_time_password,
+    )
