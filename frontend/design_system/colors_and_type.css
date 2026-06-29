@@ -1,0 +1,395 @@
+/*
+ * АРГОНАВТИКА — Design Tokens
+ * Source of truth for colors, typography, spacing, and component tokens
+ * Import this file in any HTML artifact using this design system
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Prata&family=Lora:ital,wght@0,400;0,600;1,400;1,600&family=Onest:wght@300;400;500;600&display=swap');
+
+/* ============================================================
+   COLOR TOKENS
+   ============================================================ */
+
+:root {
+  /* --- Grounds (Backgrounds) --- */
+  --color-bezdna:        #0B100E;   /* Бездна — primary dark background */
+  --color-tishina:       #000000;   /* Тишина — pure silence / negative space */
+  --color-more:          #134E45;   /* Море — deep teal / element */
+  --color-more-glub:     #0E342E;   /* Море·глубь — darkened sea */
+  --color-frame:         #1C211E;   /* Frame borders / section dividers */
+  --color-frame-deep:    #2C322E;   /* Deeper frame borders */
+
+  /* --- Text / Light --- */
+  --color-kost:          #E9E2D4;   /* Пена/Кость — primary text */
+  --color-kost-yar:      #F4F1E9;   /* Кость·ярь — maximum light */
+  --color-kost-dim:      #C7C0B1;   /* Dimmed bone — secondary text */
+  --color-kost-muted:    #9A9486;   /* Muted bone — tertiary text */
+  --color-kost-ghost:    #5F5B50;   /* Ghost — placeholder text */
+  --color-kost-stone:    #4F4B42;   /* Stone labels */
+
+  /* --- Gold (Co-lead Accent) --- */
+  --color-zoloto:        #C29A48;   /* Золото — CTA, lines, star, ceremony */
+  --color-zoloto-yar:    #D9B45A;   /* Золото·ярь — gold highlight */
+  --color-latun:         #9C7A33;   /* Латунь — dark gold */
+
+  /* --- Blood (Navь / Depth / Wound) --- */
+  --color-krov:          #8E2018;   /* Кровь — Навь, harsh accents */
+  --color-krov-yar:      #B23A2E;   /* Кровь·ярь — lighter blood text */
+
+  /* --- Stone (Structure) --- */
+  --color-kamen:         #6E6A5E;   /* Камень — stone gray */
+  --color-kamen-tepl:    #8A8478;   /* Камень·тепл — warm stone */
+
+  /* --- Spectrum of Consciousness (reserved for Карта миров only) --- */
+  --spectrum-0:  #000000;  /* black */
+  --spectrum-1:  #8E2018;  /* red */
+  --spectrum-2:  #C24A18;  /* orange */
+  --spectrum-3:  #C29A48;  /* gold */
+  --spectrum-4:  #134E45;  /* teal */
+  --spectrum-5:  #1A3A6E;  /* blue */
+  --spectrum-6:  #2E1A6E;  /* indigo */
+  --spectrum-7:  #4E1A6E;  /* violet */
+  --spectrum-8:  #F4F1E9;  /* white */
+}
+
+/* ============================================================
+   SEMANTIC COLOR ALIASES
+   ============================================================ */
+
+:root {
+  --bg:              var(--color-bezdna);
+  --bg-deep:         var(--color-tishina);
+  --bg-sea:          var(--color-more);
+  --bg-surface:      #0C100F;          /* Slightly lighter abyss for cards */
+
+  --text-primary:    var(--color-kost);
+  --text-secondary:  var(--color-kost-dim);
+  --text-muted:      var(--color-kost-muted);
+  --text-ghost:      var(--color-kost-ghost);
+
+  --accent:          var(--color-zoloto);
+  --accent-bright:   var(--color-zoloto-yar);
+  --accent-dark:     var(--color-latun);
+
+  --blood:           var(--color-krov);
+  --blood-bright:    var(--color-krov-yar);
+
+  --stone:           var(--color-kamen);
+  --stone-warm:      var(--color-kamen-tepl);
+
+  --divider:         var(--color-frame);
+  --divider-gold:    rgba(194, 154, 72, 0.25);
+  --divider-gold-strong: rgba(194, 154, 72, 0.55);
+}
+
+/* ============================================================
+   TYPOGRAPHY — FOUR TIERS
+   ============================================================ */
+
+:root {
+  /* Font families */
+  --font-t1:         'Prata', Georgia, serif;  /* T1 Ceremonial — placeholder for custom viaz */
+  --font-t2:         'Prata', Georgia, serif;  /* T2 Display */
+  --font-t3:         'Lora', 'Literata', Georgia, serif; /* T3 Text */
+  --font-t4:         'Onest', system-ui, sans-serif;     /* T4 Interface */
+
+  /* Scale */
+  --text-hero:       clamp(48px, 8vw, 88px);  /* T1 hero word */
+  --text-h1:         clamp(32px, 4vw, 44px);  /* H1 Prata */
+  --text-h2:         clamp(22px, 2.5vw, 30px); /* H2 Prata */
+  --text-h3:         clamp(18px, 2vw, 22px);  /* H3 Prata */
+  --text-body:       18px;                    /* Lora body */
+  --text-body-sm:    16px;                    /* Lora smaller */
+  --text-label:      11px;                    /* Onest label */
+  --text-label-md:   13px;                    /* Onest label medium */
+  --text-ui:         14px;                    /* Onest UI */
+
+  /* Line heights */
+  --lh-hero:         1.08; /* @kind other */
+  --lh-display:      1.2;  /* @kind other */
+  --lh-heading:      1.35; /* @kind other */
+  --lh-body:         1.75; /* @kind other */
+  --lh-tight:        1.1;  /* @kind other */
+
+  /* Letter spacing */
+  --ls-label:        3px;   /* Onest uppercase labels */
+  --ls-label-sm:     2px;   /* Onest secondary labels */
+  --ls-label-wide:   4px;   /* Wide track labels */
+  --ls-display:      0.01em; /* Slight Prata tracking */
+
+  /* Measure */
+  --measure:         62ch;  /* Manifesto reading width */
+  --measure-wide:    80ch;
+}
+
+/* ============================================================
+   BASE ELEMENT STYLES
+   ============================================================ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-t3);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+}
+
+/* ============================================================
+   TYPOGRAPHIC ELEMENTS
+   ============================================================ */
+
+/* T1 — Ceremonial (hero, wordmark, world names) */
+.t1, h1.ceremonial {
+  font-family: var(--font-t1);
+  font-size: var(--text-hero);
+  line-height: var(--lh-hero);
+  letter-spacing: var(--ls-display);
+  color: var(--text-primary);
+}
+
+/* T2 — Display (section headings, pull-quotes, chapter titles) */
+.t2, h1, .prata {
+  font-family: var(--font-t2);
+  font-size: var(--text-h1);
+  line-height: var(--lh-display);
+  color: var(--text-primary);
+}
+
+h2, .t2-h2 {
+  font-family: var(--font-t2);
+  font-size: var(--text-h2);
+  line-height: var(--lh-heading);
+}
+
+h3, .t2-h3 {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  line-height: var(--lh-heading);
+}
+
+/* T3 — Body / Manifesto */
+p, .lora {
+  font-family: var(--font-t3);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+em, .lora-italic {
+  font-family: var(--font-t3);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* T4 — Interface */
+.label, .onest-label {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+
+.label-md {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  letter-spacing: var(--ls-label-sm);
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   SPACING TOKENS
+   ============================================================ */
+
+:root {
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+  --space-20:  80px;
+  --space-24:  96px;
+  --space-32: 128px;
+
+  /* Section breathing room */
+  --section-pad-y:   clamp(64px, 8vw, 120px);
+  --section-pad-x:   clamp(24px, 5vw, 80px);
+  --content-max-w:   720px;
+  --wide-max-w:      1200px;
+}
+
+/* ============================================================
+   BORDER RADIUS TOKENS
+   ============================================================ */
+
+:root {
+  --radius-btn:    6px;   /* Buttons — not too round */
+  --radius-media:  8px;   /* Video / image containers */
+  --radius-card:   14px;  /* Frame cards */
+  --radius-pill:   5px;   /* Pill badges */
+  --radius-none:   0px;   /* Sharp — dominant mode */
+}
+
+/* ============================================================
+   SHADOW / GLOW TOKENS
+   ============================================================ */
+
+:root {
+  --glow-gold:         0 0 40px rgba(194, 154, 72, 0.12);
+  --glow-gold-strong:  0 0 60px rgba(194, 154, 72, 0.24);
+  --glow-sea:          0 0 40px rgba(19, 78, 69, 0.3);
+  --shadow-frame:      inset 0 0 0 1px var(--color-frame-deep);
+}
+
+/* ============================================================
+   COMPONENT TOKENS
+   ============================================================ */
+
+:root {
+  /* Buttons */
+  --btn-font:        var(--font-t4);
+  --btn-size:        13px;
+  --btn-tracking:    1px;
+  --btn-pad:         10px 20px;
+  --btn-radius:      var(--radius-btn);
+
+  /* Dividers */
+  --divider-thickness: 1px;
+  --hairline:        1px solid var(--divider-gold);
+
+  /* Transitions */
+  --transition-fade:   opacity 200ms ease;            /* @kind other */
+  --transition-color:  color 200ms ease, background-color 200ms ease;
+  --transition-slow:   all 800ms cubic-bezier(0.25, 0.1, 0.25, 1); /* @kind other */
+}
+
+/* ============================================================
+   UTILITY CLASSES
+   ============================================================ */
+
+.text-gold    { color: var(--accent); }
+.text-blood   { color: var(--blood-bright); }
+.text-bone    { color: var(--text-primary); }
+.text-muted   { color: var(--text-muted); }
+.text-ghost   { color: var(--text-ghost); }
+.text-teal    { color: var(--color-more); }
+
+.bg-abyss     { background: var(--bg); }
+.bg-black     { background: var(--bg-deep); }
+.bg-surface   { background: var(--bg-surface); }
+.bg-sea       { background: var(--bg-sea); }
+
+/* Star spark glyph */
+.star-spark {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+}
+
+/* Gold hairline divider */
+.divider-gold {
+  border: none;
+  border-top: 1px solid var(--divider-gold);
+  margin: var(--space-8) 0;
+}
+
+.divider-gold-strong {
+  border: none;
+  border-top: 1px solid var(--divider-gold-strong);
+}
+
+/* Manifesto reading mode */
+.manifesto-mode {
+  max-width: var(--measure);
+  font-family: var(--font-t3);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  color: var(--text-secondary);
+}
+
+/* Section label */
+.sec-label {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--color-kost-stone);
+  margin-bottom: var(--space-4);
+}
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+
+.btn {
+  display: inline-block;
+  font-family: var(--btn-font);
+  font-size: var(--btn-size);
+  letter-spacing: var(--btn-tracking);
+  padding: var(--btn-pad);
+  border-radius: var(--btn-radius);
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: var(--transition-color);
+}
+
+.btn-primary {
+  background: var(--color-kost);
+  color: var(--color-bezdna);
+}
+
+.btn-primary:hover {
+  background: var(--color-kost-yar);
+}
+
+.btn-gold {
+  background: var(--color-zoloto);
+  color: var(--color-bezdna);
+}
+
+.btn-gold:hover {
+  background: var(--color-zoloto-yar);
+}
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--color-frame-deep);
+}
+
+.btn-outline:hover {
+  border-color: var(--color-kost-dim);
+}
+
+/* ============================================================
+   NOTES
+   ============================================================ */
+
+/*
+  T1 CEREMONIAL FONT: The brand uses a custom Cyrillic viaz (ligature) letterform
+  for the brand wordmark and hero ceremonial use. This file uses Prata as the
+  official fallback until the custom font is provided by the client.
+
+  To replace: load the custom font and update --font-t1.
+
+  FLAG: Custom viaz font not yet provided. Using Prata as placeholder.
+  Request the font files from Аргат / the client.
+*/

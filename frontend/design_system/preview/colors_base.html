@@ -1,0 +1,48 @@
+<!-- @dsCard group="Colors" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; font-family: 'Onest', sans-serif; padding: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .swatch { border-radius: 4px; overflow: hidden; }
+  .chip { height: 52px; width: 100%; }
+  .info { padding: 5px 4px 6px; }
+  .name { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #8A8478; margin-bottom: 2px; }
+  .hex { font-size: 10px; color: #5F5B50; letter-spacing: 0.5px; }
+  .row-label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; margin: 14px 0 6px; }
+</style>
+</head>
+<body>
+  <div class="row-label">Основа · Grounds</div>
+  <div class="grid" style="grid-template-columns: repeat(4,1fr);">
+    <div class="swatch"><div class="chip" style="background:#0B100E; border:1px solid #2C322E;"></div><div class="info"><div class="name">Бездна</div><div class="hex">#0B100E</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#000000; border:1px solid #2C322E;"></div><div class="info"><div class="name">Тишина</div><div class="hex">#000000</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#134E45;"></div><div class="info"><div class="name">Море</div><div class="hex">#134E45</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#0E342E;"></div><div class="info"><div class="name">Море·глубь</div><div class="hex">#0E342E</div></div></div>
+  </div>
+
+  <div class="row-label">Текст · Text</div>
+  <div class="grid" style="grid-template-columns: repeat(5,1fr);">
+    <div class="swatch"><div class="chip" style="background:#E9E2D4;"></div><div class="info"><div class="name">Кость</div><div class="hex">#E9E2D4</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#F4F1E9;"></div><div class="info"><div class="name">Кость·ярь</div><div class="hex">#F4F1E9</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#C7C0B1;"></div><div class="info"><div class="name">Кость·dim</div><div class="hex">#C7C0B1</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#9A9486;"></div><div class="info"><div class="name">Muted</div><div class="hex">#9A9486</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#5F5B50;"></div><div class="info"><div class="name">Ghost</div><div class="hex">#5F5B50</div></div></div>
+  </div>
+
+  <div class="row-label">Акценты · Accents</div>
+  <div class="grid" style="grid-template-columns: repeat(7,1fr);">
+    <div class="swatch"><div class="chip" style="background:#C29A48;"></div><div class="info"><div class="name">Золото</div><div class="hex">#C29A48</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#D9B45A;"></div><div class="info"><div class="name">Золото·ярь</div><div class="hex">#D9B45A</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#9C7A33;"></div><div class="info"><div class="name">Латунь</div><div class="hex">#9C7A33</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#8E2018;"></div><div class="info"><div class="name">Кровь</div><div class="hex">#8E2018</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#B23A2E;"></div><div class="info"><div class="name">Кровь·ярь</div><div class="hex">#B23A2E</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#6E6A5E;"></div><div class="info"><div class="name">Камень</div><div class="hex">#6E6A5E</div></div></div>
+    <div class="swatch"><div class="chip" style="background:#8A8478;"></div><div class="info"><div class="name">Камень·тепл</div><div class="hex">#8A8478</div></div></div>
+  </div>
+</body>
+</html>

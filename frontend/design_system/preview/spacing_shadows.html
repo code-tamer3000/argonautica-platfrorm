@@ -1,0 +1,60 @@
+<!-- @dsCard group="Spacing" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; padding: 20px 24px; font-family: 'Onest', sans-serif; }
+  .label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; margin-bottom: 10px; }
+  .box { border-radius: 8px; padding: 20px; margin-bottom: 10px; }
+  .name { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #5F5B50; margin-top: 6px; }
+  .row { display: flex; gap: 10px; align-items: stretch; }
+</style>
+</head>
+<body>
+  <div class="label">Shadows &amp; Glow System</div>
+  <div class="row">
+    <div style="flex:1;">
+      <div class="box" style="background:#0C100F; border:1px solid #1C211E;">
+        <span style="font-size:12px; color:#E9E2D4;">Frame border</span>
+      </div>
+      <div class="name">Frame · #1C211E · 1px</div>
+    </div>
+    <div style="flex:1;">
+      <div class="box" style="background:#0C100F; border:1px solid #2C322E;">
+        <span style="font-size:12px; color:#E9E2D4;">Deep frame</span>
+      </div>
+      <div class="name">Deep · #2C322E · 1px</div>
+    </div>
+  </div>
+  <div style="height:10px;"></div>
+  <div class="row">
+    <div style="flex:1;">
+      <div class="box" style="background:#0D1210; box-shadow: 0 0 40px rgba(194,154,72,0.12);">
+        <span style="font-size:12px; color:#E9E2D4;">Gold glow</span>
+      </div>
+      <div class="name">Glow · rgba(194,154,72,0.12)</div>
+    </div>
+    <div style="flex:1;">
+      <div class="box" style="background:#0C1210; box-shadow: 0 0 60px rgba(194,154,72,0.24);">
+        <span style="font-size:12px; color:#E9E2D4;">Strong glow</span>
+      </div>
+      <div class="name">Strong · rgba(194,154,72,0.24)</div>
+    </div>
+  </div>
+  <div style="height:10px;"></div>
+  <div>
+    <div class="box" style="background:#0E1A18; box-shadow: 0 0 40px rgba(19,78,69,0.3);">
+      <span style="font-size:12px; color:#E9E2D4;">Sea atmospheric glow</span>
+    </div>
+    <div class="name">Sea glow · rgba(19,78,69,0.3)</div>
+  </div>
+  <div style="margin-top:12px; border-top:1px solid rgba(194,154,72,0.25); padding-top:8px;">
+    <div class="label" style="margin-bottom:3px;">Gold hairline divider</div>
+    <span style="font-size:9px; color:#5F5B50;">1px solid rgba(194,154,72,0.25) — default</span><br>
+    <span style="font-size:9px; color:#5F5B50;">1px solid rgba(194,154,72,0.55) — strong</span>
+  </div>
+</body>
+</html>

@@ -52,10 +52,11 @@
 **Backend:** Python 3.12+, async везде (async SQLAlchemy, async-эндпоинты). Типизация
 обязательна. Pydantic — для схем запросов/ответов. Раскладка: `models/` (SQLAlchemy),
 `schemas/` (Pydantic), `api/` (роутеры REST), `ws/` (WebSocket), `services/`
-(бизнес-логика, в т.ч. работа с MinIO), `core/` (config, security/JWT, redis).
+(бизнес-логика, в т.ч. работа с MinIO), `core/` (config, security/JWT, redis).   
 S3-клиент — boto3 (работает с MinIO, упрощает будущий переезд на managed-S3).
 
-**Frontend:** React + TypeScript. UI — строго по дизайн-системе проекта. Клиент
+**Frontend:** React + TypeScript. UI — строго по дизайн-системе проекта (см.
+@frontend/design-system/README.md) от туда берем всю стелистику, но не структуру. Клиент
 обязан уметь **переподключение WebSocket** (при blue-green деплое сокеты рвутся).
 
 ## Git-процесс

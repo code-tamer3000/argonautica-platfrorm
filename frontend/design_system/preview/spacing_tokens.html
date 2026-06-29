@@ -1,0 +1,48 @@
+<!-- @dsCard group="Spacing" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; padding: 20px 24px; font-family: 'Onest', sans-serif; }
+  .row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .bar { background: #C29A48; height: 10px; border-radius: 2px; opacity: 0.7; }
+  .token { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; width: 70px; flex-shrink: 0; }
+  .val { font-size: 10px; color: #5F5B50; width: 36px; flex-shrink: 0; }
+  .section { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; margin: 14px 0 8px; }
+  .radius-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .radius-box { background: #1C211E; border: 1px solid #2C322E; width: 36px; height: 36px; }
+</style>
+</head>
+<body>
+  <div class="section">Spacing Scale</div>
+  <div class="row"><span class="token">space-1</span><div class="bar" style="width:4px;"></div><span class="val">4px</span></div>
+  <div class="row"><span class="token">space-2</span><div class="bar" style="width:8px;"></div><span class="val">8px</span></div>
+  <div class="row"><span class="token">space-4</span><div class="bar" style="width:16px;"></div><span class="val">16px</span></div>
+  <div class="row"><span class="token">space-6</span><div class="bar" style="width:24px;"></div><span class="val">24px</span></div>
+  <div class="row"><span class="token">space-8</span><div class="bar" style="width:32px;"></div><span class="val">32px</span></div>
+  <div class="row"><span class="token">space-12</span><div class="bar" style="width:48px;"></div><span class="val">48px</span></div>
+  <div class="row"><span class="token">space-16</span><div class="bar" style="width:64px;"></div><span class="val">64px</span></div>
+  <div class="row"><span class="token">space-24</span><div class="bar" style="width:96px;"></div><span class="val">96px</span></div>
+  <div class="row"><span class="token">space-32</span><div class="bar" style="width:128px;"></div><span class="val">128px</span></div>
+
+  <div class="section">Border Radius</div>
+  <div class="radius-row">
+    <div class="radius-box" style="border-radius:0px;"></div><span style="font-size:9px; color:#5F5B50;">0px · dominant</span>
+  </div>
+  <div class="radius-row">
+    <div class="radius-box" style="border-radius:5px;"></div><span style="font-size:9px; color:#5F5B50;">5px · pill/badge</span>
+  </div>
+  <div class="radius-row">
+    <div class="radius-box" style="border-radius:6px;"></div><span style="font-size:9px; color:#5F5B50;">6px · button</span>
+  </div>
+  <div class="radius-row">
+    <div class="radius-box" style="border-radius:8px;"></div><span style="font-size:9px; color:#5F5B50;">8px · media</span>
+  </div>
+  <div class="radius-row">
+    <div class="radius-box" style="border-radius:14px;"></div><span style="font-size:9px; color:#5F5B50;">14px · card frame</span>
+  </div>
+</body>
+</html>

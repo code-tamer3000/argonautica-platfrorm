@@ -1,0 +1,52 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Prata&family=Onest:wght@400&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; padding: 20px 24px; }
+  .label { font-family: 'Onest', sans-serif; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; margin-bottom: 10px; }
+  .chapter { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(194,154,72,0.15); }
+  .chapter:last-child { border-bottom: none; }
+  .num { font-family: 'Onest', sans-serif; font-size: 10px; letter-spacing: 2px; color: #5F5B50; width: 36px; flex-shrink: 0; }
+  .name { font-family: 'Prata', serif; font-size: 14px; color: #C7C0B1; }
+  .star { flex-shrink: 0; }
+</style>
+</head>
+<body>
+  <div class="label">03 · Навигация по главам — I–XXIV</div>
+  <div>
+    <div class="chapter">
+      <span class="num">I</span>
+      <svg class="star" width="8" height="8" viewBox="-11 -11 22 22"><path d="M0,-10 C1.5,-3 3,-1.5 10,0 C3,1.5 1.5,3 0,10 C-1.5,3 -3,1.5 -10,0 C-3,-1.5 -1.5,-3 0,-10 Z" fill="rgba(194,154,72,0.5)"/></svg>
+      <span class="name">Архитектура симуляции</span>
+    </div>
+    <div class="chapter">
+      <span class="num">V</span>
+      <svg class="star" width="8" height="8" viewBox="-11 -11 22 22"><path d="M0,-10 C1.5,-3 3,-1.5 10,0 C3,1.5 1.5,3 0,10 C-1.5,3 -3,1.5 -10,0 C-3,-1.5 -1.5,-3 0,-10 Z" fill="rgba(194,154,72,0.5)"/></svg>
+      <span class="name">Вещество Матрицы</span>
+    </div>
+    <div class="chapter" style="border-bottom-color:rgba(194,154,72,0.35);">
+      <span class="num">XV</span>
+      <svg class="star" width="8" height="8" viewBox="-11 -11 22 22"><path d="M0,-10 C1.5,-3 3,-1.5 10,0 C3,1.5 1.5,3 0,10 C-1.5,3 -3,1.5 -10,0 C-3,-1.5 -1.5,-3 0,-10 Z" fill="#C29A48"/></svg>
+      <span class="name" style="color:#E9E2D4;">Оживление</span>
+    </div>
+    <div class="chapter">
+      <span class="num">XXIII</span>
+      <svg class="star" width="8" height="8" viewBox="-11 -11 22 22"><path d="M0,-10 C1.5,-3 3,-1.5 10,0 C3,1.5 1.5,3 0,10 C-1.5,3 -3,1.5 -10,0 C-3,-1.5 -1.5,-3 0,-10 Z" fill="rgba(194,154,72,0.5)"/></svg>
+      <span class="name">Карта Аргонавтики</span>
+    </div>
+    <div class="chapter">
+      <span class="num">XXIV</span>
+      <svg class="star" width="8" height="8" viewBox="-11 -11 22 22"><path d="M0,-10 C1.5,-3 3,-1.5 10,0 C3,1.5 1.5,3 0,10 C-1.5,3 -3,1.5 -10,0 C-3,-1.5 -1.5,-3 0,-10 Z" fill="rgba(194,154,72,0.5)"/></svg>
+      <span class="name">…</span>
+    </div>
+  </div>
+  <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+    <span style="font-family:'Prata',serif; font-size:12px; color:#C7C0B1; border:1px solid #2E332F; padding:7px 11px; border-radius:5px;">I · Архитектура симуляции</span>
+    <span style="font-family:'Prata',serif; font-size:12px; color:#C7C0B1; border:1px solid #2E332F; padding:7px 11px; border-radius:5px;">XV · Оживление</span>
+  </div>
+</body>
+</html>
