@@ -190,12 +190,43 @@
 
 ---
 
+## Стадия 8 — База знаний (Knowledge Base) (2026-06-30) ✅
+
+Вторая половина продукта получила API: авторские материалы (markdown) с привязкой
+файлов/видео и чтение опубликованного всеми участниками. **Категории — вне MVP**
+(DECISIONS.md), материалы плоские (`category_id` = NULL). **Миграций не требует** —
+схема (`kb_items`, `kb_item_media`) лежит с Стадии 1, `alembic check` чист.
+
+### Реализовано
+- **Авторский CRUD (только admin)** — [backend/app/api/kb.py](../backend/app/api/kb.py),
+  префикс `/api/kb`: `POST /items` (по умолчанию черновик), `PATCH /items/{id}`
+  (whitelist-поля, как `admin.update_user`), `DELETE /items/{id}` (явный bulk-DELETE
+  связей перед материалом — иначе FK), `POST /items/{id}/media` (идемпотентная
+  привязка), `DELETE /items/{id}/media/{asset_id}`. Файлы грузятся обычным media-flow
+  (`/api/media/...`) и линкуются по `media_asset_id` — загрузку не дублируем.
+- **Чтение (любой участник)** — `GET /items` (участник видит только `published`,
+  admin — все; `media_asset_ids` без N+1) и `GET /items/{id}` (черновик для не-admin —
+  404, существование не раскрываем). Доступ — [services/kb.py](../backend/app/services/kb.py)
+  (`load_kb_item`/`assert_kb_item_visible`/`attached_media_ids`).
+- **Доступ к медиа KB** — расширен `assert_media_access`
+  ([services/media.py](../backend/app/services/media.py)): ассет, привязанный к
+  **опубликованному** материалу, доступен любому участнику (presigned-GET через
+  существующий `GET /api/media/{id}`). Отвязка/снятие публикации доступ закрывают.
+
+### Проверено
+- Тесты [tests/test_kb.py](../backend/tests/test_kb.py): видимость черновик/публикация,
+  гейты admin-only, привязка медиа и доступ к нему по публикации, отвязка снимает
+  доступ, удаление материала каскадит связи, 404 на чужой ассет. `pytest -q` — 72 passed.
+  (MinIO не нужен — `MediaAsset` сидится в БД, presigned-URL подписывается локально.)
+- `alembic check` → *No new upgrade operations*; `ruff`/`mypy app` (strict) — чисто.
+
+---
+
 ## Стадия 9 — Rate-limiting + Календарь (2026-06-30) ✅
 
 Два независимых завершающих куска бэкенда. **Миграций не требует** —
 `calendar_events` заложена в Стадии 1, rate-limit схему не трогает; `alembic check`
-чист. (Идёт параллельно со Стадией 8 «База знаний» в отдельной ветке — на мерже в
-`develop` пересекутся только `main.py` и этот журнал, конфликт тривиальный.)
+чист.
 
 ### Реализовано
 - **Rate-limiting (§6.6)** — [services/ratelimit.py](../backend/app/services/ratelimit.py):
