@@ -87,13 +87,22 @@ def presigned_get_url(
 
 
 def ensure_buckets() -> None:
-    """Идемпотентно создать приватные бакеты для медиа и базы знаний."""
+    """Идемпотентно создать приватные бакеты. Retry пока MinIO не станет доступен."""
+    import time
+
     client = _server_client()
-    for bucket in (settings.minio_bucket_media, settings.minio_bucket_kb):
+    for attempt in range(12):
         try:
-            client.head_bucket(Bucket=bucket)
-        except ClientError:
-            client.create_bucket(Bucket=bucket)
+            for bucket in (settings.minio_bucket_media, settings.minio_bucket_kb):
+                try:
+                    client.head_bucket(Bucket=bucket)
+                except ClientError:
+                    client.create_bucket(Bucket=bucket)
+            return
+        except Exception:
+            if attempt == 11:
+                raise
+            time.sleep(5)
 
 
 def build_storage_key(content_type: str) -> str:
