@@ -1,4 +1,5 @@
 """Эндпоинты аутентификации: login / refresh / logout / change-password / me."""
+from datetime import UTC, datetime
 from typing import Annotated
 
 import jwt
@@ -15,6 +16,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_session
+from app.models.media import MediaAsset
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -23,8 +25,9 @@ from app.schemas.auth import (
     RefreshRequest,
     TokenPair,
 )
-from app.schemas.user import UserOut
+from app.schemas.user import ProfileUpdateRequest, UserOut
 from app.services.auth import issue_token_pair, refresh_is_valid, revoke_refresh
+from app.services.media import presign_asset_urls
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -102,6 +105,46 @@ async def change_password(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+async def _me_out(session: AsyncSession, user: User) -> UserOut:
+    """Свой профиль: avatar_url — подписанный media-URL (если задан), иначе legacy."""
+    out = UserOut.model_validate(user)
+    if user.avatar_media_id is not None:
+        urls = await presign_asset_urls(session, {user.avatar_media_id})
+        out.avatar_url = urls.get(user.avatar_media_id)
+    return out
+
+
 @router.get("/me", response_model=UserOut)
-async def me(user: Annotated[User, Depends(get_current_active_user)]) -> User:
-    return user
+async def me(
+    user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserOut:
+    return await _me_out(session, user)
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    body: ProfileUpdateRequest,
+    user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UserOut:
+    """Редактировать свой профиль. Аватар — свой image-ассет (media flow), иначе 403/404."""
+    changes = body.model_dump(exclude_unset=True)
+    if "avatar_media_id" in changes:
+        media_id = changes["avatar_media_id"]
+        if media_id is not None:
+            asset = await session.get(MediaAsset, media_id)
+            if asset is None or asset.kind != "image":
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Image asset not found")
+            if asset.created_by != user.id:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your asset")
+        user.avatar_media_id = media_id
+    if changes.get("display_name") is not None:
+        user.display_name = changes["display_name"]
+    if "bio" in changes:
+        user.bio = changes["bio"]
+    if changes.get("settings") is not None:
+        user.settings = changes["settings"]
+    user.updated_at = datetime.now(UTC)
+    await session.flush()
+    return await _me_out(session, user)

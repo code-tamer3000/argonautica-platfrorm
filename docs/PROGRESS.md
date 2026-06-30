@@ -222,6 +222,42 @@
 
 ---
 
+## Стадия 10 — Стикерпаки + Профиль и директория (2026-06-30) ✅
+
+Последний фич-домен бэкенда: редактирование своего профиля, директория
+пользователей и стикерпаки. **Первая миграция после Стадии 1** (additive/expand,
+обратима): картинки аватаров/стикеров — через media-flow, храним ссылку на ассет,
+URL подписываем на чтение.
+
+### Реализовано
+- **Миграция `e10ce43ba1d3`** — `users.avatar_media_id`, `stickers.image_media_id`
+  (nullable FK на `media_assets`); `stickers.image_url` стал nullable. `avatar_url`/
+  `image_url` оставлены под внешний URL (приоритет у media_id). Обратима.
+- **Подпись на чтение** — `presign_asset_urls` ([services/media.py](../backend/app/services/media.py)):
+  батч `{asset_id: presigned-GET}` (подпись локальна, без N+1; аватары/стикеры видны
+  любому участнику — без `assert_media_access`).
+- **Профиль (§4.2)** — [api/auth.py](../backend/app/api/auth.py): `GET /me` (теперь с
+  подписанным `avatar_url`, bio, settings) и `PATCH /me` (display_name/bio/avatar/
+  settings; аватар — только свой image-ассет, иначе 403/404; `extra="forbid"`).
+- **Директория** — [api/users.py](../backend/app/api/users.py): `GET /api/users`
+  (список для ростера/выбора DM-пира, аватары батчем) и `GET /api/users/{id}`
+  (публичный профиль без email/settings).
+- **Стикерпаки (§4.5)** — [api/stickers.py](../backend/app/api/stickers.py): admin
+  создаёт пак и добавляет стикеры (картинка — image-ассет, иначе 404); участники
+  читают `GET /api/stickerpacks` (паки со стикерами, картинки подписаны). Удаление не
+  делаем — стикеры под FK `messages.sticker_id` (снос ломает историю).
+
+### Проверено
+- Тесты [tests/test_profile.py](../backend/tests/test_profile.py) (правка профиля,
+  аватар через media + снятие, чужой/не-image ассет → 403/404, директория, extra
+  forbidden) и [tests/test_stickers.py](../backend/tests/test_stickers.py) (создание
+  пака/стикера, чтение с подписью, admin-гейты, отправка стикер-сообщения). `pytest`
+  — 82 passed.
+- Миграция: `upgrade`→`downgrade -1`→`upgrade` (обратима); `alembic check` → *No new
+  upgrade operations*; `ruff`/`mypy app` (strict) — чисто.
+
+---
+
 ## Окружения: dev vs prod ⚠️
 
 **Принцип.** Код один. Отличается только `.env` на конкретном сервере. **Имена**
