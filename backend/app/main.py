@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.calendar import router as calendar_router
 from app.api.media import router as media_router
 from app.api.messages import router as messages_router
 from app.api.rooms import router as rooms_router
@@ -37,6 +38,7 @@ app.include_router(admin_router)
 app.include_router(rooms_router)
 app.include_router(messages_router)
 app.include_router(media_router)
+app.include_router(calendar_router)
 app.include_router(ws_router)
 
 

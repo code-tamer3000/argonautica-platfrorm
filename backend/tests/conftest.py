@@ -12,6 +12,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.redis import redis_client
 from app.core.security import hash_password
 from app.db.session import SessionLocal, engine
@@ -23,6 +24,13 @@ from app.ws.pubsub import stop_listener
 MakeUser = Callable[..., Awaitable[User]]
 MakeRoom = Callable[..., Awaitable[Room]]
 AddMembership = Callable[..., Awaitable[RoomMember]]
+
+
+@pytest_asyncio.fixture(autouse=True)
+def _disable_rate_limit() -> None:
+    """Rate-limit выключен для всего набора, чтобы повторные login/send не упирались
+    в лимиты. test_ratelimit включает его точечно через monkeypatch."""
+    settings.rate_limit_enabled = False
 
 
 @pytest_asyncio.fixture(autouse=True)

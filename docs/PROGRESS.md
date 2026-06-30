@@ -190,6 +190,37 @@
 
 ---
 
+## Стадия 9 — Rate-limiting + Календарь (2026-06-30) ✅
+
+Два независимых завершающих куска бэкенда. **Миграций не требует** —
+`calendar_events` заложена в Стадии 1, rate-limit схему не трогает; `alembic check`
+чист. (Идёт параллельно со Стадией 8 «База знаний» в отдельной ветке — на мерже в
+`develop` пересекутся только `main.py` и этот журнал, конфликт тривиальный.)
+
+### Реализовано
+- **Rate-limiting (§6.6)** — [services/ratelimit.py](../backend/app/services/ratelimit.py):
+  `enforce_rate_limit` (fixed-window счётчик в Redis, 429 + `Retry-After`) + `client_ip`
+  (за nginx — первый `X-Forwarded-For`). Применён к `login` (по IP, анти-брутфорс),
+  `send_message` и `request_upload` (по юзеру). Лимиты — в
+  [config.py](../backend/app/core/config.py) (`rate_limit_*`, env-tunable);
+  глобальный выключатель `RATE_LIMIT_ENABLED` (в тестах — off, точечно включается
+  monkeypatch'ем).
+- **Календарь (§4.10)** — [api/calendar.py](../backend/app/api/calendar.py) +
+  [schemas/calendar.py](../backend/app/schemas/calendar.py), префикс `/api/calendar`:
+  CRUD событий **только admin** (`POST/PATCH/DELETE /events`, проверка `ends_at >=
+  starts_at`); чтение участниками `GET /events` (project-wide видят все; событие
+  комнаты — только при доступе, та же видимость, что у списка комнат; фильтры
+  `from`/`to`/`room_id`) и `GET /events/{id}` (для события комнаты — `assert_room_access`).
+
+### Проверено
+- Тесты [tests/test_ratelimit.py](../backend/tests/test_ratelimit.py) (login/send → 429
+  при превышении) и [tests/test_calendar.py](../backend/tests/test_calendar.py)
+  (видимость project-wide/группа/канал, admin-гейты, валидация дат, фильтр диапазона).
+  `pytest -q` — 74 passed (rate-limit в наборе выключен autouse-фикстурой).
+- `alembic check` → *No new upgrade operations*; `ruff`/`mypy app` (strict) — чисто.
+
+---
+
 ## Окружения: dev vs prod ⚠️
 
 **Принцип.** Код один. Отличается только `.env` на конкретном сервере. **Имена**

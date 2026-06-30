@@ -13,6 +13,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
+from app.core.config import settings
 from app.db.session import get_session
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
@@ -27,6 +28,7 @@ from app.schemas.message import (
     SendMessageRequest,
     ThreadOut,
 )
+from app.services.ratelimit import enforce_rate_limit
 from app.services.rooms import (
     assert_can_pin,
     assert_room_access,
@@ -82,6 +84,9 @@ async def send_message(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MessageOut:
     """Отправить сообщение (текст / стикер / вложения), опционально — ответ в тред."""
+    await enforce_rate_limit(
+        f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
+    )
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
 
