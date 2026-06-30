@@ -89,8 +89,12 @@ async def send_message(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Sticker not found")
 
     if body.attachment_ids:
+        # Прикрепить можно только свои ассеты (нельзя подставить чужой id — IDOR).
         found = await session.execute(
-            select(MediaAsset.id).where(MediaAsset.id.in_(body.attachment_ids))
+            select(MediaAsset.id).where(
+                MediaAsset.id.in_(body.attachment_ids),
+                MediaAsset.created_by == current_user.id,
+            )
         )
         if set(found.scalars().all()) != set(body.attachment_ids):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
