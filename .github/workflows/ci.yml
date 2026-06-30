@@ -90,6 +90,21 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
       - run: pip install -e ".[dev]"
+      # MinIO нужен медиа-тестам (presigned round-trip, test_media.py). Сервис-
+      # контейнером не поднять: образу нужна команда `server /data`, а блок
+      # `services:` команду не передаёт — поэтому запускаем явным docker run и ждём
+      # готовности по health-эндпоинту. Креды совпадают с MINIO_* в env джобы.
+      - name: Start MinIO
+        working-directory: .
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+            -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+            minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for _ in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break
+            sleep 1
+          done
       # Применяем миграции к чистой БД — заодно проверяем их на каждом PR.
       - run: alembic upgrade head
       - run: pytest -q
