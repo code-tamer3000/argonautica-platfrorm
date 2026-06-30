@@ -1,0 +1,31 @@
+.page { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8); overflow-y: auto; }
+.pageHeader { display: flex; align-items: center; justify-content: space-between; }
+.pageHeader h1 { font-family: var(--font-t1); color: var(--text-primary); }
+.list { display: flex; flex-direction: column; gap: var(--space-3); }
+.listItem { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
+.listItemMain { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
+.listTitle { font-family: var(--font-t4); color: var(--text-primary); font-size: var(--text-ui); }
+.listMeta { font-size: 0.75rem; color: var(--text-secondary); }
+.listActions { display: flex; gap: var(--space-2); flex-shrink: 0; }
+.badgePublished { font-size: 0.75rem; padding: 2px var(--space-2); background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); border-radius: 9999px; }
+.badgeDraft { font-size: 0.75rem; padding: 2px var(--space-2); background: var(--divider); color: var(--text-secondary); border-radius: 9999px; }
+.form { display: flex; flex-direction: column; gap: var(--space-4); min-width: 420px; }
+.formRow { display: flex; flex-direction: column; gap: var(--space-2); }
+.formRow label { font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-t4); }
+.input { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-2) var(--space-3); color: var(--text-primary); font-size: var(--text-ui); width: 100%; box-sizing: border-box; }
+.input:focus { outline: none; border-color: var(--accent); }
+.textarea { resize: vertical; min-height: 120px; }
+.checkRow { display: flex; align-items: center; gap: var(--space-3); }
+.formActions { display: flex; justify-content: flex-end; gap: var(--space-3); padding-top: var(--space-2); }
+.mediaGrid { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
+.mediaItem { position: relative; }
+.mediaDetach { position: absolute; top: -6px; right: -6px; background: var(--bg-surface); border: 1px solid var(--divider); border-radius: 50%; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+.stickerGrid { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.stickerImg { width: 48px; height: 48px; object-fit: contain; border: 1px solid var(--divider); border-radius: var(--radius-btn); }
+.oneTimePass { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-3); font-family: monospace; font-size: var(--text-ui); color: var(--text-primary); word-break: break-all; }
+.copyRow { display: flex; gap: var(--space-3); align-items: center; }
+.adminLayout { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.adminNav { display: flex; gap: var(--space-2); padding: var(--space-3) var(--space-8); border-bottom: 1px solid var(--divider); background: var(--bg-surface); flex-shrink: 0; }
+.adminNavLink { padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); color: var(--text-secondary); text-decoration: none; font-size: var(--text-ui); font-family: var(--font-t4); }
+.adminNavLink:hover { background: var(--divider); color: var(--text-primary); }
+.adminNavActive { padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); color: var(--text-primary); text-decoration: none; font-size: var(--text-ui); font-family: var(--font-t4); background: color-mix(in srgb, var(--accent) 15%, transparent); }
