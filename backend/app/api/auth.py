@@ -123,7 +123,9 @@ async def _me_out(session: AsyncSession, user: User) -> UserOut:
 
 @router.get("/me", response_model=UserOut)
 async def me(
-    user: Annotated[User, Depends(get_current_active_user)],
+    # Намеренно get_current_user (не active): свой профиль читаем всегда, в т.ч.
+    # при must_change_password — иначе фронт не сможет показать экран смены пароля.
+    user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserOut:
     return await _me_out(session, user)
