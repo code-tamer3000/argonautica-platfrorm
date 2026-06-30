@@ -12,6 +12,8 @@ from app.api.kb import router as kb_router
 from app.api.media import router as media_router
 from app.api.messages import router as messages_router
 from app.api.rooms import router as rooms_router
+from app.api.stickers import router as stickers_router
+from app.api.users import router as users_router
 from app.core.redis import close_redis, redis_client
 from app.services.media import ensure_buckets
 from app.ws.chat import router as ws_router
@@ -40,6 +42,8 @@ app.include_router(rooms_router)
 app.include_router(messages_router)
 app.include_router(media_router)
 app.include_router(kb_router)
+app.include_router(users_router)
+app.include_router(stickers_router)
 app.include_router(calendar_router)
 app.include_router(ws_router)
 

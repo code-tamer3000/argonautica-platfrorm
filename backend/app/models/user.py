@@ -2,7 +2,15 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,7 +29,12 @@ class User(Base):
     email: Mapped[str | None] = mapped_column(Text, unique=True)  # опционален
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
-    avatar_url: Mapped[str | None] = mapped_column(Text)
+    avatar_url: Mapped[str | None] = mapped_column(Text)  # legacy/внешний URL
+    # Аватар как media-ассет: presigned-GET подписываем на чтение (avatar_url оставлен
+    # под внешний URL — приоритет у media_id).
+    avatar_media_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("media_assets.id")
+    )
     bio: Mapped[str | None] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text, nullable=False, server_default="participant")
     # Временный (одноразовый) пароль выдан админом — юзер обязан сменить при входе.
