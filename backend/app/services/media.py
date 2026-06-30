@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment
 from app.models.user import User
@@ -121,9 +122,23 @@ async def assert_media_access(
     """Доступ к чтению ассета (авторизация на каждом запросе, п.1).
 
     Разрешаем, если юзер его загрузил, либо ассет прикреплён к живому сообщению в
-    комнате, к которой у юзера есть доступ. Иначе — 403.
+    комнате, к которой у юзера есть доступ, либо привязан к опубликованному
+    материалу базы знаний (его медиа видит любой участник). Иначе — 403.
     """
     if asset.created_by == user.id:
+        return
+
+    # Медиа опубликованного материала базы знаний доступно любому участнику (§4.9).
+    in_published_kb = await session.execute(
+        select(KbItemMedia.kb_item_id)
+        .join(KbItem, KbItem.id == KbItemMedia.kb_item_id)
+        .where(
+            KbItemMedia.media_asset_id == asset.id,
+            KbItem.published.is_(True),
+        )
+        .limit(1)
+    )
+    if in_published_kb.first() is not None:
         return
 
     room_ids = (
