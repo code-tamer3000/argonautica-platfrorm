@@ -288,6 +288,45 @@ URL подписываем на чтение.
 
 ---
 
+## Стадия 11 — Прод-инфра: докеризация + nginx + blue-green (2026-06-30) ✅
+
+Не-фичевая стадия: прод-стек по SPEC §5/§7. Кода бэкенда не трогает. Наружу торчит
+только nginx; stateful-сервисы — внутри docker-сети, общие для blue/green; деплой —
+zero-downtime переключением; миграции — expand/contract. Полный runbook —
+[docs/DEPLOY.md](DEPLOY.md).
+
+### Реализовано
+- **Образ бэкенда** — [backend/Dockerfile](../backend/Dockerfile) (slim, non-root,
+  HEALTHCHECK на `/api/health`) + `docker-entrypoint.sh` (uvicorn, `UVICORN_WORKERS`;
+  миграции — отдельным one-shot, чтобы blue+green не гонялись за `alembic upgrade`) +
+  `.dockerignore`.
+- **nginx** — [docker/nginx/templates/default.conf.template](../docker/nginx/templates/default.conf.template)
+  (envsubst `${DOMAIN}`/`${MEDIA_DOMAIN}`): TLS, редирект 80→443 + ACME-webroot,
+  `/api/` и `/ws` (Upgrade/Connection, `proxy_read_timeout 3600s`) → upstream backend,
+  `/` → SPA-статика (`try_files`), отдельный server для медиа-домена → `minio:9000`
+  (Host сохраняем — SigV4). Security-хедеры (HSTS и пр.). Активный цвет — в
+  [active_backend.conf](../docker/nginx/active_backend.conf); `make-self-signed.sh` для
+  локальных сертов; placeholder-`index.html` (до фронта).
+- **Прод-compose** — [docker/docker-compose.prod.yml](../docker/docker-compose.prod.yml):
+  Postgres/Redis/MinIO **без host-портов** (named volumes, healthcheck'и), one-shot
+  `migrate` (profile), `backend-blue`/`backend-green`, nginx (80/443). MinIO запинен на
+  релиз.
+- **Blue-green деплой** — [docker/deploy.sh](../docker/deploy.sh): образ → migrate
+  (expand, до переключения) → поднять второй цвет → дождаться healthy → переписать
+  upstream → `nginx -s reload` → дренаж WS → стоп старого. Детект `docker compose`/
+  `docker-compose`. Откат — вернуть upstream + reload.
+
+### Проверено (локально, self-signed, без домена/VPS)
+- `docker build backend/` — образ собирается; контейнер отвечает на `/api/health`.
+- `nginx -t` на отрендеренном конфиге — ок; `docker compose config` валиден.
+- Стек поднят на `localhost`/`media.localhost`: `curl -k https://localhost/api/health`
+  → ok, `http→https` редирект, медиа-домен проксирует в MinIO, `/ws` отдаёт upgrade.
+- `deploy.sh`: активный цвет в upstream меняется, трафик не прерывается.
+- Боевые TLS (Let's Encrypt), реальные домен/VPS и `frontend/dist` — ручные шаги
+  деплоя (DEPLOY.md), вне локальной проверки.
+
+---
+
 ## Окружения: dev vs prod ⚠️
 
 **Принцип.** Код один. Отличается только `.env` на конкретном сервере. **Имена**
