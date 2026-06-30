@@ -3,11 +3,12 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, get_current_user
+from app.core.config import settings
 from app.core.security import (
     REFRESH_TOKEN_TYPE,
     decode_token,
@@ -28,6 +29,7 @@ from app.schemas.auth import (
 from app.schemas.user import ProfileUpdateRequest, UserOut
 from app.services.auth import issue_token_pair, refresh_is_valid, revoke_refresh
 from app.services.media import presign_asset_urls
+from app.services.ratelimit import client_ip, enforce_rate_limit
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -44,8 +46,13 @@ _INVALID_REFRESH = HTTPException(
 @router.post("/login", response_model=TokenPair)
 async def login(
     body: LoginRequest,
+    request: Request,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TokenPair:
+    # Анти-брутфорс/DoS: лимит попыток входа с одного IP (§6.6).
+    await enforce_rate_limit(
+        f"rl:login:{client_ip(request)}", settings.rate_limit_login_per_minute
+    )
     user = (
         await session.execute(select(User).where(User.username == body.username))
     ).scalar_one_or_none()

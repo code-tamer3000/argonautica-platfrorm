@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     jwt_access_ttl_minutes: int = 15
     jwt_refresh_ttl_days: int = 30
 
+    # --- Rate limiting (§6.6) ---
+    # Эфемерные счётчики в Redis. Выключатель — для тестов/инцидентов.
+    rate_limit_enabled: bool = True
+    rate_limit_login_per_minute: int = 10  # на IP — анти-брутфорс/DoS на /login
+    rate_limit_send_per_minute: int = 60  # на юзера — отправка сообщений
+    rate_limit_upload_per_minute: int = 30  # на юзера — запросы presigned-загрузки
+
     @model_validator(mode="after")
     def _default_public_endpoint(self) -> "Settings":
         # Браузеру нужен публичный адрес MinIO (напр. localhost:9000), а не
