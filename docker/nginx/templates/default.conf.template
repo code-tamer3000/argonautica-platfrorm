@@ -1,0 +1,93 @@
+# Рендерится официальным nginx-образом: envsubst подставляет ${DOMAIN}/${MEDIA_DOMAIN}
+# (из env контейнера) и кладёт результат в conf.d/ (внутри http{}). nginx-переменные
+# ($host, $http_upgrade, ...) не трогаются — envsubst ограничен списком env-переменных.
+
+# Карта для WebSocket-апгрейда.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Активный backend (blue/green). Файл переписывает docker/deploy.sh + `nginx -s reload`.
+include /etc/nginx/active_backend.conf;
+
+# --- HTTP → HTTPS + ACME-challenge (Let's Encrypt в проде) ---
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN} ${MEDIA_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# --- Приложение: API + WebSocket + статика SPA ---
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${DOMAIN};
+
+    ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/certs/${DOMAIN}.key;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location /api/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket. При blue-green переключении сокеты рвутся — клиент реконнектится.
+    location /ws {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+
+    # SPA (service worker + клиентский роутинг). Пока фронта нет — placeholder.
+    location / {
+        root /usr/share/nginx/html;
+        try_files $uri /index.html;
+    }
+}
+
+# --- MinIO: presigned PUT/GET напрямую клиент↔MinIO через nginx ---
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${MEDIA_DOMAIN};
+
+    ssl_certificate     /etc/nginx/certs/${MEDIA_DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/certs/${MEDIA_DOMAIN}.key;
+
+    # SigV4 завязан на Host: boto3 подписывает presigned-URL под MINIO_PUBLIC_ENDPOINT
+    # (= https://${MEDIA_DOMAIN}); nginx ОБЯЗАН сохранить Host, иначе подпись не сойдётся.
+    location / {
+        proxy_pass http://minio:9000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Прямые загрузки (видео) — не буферизуем тело; потолок с запасом над лимитом.
+        client_max_body_size 200m;
+        proxy_request_buffering off;
+    }
+}
