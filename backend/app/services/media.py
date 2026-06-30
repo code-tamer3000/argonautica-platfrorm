@@ -167,3 +167,25 @@ async def assert_media_access(
             continue
 
     raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this media asset")
+
+
+async def presign_asset_urls(
+    session: AsyncSession, asset_ids: set[int]
+) -> dict[int, str]:
+    """`{asset_id: presigned-GET}` батчем для аватаров/стикеров.
+
+    Подпись локальна (без сети) — N+1 по сети не создаёт. Картинки аватаров/стикеров
+    видны любому активному участнику, поэтому подписываем без `assert_media_access`
+    (вызывающие эндпоинты и так под аутентификацией).
+    """
+    if not asset_ids:
+        return {}
+    rows = await session.execute(
+        select(MediaAsset.id, MediaAsset.bucket, MediaAsset.storage_key).where(
+            MediaAsset.id.in_(asset_ids)
+        )
+    )
+    return {
+        asset_id: presigned_get_url(bucket, key)
+        for asset_id, bucket, key in rows.all()
+    }

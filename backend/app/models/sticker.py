@@ -27,6 +27,10 @@ class Sticker(Base):
     pack_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("stickerpacks.id"), nullable=False
     )
-    image_url: Mapped[str] = mapped_column(Text, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(Text)  # legacy/внешний URL
+    # Картинка стикера как media-ассет (presigned-GET на чтение); приоритет у media_id.
+    image_media_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("media_assets.id")
+    )
     keyword: Mapped[str | None] = mapped_column(Text)  # для поиска/подстановки
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")

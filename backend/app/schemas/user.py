@@ -1,5 +1,5 @@
 """Pydantic-схемы пользователей."""
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,13 +35,44 @@ class AdminUpdateUserRequest(BaseModel):
     can_create_groups: bool | None = None
 
 
+class ProfileUpdateRequest(BaseModel):
+    """Редактирование своего профиля. Применяются только переданные поля.
+
+    `avatar_media_id=null` — снять аватар; `bio=null` — очистить. `display_name`/
+    `settings` пустыми (null) не зануляем (NOT NULL в БД).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = None
+    bio: str | None = None
+    avatar_media_id: int | None = None
+    settings: dict[str, Any] | None = None
+
+
 class UserOut(BaseModel):
+    """Свой профиль (GET/PATCH /me). `avatar_url` — подписанный media-URL или legacy."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     username: str
     email: str | None
     display_name: str
+    avatar_url: str | None = None
+    bio: str | None = None
     role: str
     must_change_password: bool
     can_create_groups: bool
+    settings: dict[str, Any] = {}
+
+
+class PublicUserOut(BaseModel):
+    """Публичный профиль (директория/по id) — без email/settings."""
+
+    id: int
+    username: str
+    display_name: str
+    avatar_url: str | None = None
+    bio: str | None = None
+    role: str
