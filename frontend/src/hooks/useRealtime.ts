@@ -1,7 +1,9 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
-import { appendMessage, removeMessage, replaceMessage } from '../api/cache'
+import { appendMessage, bumpReplyCount, removeMessage, replaceMessage } from '../api/cache'
+import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
+import { threadKey } from '../api/threads'
 import { useAuth } from '../features/auth/AuthContext'
 import { wsClient } from '../lib/wsClient'
 import type { RoomOut, WsEvent } from '../lib/types'
@@ -56,7 +58,13 @@ export function useRealtime(): void {
       switch (e.type) {
         case 'message.new': {
           const msg = e.message
-          if (msg.thread_root_id === null) appendMessage(qc, msg.room_id, msg)
+          if (msg.thread_root_id === null) {
+            appendMessage(qc, msg.room_id, msg)
+          } else {
+            // Ответ в тред: обновить счётчик на корне и открытый тред.
+            bumpReplyCount(qc, msg.room_id, msg.thread_root_id, msg.created_at)
+            qc.invalidateQueries({ queryKey: threadKey(msg.room_id, msg.thread_root_id) })
+          }
           bumpRoom(qc, msg.room_id)
           const active = useUiStore.getState().activeRoomId
           if (msg.room_id === active) {
@@ -71,6 +79,10 @@ export function useRealtime(): void {
           break
         case 'message.deleted':
           removeMessage(qc, e.room_id, e.message_id)
+          break
+        case 'pin.added':
+        case 'pin.removed':
+          qc.invalidateQueries({ queryKey: pinsKey(e.room_id) })
           break
         case 'typing':
           if (e.user_id !== me) markTyping(e.room_id, e.user_id)

@@ -27,3 +27,21 @@ export function removeMessage(qc: QueryClient, roomId: number, id: number): void
     old ? { ...old, pages: old.pages.map((p) => p.filter((m) => m.id !== id)) } : old,
   )
 }
+
+// Ответ в тред: денормализованный счётчик на корне в ленте (root не приходит в событии).
+export function bumpReplyCount(qc: QueryClient, roomId: number, rootId: number, at: string): void {
+  qc.setQueryData<MessagesData>(messagesKey(roomId), (old) =>
+    old
+      ? {
+          ...old,
+          pages: old.pages.map((p) =>
+            p.map((m) =>
+              m.id === rootId
+                ? { ...m, reply_count: m.reply_count + 1, last_reply_at: at }
+                : m,
+            ),
+          ),
+        }
+      : old,
+  )
+}

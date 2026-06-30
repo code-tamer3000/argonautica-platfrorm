@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Button } from '../../components/Button'
+import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
 import { useAuth } from '../auth/AuthContext'
@@ -30,6 +31,7 @@ export function AppShell() {
         <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
       </header>
       <ChatLayout />
+      <Toasts />
     </div>
   )
 }

@@ -81,7 +81,7 @@
 .navBtn:hover { color: var(--text-primary); border-color: var(--color-frame-deep); }
 
 /* --- Чат-пейн --- */
-.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 
 .header {
   display: flex; align-items: center; gap: var(--space-3);
@@ -138,3 +138,89 @@
   flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
   color: var(--text-muted); padding: var(--space-8);
 }
+
+/* --- Вложения / стикеры --- */
+.attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.attImage { max-width: 280px; max-height: 280px; border-radius: var(--radius-media); cursor: pointer; display: block; }
+.attVideo { max-width: 320px; max-height: 280px; border-radius: var(--radius-media); }
+.attFile {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn); font-family: var(--font-t4); font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+.attLoading { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost); padding: var(--space-2) 0; }
+.sticker { width: 120px; height: 120px; object-fit: contain; margin-top: var(--space-1); }
+
+/* --- Действия над сообщением --- */
+.msg:hover .actions { opacity: 1; }
+.actions {
+  opacity: 0; transition: var(--transition-fade);
+  display: flex; gap: var(--space-1); margin-top: var(--space-1);
+}
+.actionBtn {
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-btn);
+  color: var(--text-muted); font-family: var(--font-t4); font-size: var(--text-label-md);
+  padding: 2px var(--space-2); cursor: pointer;
+}
+.actionBtn:hover { color: var(--text-primary); border-color: var(--color-frame-deep); }
+.actionDanger:hover { color: var(--blood-bright); border-color: var(--blood); }
+
+.threadLink {
+  display: inline-block; margin-top: var(--space-1);
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent);
+  background: transparent; border: none; cursor: pointer; padding: 0;
+}
+.threadLink:hover { color: var(--accent-bright); }
+
+.editRow { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-1); }
+.editInput {
+  padding: var(--space-2) var(--space-3); font-family: var(--font-t3); font-size: var(--text-body-sm);
+  background: var(--bg-deep); border: 1px solid var(--divider-gold); border-radius: var(--radius-btn);
+  color: var(--text-primary); resize: vertical;
+}
+.editActions { display: flex; gap: var(--space-2); }
+
+/* --- Композер: reply/edit бар, кнопки --- */
+.contextBar {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
+  border-top: 1px solid var(--color-frame);
+  background: var(--bg-surface); color: var(--text-muted);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+}
+.contextBar .ctxLabel { color: var(--accent); }
+.iconBtn {
+  background: transparent; border: 1px solid var(--color-frame-deep); border-radius: var(--radius-btn);
+  color: var(--text-secondary); cursor: pointer; padding: var(--space-2) var(--space-3); font-size: 16px;
+}
+.iconBtn:hover { border-color: var(--color-kost-dim); color: var(--text-primary); }
+
+.pendingAtt {
+  display: flex; gap: var(--space-2); flex-wrap: wrap;
+  padding: var(--space-2) var(--space-5) 0;
+}
+.pendingChip {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 2px var(--space-2); border: 1px solid var(--divider-gold); border-radius: var(--radius-pill);
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-secondary);
+}
+.pendingChip button { background: none; border: none; color: var(--text-muted); cursor: pointer; }
+
+/* --- Sticker picker --- */
+.pickerPop {
+  position: absolute; bottom: 70px; left: var(--space-5); z-index: 30;
+  width: 320px; max-height: 360px; overflow-y: auto;
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); padding: var(--space-3); box-shadow: var(--glow-gold);
+}
+.pickerPack { margin-bottom: var(--space-3); }
+.pickerGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
+.pickerSticker { width: 100%; aspect-ratio: 1; object-fit: contain; cursor: pointer; border-radius: var(--radius-btn); }
+.pickerSticker:hover { background: rgba(19, 78, 69, 0.18); }
+
+/* --- Списки участников/пинов в drawer --- */
+.drawerRow { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-frame); }
+.drawerRow .grow { font-family: var(--font-t4); font-size: var(--text-ui); }
+.headerActions { display: flex; gap: var(--space-2); }
+

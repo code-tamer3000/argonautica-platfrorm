@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMarkRead, useMessages } from '../../api/messages'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Spinner'
+import type { MessageOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
 import { Composer } from './Composer'
+import { MembersDrawer } from './MembersDrawer'
 import { MessageList } from './MessageList'
+import { PinsDrawer } from './PinsDrawer'
+import { ThreadPanel } from './ThreadPanel'
 import { TypingIndicator } from './TypingIndicator'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
@@ -29,6 +33,21 @@ export function ChatPane({ roomId }: { roomId: number }) {
     () => (query.data ? query.data.pages.flat().slice().reverse() : []),
     [query.data],
   )
+
+  const [replyTo, setReplyTo] = useState<MessageOut | null>(null)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [threadRootId, setThreadRootId] = useState<number | null>(null)
+  const [showPins, setShowPins] = useState(false)
+  const [showMembers, setShowMembers] = useState(false)
+
+  // Сбросить панели при смене комнаты.
+  useEffect(() => {
+    setReplyTo(null)
+    setEditingId(null)
+    setThreadRootId(null)
+    setShowPins(false)
+    setShowMembers(false)
+  }, [roomId])
 
   // Вывести пира личного чата из сообщений (API не отдаёт состав dm).
   useEffect(() => {
@@ -70,6 +89,12 @@ export function ChatPane({ roomId }: { roomId: number }) {
           </div>
           <div className={styles.headerSub}>{subLabel(room.type)}</div>
         </div>
+        <div className={styles.headerActions}>
+          <button className={styles.actionBtn} onClick={() => setShowPins(v => !v)} title="Закреплённые">📌</button>
+          {room.type !== 'dm' && (
+            <button className={styles.actionBtn} onClick={() => setShowMembers(v => !v)} title="Участники">👥</button>
+          )}
+        </div>
       </header>
       <MessageList
         messages={messages}
@@ -77,9 +102,23 @@ export function ChatPane({ roomId }: { roomId: number }) {
         loadMore={() => void query.fetchNextPage()}
         loading={query.isFetchingNextPage}
         users={users}
+        editingId={editingId}
+        onReply={(msg) => setReplyTo(msg)}
+        onEdit={(msg) => setEditingId(msg.id)}
+        onClearEdit={() => setEditingId(null)}
+        onOpenThread={(rootId) => setThreadRootId(rootId)}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      <Composer roomId={roomId} />
+      <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+      {threadRootId != null && (
+        <ThreadPanel roomId={roomId} rootId={threadRootId} onClose={() => setThreadRootId(null)} />
+      )}
+      {showPins && (
+        <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} />
+      )}
+      {showMembers && (
+        <MembersDrawer roomId={roomId} onClose={() => setShowMembers(false)} />
+      )}
     </>
   )
 }

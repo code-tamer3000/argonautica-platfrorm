@@ -11,9 +11,14 @@ interface Props {
   loadMore: () => void
   loading: boolean
   users: Map<number, PublicUserOut>
+  editingId?: number | null
+  onReply?: (msg: MessageOut) => void
+  onEdit?: (msg: MessageOut) => void
+  onClearEdit?: () => void
+  onOpenThread?: (rootId: number) => void
 }
 
-export function MessageList({ messages, hasMore, loadMore, loading, users }: Props) {
+export function MessageList({ messages, hasMore, loadMore, loading, users, editingId, onReply, onEdit, onClearEdit, onOpenThread }: Props) {
   const ref = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
   const count = messages.length
@@ -49,7 +54,16 @@ export function MessageList({ messages, hasMore, loadMore, loading, users }: Pro
                 <span>{dayLabel(m.created_at)}</span>
               </div>
             )}
-            <MessageItem msg={m} continuation={continuation} author={users.get(m.sender_id)} />
+            <MessageItem
+              msg={m}
+              continuation={continuation}
+              author={users.get(m.sender_id)}
+              editingId={editingId}
+              onReply={onReply}
+              onEdit={onEdit}
+              onClearEdit={onClearEdit}
+              onOpenThread={onOpenThread}
+            />
           </div>
         )
       })}
