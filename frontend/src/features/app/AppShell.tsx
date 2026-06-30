@@ -1,19 +1,22 @@
 import { useEffect } from 'react'
-import { wsClient } from '../../lib/wsClient'
 import { Button } from '../../components/Button'
+import { useRealtime } from '../../hooks/useRealtime'
+import { wsClient } from '../../lib/wsClient'
 import { useAuth } from '../auth/AuthContext'
+import { ChatLayout } from '../chat/ChatLayout'
 import styles from './appshell.module.css'
 
-// Каркас приложения (Стадия 12, фаза 1). В следующих фазах тело заменяется на
-// Telegram-раскладку: список чатов + чат-пейн, экраны Базы/Календаря/Профиля/Админки.
 export function AppShell() {
   const { user, logout } = useAuth()
 
-  // Реалтайм-соединение живёт, пока юзер залогинен (с авто-реконнектом).
+  // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
     wsClient.start()
     return () => wsClient.stop()
   }, [])
+
+  // Проводка WS-событий в кэш (один раз в корне).
+  useRealtime()
 
   return (
     <div className={`col ${styles.shell}`}>
@@ -26,16 +29,7 @@ export function AppShell() {
         </span>
         <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
       </header>
-      <main className={`grow center ${styles.body}`}>
-        <div className={styles.placeholder}>
-          <div className="label">Каркас готов</div>
-          <p>
-            Аутентификация, дизайн-система и реалтайм-соединение подключены.
-            Дальше — список чатов, сообщения, треды, пины, медиа, база знаний,
-            календарь, профиль и админка.
-          </p>
-        </div>
-      </main>
+      <ChatLayout />
     </div>
   )
 }

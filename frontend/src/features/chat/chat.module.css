@@ -1,0 +1,140 @@
+/* --- Раскладка (Telegram, 2 колонки) --- */
+.layout { height: 100%; }
+
+.list {
+  width: 320px;
+  flex: 0 0 320px;
+  border-right: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.listHead {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-frame);
+}
+
+.search {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-ui);
+  background: var(--bg-deep);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+}
+
+.rooms { flex: 1; overflow-y: auto; min-height: 0; }
+
+.roomItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(28, 33, 30, 0.6);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition-color);
+}
+.roomItem:hover { background: rgba(19, 78, 69, 0.10); }
+.roomActive { background: rgba(19, 78, 69, 0.18); }
+
+.roomAvatarWrap { position: relative; flex: 0 0 auto; }
+.presenceDot {
+  position: absolute; right: -1px; bottom: -1px;
+  width: 11px; height: 11px; border-radius: 50%;
+  background: var(--color-more); border: 2px solid var(--bg-surface);
+}
+
+.roomMain { flex: 1; min-width: 0; }
+.roomTitle {
+  font-family: var(--font-t4); font-size: var(--text-ui); color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.roomSub { font-size: var(--text-label-md); color: var(--text-muted); }
+
+.unread {
+  flex: 0 0 auto;
+  min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--accent); color: var(--color-bezdna);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+.bottomNav {
+  display: flex; gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--color-frame-deep);
+}
+.navBtn {
+  flex: 1; padding: var(--space-2);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-btn);
+  color: var(--text-muted); font-family: var(--font-t4); font-size: var(--text-label-md);
+  cursor: pointer;
+}
+.navBtn:hover { color: var(--text-primary); border-color: var(--color-frame-deep); }
+
+/* --- Чат-пейн --- */
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+.header {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface);
+}
+.headerTitle { font-family: var(--font-t4); font-size: var(--text-h3); color: var(--text-primary); }
+.headerSub { font-size: var(--text-label-md); color: var(--text-muted); }
+
+.messages {
+  flex: 1; overflow-y: auto; min-height: 0;
+  display: flex; flex-direction: column;
+  padding: var(--space-4) var(--space-5);
+  gap: 2px;
+}
+
+.daySep { text-align: center; margin: var(--space-4) 0 var(--space-2); }
+.daySep span {
+  font-family: var(--font-t4); font-size: var(--text-label); letter-spacing: var(--ls-label-sm);
+  text-transform: uppercase; color: var(--text-ghost);
+  padding: 2px var(--space-3); border: 1px solid var(--color-frame); border-radius: var(--radius-pill);
+}
+
+.msg { display: flex; gap: var(--space-3); padding: 2px 0; }
+.msgAvatar { width: 36px; flex: 0 0 36px; }
+.msgBody { min-width: 0; flex: 1; }
+.msgHead { display: flex; align-items: baseline; gap: var(--space-2); }
+.msgAuthor { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent); }
+.msgTime { font-family: var(--font-t4); font-size: var(--text-label); color: var(--text-ghost); }
+.msgText { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.msgContinuation .msgText { padding-left: 0; }
+.msgMeta { font-size: var(--text-label); color: var(--text-ghost); font-family: var(--font-t4); }
+.msgPlaceholder { color: var(--text-muted); font-style: italic; }
+
+.typing { padding: 2px var(--space-5) var(--space-2); font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-height: 22px; }
+
+/* --- Composer --- */
+.composer {
+  display: flex; align-items: flex-end; gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface);
+}
+.composerInput {
+  flex: 1; resize: none; max-height: 160px;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-t3); font-size: var(--text-body-sm); line-height: 1.5;
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep); border-radius: var(--radius-card);
+  color: var(--text-primary);
+}
+
+.empty {
+  flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
+  color: var(--text-muted); padding: var(--space-8);
+}
