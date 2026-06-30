@@ -33,6 +33,7 @@ from app.services.media import (
     presigned_put_url,
     stat_object,
 )
+from app.services.ratelimit import enforce_rate_limit
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
@@ -71,6 +72,9 @@ async def request_upload(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> UploadTicket:
     """Выдать presigned-PUT после проверки типа/размера; запомнить намерение в Redis."""
+    await enforce_rate_limit(
+        f"rl:upload:{current_user.id}", settings.rate_limit_upload_per_minute
+    )
     _validate_content_type(body.kind, body.content_type)
     if body.size > settings.media_max_upload_bytes:
         raise HTTPException(
