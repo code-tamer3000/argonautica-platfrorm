@@ -39,7 +39,13 @@
   padding: 1px var(--space-2);
 }
 
-.body { padding: var(--space-8); }
+.body        { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.sidenav     { width: 200px; padding: var(--space-3) 0; border-right: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; background: var(--bg-surface); flex-shrink: 0; }
+.navLink     { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); margin: 0 var(--space-2); color: var(--text-secondary); text-decoration: none; font-family: var(--font-t4); font-size: var(--text-ui); }
+.navLink:hover { background: var(--color-frame); color: var(--text-primary); }
+.navLinkActive { background: var(--color-more) !important; color: var(--text-primary); }
+.navIcon     { width: 18px; text-align: center; }
+.content     { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
 .placeholder {
   max-width: 520px;
