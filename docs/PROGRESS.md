@@ -379,3 +379,77 @@ alembic upgrade head      # применить схему
 alembic check             # модели не разошлись с миграцией
 ruff check app alembic && mypy app
 ```
+
+---
+
+## Стадия 12 — Фронтенд: каркас, дизайн-система, auth, чат-ядро (2026-06-30) ✅
+
+Первые два шага React-PWA. Стек: React 18 + TypeScript + Vite + TanStack Query v5 +
+Zustand + react-router-dom v6. **Рабочий бэкенд обязателен** (Postgres + Redis + MinIO).
+
+### Реализовано
+
+**Фаза 1 — каркас + дизайн-система + аутентификация**
+- **Точка входа** — [frontend/src/main.tsx](../frontend/src/main.tsx): QueryClientProvider
+  (staleTime 15 s, retry 1, без refetchOnWindowFocus), BrowserRouter, AuthProvider, App.
+- **Дизайн-система** — [frontend/src/styles/tokens.css](../frontend/src/styles/tokens.css)
+  (палитра: `--color-bezdna`, `--color-more`, `--color-zoloto`; типографика: Prata/Lora/Onest;
+  спейсинг, радиусы, эффекты) + [global.css](../frontend/src/styles/global.css) (сброс,
+  утилиты `.col/.row/.grow/.center`).
+- **Компоненты** — `Avatar`, `Button` (primary/gold/outline), `Spinner`.
+- **API-слой** — [lib/apiClient.ts](../frontend/src/lib/apiClient.ts): Bearer-авторизация,
+  авто-рефреш на 401 (singleton promise), `ApiError`. [lib/wsClient.ts](../frontend/src/lib/wsClient.ts):
+  авто-реконнект (backoff до 15 s), ping 25 s, re-subscribe после реконнекта.
+- **Типы** — [lib/types.ts](../frontend/src/lib/types.ts): все DTO бэкенда + дискриминированный
+  union `WsEvent` (12 типов событий).
+- **Auth** — [features/auth/](../frontend/src/features/auth/): `AuthContext` (bootstrap через
+  refresh → /me), `AuthGuard`, `LoginScreen`, `ChangePasswordScreen`.
+- **AppShell** — [features/app/AppShell.tsx](../frontend/src/features/app/AppShell.tsx):
+  запуск WS + `useRealtime()` в корне, шапка, `<ChatLayout>`.
+
+**Фаза 2 — чат-ядро**
+- **API-хуки чата** — `useMessages` (infinite, cursor), `useSendMessage`, `useEditMessage`,
+  `useDeleteMessage`, `useMarkRead` ([api/messages.ts](../frontend/src/api/messages.ts));
+  `useRooms`, `useCreateRoom`, `useRoomMembers`, `useAddMember`, `useRemoveMember`
+  ([api/rooms.ts](../frontend/src/api/rooms.ts)); `useUsers`, `useUsersMap`
+  ([api/users.ts](../frontend/src/api/users.ts)).
+- **Кэш-мутации** — [api/cache.ts](../frontend/src/api/cache.ts): `appendMessage`,
+  `replaceMessage`, `removeMessage`, `bumpReplyCount`.
+- **Чат-компоненты** — [features/chat/](../frontend/src/features/chat/): `ChatLayout`,
+  `RoomList` (поиск, бейджи, presence), `ChatPane` (auto-mark-read), `MessageList`
+  (infinite scroll), `MessageItem`, `Composer` (Enter-to-send, throttled typing), `TypingIndicator`.
+- **Реалтайм** — [hooks/useRealtime.ts](../frontend/src/hooks/useRealtime.ts): маршрутизация
+  WS-событий в кэш.
+- **UI-стор** — [stores/ui.ts](../frontend/src/stores/ui.ts): `activeRoomId`, `typing` (4 s TTL), `online`, `dmPeers`.
+
+### Проверено
+- `npm run build` → TypeScript 0 ошибок, vite-сборка чистая.
+
+---
+
+## Стадия 13 — Фронтенд: вложения, стикеры, треды, закрепления (2026-06-30) ✅
+
+Расширение чата: полная поддержка медиа, стикеров, тредов и закреплений.
+
+### Реализовано
+- **Медиа-загрузка** — [lib/mediaUpload.ts](../frontend/src/lib/mediaUpload.ts): 3-шаговый
+  presigned flow (POST /uploads → PUT MinIO → POST /assets) с определением размеров изображений.
+- **API-хуки** — `useMediaUrl` ([api/media.ts](../frontend/src/api/media.ts)); `usePins`,
+  `usePin`, `useUnpin` ([api/pins.ts](../frontend/src/api/pins.ts)); `useThread`
+  ([api/threads.ts](../frontend/src/api/threads.ts)); `useStickerpacks`, `useStickerMap`
+  ([api/stickers.ts](../frontend/src/api/stickers.ts)).
+- **Компонент-слой** — [components/Overlay.tsx](../frontend/src/components/Overlay.tsx):
+  `Modal`, `Drawer`, `Lightbox`. [components/Toasts.tsx](../frontend/src/components/Toasts.tsx) +
+  `stores/toast.ts`: императивный `toast(text, kind?)`, авто-dismiss 3.5 s.
+- **Attachment** — [features/chat/Attachment.tsx](../frontend/src/features/chat/Attachment.tsx):
+  presigned-GET → img/video/download-link, Lightbox по клику на фото.
+- **StickerPicker** — попап с 4-колоночной сеткой стикеров по пакам.
+- **MessageItem** расширен — рендеринг стикеров, `Attachment` вместо плейсхолдера,
+  экшн-меню (ответить / редактировать / удалить / закрепить), inline-edit, тред-ссылка.
+- **Composer** расширен — upload-кнопка, pending-чипы, стикер-picker, context-bar для ответа.
+- **ChatPane** — 5 стейтов (replyTo, editingId, threadRootId, showPins, showMembers),
+  кнопки 📌/👥 в хедере.
+- **Панели** — `ThreadPanel` (Drawer + мини-composer), `PinsDrawer`, `MembersDrawer`.
+
+### Проверено
+- `npm run build` → TypeScript 0 ошибок, vite-сборка чистая (274 KiB JS).
