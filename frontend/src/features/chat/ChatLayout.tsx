@@ -18,7 +18,7 @@ export function ChatLayout() {
       <RoomList selectedId={roomId} onSelect={setRoomId} />
       <div className={`grow ${styles.pane}`}>
         {roomId ? (
-          <ChatPane key={roomId} roomId={roomId} />
+          <ChatPane key={roomId} roomId={roomId} onOpenRoom={setRoomId} />
         ) : (
           <div className={styles.empty}>Выберите чат, чтобы начать общение</div>
         )}

@@ -4,6 +4,9 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Spinner'
 import { useUiStore } from '../../stores/ui'
+import { useAuth } from '../auth/AuthContext'
+import { NewChatModal } from './NewChatModal'
+import { NewGroupModal } from './NewGroupModal'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
 
@@ -18,9 +21,11 @@ const subLabel = (type: string): string =>
 export function RoomList({ selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()
   const users = useUsersMap()
+  const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const online = useUiStore((s) => s.online)
   const [q, setQ] = useState('')
+  const [modal, setModal] = useState<'chat' | 'group' | null>(null)
 
   const filtered = useMemo(() => {
     const list = rooms ?? []
@@ -32,6 +37,16 @@ export function RoomList({ selectedId, onSelect }: Props) {
   return (
     <aside className={styles.list}>
       <div className={styles.listHead}>
+        <div className={styles.headActions}>
+          <button className={styles.headBtn} onClick={() => setModal('chat')}>
+            ✏️ Новый чат
+          </button>
+          {me?.can_create_groups && (
+            <button className={styles.headBtn} onClick={() => setModal('group')}>
+              👥 Группа
+            </button>
+          )}
+        </div>
         <input
           className={styles.search}
           placeholder="Поиск"
@@ -39,6 +54,25 @@ export function RoomList({ selectedId, onSelect }: Props) {
           onChange={(e) => setQ(e.target.value)}
         />
       </div>
+
+      {modal === 'chat' && (
+        <NewChatModal
+          onClose={() => setModal(null)}
+          onOpenDm={(id) => {
+            setModal(null)
+            onSelect(id)
+          }}
+        />
+      )}
+      {modal === 'group' && (
+        <NewGroupModal
+          onClose={() => setModal(null)}
+          onCreated={(id) => {
+            setModal(null)
+            onSelect(id)
+          }}
+        />
+      )}
       <div className={styles.rooms}>
         {isLoading && (
           <div className="center" style={{ padding: 24 }}>

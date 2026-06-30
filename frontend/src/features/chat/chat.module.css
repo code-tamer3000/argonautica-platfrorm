@@ -224,3 +224,67 @@
 .drawerRow .grow { font-family: var(--font-t4); font-size: var(--text-ui); }
 .headerActions { display: flex; gap: var(--space-2); }
 
+
+/* --- Кнопки шапки списка чатов (новый чат / группа) --- */
+.headActions { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
+.headBtn {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-ui);
+  background: var(--bg-deep);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.headBtn:hover { border-color: var(--color-gold, #c9a24b); }
+
+/* --- Списки пользователей в модалках (новый чат / группа) --- */
+.userList { max-height: 360px; overflow-y: auto; margin-top: var(--space-3); }
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-2);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-frame);
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+}
+.userRow:hover { background: rgba(19, 78, 69, 0.12); }
+.userRowMain { flex: 1; min-width: 0; }
+.userRowName { font-size: var(--text-ui); font-weight: 500; }
+.userRowSub { font-size: 12px; color: var(--text-muted); }
+
+.modalActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.groupHint { font-size: 13px; color: var(--text-muted); margin: var(--space-3) 0 var(--space-2); }
+
+/* --- Карточка профиля пользователя --- */
+.profileCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  text-align: center;
+  padding: var(--space-2) 0;
+}
+.profileName { font-size: 18px; font-weight: 600; margin-top: var(--space-2); }
+.profileUsername { font-size: 13px; color: var(--text-muted); }
+.profileRole { font-size: 12px; color: var(--color-gold, #c9a24b); }
+.profileBio {
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  margin: var(--space-3) 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

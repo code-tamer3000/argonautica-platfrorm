@@ -1,20 +1,25 @@
+import { useState } from 'react'
 import { useRoomMembers, useRemoveMember } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import type { PublicUserOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
+import { UserProfileModal } from './UserProfileModal'
 
 interface Props {
   roomId: number
   onClose: () => void
+  onOpenDm?: (roomId: number) => void
 }
 
-export function MembersDrawer({ roomId, onClose }: Props) {
+export function MembersDrawer({ roomId, onClose, onOpenDm }: Props) {
   const { data: members, isLoading } = useRoomMembers(roomId, true)
   const remove = useRemoveMember(roomId)
   const users = useUsersMap()
   const { user: me } = useAuth()
+  const [picked, setPicked] = useState<PublicUserOut | null>(null)
 
   return (
     <Drawer title="Участники" onClose={onClose}>
@@ -38,15 +43,32 @@ export function MembersDrawer({ roomId, onClose }: Props) {
               alignItems: 'center',
             }}
           >
-            <Avatar name={name} url={u?.avatar_url} size={32} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>
-                {name}{isMe ? ' (вы)' : ''}
+            <button
+              onClick={() => u && setPicked(u)}
+              disabled={!u}
+              style={{
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+                flex: 1,
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: u ? 'pointer' : 'default',
+                textAlign: 'left',
+                color: 'inherit',
+              }}
+            >
+              <Avatar name={name} url={u?.avatar_url} size={32} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>
+                  {name}{isMe ? ' (вы)' : ''}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  {member.role_in_room === 'owner' ? 'Владелец' : 'Участник'}
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {member.role_in_room === 'owner' ? 'Владелец' : 'Участник'}
-              </div>
-            </div>
+            </button>
             {me?.role === 'admin' && !isMe && (
               <button
                 onClick={() => remove.mutate(member.user_id)}
@@ -67,6 +89,18 @@ export function MembersDrawer({ roomId, onClose }: Props) {
           </div>
         )
       })}
+
+      {picked && (
+        <UserProfileModal
+          profile={picked}
+          onClose={() => setPicked(null)}
+          onOpenDm={(id) => {
+            setPicked(null)
+            onClose()
+            onOpenDm?.(id)
+          }}
+        />
+      )}
     </Drawer>
   )
 }

@@ -19,7 +19,7 @@ import styles from './chat.module.css'
 const subLabel = (type: string): string =>
   type === 'channel' ? 'Канал' : type === 'group' ? 'Группа' : 'Личный чат'
 
-export function ChatPane({ roomId }: { roomId: number }) {
+export function ChatPane({ roomId, onOpenRoom }: { roomId: number; onOpenRoom?: (id: number) => void }) {
   const { user } = useAuth()
   const { data: rooms } = useRooms()
   const room = rooms?.find((r) => r.id === roomId)
@@ -117,7 +117,11 @@ export function ChatPane({ roomId }: { roomId: number }) {
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} />
       )}
       {showMembers && (
-        <MembersDrawer roomId={roomId} onClose={() => setShowMembers(false)} />
+        <MembersDrawer
+          roomId={roomId}
+          onClose={() => setShowMembers(false)}
+          onOpenDm={onOpenRoom}
+        />
       )}
     </>
   )

@@ -39,6 +39,10 @@ export function useAddMember(roomId: number) {
   })
 }
 
+// Не-хук: добавить участника. Нужен при создании группы (роста roomId на лету хук не умеет).
+export const addRoomMember = (roomId: number, userId: number): Promise<MemberOut> =>
+  http.post<MemberOut>(`/api/rooms/${roomId}/members`, { user_id: userId })
+
 export function useRemoveMember(roomId: number) {
   const qc = useQueryClient()
   return useMutation({
