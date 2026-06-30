@@ -1,0 +1,169 @@
+/*
+ * АРГОНАВТИКА — Design Tokens (copied from frontend/design_system/colors_and_type.css)
+ * Source of truth for colors, typography, spacing, and component tokens.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Prata&family=Lora:ital,wght@0,400;0,600;1,400;1,600&family=Onest:wght@300;400;500;600&display=swap');
+
+:root {
+  /* --- Grounds (Backgrounds) --- */
+  --color-bezdna:        #0B100E;
+  --color-tishina:       #000000;
+  --color-more:          #134E45;
+  --color-more-glub:     #0E342E;
+  --color-frame:         #1C211E;
+  --color-frame-deep:    #2C322E;
+
+  /* --- Text / Light --- */
+  --color-kost:          #E9E2D4;
+  --color-kost-yar:      #F4F1E9;
+  --color-kost-dim:      #C7C0B1;
+  --color-kost-muted:    #9A9486;
+  --color-kost-ghost:    #5F5B50;
+  --color-kost-stone:    #4F4B42;
+
+  /* --- Gold --- */
+  --color-zoloto:        #C29A48;
+  --color-zoloto-yar:    #D9B45A;
+  --color-latun:         #9C7A33;
+
+  /* --- Blood --- */
+  --color-krov:          #8E2018;
+  --color-krov-yar:      #B23A2E;
+
+  /* --- Stone --- */
+  --color-kamen:         #6E6A5E;
+  --color-kamen-tepl:    #8A8478;
+}
+
+:root {
+  --bg:              var(--color-bezdna);
+  --bg-deep:         var(--color-tishina);
+  --bg-sea:          var(--color-more);
+  --bg-surface:      #0C100F;
+
+  --text-primary:    var(--color-kost);
+  --text-secondary:  var(--color-kost-dim);
+  --text-muted:      var(--color-kost-muted);
+  --text-ghost:      var(--color-kost-ghost);
+
+  --accent:          var(--color-zoloto);
+  --accent-bright:   var(--color-zoloto-yar);
+  --accent-dark:     var(--color-latun);
+
+  --blood:           var(--color-krov);
+  --blood-bright:    var(--color-krov-yar);
+
+  --stone:           var(--color-kamen);
+  --stone-warm:      var(--color-kamen-tepl);
+
+  --divider:         var(--color-frame);
+  --divider-gold:    rgba(194, 154, 72, 0.25);
+  --divider-gold-strong: rgba(194, 154, 72, 0.55);
+}
+
+:root {
+  --font-t1:         'Prata', Georgia, serif;
+  --font-t2:         'Prata', Georgia, serif;
+  --font-t3:         'Lora', 'Literata', Georgia, serif;
+  --font-t4:         'Onest', system-ui, sans-serif;
+
+  --text-hero:       clamp(48px, 8vw, 88px);
+  --text-h1:         clamp(32px, 4vw, 44px);
+  --text-h2:         clamp(22px, 2.5vw, 30px);
+  --text-h3:         clamp(18px, 2vw, 22px);
+  --text-body:       18px;
+  --text-body-sm:    16px;
+  --text-label:      11px;
+  --text-label-md:   13px;
+  --text-ui:         14px;
+
+  --lh-hero:         1.08;
+  --lh-display:      1.2;
+  --lh-heading:      1.35;
+  --lh-body:         1.75;
+  --lh-tight:        1.1;
+
+  --ls-label:        3px;
+  --ls-label-sm:     2px;
+  --ls-label-wide:   4px;
+  --ls-display:      0.01em;
+
+  --measure:         62ch;
+  --measure-wide:    80ch;
+}
+
+:root {
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+  --space-20:  80px;
+  --space-24:  96px;
+  --space-32: 128px;
+
+  --section-pad-y:   clamp(64px, 8vw, 120px);
+  --section-pad-x:   clamp(24px, 5vw, 80px);
+  --content-max-w:   720px;
+  --wide-max-w:      1200px;
+}
+
+:root {
+  --radius-btn:    6px;
+  --radius-media:  8px;
+  --radius-card:   14px;
+  --radius-pill:   5px;
+  --radius-none:   0px;
+}
+
+:root {
+  --glow-gold:         0 0 40px rgba(194, 154, 72, 0.12);
+  --glow-gold-strong:  0 0 60px rgba(194, 154, 72, 0.24);
+  --glow-sea:          0 0 40px rgba(19, 78, 69, 0.3);
+  --shadow-frame:      inset 0 0 0 1px var(--color-frame-deep);
+}
+
+:root {
+  --btn-font:        var(--font-t4);
+  --btn-size:        13px;
+  --btn-tracking:    1px;
+  --btn-pad:         10px 20px;
+  --btn-radius:      var(--radius-btn);
+
+  --divider-thickness: 1px;
+  --hairline:        1px solid var(--divider-gold);
+
+  --transition-fade:   opacity 200ms ease;
+  --transition-color:  color 200ms ease, background-color 200ms ease;
+  --transition-slow:   all 800ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Buttons (design-system classes) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: var(--btn-font);
+  font-size: var(--btn-size);
+  letter-spacing: var(--btn-tracking);
+  padding: var(--btn-pad);
+  border-radius: var(--btn-radius);
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+  transition: var(--transition-color);
+}
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn-primary { background: var(--color-kost); color: var(--color-bezdna); }
+.btn-primary:hover:not(:disabled) { background: var(--color-kost-yar); }
+.btn-gold { background: var(--color-zoloto); color: var(--color-bezdna); }
+.btn-gold:hover:not(:disabled) { background: var(--color-zoloto-yar); }
+.btn-outline { background: transparent; color: var(--text-primary); border: 1px solid var(--color-frame-deep); }
+.btn-outline:hover:not(:disabled) { border-color: var(--color-kost-dim); }
