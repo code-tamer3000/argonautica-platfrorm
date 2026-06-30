@@ -1,15 +1,14 @@
 import { useState } from 'react'
-import { useCreateUser, usePatchAdminUser } from '../../api/admin'
-import { useUsers } from '../../api/users'
+import { useAdminUsers, useCreateUser, usePatchAdminUser } from '../../api/admin'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { toast } from '../../stores/toast'
 import type { CreateUserResult } from '../../api/admin'
-import type { PublicUserOut } from '../../lib/types'
+import type { AdminUserOut } from '../../lib/types'
 import styles from './admin.module.css'
 
 export function AdminUsers() {
-  const { data: users = [] } = useUsers()
+  const { data: users = [] } = useAdminUsers()
   const createUser = useCreateUser()
   const patchUser = usePatchAdminUser()
 
@@ -24,9 +23,7 @@ export function AdminUsers() {
   const [otpResult, setOtpResult] = useState<CreateUserResult | null>(null)
 
   // Edit user modal
-  const [editUser, setEditUser] = useState<PublicUserOut | null>(null)
-  // TODO: PublicUserOut does not include can_create_groups — it is not exposed by the public users API.
-  // Initializing to false as a default; a dedicated admin users endpoint would be needed to read the real value.
+  const [editUser, setEditUser] = useState<AdminUserOut | null>(null)
   const [editCanCreate, setEditCanCreate] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
 
@@ -59,9 +56,9 @@ export function AdminUsers() {
     )
   }
 
-  function handleEditOpen(user: PublicUserOut) {
+  function handleEditOpen(user: AdminUserOut) {
     setEditUser(user)
-    setEditCanCreate(false) // default — see TODO above
+    setEditCanCreate(user.can_create_groups)
     setEditRole(user.role as 'participant' | 'admin')
   }
 

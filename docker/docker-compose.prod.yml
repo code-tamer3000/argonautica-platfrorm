@@ -77,10 +77,17 @@ services:
   backend-green:
     <<: *backend
 
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
   nginx:
     image: nginx:1.27
     depends_on:
       - backend-blue
+      - frontend
     ports:
       - "80:80"
       - "443:443"
@@ -91,7 +98,6 @@ services:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/active_backend.conf:/etc/nginx/active_backend.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
-      - ./nginx/html:/usr/share/nginx/html:ro
       - certbot_webroot:/var/www/certbot
     restart: unless-stopped
 

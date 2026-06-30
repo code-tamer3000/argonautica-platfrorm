@@ -17,8 +17,11 @@ export default defineConfig({
         theme_color: '#0B100E',
         background_color: '#0B100E',
         display: 'standalone',
-        // Иконки добавим в фазе PWA (Стадия 12, фаза 5).
-        icons: [],
+        icons: [
+          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
       },
       workbox: {
         // Оболочку прекэшируем, API/WS — никогда.

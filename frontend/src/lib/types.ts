@@ -154,6 +154,17 @@ export interface AdminCreateUserResponse {
   one_time_password: string
 }
 
+export interface AdminUserOut {
+  id: number
+  username: string
+  display_name: string
+  email: string | null
+  role: Role
+  can_create_groups: boolean
+  is_active: boolean
+  created_at: string
+}
+
 // --- WebSocket события ---
 export type WsEvent =
   | { type: 'message.new'; message: MessageOut }
