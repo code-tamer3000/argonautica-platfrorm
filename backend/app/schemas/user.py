@@ -1,4 +1,5 @@
 """Pydantic-схемы пользователей."""
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -76,3 +77,22 @@ class PublicUserOut(BaseModel):
     avatar_url: str | None = None
     bio: str | None = None
     role: str
+
+
+class AdminUserOut(BaseModel):
+    """Ответ GET /api/admin/users — расширенный профиль с admin-полями.
+
+    Включает can_create_groups и другие поля, недоступные через публичный API.
+    is_active всегда True: платформа не поддерживает деактивацию пользователей.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    display_name: str
+    email: str | None
+    role: str
+    can_create_groups: bool
+    is_active: bool = True
+    created_at: datetime

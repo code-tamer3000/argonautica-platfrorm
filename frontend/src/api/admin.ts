@@ -1,7 +1,9 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { UserOut } from '../lib/types'
+import type { AdminUserOut, UserOut } from '../lib/types'
 import { usersKey } from './users'
+
+export const adminUsersKey = ['admin', 'users'] as const
 
 export interface CreateUserBody {
   username: string
@@ -21,6 +23,13 @@ export interface PatchAdminUserBody {
   role?: 'participant' | 'admin'
   display_name?: string
   email?: string | null
+}
+
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: adminUsersKey,
+    queryFn: () => http.get<AdminUserOut[]>('/api/admin/users'),
+  })
 }
 
 export function useCreateUser() {

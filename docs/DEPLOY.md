@@ -54,6 +54,67 @@ docker/deploy.sh
 при необходимости поднять прежний контейнер (`… up -d --no-deps backend-<color>`). Старый
 образ/контейнер остаётся до следующего деплоя.
 
+## 6. Резервное копирование
+
+Скрипт: [`docker/backup.sh`](../docker/backup.sh).
+
+### Что делает скрипт
+
+1. Находит контейнер `postgres` динамически через `docker compose ps -q postgres`.
+2. Запускает `pg_dump` внутри контейнера, пайпит вывод через `gzip` в файл
+   `/tmp/backup_YYYY-MM-DD_HH.sql.gz`.
+3. Загружает архив в bucket `backups` в MinIO. Использует `mc` (MinIO client),
+   при его отсутствии — fallback на `python3 + boto3`.
+4. Удаляет из bucket объекты старше 30 дней (`mc rm --older-than 30d` или boto3).
+5. Удаляет временный файл с диска.
+6. Завершается с ненулевым кодом при любой ошибке (`set -euo pipefail`).
+
+### Подготовка
+
+**Сделать скрипт исполняемым** (один раз после клонирования):
+```sh
+chmod +x docker/backup.sh
+```
+
+**Настроить алиас `mc`** (MinIO client должен быть установлен на хосте):
+```sh
+mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+```
+Bucket `backups` создаётся скриптом автоматически при первом запуске.
+
+Если `mc` не установлен, скрипт использует `python3 + boto3` (boto3 должен быть
+доступен в системном python или в venv).
+
+### Ручной запуск
+
+Запускать из корня репозитория с `.env` в текущей директории:
+```sh
+set -a; source .env; set +a
+docker/backup.sh
+```
+
+Или передать переменные явно:
+```sh
+POSTGRES_USER=app POSTGRES_PASSWORD=secret POSTGRES_DB=platform \
+  MINIO_ENDPOINT=http://localhost:9000 \
+  MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=secret \
+  docker/backup.sh
+```
+
+### Настройка cron
+
+Пример: запускать каждый день в 03:00, логировать в `/var/log/backup.log`:
+```
+0 3 * * * cd /path/to/repo && set -a && source .env && set +a && /path/to/repo/docker/backup.sh >> /var/log/backup.log 2>&1
+```
+
+Или если переменные уже в окружении cron-пользователя:
+```
+0 3 * * * /path/to/repo/docker/backup.sh >> /var/log/backup.log 2>&1
+```
+
+Проверить последний запуск: `tail -50 /var/log/backup.log`.
+
 ## Заметки
 - **Только expand/contract миграции** (blue и green делят один Postgres): сначала
   add-колонка + выкатка кода, отдельным релизом — drop. Никаких RENAME/DROP в один шаг.

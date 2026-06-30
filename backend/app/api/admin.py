@@ -10,10 +10,13 @@ from app.api.deps import require_admin
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.user import User
+from sqlalchemy import select
+
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
     AdminUpdateUserRequest,
+    AdminUserOut,
     UserOut,
 )
 
@@ -27,6 +30,15 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_admin)],
 )
+
+
+@router.get("/users", response_model=list[AdminUserOut])
+async def list_users(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[User]:
+    """Список пользователей с admin-полями (включая can_create_groups)."""
+    result = await session.execute(select(User).order_by(User.display_name))
+    return list(result.scalars().all())
 
 
 @router.post(
