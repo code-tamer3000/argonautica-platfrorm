@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +11,6 @@ from app.api.deps import require_admin
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.user import User
-from sqlalchemy import select
-
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
