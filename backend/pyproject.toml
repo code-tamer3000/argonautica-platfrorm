@@ -15,7 +15,7 @@ dependencies = [
     "argon2-cffi",
     "python-multipart",
     "boto3",            # S3-клиент для MinIO (и будущего managed-S3)
-    "httpx",            # HTTP-клиент: Telegram Bot API (scripts/telegram_bot.py)
+    "telethon",         # MTProto-клиент для telegram-бота (через MTProxy) — scripts/telegram_bot.py
 ]
 
 [build-system]
@@ -64,4 +64,9 @@ plugins = ["pydantic.mypy"]
 # тяжёлые и для пары вызовов presigned-URL избыточны — игнорируем импорт.
 [[tool.mypy.overrides]]
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
+ignore_missing_imports = true
+
+# Telethon не поставляет типовые стабы (py.typed) — игнорируем импорт (бот вне strict).
+[[tool.mypy.overrides]]
+module = ["telethon", "telethon.*"]
 ignore_missing_imports = true
