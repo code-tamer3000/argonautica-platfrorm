@@ -72,6 +72,15 @@ services:
   backend-green:
     <<: *backend
 
+  # Telegram-бот выдачи доступа: участник пишет боту → получает логин/пароль.
+  # Тот же образ, что backend. Не участвует в blue-green (singleton, long-polling).
+  # Если TELEGRAM_BOT_TOKEN пуст — можно не запускать: `--scale bot=0` или убрать.
+  bot:
+    <<: *backend
+    command: ["python", "scripts/telegram_bot.py"]
+    healthcheck:
+      disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
+
   frontend:
     build:
       context: ../frontend

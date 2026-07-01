@@ -16,6 +16,8 @@ RUN pip install --no-cache-dir .
 # Миграции (alembic не входит в wheel — packages=["app"]) и entrypoint.
 COPY alembic ./alembic
 COPY alembic.ini ./
+# Служебные скрипты (bulk-создание юзеров, telegram-бот) — запускаются в этом же образе.
+COPY scripts ./scripts
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
