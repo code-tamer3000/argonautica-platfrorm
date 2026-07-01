@@ -269,8 +269,9 @@ if [ -n "$UVICORN" ]; then
     (
         cd "$ROOT/backend"
         DATABASE_URL="$LOCAL_DB_URL" \
-        REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}" \
-        MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://127.0.0.1:9000}" \
+        REDIS_URL="redis://127.0.0.1:6379/0" \
+        MINIO_ENDPOINT="http://127.0.0.1:9000" \
+        MINIO_PUBLIC_ENDPOINT="http://127.0.0.1:9000" \
         $UVICORN app.main:app --host 127.0.0.1 --port 8000 --reload
     ) >> "$BACKEND_LOG" 2>&1 &
 
