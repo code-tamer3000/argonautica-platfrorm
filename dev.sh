@@ -167,12 +167,65 @@ else
     warn "  cd backend && pip install -e . && alembic upgrade head"
 fi
 
-# ─── MinIO бакеты ────────────────────────────────────────────────────────────
-step "MinIO — проверяем / создаём бакеты"
+# ─── Seed: admin + тестовый юзер ────────────────────────────────────────────
+step "Seed — admin и тестовый юзер"
 
 PYTHON3=""
 [ -x "$VENV/bin/python3" ] && PYTHON3="$VENV/bin/python3"
 [ -z "$PYTHON3" ] && command -v python3 &>/dev/null && PYTHON3="python3"
+
+# asyncpg DSN не поддерживает +asyncpg в схеме
+export SEED_DB_URL="${LOCAL_DB_URL/postgresql+asyncpg/postgresql}"
+
+if [ -n "$PYTHON3" ] && "$PYTHON3" -c "import asyncpg, argon2" 2>/dev/null; then
+    "$PYTHON3" - <<'PYEOF'
+import asyncio, os
+import asyncpg
+from argon2 import PasswordHasher
+
+ph = PasswordHasher()
+
+# (username, display_name, password, role)
+SEED_USERS = [
+    ("admin", "Админ",         "admin", "admin"),
+    ("user",  "Тестовый юзер", "user",  "participant"),
+]
+
+async def ensure_user(conn, username, display_name, password, role):
+    row = await conn.fetchrow("SELECT id FROM users WHERE username = $1", username)
+    if row:
+        print(f"  ✓ {username!r} уже существует (id={row['id']})")
+        return
+    hashed = ph.hash(password)
+    uid = await conn.fetchval(
+        "INSERT INTO users (username, display_name, password_hash, role, must_change_password)"
+        " VALUES ($1, $2, $3, $4, false) RETURNING id",
+        username, display_name, hashed, role,
+    )
+    # Личный канал (такой же как create_user в admin.py)
+    await conn.execute(
+        "INSERT INTO rooms (type, name, is_personal, created_by)"
+        " VALUES ('channel', $1, true, $2)",
+        display_name, uid,
+    )
+    print(f"  ✓ {username!r} / {password!r}  role={role}  id={uid}")
+
+async def main():
+    conn = await asyncpg.connect(os.environ["SEED_DB_URL"])
+    try:
+        for args in SEED_USERS:
+            await ensure_user(conn, *args)
+    finally:
+        await conn.close()
+
+asyncio.run(main())
+PYEOF
+else
+    warn "asyncpg или argon2 не найдены в окружении — seed пропущен"
+fi
+
+# ─── MinIO бакеты ────────────────────────────────────────────────────────────
+step "MinIO — проверяем / создаём бакеты"
 
 if [ -n "$PYTHON3" ] && "$PYTHON3" -c "import boto3" 2>/dev/null; then
     "$PYTHON3" - <<PYEOF
@@ -267,7 +320,11 @@ printf "  %-16s %s\n" "Redis"     "127.0.0.1:6379"
 printf "  %-16s %s\n" "MinIO S3"  "http://127.0.0.1:9000"
 printf "  %-16s %s\n" "MinIO UI"  "http://127.0.0.1:9001"
 echo ""
-echo "  ./dev.sh logs   — хвост логов бэкенда и фронта"
+echo "  Логины:
+    admin / admin  (роль: admin)
+    user  / user   (роль: participant)
+
+  ./dev.sh logs   — хвост логов бэкенда и фронта"
 echo "  ./dev.sh stop   — остановить всё (данные сохраняются)"
 echo "  ./dev.sh reset  — остановить + удалить БД/volumes"
 echo ""
