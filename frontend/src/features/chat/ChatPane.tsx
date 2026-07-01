@@ -165,7 +165,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+      {/* В чужом личном канале нельзя писать верхнеуровневые сообщения */}
+      {(!room.is_personal || room.created_by === user?.id) && (
+        <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+      )}
       {threadRootId != null && (
         <ThreadPanel roomId={roomId} rootId={threadRootId} onClose={() => setThreadRootId(null)} />
       )}

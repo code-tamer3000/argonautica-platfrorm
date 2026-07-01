@@ -91,6 +91,15 @@ async def send_message(
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
 
+    # Личный канал: верхнеуровневые сообщения только от владельца.
+    # Thread-ответы (reply_to_message_id задан) разрешены всем — это «комментарии».
+    if room.is_personal and room.created_by != current_user.id:
+        if body.reply_to_message_id is None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only the channel owner can post here; use threads to comment",
+            )
+
     if body.sticker_id is not None and await session.get(Sticker, body.sticker_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Sticker not found")
 

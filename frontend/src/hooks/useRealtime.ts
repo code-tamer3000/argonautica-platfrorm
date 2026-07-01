@@ -57,6 +57,16 @@ export function useRealtime(): void {
     }
   }, [rooms, setDmPeer])
 
+  // При каждом реконнекте: сбрасываем локальный трекер и рефетчим комнаты.
+  // wsClient сам переподпишет уже известные комнаты в ws.onopen;
+  // рефетч нужен чтобы подписаться на комнаты созданные пока WS был оффлайн.
+  useEffect(() => {
+    return wsClient.onConnect(() => {
+      subscribed.current.clear()
+      void qc.invalidateQueries({ queryKey: roomsKey })
+    })
+  }, [qc])
+
   // Снепшот онлайн-пользователей при загрузке, чтобы индикаторы не были пустыми.
   useEffect(() => {
     if (!user) return

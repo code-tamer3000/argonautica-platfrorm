@@ -4,10 +4,12 @@ import { getAccessToken } from './tokens'
 import type { WsEvent } from './types'
 
 type Listener = (e: WsEvent) => void
+type VoidFn = () => void
 
 class WsClient {
   private ws: WebSocket | null = null
   private listeners = new Set<Listener>()
+  private connectListeners = new Set<VoidFn>()
   private subscribed = new Set<number>()
   private reconnectAttempts = 0
   private shouldRun = false
@@ -31,6 +33,12 @@ class WsClient {
   on(fn: Listener): () => void {
     this.listeners.add(fn)
     return () => this.listeners.delete(fn)
+  }
+
+  /** Вызывается при каждом установлении WS-соединения (включая реконнект). */
+  onConnect(fn: VoidFn): () => void {
+    this.connectListeners.add(fn)
+    return () => this.connectListeners.delete(fn)
   }
 
   subscribe(roomId: number): void {
@@ -80,6 +88,7 @@ class WsClient {
       this.reconnectAttempts = 0
       for (const room of this.subscribed) this.send({ type: 'subscribe', room_id: room })
       this.pingTimer = window.setInterval(() => this.send({ type: 'ping' }), 25_000)
+      this.connectListeners.forEach((fn) => fn())
     }
     ws.onmessage = (ev) => {
       try {
