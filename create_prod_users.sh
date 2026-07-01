@@ -39,7 +39,7 @@ echo "Создаю аккаунты из '$USERS_FILE' → '$OUT'..." >&2
 "${DC[@]}" -f "$CF" --env-file .env run --rm --no-deps \
     -v "$ROOT/backend/scripts:/app/scripts:ro" \
     -v "$ROOT/$USERS_FILE:/app/users.md:ro" \
-    backend-blue python scripts/create_users.py users.md \
+    backend-blue python -m scripts.create_users users.md \
     | tee "$OUT"
 
 echo "" >&2
