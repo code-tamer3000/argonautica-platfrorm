@@ -20,7 +20,7 @@ export function Attachment({ assetId }: { assetId: number }) {
   }
   if (kind === 'video') return <video className={styles.attVideo} src={data.url} controls />
   return (
-    <a className={styles.attFile} href={data.url} target="_blank" rel="noreferrer">
+    <a className={styles.attFile} href={data.url} download rel="noreferrer">
       <IconAttach size={16} /> Скачать файл
     </a>
   )

@@ -154,5 +154,7 @@ async def get_media_url(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
     await assert_media_access(session, asset, current_user)
 
-    url = presigned_get_url(asset.bucket, asset.storage_key)
+    # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн (рендер в <img>/<video>).
+    download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
+    url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
     return MediaUrlOut(url=url, expires_in=PRESIGN_EXPIRES)

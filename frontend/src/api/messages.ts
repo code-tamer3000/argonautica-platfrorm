@@ -61,11 +61,18 @@ export function useDeleteMessage(roomId: number) {
   })
 }
 
-export function useMessageDates(roomId: number, year: number, month: number, enabled = true) {
+// Категории дневника личного канала. Порядок = порядок публикации в UI.
+export type JournalCategory = 'focus' | 'notes' | 'film'
+export const JOURNAL_CATEGORIES: JournalCategory[] = ['focus', 'notes', 'film']
+
+// Карта {дата: [категории]} за месяц. День закрыт, когда есть все три категории.
+export type JournalDays = Record<string, JournalCategory[]>
+
+export function useJournalDays(roomId: number, year: number, month: number, enabled = true) {
   return useQuery({
-    queryKey: ['message-dates', roomId, year, month],
+    queryKey: ['journal-days', roomId, year, month],
     queryFn: () =>
-      http.get<string[]>(`/api/rooms/${roomId}/message-dates?year=${year}&month=${month}`),
+      http.get<JournalDays>(`/api/rooms/${roomId}/journal-days?year=${year}&month=${month}`),
     enabled,
   })
 }

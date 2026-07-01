@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMessageDates } from '../../api/messages'
+import { JOURNAL_CATEGORIES, useJournalDays } from '../../api/messages'
 import styles from './chat.module.css'
 
 interface Props {
@@ -22,9 +22,14 @@ export function ChannelCalendar({ roomId }: Props) {
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth() + 1)
 
-  const { data: dates } = useMessageDates(roomId, year, month)
-  const doneSet = new Set(dates ?? [])
+  const { data: days } = useJournalDays(roomId, year, month)
   const today = todayStr()
+
+  // День закрыт (зелёный) — опубликованы все категории; частичный — есть, но не все.
+  const isClosed = (dateStr: string) =>
+    JOURNAL_CATEGORIES.every((c) => (days?.[dateStr] ?? []).includes(c))
+  const isPartial = (dateStr: string) =>
+    !isClosed(dateStr) && (days?.[dateStr]?.length ?? 0) > 0
 
   // First day-of-week (Mon=0) offset for the 1st of the month.
   const firstDay = new Date(year, month - 1, 1)
@@ -59,17 +64,23 @@ export function ChannelCalendar({ roomId }: Props) {
         {cells.map((day, i) => {
           if (day === null) return <span key={`e${i}`} />
           const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-          const done = doneSet.has(dateStr)
+          const closed = isClosed(dateStr)
+          const partial = isPartial(dateStr)
           const isToday = dateStr === today
           return (
             <span
               key={dateStr}
               className={[
                 styles.calendarDay,
-                done ? styles.calendarDayDone : '',
+                closed ? styles.calendarDayDone : '',
+                partial ? styles.calendarDayPartial : '',
                 isToday ? styles.calendarDayToday : '',
               ].filter(Boolean).join(' ')}
-              title={done ? 'Запись опубликована' : undefined}
+              title={
+                closed ? 'День закрыт — все категории'
+                  : partial ? `Публикаций: ${days?.[dateStr]?.length ?? 0}/3`
+                    : undefined
+              }
             >
               {day}
             </span>
