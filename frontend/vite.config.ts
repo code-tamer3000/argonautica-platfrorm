@@ -8,7 +8,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' + ручная регистрация (useRegisterSW) — чтобы показать ненавязчивый
+      // баннер «есть обновление», а не тихо/принудительно перезагружать вкладку.
+      registerType: 'prompt',
+      injectRegister: false,
       manifest: {
         name: 'Аргонавтика',
         short_name: 'Аргонавтика',
@@ -26,6 +29,8 @@ export default defineConfig({
       workbox: {
         // Оболочку прекэшируем, API/WS — никогда.
         navigateFallbackDenylist: [/^\/api/, /^\/ws/],
+        // Не копить старые версии закэшированных ассетов между деплоями.
+        cleanupOutdatedCaches: true,
       },
     }),
   ],
