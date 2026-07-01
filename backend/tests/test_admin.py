@@ -40,9 +40,16 @@ async def test_admin_create_user_and_forced_password_change(
     # Новый юзер логинится по временному паролю...
     user_tokens = await login(client, new_username, temp_password)
 
-    # ...но до смены пароля защищённые эндпоинты закрыты (must_change_password).
-    blocked = await client.get(
+    # /me доступен при must_change_password — фронт должен видеть флаг для редиректа.
+    me_early = await client.get(
         "/api/auth/me", headers=auth_headers(user_tokens["access_token"])
+    )
+    assert me_early.status_code == 200
+    assert me_early.json()["must_change_password"] is True
+
+    # Остальные защищённые эндпоинты закрыты до смены пароля.
+    blocked = await client.get(
+        "/api/users", headers=auth_headers(user_tokens["access_token"])
     )
     assert blocked.status_code == 403
 
