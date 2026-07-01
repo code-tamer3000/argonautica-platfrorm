@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMarkRead, useMessages } from '../../api/messages'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
@@ -8,9 +8,11 @@ import { Spinner } from '../../components/Spinner'
 import type { MessageOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
+import { ChannelCalendar } from './ChannelCalendar'
 import { Composer } from './Composer'
+import { DailyJournalForm } from './DailyJournalForm'
 import { MembersDrawer } from './MembersDrawer'
-import { MessageList } from './MessageList'
+import { MessageList, type MessageListHandle } from './MessageList'
 import { PinsBar } from './PinsBar'
 import { PinsDrawer } from './PinsDrawer'
 import { ThreadPanel } from './ThreadPanel'
@@ -19,7 +21,8 @@ import { UserProfileModal } from './UserProfileModal'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
 
-const subLabel = (type: string): string =>
+const subLabel = (type: string, isPersonal = false): string =>
+  isPersonal ? 'Личный канал' :
   type === 'channel' ? 'Канал' : type === 'group' ? 'Группа' : 'Личный чат'
 
 export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpenRoom?: (id: number) => void; onBack?: () => void }) {
@@ -43,6 +46,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showPins, setShowPins] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null)
+  const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
+  const messageListRef = useRef<MessageListHandle>(null)
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
@@ -52,6 +58,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setShowPins(false)
     setShowMembers(false)
     setShowProfile(false)
+    setSelectedMsgId(null)
+    setHighlightedMsgId(null)
   }, [roomId])
 
   // Вывести пира личного чата из сообщений (API не отдаёт состав dm).
@@ -62,17 +70,28 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     }
   }, [room?.type, messages, user, roomId, setDmPeer])
 
-  // Отметить прочитанным до последнего сообщения.
+  // Отметить прочитанным только когда пользователь внизу ленты.
   const lastId = messages.length ? messages[messages.length - 1].id : 0
   const lastReadRef = useRef(0)
   const markReadRef = useRef(markRead)
   markReadRef.current = markRead
-  useEffect(() => {
-    if (lastId && lastId !== lastReadRef.current) {
-      lastReadRef.current = lastId
-      markReadRef.current.mutate(lastId)
-    }
+
+  const tryMarkRead = useCallback(() => {
+    if (!lastId) return
+    if (lastId <= lastReadRef.current) return
+    if (!messageListRef.current?.isAtBottom()) return
+    lastReadRef.current = lastId
+    markReadRef.current.mutate(lastId)
   }, [lastId])
+
+  useEffect(() => { tryMarkRead() }, [tryMarkRead])
+
+  function navigateToMessage(msgId: number) {
+    const found = messageListRef.current?.scrollToMessage(msgId)
+    if (!found) { setShowPins(true); return }
+    setHighlightedMsgId(msgId)
+    setTimeout(() => setHighlightedMsgId(null), 2000)
+  }
 
   if (!room) {
     return (
@@ -109,7 +128,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
               {room.type === 'channel' ? '# ' : ''}
               {title}
             </div>
-            <div className={styles.headerSub}>{subLabel(room.type)}</div>
+            <div className={styles.headerSub}>{subLabel(room.type, room.is_personal)}</div>
           </div>
         </button>
         <div className={styles.headerActions}>
@@ -123,18 +142,27 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           )}
         </div>
       </header>
-      <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} />
+      <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} onNavigate={navigateToMessage} />
+      {room.is_personal && <ChannelCalendar roomId={roomId} />}
+      {room.is_personal && room.created_by === user?.id && (
+        <DailyJournalForm roomId={roomId} userId={user.id} />
+      )}
       <MessageList
+        ref={messageListRef}
         messages={messages}
         hasMore={!!query.hasNextPage}
         loadMore={() => void query.fetchNextPage()}
         loading={query.isFetchingNextPage}
         users={users}
         editingId={editingId}
+        selectedMsgId={selectedMsgId}
+        highlightedMsgId={highlightedMsgId}
         onReply={(msg) => setReplyTo(msg)}
         onEdit={(msg) => setEditingId(msg.id)}
         onClearEdit={() => setEditingId(null)}
         onOpenThread={(rootId) => setThreadRootId(rootId)}
+        onSelectMsg={setSelectedMsgId}
+        onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
       <TypingIndicator roomId={roomId} users={users} />
       <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
@@ -142,7 +170,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         <ThreadPanel roomId={roomId} rootId={threadRootId} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
-        <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} />
+        <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />
       )}
       {showMembers && (
         <MembersDrawer

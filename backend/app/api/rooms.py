@@ -108,6 +108,25 @@ async def create_room(
     return room
 
 
+@router.get("/personal", response_model=RoomOut)
+async def get_personal_channel(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Room:
+    """Вернуть личный канал текущего пользователя."""
+    room = (
+        await session.execute(
+            select(Room).where(
+                Room.is_personal.is_(True),
+                Room.created_by == current_user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if room is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Personal channel not found")
+    return room
+
+
 @router.get("", response_model=list[RoomOut])
 async def list_rooms(
     current_user: Annotated[User, Depends(get_current_active_user)],

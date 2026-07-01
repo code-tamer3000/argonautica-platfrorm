@@ -32,8 +32,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'http://localhost:8000', changeOrigin: true },
-      '/ws': { target: 'ws://localhost:8000', ws: true },
+      '/api': { target: 'https://https://platform.argonautica-systems.ru/', changeOrigin: true },
+      '/ws': { target: 'wss://https://platform.argonautica-systems.ru/', ws: true },
     },
   },
 })

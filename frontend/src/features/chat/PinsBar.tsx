@@ -7,6 +7,7 @@ import styles from './chat.module.css'
 interface Props {
   roomId: number
   onOpenList: () => void
+  onNavigate?: (msgId: number) => void
 }
 
 function preview(content: string | null, stickerId: number | null, hasAtt: boolean): string {
@@ -17,9 +18,9 @@ function preview(content: string | null, stickerId: number | null, hasAtt: boole
 }
 
 /** Тонкая полоса закрепа под шапкой (как в Telegram). Всегда видна, если есть пины.
- *  Несколько пинов — циклическое переключение по клику; кнопка справа открывает
- *  полный список для управления/открепления. */
-export function PinsBar({ roomId, onOpenList }: Props) {
+ *  Несколько пинов — циклическое переключение по клику; клик навигирует к сообщению;
+ *  кнопка справа открывает полный список. */
+export function PinsBar({ roomId, onOpenList, onNavigate }: Props) {
   const { data } = usePins(roomId, true)
   const users = useUsersMap()
   const [idx, setIdx] = useState(0)
@@ -38,8 +39,11 @@ export function PinsBar({ roomId, onOpenList }: Props) {
       <button
         type="button"
         className={styles.pinsBarBody}
-        onClick={() => (multiple ? setIdx((i) => i + 1) : onOpenList())}
-        title={multiple ? 'Следующее закреплённое' : 'Открыть закреплённые'}
+        onClick={() => {
+          onNavigate?.(pin.message.id)
+          if (multiple) setIdx((i) => i + 1)
+        }}
+        title="Перейти к сообщению"
       >
         <span className={styles.pinsBarLabel}>
           Закреплённое{multiple ? ` · ${pos + 1}/${data.length}` : ''}

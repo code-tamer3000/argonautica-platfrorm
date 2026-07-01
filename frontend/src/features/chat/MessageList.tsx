@@ -1,9 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Spinner } from '../../components/Spinner'
 import { dayLabel, sameDay } from '../../lib/format'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { MessageItem } from './MessageItem'
 import styles from './chat.module.css'
+
+export interface MessageListHandle {
+  scrollToMessage: (id: number) => boolean
+  isAtBottom: () => boolean
+}
 
 interface Props {
   messages: MessageOut[]
@@ -12,32 +17,58 @@ interface Props {
   loading: boolean
   users: Map<number, PublicUserOut>
   editingId?: number | null
+  selectedMsgId?: number | null
+  highlightedMsgId?: number | null
   onReply?: (msg: MessageOut) => void
   onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
+  onSelectMsg?: (id: number | null) => void
+  onAtBottomChange?: (isBottom: boolean) => void
 }
 
-export function MessageList({ messages, hasMore, loadMore, loading, users, editingId, onReply, onEdit, onClearEdit, onOpenThread }: Props) {
-  const ref = useRef<HTMLDivElement>(null)
+export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
+  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
+    onReply, onEdit, onClearEdit, onOpenThread, onSelectMsg, onAtBottomChange },
+  ref,
+) {
+  const containerRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
   const count = messages.length
 
+  useImperativeHandle(ref, () => ({
+    scrollToMessage(id: number) {
+      const el = containerRef.current?.querySelector(`[data-msg-id="${id}"]`)
+      if (!el) return false
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return true
+    },
+    isAtBottom: () => atBottom.current,
+  }))
+
   // Автоскролл вниз при новых сообщениях, если уже были внизу.
   useEffect(() => {
-    const el = ref.current
+    const el = containerRef.current
     if (el && atBottom.current) el.scrollTop = el.scrollHeight
   }, [count])
 
   function onScroll() {
-    const el = ref.current
+    const el = containerRef.current
     if (!el) return
+    const wasAtBottom = atBottom.current
     atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    if (!wasAtBottom && atBottom.current) onAtBottomChange?.(true)
+    else if (wasAtBottom && !atBottom.current) onAtBottomChange?.(false)
     if (el.scrollTop < 60 && hasMore && !loading) loadMore()
   }
 
   return (
-    <div className={styles.messages} ref={ref} onScroll={onScroll}>
+    <div
+      className={styles.messages}
+      ref={containerRef}
+      onScroll={onScroll}
+      onClick={() => onSelectMsg?.(null)}
+    >
       {loading && (
         <div className="center" style={{ padding: 8 }}>
           <Spinner size={18} />
@@ -48,7 +79,7 @@ export function MessageList({ messages, hasMore, loadMore, loading, users, editi
         const showDay = !prev || !sameDay(prev.created_at, m.created_at)
         const continuation = !showDay && !!prev && prev.sender_id === m.sender_id
         return (
-          <div key={m.id}>
+          <div key={m.id} data-msg-id={m.id}>
             {showDay && (
               <div className={styles.daySep}>
                 <span>{dayLabel(m.created_at)}</span>
@@ -59,14 +90,17 @@ export function MessageList({ messages, hasMore, loadMore, loading, users, editi
               continuation={continuation}
               author={users.get(m.sender_id)}
               editingId={editingId}
+              isSelected={selectedMsgId === m.id}
+              isHighlighted={highlightedMsgId === m.id}
               onReply={onReply}
               onEdit={onEdit}
               onClearEdit={onClearEdit}
               onOpenThread={onOpenThread}
+              onSelect={onSelectMsg}
             />
           </div>
         )
       })}
     </div>
   )
-}
+})

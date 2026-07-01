@@ -15,10 +15,13 @@ interface Props {
   author?: PublicUserOut
   isInThread?: boolean
   editingId?: number | null
+  isSelected?: boolean
+  isHighlighted?: boolean
   onReply?: (msg: MessageOut) => void
   onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
+  onSelect?: (id: number | null) => void
 }
 
 export function MessageItem({
@@ -27,10 +30,13 @@ export function MessageItem({
   author,
   isInThread,
   editingId,
+  isSelected,
+  isHighlighted,
   onReply,
   onEdit,
   onClearEdit,
   onOpenThread,
+  onSelect,
 }: Props) {
   const { user } = useAuth()
   const stickerMap = useStickerMap()
@@ -51,8 +57,19 @@ export function MessageItem({
   const canEdit = user?.id === msg.sender_id
   const canDelete = user?.id === msg.sender_id || user?.role === 'admin'
 
+  const msgClass = [
+    styles.msg,
+    continuation ? styles.msgContinuation : '',
+    isSelected ? styles.msgSelected : '',
+    isHighlighted ? styles.msgHighlighted : '',
+  ].filter(Boolean).join(' ')
+
   return (
-    <div className={`${styles.msg} ${continuation ? styles.msgContinuation : ''}`}>
+    <div
+      className={msgClass}
+      data-selected={isSelected || undefined}
+      onClick={(e) => { e.stopPropagation(); onSelect?.(isSelected ? null : msg.id) }}
+    >
       <div className={styles.msgAvatar}>
         {!continuation && <Avatar name={name} url={author?.avatar_url} size={36} />}
       </div>
