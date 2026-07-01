@@ -1,34 +1,31 @@
-"""Telegram-бот выдачи доступа участникам (через MTProto + MTProxy).
+"""Telegram-бот выдачи доступа участникам (HTTP Bot API через SOCKS5-прокси).
 
-Зачем MTProto, а не HTTP Bot API: на сервере заблокированы IP Telegram, поэтому
-`api.telegram.org` недоступен. Telethon говорит с Telegram по протоколу MTProto и
-умеет ходить через MTProxy (Server/Port/Secret) — а MTProxy до Telegram достучаться
-может. Так бот работает в обход блокировки.
+На сервере заблокированы IP Telegram, поэтому `api.telegram.org` напрямую недоступен
+(getUpdates → timeout/ENETUNREACH). Обходим обычным SOCKS5-прокси (TELEGRAM_PROXY) —
+он просто туннелирует HTTPS-запросы httpx, никакой MTProto/MTProxy не нужен.
 
-Логика та же: участник пишет боту в личку → бот сверяет его @username с логином на
-платформе (регистронезависимо) → выдаёт СВЕЖИЙ одноразовый пароль (argon2-хеш в БД,
-plaintext только в сообщении), ставит must_change_password=true, присылает доступ +
-инструкцию по установке PWA. Аккаунты должны существовать заранее (create_prod_users.sh).
+Логика: участник пишет боту в личку → бот сверяет его @username с логином на платформе
+(регистронезависимо) → выдаёт СВЕЖИЙ одноразовый пароль (argon2-хеш в БД, plaintext
+только в этом сообщении), ставит must_change_password=true, присылает доступ + инструкцию
+по установке PWA. Аккаунты должны существовать заранее (create_prod_users.sh) — бот
+только выдаёт доступ, но не заводит новых людей.
 
-Требует env:
-  TELEGRAM_BOT_TOKEN            — токен бота от @BotFather
-  TELEGRAM_API_ID              — api_id с https://my.telegram.org
-  TELEGRAM_API_HASH            — api_hash оттуда же
-  TELEGRAM_MTPROXY_SERVER/PORT/SECRET — MTProxy (если пусто — прямое подключение)
-  DATABASE_URL, REDIS_URL, (опц.) PLATFORM_URL
+Безопасность: Telegram-username можно сменить, поэтому теоретически возможен захват
+чужого логина, совпавшего по нику. Группа закрытая (~30 человек) — риск принят;
+пароль всё равно временный и требует смены при входе. Частота ограничена через Redis.
 
 Запуск (в образе backend): python -m scripts.telegram_bot
+Требует env: TELEGRAM_BOT_TOKEN, DATABASE_URL, REDIS_URL, (опц.) PLATFORM_URL, TELEGRAM_PROXY.
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import os
 from typing import Any
 
+import httpx
 from sqlalchemy import func, select
-from telethon import TelegramClient, events
-from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate
-from telethon.sessions import MemorySession
 
 from app.core.redis import redis_client
 from app.core.security import generate_one_time_password, hash_password
@@ -36,13 +33,11 @@ from app.db.session import SessionLocal
 from app.models.user import User
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-API_ID = int(os.environ.get("TELEGRAM_API_ID", "0") or 0)
-API_HASH = os.environ.get("TELEGRAM_API_HASH", "").strip()
 PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://platform.argonautica-systems.ru").rstrip("/")
-
-MTPROXY_SERVER = os.environ.get("TELEGRAM_MTPROXY_SERVER", "").strip()
-MTPROXY_PORT = int(os.environ.get("TELEGRAM_MTPROXY_PORT", "0") or 0)
-MTPROXY_SECRET = os.environ.get("TELEGRAM_MTPROXY_SECRET", "").strip()
+# SOCKS5/HTTP-прокси до Telegram, если IP Telegram заблокированы на сервере.
+# Формат: socks5://user:pass@host:port  или  http://user:pass@host:port
+TELEGRAM_PROXY = os.environ.get("TELEGRAM_PROXY", "").strip() or None
+API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Анти-спам: не более N выдач пароля на один Telegram-аккаунт за окно.
 RATE_LIMIT = 3
@@ -93,94 +88,96 @@ async def _rate_ok(tg_user_id: int) -> bool:
     return bool(count <= RATE_LIMIT)
 
 
-async def _handle(event: Any) -> None:
-    if not event.is_private:
-        return
-    sender = await event.get_sender()
-    tg_id = int(getattr(sender, "id", 0))
-    tg_username = getattr(sender, "username", None)
-    text = (event.raw_text or "").strip()
+async def _send(client: httpx.AsyncClient, chat_id: int, text: str) -> None:
+    try:
+        await client.post(
+            f"{API}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                  "disable_web_page_preview": True},
+        )
+    except httpx.HTTPError as exc:  # noqa: BLE001 — бот не должен падать из-за сети
+        print(f"sendMessage failed: {type(exc).__name__}: {exc!r}", flush=True)
 
-    async def reply(msg: str) -> None:
-        await event.respond(msg, parse_mode="html", link_preview=False)
+
+async def _handle_message(client: httpx.AsyncClient, message: dict[str, Any]) -> None:
+    chat_id = message["chat"]["id"]
+    text = (message.get("text") or "").strip()
+    from_user = message.get("from") or {}
+    tg_id = from_user.get("id", chat_id)
+    tg_username = from_user.get("username")
 
     if text.startswith("/start"):
-        await reply(START_TEXT)
+        await _send(client, chat_id, START_TEXT)
         return
 
     if not tg_username:
-        await reply(
+        await _send(
+            client, chat_id,
             "У тебя не задан @username в Telegram. Открой Настройки → «Имя "
-            "пользователя», задай его (он должен совпадать с твоим логином) и напиши снова."
+            "пользователя», задай его (он должен совпадать с твоим логином) и напиши снова.",
         )
         return
 
     user = await _find_user(tg_username)
     if user is None:
-        await reply(
+        await _send(
+            client, chat_id,
             f"Не нашёл участника с логином <b>{html.escape(tg_username)}</b>. "
-            "Проверь ник или обратись к администратору."
+            "Проверь ник или обратись к администратору.",
         )
         return
 
     if not await _rate_ok(tg_id):
-        await reply("Слишком много запросов пароля. Попробуй позже (в течение часа).")
+        await _send(
+            client, chat_id,
+            "Слишком много запросов пароля. Попробуй позже (в течение часа).",
+        )
         return
 
     password = await _reset_password(user.id)
-    await reply(
+    await _send(
+        client, chat_id,
         f"✅ Доступ к платформе\n\n"
         f"🔗 Ссылка: {PLATFORM_URL}\n"
         f"👤 Логин: <code>{html.escape(user.username)}</code>\n"
         f"🔑 Пароль: <code>{html.escape(password)}</code>\n\n"
         f"При первом входе система попросит сменить пароль.\n\n"
-        f"{INSTALL_HELP}"
+        f"{INSTALL_HELP}",
     )
 
 
-def _normalize_mtproxy_secret(secret: str) -> str:
-    """Привести secret к 16-байтовому hex (32 символа) — как требует Telethon MTProxy.
-
-    Форматы MTProxy-secret:
-      - «голый»: 32 hex (16 байт) — берём как есть;
-      - `dd` + 32 hex — secure/randomized: отрезаем `dd`;
-      - `ee` + 32 hex + hex(домен) — FakeTLS: берём 16-байтовый секрет сразу после `ee`.
-    """
-    s = secret.strip().lower()
-    if s.startswith(("dd", "ee")):
-        s = s[2:]
-    return s[:32]
-
-
-def _build_client() -> Any:
-    kwargs: dict[str, Any] = {}
-    if MTPROXY_SERVER and MTPROXY_PORT and MTPROXY_SECRET:
-        secret = _normalize_mtproxy_secret(MTPROXY_SECRET)
-        print(
-            f"MTProxy secret: raw {len(MTPROXY_SECRET)} → normalized {len(secret)} hex",
-            flush=True,
-        )
-        kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
-        kwargs["proxy"] = (MTPROXY_SERVER, MTPROXY_PORT, secret)
-    return TelegramClient(MemorySession(), API_ID, API_HASH, **kwargs)
-
-
 async def main() -> None:
-    if not BOT_TOKEN or not API_ID or not API_HASH:
-        raise SystemExit(
-            "Нужны TELEGRAM_BOT_TOKEN, TELEGRAM_API_ID, TELEGRAM_API_HASH"
-        )
+    if not BOT_TOKEN:
+        raise SystemExit("TELEGRAM_BOT_TOKEN не задан")
 
-    client = _build_client()
-    client.add_event_handler(_handle, events.NewMessage(incoming=True))
+    print(
+        f"Bot started. Platform URL: {PLATFORM_URL}. Proxy: {TELEGRAM_PROXY or 'none'}",
+        flush=True,
+    )
+    offset = 0
+    async with httpx.AsyncClient(timeout=40, proxy=TELEGRAM_PROXY) as client:
+        while True:
+            try:
+                resp = await client.get(
+                    f"{API}/getUpdates",
+                    params={"offset": offset, "timeout": 30},
+                )
+                updates = resp.json().get("result", [])
+            except (httpx.HTTPError, ValueError) as exc:  # noqa: BLE001
+                # Тип + repr: у сетевых исключений httpx str() часто пустой.
+                print(f"getUpdates failed: {type(exc).__name__}: {exc!r}", flush=True)
+                await asyncio.sleep(3)
+                continue
 
-    proxy_info = f"{MTPROXY_SERVER}:{MTPROXY_PORT}" if MTPROXY_SERVER else "none"
-    await client.start(bot_token=BOT_TOKEN)
-    print(f"Bot started. Platform: {PLATFORM_URL}. MTProxy: {proxy_info}", flush=True)
-    await client.run_until_disconnected()
+            for upd in updates:
+                offset = upd["update_id"] + 1
+                message = upd.get("message") or upd.get("edited_message")
+                if message and message.get("chat", {}).get("type") == "private":
+                    try:
+                        await _handle_message(client, message)
+                    except Exception as exc:  # noqa: BLE001 — один сбой не роняет бота
+                        print(f"handle_message error: {type(exc).__name__}: {exc!r}", flush=True)
 
 
 if __name__ == "__main__":
-    import asyncio
-
     asyncio.run(main())
