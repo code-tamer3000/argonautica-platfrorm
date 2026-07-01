@@ -38,21 +38,27 @@
 > Важно: бот только выдаёт доступ уже заведённым людям. Сначала аккаунт нужно создать
 > шагом 1 (`create_prod_users.sh`). Иначе бот ответит «не нашёл участника с таким логином».
 
+Бот работает по **MTProto через Telethon** (не HTTP Bot API): на RU-хостинге IP
+Telegram заблокированы, поэтому `api.telegram.org` недоступен, а MTProxy до Telegram
+достучаться может. Поэтому нужен MTProxy (Server/Port/Secret) и api_id/api_hash.
+
 ### Настройка (один раз)
 
 1. В Telegram у **@BotFather** создай бота (`/newbot`), получи токен.
-2. На сервере в `.env` пропиши:
+2. На https://my.telegram.org → **API development tools** получи `api_id` и `api_hash`.
+3. Возьми MTProxy (Server / Port / Secret) — тот, что показывает панель прокси.
+4. На сервере в `.env` пропиши:
    ```
    TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
+   TELEGRAM_API_ID=1234567
+   TELEGRAM_API_HASH=abcdef0123456789abcdef0123456789
    PLATFORM_URL=https://platform.argonautica-systems.ru
-   # Если IP Telegram заблокированы на сервере (частый случай на RU-хостинге) — прокси:
-   TELEGRAM_PROXY=socks5://user:pass@proxy-host:1080
+   # MTProxy из панели прокси:
+   TELEGRAM_MTPROXY_SERVER=gt-yxorp.kvn-npv.com
+   TELEGRAM_MTPROXY_PORT=8443
+   TELEGRAM_MTPROXY_SECRET=ee6b696e6f...
    ```
-   > Проверить доступность Telegram с сервера:
-   > `docker compose -f docker/docker-compose.prod.yml --env-file .env exec bot \`
-   > `python -c "import socket; socket.create_connection(('149.154.166.110',443),10); print('ok')"`
-   > Если таймаут, а `1.1.1.1:443` доступен — Telegram блокируется, нужен `TELEGRAM_PROXY`.
-3. Подними сервис бота:
+5. Подними сервис бота:
    ```bash
    docker compose -f docker/docker-compose.prod.yml --env-file .env up -d bot
    ```
