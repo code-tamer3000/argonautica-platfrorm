@@ -27,6 +27,14 @@ RUN printf 'server {\n\
     location = /index.html {\n\
         add_header Cache-Control "no-cache";\n\
     }\n\
+    # SW-манифест и сам service worker — не хэшированные имена, их нельзя кэшировать\n\
+    # надолго, иначе открытая вкладка годами не узнает о новой версии.\n\
+    location = /sw.js {\n\
+        add_header Cache-Control "no-cache";\n\
+    }\n\
+    location = /manifest.webmanifest {\n\
+        add_header Cache-Control "no-cache";\n\
+    }\n\
 \n\
     # SPA routing: unknown paths fall back to index.html\n\
     location / {\n\

@@ -1,0 +1,39 @@
+.banner {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-gold);
+  max-width: min(360px, 90vw);
+}
+
+.text {
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+}
+
+.updateBtn {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-label-md);
+}
+
+.dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-label-md);
+  line-height: 1;
+  padding: var(--space-1);
+}
+.dismiss:hover { color: var(--text-primary); }
