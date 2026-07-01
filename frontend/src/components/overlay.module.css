@@ -1,0 +1,71 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  animation: fade 160ms ease;
+}
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+
+.modal {
+  margin: auto;
+  width: 100%;
+  max-width: 440px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-gold);
+  animation: modal-in 220ms var(--ease-out-soft) both;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.drawer {
+  margin-left: auto;
+  height: 100%;
+  width: 360px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--color-frame-deep);
+  animation: drawer-in 240ms var(--ease-out-soft) both;
+}
+@keyframes drawer-in {
+  from { transform: translateX(24px); opacity: 0.4; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .modal { max-width: 100%; margin: auto var(--space-3); }
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-frame-deep);
+}
+.title { font-family: var(--font-t2); font-size: var(--text-h3); color: var(--text-primary); flex: 1; }
+.x {
+  background: transparent; border: none; color: var(--text-muted);
+  font-size: 18px; cursor: pointer; padding: var(--space-1) var(--space-2);
+}
+.x:hover { color: var(--text-primary); }
+
+.body { padding: var(--space-5); overflow-y: auto; }
+.bodyScroll { padding: var(--space-4); overflow-y: auto; flex: 1; min-height: 0; }
+
+/* Lightbox */
+.lightbox {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex; align-items: center; justify-content: center; padding: var(--space-6);
+}
+.lightboxMedia { max-width: 92vw; max-height: 92vh; border-radius: var(--radius-media); }

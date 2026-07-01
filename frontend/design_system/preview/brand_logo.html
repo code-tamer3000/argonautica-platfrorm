@@ -1,0 +1,76 @@
+<!-- @dsCard group="Brand" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Prata&family=Onest:wght@400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; padding: 20px 24px; font-family: 'Onest', sans-serif; }
+  .label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; margin-bottom: 10px; }
+  .divider { border: none; border-top: 1px solid #1C211E; margin: 16px 0; }
+  .row { display: flex; gap: 14px; }
+  .box {
+    flex: 1; border-radius: 6px;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 10px; padding: 20px 12px;
+  }
+  .box img { width: 52px; height: auto; display: block; }
+  .cap { font-size: 9px; color: #4F4B42; text-align: center; letter-spacing: 1px; }
+</style>
+</head>
+<body>
+
+  <div class="label">Монограмма — версии</div>
+  <div class="row">
+
+    <div class="box" style="background:#000000;">
+      <img src="../assets/logo_black.png"
+           style="filter: invert(1);"
+           alt="Логотип белый">
+      <span class="cap">Белый на чёрном</span>
+    </div>
+
+    <div class="box" style="background:#0B100E; border:1px solid #2C322E;">
+      <img src="../assets/logo_black.png"
+           style="filter: invert(1) sepia(0.15) brightness(0.97);"
+           alt="Логотип кость">
+      <span class="cap">Кость на бездне</span>
+    </div>
+
+    <div class="box" style="background:#000000;">
+      <img src="../assets/logo_black.png"
+           style="filter: invert(1) sepia(1) saturate(3) brightness(0.85);"
+           alt="Логотип золото">
+      <span class="cap">Золото · церемониал</span>
+    </div>
+
+  </div>
+
+  <hr class="divider">
+
+  <div class="label" style="margin-bottom:7px;">Словесный знак</div>
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+    <img src="../assets/logo_black.png"
+         style="width:22px; height:auto; filter: invert(1);"
+         alt="монограмма">
+    <span style="font-family:'Prata',serif; font-size:18px; letter-spacing:5px; color:#E9E2D4; text-transform:uppercase;">АРГОНАВТИКА</span>
+  </div>
+
+  <hr class="divider">
+
+  <div class="label" style="margin-bottom:6px;">Герой — море и монограмма</div>
+  <div style="border-radius:8px; overflow:hidden; height:80px; position:relative;">
+    <img src="../assets/banner_sea.jpg"
+         style="width:100%; height:100%; object-fit:cover; object-position:center 40%; display:block;"
+         alt="море">
+    <div style="position:absolute; inset:0; background:rgba(0,0,0,0.18);"></div>
+    <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;">
+      <img src="../assets/logo_black.png"
+           style="height:58px; width:auto; filter: invert(1); drop-shadow(0 2px 12px rgba(0,0,0,0.5));"
+           alt="логотип на море">
+    </div>
+  </div>
+
+</body>
+</html>

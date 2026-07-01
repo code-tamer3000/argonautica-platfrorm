@@ -1,20 +1,53 @@
 """Точка входа FastAPI. Каркас — наполняется по мере разработки."""
-from fastapi import FastAPI
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Platform API")
+from fastapi import FastAPI
+from fastapi.concurrency import run_in_threadpool
+
+from app.api.admin import router as admin_router
+from app.api.auth import router as auth_router
+from app.api.calendar import router as calendar_router
+from app.api.kb import router as kb_router
+from app.api.media import router as media_router
+from app.api.messages import router as messages_router
+from app.api.rooms import router as rooms_router
+from app.api.stickers import router as stickers_router
+from app.api.users import router as users_router
+from app.core.redis import close_redis, redis_client
+from app.services.media import ensure_buckets
+from app.ws.chat import router as ws_router
+from app.ws.pubsub import ensure_listener_started, stop_listener
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Проверяем доступность Redis на старте (fail-fast), создаём бакеты MinIO,
+    # поднимаем pub/sub-слушателя реалтайма; на остановке — гасим его и закрываем пул.
+    await redis_client.ping()
+    await run_in_threadpool(ensure_buckets)
+    await ensure_listener_started()
+    try:
+        yield
+    finally:
+        await stop_listener()
+        await close_redis()
+
+
+app = FastAPI(title="Platform API", lifespan=lifespan)
+
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(rooms_router)
+app.include_router(messages_router)
+app.include_router(media_router)
+app.include_router(kb_router)
+app.include_router(users_router)
+app.include_router(stickers_router)
+app.include_router(calendar_router)
+app.include_router(ws_router)
 
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
-
-
-# TODO:
-#   - app/core/config.py     — настройки из окружения (pydantic-settings)
-#   - app/core/security.py   — JWT (access/refresh), хеш паролей (argon2)
-#   - app/core/redis.py      — клиент Redis (pub/sub, presence, сессии, rate-limit)
-#   - app/db/session.py      — async-движок и сессии SQLAlchemy
-#   - app/models/            — модели (users, rooms, room_members, messages, ...)
-#   - app/api/               — REST-роутеры, подключить через include_router
-#   - app/ws/                — WebSocket-эндпоинты + интеграция с Redis pub/sub
-#   - app/services/media.py  — presigned-PUT/GET в MinIO через boto3

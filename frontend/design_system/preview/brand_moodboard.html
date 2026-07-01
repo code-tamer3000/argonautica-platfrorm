@@ -1,0 +1,32 @@
+<!-- @dsCard group="Brand" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #000000; overflow: hidden; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; height: 100vh; max-height: 380px; }
+  .img-cell { overflow: hidden; position: relative; }
+  .img-cell img { width: 100%; height: 100%; object-fit: cover; display: block; filter: brightness(0.85); }
+  .caption { position: absolute; bottom: 6px; left: 8px; font-family: 'Onest', monospace; font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: rgba(233,226,212,0.5); }
+</style>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="grid">
+    <div class="img-cell" style="grid-row:span 2;">
+      <img src="../assets/argo_logo_sea.jpg" alt="Море">
+      <span class="caption">C · Тёмный океан</span>
+    </div>
+    <div class="img-cell">
+      <img src="../assets/img/sword.jpg" alt="Меч">
+      <span class="caption">A · Эллинский герб</span>
+    </div>
+    <div class="img-cell">
+      <img src="../assets/img/runo.jpg" alt="Руно">
+      <span class="caption">A · Мифология</span>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,68 @@
+/* Базовая оболочка приложения (поверх tokens.css). Взято из дизайн-системы:
+   фокус-ринг, выделение, плейсхолдер, тонкий скроллбар, reduced-motion. */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; }
+/* Приложение — фикс-оболочка на весь экран: страницы скроллятся ВНУТРИ своих панелей,
+   сама страница не должна прокручиваться ни по горизонтали, ни по вертикали.
+   overflow-x:hidden + max-width гарантируют, что ни один широкий элемент не «вытолкнет»
+   макет вбок на узких экранах (частая причина «край приложения уехал вправо»). */
+html, body, #root { max-width: 100%; overflow-x: hidden; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body);
+  overscroll-behavior: none;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-bright); }
+
+button { font-family: var(--font-t4); }
+
+input, textarea, select {
+  font-family: var(--font-t4);
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn);
+}
+input::placeholder, textarea::placeholder { color: var(--color-kost-ghost); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--divider-gold-strong); }
+
+:focus-visible { outline: 2px solid rgba(194, 154, 72, 0.5); outline-offset: 2px; }
+::selection { background: rgba(194, 154, 72, 0.25); color: var(--color-kost-yar); }
+
+/* Тонкий тёмный скроллбар */
+* { scrollbar-width: thin; scrollbar-color: var(--color-frame-deep) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: #060908; }
+*::-webkit-scrollbar-thumb { background: var(--color-frame-deep); border-radius: 4px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--color-latun); }
+
+@keyframes arg-spin { to { transform: rotate(360deg); } }
+
+/* Появление: fade + лёгкий подъём (по гайдлайну дизайн-системы — drift вверх, без пружин) */
+@keyframes arg-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: arg-rise 320ms var(--ease-out-soft) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* Утилиты раскладки */
+.app-root { height: 100%; display: flex; }
+.col { display: flex; flex-direction: column; }
+.row { display: flex; flex-direction: row; }
+.grow { flex: 1 1 auto; min-height: 0; min-width: 0; }
+.center { display: flex; align-items: center; justify-content: center; }
+.muted { color: var(--text-muted); }
+.label { font-family: var(--font-t4); font-size: var(--text-label); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--text-ghost); }

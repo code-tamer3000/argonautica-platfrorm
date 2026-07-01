@@ -1,0 +1,213 @@
+.page {
+  padding: var(--space-6) var(--space-8);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.pageTitle {
+  font-family: var(--font-t1);
+  font-size: 28px;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+.searchBar {
+  margin-bottom: var(--space-5);
+}
+
+.searchInput {
+  width: 100%;
+  max-width: 480px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+}
+
+.searchInput:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: var(--transition-base);
+}
+
+.card:hover {
+  border-color: var(--divider-gold);
+  box-shadow: var(--glow-gold);
+  transform: translateY(-2px);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cardTitle {
+  font-family: var(--font-t1);
+  font-size: 16px;
+  color: var(--text-primary);
+  flex: 1;
+  line-height: 1.3;
+}
+
+.cardPreview {
+  font-family: var(--font-t3);
+  font-size: var(--text-ui);
+  color: var(--text-muted);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.cardMeta {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  color: var(--text-muted);
+  margin-top: auto;
+}
+
+.badgeDraft {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.badgePublished {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider-gold);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* Viewer */
+
+.viewer {
+  padding: var(--space-8);
+  overflow-y: auto;
+  flex: 1;
+  max-width: 800px;
+}
+
+.viewerHead {
+  margin-bottom: var(--space-6);
+}
+
+.articleTitle {
+  font-family: var(--font-t1);
+  font-size: 32px;
+  color: var(--text-primary);
+  margin: var(--space-2) 0;
+  line-height: 1.2;
+}
+
+.articleMeta {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.articleBody {
+  font-family: var(--font-t3);
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  max-width: 70ch;
+}
+
+/* Markdown content styles */
+.articleBody h1,
+.articleBody h2,
+.articleBody h3 {
+  font-family: var(--font-t1);
+  color: var(--text-primary);
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-2);
+}
+
+.articleBody p { margin-bottom: var(--space-3); }
+
+.articleBody code {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+
+.articleBody pre {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: var(--space-4);
+  overflow-x: auto;
+  margin-bottom: var(--space-4);
+}
+
+.articleBody pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.articleBody blockquote {
+  border-left: 3px solid var(--divider-gold);
+  padding-left: var(--space-4);
+  color: var(--text-muted);
+  margin: var(--space-4) 0;
+}
+
+.articleBody ul,
+.articleBody ol {
+  padding-left: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+
+.kbMedia {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--divider);
+}
+
+/* ───── Мобила: убираем широкие поля страницы ───── */
+@media (max-width: 768px) {
+  .page { padding: var(--space-4) var(--space-4); }
+}

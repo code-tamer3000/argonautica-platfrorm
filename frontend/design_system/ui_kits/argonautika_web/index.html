@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<!-- @dsCard group="UI Kit — Argonautika Web" name="UI Kit — Сайт-манифест" subtitle="Hero · О чём · Манифест · Карта · Экспедиция — полный click-through прототип" viewport="1200x600" -->
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Аргонавтика — Сайт-манифест</title>
+<link href="https://fonts.googleapis.com/css2?family=Prata&family=Lora:ital,wght@0,400;0,600;1,400;1,600&family=Onest:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: #0B100E; -webkit-font-smoothing: antialiased; color: #E9E2D4; overflow-x: clip; }
+  input:focus { outline: none; }
+  input::placeholder { color: #5F5B50; }
+  button:focus-visible, a:focus-visible { outline: 2px solid rgba(194,154,72,0.5); outline-offset: 2px; }
+  ::selection { background: rgba(194,154,72,0.25); color: #F4F1E9; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: #060908; }
+  ::-webkit-scrollbar-thumb { background: #2C322E; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #9C7A33; }
+
+  /* Reading-pane chapter cross-fade */
+  .reader-fade { animation: readerIn 0.55s cubic-bezier(.22,.61,.36,1); }
+  @keyframes readerIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Hero scroll arrow — slow drift */
+  @media (prefers-reduced-motion: no-preference) {
+    .hero-arrow { animation: arrowDrift 2.4s ease-in-out infinite; }
+    @keyframes arrowDrift { 0%,100% { transform: translateY(0); opacity: 0.5; } 50% { transform: translateY(6px); opacity: 1; } }
+  }
+
+  /* ── World-map zones: future hover-reveal (handoff to Claude Code) ──
+     On hover a zone manifests; the others fade into half-blur. Static in Design. */
+  .world-zone { transition: filter .6s ease, opacity .6s ease; }
+  .video-slot .video-slot-ring, .video-slot { transition: box-shadow .4s ease, border-color .4s ease, transform .4s ease; }
+  @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .world-map-slot:hover .world-zone:not(:hover) { filter: blur(3px) brightness(0.55) saturate(0.8); opacity: 0.5; }
+    .video-slot:hover { border-color: rgba(217,180,90,0.55); box-shadow: inset 0 0 80px rgba(0,0,0,0.5), 0 30px 90px rgba(0,0,0,0.45), 0 0 60px rgba(194,154,72,0.12); transform: translateY(-2px); }
+  }
+
+  /* ── Responsive ───────────────────────────── */
+  @media (max-width: 880px) {
+    .about-grid { grid-template-columns: 1fr !important; }
+    .about-grid figure { max-width: 300px; }
+    .karta-grid { grid-template-columns: 1fr !important; }
+    .manifesto-grid { grid-template-columns: 1fr !important; }
+    .thread-rail { display: none !important; }
+    .ch-nav { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+    .ch-nav > div:first-child { width: 100%; }
+    .ch-nav button { width: auto !important; border-bottom: none !important; padding: 6px 0 !important; }
+    .arc-row { grid-template-columns: repeat(2, 1fr) !important; row-gap: 30px; }
+    .arc-row > div:nth-child(2) > div[style*="position: absolute"] { display: none; }
+  }
+  @media (max-width: 600px) {
+    .hdr-links { display: none !important; }
+    .moves-grid { grid-template-columns: 1fr !important; }
+    .arc-row { grid-template-columns: 1fr 1fr !important; }
+    .exp-form { flex-direction: column; }
+    .exp-form input { border-right: 1px solid #2C322E !important; border-radius: 6px !important; margin-bottom: 8px; }
+    .exp-form button { border-radius: 6px !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="Shared.jsx"></script>
+<script type="text/babel" src="Sections.jsx"></script>
+<script type="text/babel" src="Sections2.jsx"></script>
+<script type="text/babel" src="Sections3.jsx"></script>
+<script type="text/babel" src="App.jsx"></script>
+</body>
+</html>

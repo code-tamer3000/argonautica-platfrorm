@@ -1,0 +1,45 @@
+<!-- @dsCard group="Components" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; padding: 20px 24px; font-family: 'Onest', sans-serif; }
+  .label { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #4F4B42; margin-bottom: 10px; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+  .btn { display: inline-block; font-family: 'Onest', sans-serif; font-size: 13px; letter-spacing: 1px; padding: 10px 20px; border-radius: 6px; cursor: pointer; border: none; }
+  .divider { border: none; border-top: 1px solid #1C211E; margin: 4px 0 14px; }
+</style>
+</head>
+<body>
+  <div class="label">Primary — Кость по тёмному</div>
+  <div class="row">
+    <span class="btn" style="background:#E9E2D4; color:#0B100E;">Читать Манифест</span>
+    <span class="btn" style="background:#F4F1E9; color:#0B100E;">Читать целиком</span>
+    <span style="font-size:9px; color:#4F4B42;">Default · Hover</span>
+  </div>
+  <hr class="divider">
+  <div class="label">Золото — Церемониал / CTA</div>
+  <div class="row">
+    <span class="btn" style="background:#C29A48; color:#0B100E;">Оставить заявку</span>
+    <span class="btn" style="background:#D9B45A; color:#0B100E;">Оставить заявку</span>
+    <span style="font-size:9px; color:#4F4B42;">Default · Hover</span>
+  </div>
+  <hr class="divider">
+  <div class="label">Outline — Вторичная</div>
+  <div class="row">
+    <span class="btn" style="background:transparent; color:#E9E2D4; border:1px solid #2C322E;">Встать в строй</span>
+    <span class="btn" style="background:transparent; color:#E9E2D4; border:1px solid #6E6A5E;">Встать в строй</span>
+    <span style="font-size:9px; color:#4F4B42;">Default · Hover</span>
+  </div>
+  <hr class="divider">
+  <div class="label">Состояния</div>
+  <div class="row">
+    <span class="btn" style="background:#E9E2D4; color:#0B100E; opacity:0.45; cursor:not-allowed;">Disabled</span>
+    <span class="btn" style="background:#C29A48; color:#0B100E; outline:2px solid rgba(194,154,72,0.4); outline-offset:2px;">Focused</span>
+    <span class="btn" style="background:#9C7A33; color:#0B100E;">Active/Press</span>
+  </div>
+</body>
+</html>

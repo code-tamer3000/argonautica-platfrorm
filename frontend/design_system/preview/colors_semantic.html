@@ -1,0 +1,67 @@
+<!-- @dsCard group="Colors" -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Onest:wght@400;500&family=Lora:ital@1&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0B100E; font-family: 'Onest', sans-serif; padding: 20px; }
+  .pair { display: flex; align-items: stretch; border-radius: 6px; overflow: hidden; margin-bottom: 8px; }
+  .pair-bg { width: 52px; flex-shrink: 0; }
+  .pair-demo { flex: 1; display: flex; align-items: center; padding: 12px 16px; gap: 10px; }
+  .desc { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #5F5B50; margin-left: auto; }
+  .sample-text { font-size: 13px; }
+  .sample-italic { font-family: 'Lora'; font-style: italic; font-size: 13px; }
+  .star { display: inline-block; }
+</style>
+</head>
+<body>
+  <!-- Gold on black -->
+  <div class="pair">
+    <div class="pair-bg" style="background:#000000;"></div>
+    <div class="pair-demo" style="background:#0C0E0D;">
+      <svg class="star" width="12" height="12" viewBox="-11 -11 22 22"><path d="M0,-10 C1.5,-3 3,-1.5 10,0 C3,1.5 1.5,3 0,10 C-1.5,3 -3,1.5 -10,0 C-3,-1.5 -1.5,-3 0,-10 Z" fill="#C29A48"/></svg>
+      <span class="sample-text" style="color:#C29A48; letter-spacing:2px;">ЗОЛОТО ПО ЧЁРНОМУ</span>
+      <span class="desc">Церемонал · CTA · Акцент</span>
+    </div>
+  </div>
+  <!-- Bone on abyss -->
+  <div class="pair">
+    <div class="pair-bg" style="background:#0B100E;"></div>
+    <div class="pair-demo" style="background:#111615;">
+      <span class="sample-text" style="color:#E9E2D4;">Орден тех, кто различает живое от неживого.</span>
+      <span class="desc">Основной текст</span>
+    </div>
+  </div>
+  <!-- Lora italic muted -->
+  <div class="pair">
+    <div class="pair-bg" style="background:#0B100E;"></div>
+    <div class="pair-demo" style="background:#111615;">
+      <span class="sample-italic" style="color:#9A9486;">Ты не идёшь к свету — ты из него исходишь.</span>
+      <span class="desc">Lora italic · мерцание</span>
+    </div>
+  </div>
+  <!-- Blood accent -->
+  <div class="pair">
+    <div class="pair-bg" style="background:#0B100E;"></div>
+    <div class="pair-demo" style="background:#111615;">
+      <span class="sample-text" style="color:#B23A2E; font-family:'Onest';">НАВЬ · ГЛУБИНА · РАНА</span>
+      <span class="desc">Кровь · резкие строки</span>
+    </div>
+  </div>
+  <!-- Teal atmosphere -->
+  <div class="pair">
+    <div class="pair-bg" style="background:#134E45;"></div>
+    <div class="pair-demo" style="background:#0E1A18;">
+      <span class="sample-text" style="color:#E9E2D4;">Тёмное море · стихия</span>
+      <span class="desc">Море · атмосфера</span>
+    </div>
+  </div>
+  <!-- Hairline -->
+  <div style="margin-top:10px; border-top: 1px solid rgba(194,154,72,0.25); padding-top:8px; display:flex; justify-content:space-between; align-items:center;">
+    <span style="font-size:9px; letter-spacing:2px; text-transform:uppercase; color:#4F4B42;">Разделитель · Золотой волосок</span>
+    <span style="font-size:9px; color:#5F5B50;">rgba(194,154,72,0.25–0.55)</span>
+  </div>
+</body>
+</html>

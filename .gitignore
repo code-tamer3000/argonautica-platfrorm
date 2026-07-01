@@ -1,7 +1,8 @@
-# Секреты
+# Секреты — реальные .env с значениями НИКОГДА не коммитим.
 .env
 *.env
-.env.example
+# ...но шаблон .env.example (без значений) — наоборот, должен быть в git.
+!.env.example
 
 # Python
 __pycache__/
@@ -23,3 +24,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+.claude/
+
+# TLS-серты (self-signed локально / боевые на сервере) — никогда в git.
+docker/nginx/certs/
