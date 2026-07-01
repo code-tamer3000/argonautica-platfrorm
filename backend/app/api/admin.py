@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_admin
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
+from app.models.room import Room
 from app.models.user import User
 from app.schemas.user import (
     AdminCreateUserRequest,
@@ -67,6 +68,16 @@ async def create_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username or email already exists",
         ) from exc
+    # Auto-create personal channel for new user.
+    personal_channel = Room(
+        type="channel",
+        name=user.display_name,
+        is_personal=True,
+        created_by=user.id,
+    )
+    session.add(personal_channel)
+    await session.flush()
+
     return AdminCreateUserResponse(
         id=user.id,
         username=user.username,

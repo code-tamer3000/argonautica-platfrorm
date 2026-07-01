@@ -1,6 +1,7 @@
 import {
   useInfiniteQuery,
   useMutation,
+  useQuery,
   useQueryClient,
   type InfiniteData,
 } from '@tanstack/react-query'
@@ -57,6 +58,15 @@ export function useEditMessage(roomId: number) {
 export function useDeleteMessage(roomId: number) {
   return useMutation({
     mutationFn: (id: number) => http.del<null>(`/api/rooms/${roomId}/messages/${id}`),
+  })
+}
+
+export function useMessageDates(roomId: number, year: number, month: number, enabled = true) {
+  return useQuery({
+    queryKey: ['message-dates', roomId, year, month],
+    queryFn: () =>
+      http.get<string[]>(`/api/rooms/${roomId}/message-dates?year=${year}&month=${month}`),
+    enabled,
   })
 }
 

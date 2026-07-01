@@ -26,6 +26,9 @@ class RoomOut(BaseModel):
     avatar_url: str | None
     created_at: datetime
     unread_count: int = 0
+    is_personal: bool = False
+    created_by: int = 0
+    peer_id: int | None = None  # заполняется только для type='dm'
 
 
 class AddMemberRequest(BaseModel):

@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
+from app.core.redis import redis_client
 from app.db.session import get_session
 from app.models.user import User
 from app.schemas.user import PublicUserOut
@@ -50,6 +51,15 @@ async def list_users(
     media_ids = {u.avatar_media_id for u in users if u.avatar_media_id is not None}
     signed = await presign_asset_urls(session, media_ids)
     return [_public_out(u, _avatar(u, signed)) for u in users]
+
+
+@router.get("/presence", response_model=list[int])
+async def get_online_users(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> list[int]:
+    """Текущий снепшот онлайн-пользователей из Redis (для первичной загрузки)."""
+    members = await redis_client.smembers("presence:online")
+    return [int(m) for m in members]
 
 
 @router.get("/{user_id}", response_model=PublicUserOut)

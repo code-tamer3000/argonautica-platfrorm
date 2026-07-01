@@ -28,6 +28,16 @@
 
 .rooms { flex: 1; overflow-y: auto; min-height: 0; }
 
+.sectionHeader {
+  padding: var(--space-2) var(--space-4) var(--space-1);
+  font-family: var(--font-t4);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  user-select: none;
+}
+
 .roomItem {
   display: flex;
   align-items: center;
@@ -228,7 +238,14 @@
 .sticker { width: 120px; height: 120px; object-fit: contain; margin-top: var(--space-1); }
 
 /* --- Действия над сообщением --- */
-.msg:hover .actions { opacity: 1; }
+.msg:hover .actions,
+.msg[data-selected] .actions { opacity: 1; pointer-events: auto; }
+.msgSelected { background: rgba(19, 78, 69, 0.07); border-radius: var(--radius-btn); }
+.msgHighlighted { animation: highlightPulse 2s ease; }
+@keyframes highlightPulse {
+  0%, 100% { background: transparent; }
+  20% { background: rgba(19, 78, 69, 0.18); }
+}
 .actions {
   opacity: 0; transition: var(--transition-fade);
   display: flex; gap: var(--space-1); margin-top: var(--space-1);
@@ -398,3 +415,85 @@
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
   .attImage, .attVideo { max-width: 100%; }
 }
+
+/* --- Календарь личного канала --- */
+.calendarWrap {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-frame-deep);
+  background: var(--bg-deep);
+}
+.calendarNav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+.calendarTitle {
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+.calendarNavBtn {
+  background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 16px; padding: 0 var(--space-2);
+  line-height: 1;
+}
+.calendarNavBtn:hover { color: var(--accent); }
+.calendarGrid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 2px; text-align: center;
+}
+.calendarWeekday {
+  font-size: 10px; color: var(--text-ghost);
+  font-family: var(--font-t4); letter-spacing: 0.04em;
+  padding-bottom: 2px;
+}
+.calendarDay {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; margin: 1px auto;
+  border-radius: 50%; font-size: 12px; color: var(--text-muted);
+  transition: background var(--transition-base);
+}
+.calendarDayDone {
+  background: var(--accent); color: var(--bg-base); font-weight: 600;
+}
+.calendarDayToday {
+  outline: 1px solid var(--accent);
+}
+.calendarDayDone.calendarDayToday {
+  outline: 2px solid var(--divider-gold);
+}
+
+/* --- Форма дневника --- */
+.journalWrap {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-frame-deep);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.journalDone {
+  font-size: var(--text-label-md); color: var(--accent);
+  padding: var(--space-2) 0;
+}
+.journalField { display: flex; flex-direction: column; gap: 4px; }
+.journalLabel {
+  font-family: var(--font-t4); font-size: 11px; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-ghost);
+}
+.journalInput, .journalTextarea {
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn); color: var(--text-primary);
+  font-family: var(--font-body); font-size: var(--text-ui);
+  padding: var(--space-2) var(--space-3); width: 100%; box-sizing: border-box;
+  resize: vertical;
+}
+.journalInput:focus, .journalTextarea:focus {
+  outline: none; border-color: var(--accent);
+}
+.journalTextarea { min-height: 56px; }
+.journalPublish {
+  align-self: flex-end;
+  padding: var(--space-2) var(--space-4);
+  background: var(--accent); color: var(--bg-base);
+  border: none; border-radius: var(--radius-btn);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  cursor: pointer; font-weight: 600;
+  transition: opacity var(--transition-base);
+}
+.journalPublish:disabled { opacity: 0.5; cursor: not-allowed; }

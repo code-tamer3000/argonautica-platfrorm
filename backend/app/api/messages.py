@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select, update
+from sqlalchemy import cast, distinct, extract, func, select, update
+from sqlalchemy import Date as SqlDate
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -462,3 +463,32 @@ async def list_pins(
     pairs = list(rows.all())
     attachments = await _attachments_map(session, [m.id for _, m in pairs])
     return [_pinned_out(p, m, attachments.get(m.id, [])) for p, m in pairs]
+
+
+@router.get("/{room_id}/message-dates", response_model=list[str])
+async def get_message_dates(
+    room_id: int,
+    year: Annotated[int, Query(ge=2020, le=2100)],
+    month: Annotated[int, Query(ge=1, le=12)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[str]:
+    """Даты (YYYY-MM-DD), в которые есть верхнеуровневые сообщения — для calendar-UI."""
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+
+    start = datetime(year, month, 1, tzinfo=UTC)
+    end = datetime(year + 1, 1, 1, tzinfo=UTC) if month == 12 else datetime(year, month + 1, 1, tzinfo=UTC)
+
+    rows = await session.execute(
+        select(distinct(cast(Message.created_at, SqlDate)))
+        .where(
+            Message.room_id == room_id,
+            Message.deleted_at.is_(None),
+            Message.thread_root_id.is_(None),
+            Message.created_at >= start,
+            Message.created_at < end,
+        )
+        .order_by(cast(Message.created_at, SqlDate))
+    )
+    return [str(d) for d in rows.scalars().all()]

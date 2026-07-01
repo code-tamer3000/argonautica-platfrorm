@@ -53,3 +53,10 @@ export function useRemoveMember(roomId: number) {
     },
   })
 }
+
+export function usePersonalChannel() {
+  return useQuery({
+    queryKey: ['personal-channel'],
+    queryFn: () => http.get<RoomOut>('/api/rooms/personal'),
+  })
+}

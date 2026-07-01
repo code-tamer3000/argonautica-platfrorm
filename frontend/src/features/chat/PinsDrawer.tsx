@@ -8,9 +8,10 @@ import { timeHM } from '../../lib/format'
 interface Props {
   roomId: number
   onClose: () => void
+  onNavigate?: (msgId: number) => void
 }
 
-export function PinsDrawer({ roomId, onClose }: Props) {
+export function PinsDrawer({ roomId, onClose, onNavigate }: Props) {
   const { data, isLoading } = usePins(roomId, true)
   const unpin = useUnpin(roomId)
   const users = useUsersMap()
@@ -70,22 +71,41 @@ export function PinsDrawer({ roomId, onClose }: Props) {
                   (pin.message.sticker_id != null ? '[стикер]' : '[вложение]')}
               </div>
             </div>
-            <button
-              onClick={() => unpin.mutate(pin.message_id)}
-              disabled={unpin.isPending}
-              style={{
-                fontSize: 11,
-                padding: '2px 6px',
-                borderRadius: 4,
-                border: '1px solid var(--border)',
-                background: 'transparent',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Открепить
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {onNavigate && (
+                <button
+                  onClick={() => { onClose(); onNavigate(pin.message_id) }}
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    border: '1px solid var(--color-frame-deep)',
+                    background: 'transparent',
+                    color: 'var(--accent)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Перейти →
+                </button>
+              )}
+              <button
+                onClick={() => unpin.mutate(pin.message_id)}
+                disabled={unpin.isPending}
+                style={{
+                  fontSize: 11,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                Открепить
+              </button>
+            </div>
           </div>
         )
       })}

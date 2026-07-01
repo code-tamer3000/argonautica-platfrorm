@@ -40,6 +40,9 @@ export interface RoomOut {
   avatar_url: string | null
   created_at: string
   unread_count: number
+  is_personal: boolean
+  created_by: number
+  peer_id?: number
 }
 
 export interface MemberOut {
