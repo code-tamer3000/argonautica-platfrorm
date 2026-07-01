@@ -160,7 +160,8 @@ async def main() -> None:
                 )
                 updates = resp.json().get("result", [])
             except (httpx.HTTPError, ValueError) as exc:  # noqa: BLE001
-                print(f"getUpdates failed: {exc}", flush=True)
+                # Тип + repr: у сетевых исключений httpx str() часто пустой.
+                print(f"getUpdates failed: {type(exc).__name__}: {exc!r}", flush=True)
                 await asyncio.sleep(3)
                 continue
 
@@ -171,7 +172,7 @@ async def main() -> None:
                     try:
                         await _handle_message(client, message)
                     except Exception as exc:  # noqa: BLE001 — один сбой не роняет бота
-                        print(f"handle_message error: {exc}", flush=True)
+                        print(f"handle_message error: {type(exc).__name__}: {exc!r}", flush=True)
 
 
 if __name__ == "__main__":
