@@ -27,6 +27,7 @@ class RoomOut(BaseModel):
     created_at: datetime
     unread_count: int = 0
     is_personal: bool = False
+    is_news: bool = False
     created_by: int = 0
     peer_id: int | None = None  # заполняется только для type='dm'
 

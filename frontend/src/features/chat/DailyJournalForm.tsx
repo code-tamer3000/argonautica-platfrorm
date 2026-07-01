@@ -57,16 +57,18 @@ export function DailyJournalForm({ roomId, userId }: Props) {
 
   function publish() {
     if (!intention.trim() || !dayTitle.trim()) return
-    const content = [
-      '🎯 Намерение',
-      intention.trim(),
+    // Markdown: заголовок дня + секции. Ссылки в тексте станут кликабельными.
+    const parts = [
+      `## 🎬 ${dayTitle.trim()}`,
       '',
-      notes.trim() ? '📝 Заметки' : '',
-      notes.trim() ? notes.trim() : '',
-      notes.trim() ? '' : '',
-      '🎬 Фильм дня',
-      dayTitle.trim(),
-    ].filter((line, i, arr) => !(line === '' && arr[i - 1] === '')).join('\n').trim()
+      '**🎯 Намерение / концентрация**',
+      '',
+      intention.trim(),
+    ]
+    if (notes.trim()) {
+      parts.push('', '**📝 Заметки**', '', notes.trim())
+    }
+    const content = parts.join('\n')
 
     sendMessage.mutate({ content }, {
       onSuccess: () => {

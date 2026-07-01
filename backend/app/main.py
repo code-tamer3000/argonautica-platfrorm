@@ -15,7 +15,9 @@ from app.api.rooms import router as rooms_router
 from app.api.stickers import router as stickers_router
 from app.api.users import router as users_router
 from app.core.redis import close_redis, redis_client
+from app.db.session import SessionLocal
 from app.services.media import ensure_buckets
+from app.services.rooms import ensure_news_channel
 from app.ws.chat import router as ws_router
 from app.ws.pubsub import ensure_listener_started, stop_listener
 
@@ -23,9 +25,13 @@ from app.ws.pubsub import ensure_listener_started, stop_listener
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Проверяем доступность Redis на старте (fail-fast), создаём бакеты MinIO,
-    # поднимаем pub/sub-слушателя реалтайма; на остановке — гасим его и закрываем пул.
+    # гарантируем новостной канал, поднимаем pub/sub-слушателя реалтайма;
+    # на остановке — гасим его и закрываем пул.
     await redis_client.ping()
     await run_in_threadpool(ensure_buckets)
+    async with SessionLocal() as session:
+        await ensure_news_channel(session)
+        await session.commit()
     await ensure_listener_started()
     try:
         yield

@@ -38,6 +38,10 @@ class Room(Base):
     is_personal: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Новостной канал платформы (singleton). Верхнеуровневые посты — только admin.
+    is_news: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class RoomMember(Base):

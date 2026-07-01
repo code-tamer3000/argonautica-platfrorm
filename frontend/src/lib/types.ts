@@ -41,6 +41,7 @@ export interface RoomOut {
   created_at: string
   unread_count: number
   is_personal: boolean
+  is_news: boolean
   created_by: number
   peer_id?: number
 }
