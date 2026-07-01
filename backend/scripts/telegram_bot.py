@@ -138,11 +138,30 @@ async def _handle(event: Any) -> None:
     )
 
 
+def _normalize_mtproxy_secret(secret: str) -> str:
+    """Привести secret к 16-байтовому hex (32 символа) — как требует Telethon MTProxy.
+
+    Форматы MTProxy-secret:
+      - «голый»: 32 hex (16 байт) — берём как есть;
+      - `dd` + 32 hex — secure/randomized: отрезаем `dd`;
+      - `ee` + 32 hex + hex(домен) — FakeTLS: берём 16-байтовый секрет сразу после `ee`.
+    """
+    s = secret.strip().lower()
+    if s.startswith(("dd", "ee")):
+        s = s[2:]
+    return s[:32]
+
+
 def _build_client() -> Any:
     kwargs: dict[str, Any] = {}
     if MTPROXY_SERVER and MTPROXY_PORT and MTPROXY_SECRET:
+        secret = _normalize_mtproxy_secret(MTPROXY_SECRET)
+        print(
+            f"MTProxy secret: raw {len(MTPROXY_SECRET)} → normalized {len(secret)} hex",
+            flush=True,
+        )
         kwargs["connection"] = ConnectionTcpMTProxyRandomizedIntermediate
-        kwargs["proxy"] = (MTPROXY_SERVER, MTPROXY_PORT, MTPROXY_SECRET)
+        kwargs["proxy"] = (MTPROXY_SERVER, MTPROXY_PORT, secret)
     return TelegramClient(MemorySession(), API_ID, API_HASH, **kwargs)
 
 

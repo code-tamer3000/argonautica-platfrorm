@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart",
     "boto3",            # S3-клиент для MinIO (и будущего managed-S3)
     "telethon",         # MTProto-клиент для telegram-бота (через MTProxy) — scripts/telegram_bot.py
+    "python-socks[asyncio]",  # нужен Telethon для проксирования (иначе proxy игнорируется)
 ]
 
 [build-system]
