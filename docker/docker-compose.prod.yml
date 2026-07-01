@@ -6,7 +6,6 @@
 #   docker compose -f docker/docker-compose.prod.yml --env-file .env run --rm migrate
 #   docker compose -f docker/docker-compose.prod.yml --env-file .env up -d
 # Деплой новой версии: docker/deploy.sh
-version: "3.9"
 
 x-backend: &backend
   build:
@@ -77,7 +76,8 @@ services:
   # Если TELEGRAM_BOT_TOKEN пуст — можно не запускать: `--scale bot=0` или убрать.
   bot:
     <<: *backend
-    command: ["python", "scripts/telegram_bot.py"]
+    # Запуск модулем (-m): рабочая директория /app попадает в sys.path → виден пакет app.
+    command: ["python", "-m", "scripts.telegram_bot"]
     healthcheck:
       disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
 
