@@ -45,7 +45,13 @@
    ```
    TELEGRAM_BOT_TOKEN=123456:ABC-DEF...
    PLATFORM_URL=https://platform.argonautica-systems.ru
+   # Если IP Telegram заблокированы на сервере (частый случай на RU-хостинге) — прокси:
+   TELEGRAM_PROXY=socks5://user:pass@proxy-host:1080
    ```
+   > Проверить доступность Telegram с сервера:
+   > `docker compose -f docker/docker-compose.prod.yml --env-file .env exec bot \`
+   > `python -c "import socket; socket.create_connection(('149.154.166.110',443),10); print('ok')"`
+   > Если таймаут, а `1.1.1.1:443` доступен — Telegram блокируется, нужен `TELEGRAM_PROXY`.
 3. Подними сервис бота:
    ```bash
    docker compose -f docker/docker-compose.prod.yml --env-file .env up -d bot

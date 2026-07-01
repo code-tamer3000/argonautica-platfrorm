@@ -35,6 +35,9 @@ from app.models.user import User
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://platform.argonautica-systems.ru").rstrip("/")
+# Прокси для доступа к Telegram (напр. socks5://host:port или http://host:port).
+# На сетях, где IP Telegram заблокированы, без прокси getUpdates не достучится.
+TELEGRAM_PROXY = os.environ.get("TELEGRAM_PROXY", "").strip() or None
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Анти-спам: не более N выдач пароля на один Telegram-аккаунт за окно.
@@ -149,9 +152,13 @@ async def main() -> None:
     if not BOT_TOKEN:
         raise SystemExit("TELEGRAM_BOT_TOKEN не задан")
 
-    print(f"Bot started. Platform URL: {PLATFORM_URL}", flush=True)
+    print(
+        f"Bot started. Platform URL: {PLATFORM_URL}. "
+        f"Proxy: {TELEGRAM_PROXY or 'none'}",
+        flush=True,
+    )
     offset = 0
-    async with httpx.AsyncClient(timeout=40) as client:
+    async with httpx.AsyncClient(timeout=40, proxy=TELEGRAM_PROXY) as client:
         while True:
             try:
                 resp = await client.get(
