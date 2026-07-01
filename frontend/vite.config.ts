@@ -31,9 +31,16 @@ export default defineConfig({
   ],
   server: {
     port: 5173,
-    proxy: {
-      '/api': { target: 'https://https://platform.argonautica-systems.ru/', changeOrigin: true },
-      '/ws': { target: 'wss://https://platform.argonautica-systems.ru/', ws: true },
-    },
+    proxy: (() => {
+      // BACKEND_URL=http://localhost:8000   — локальный бэкенд (dev.sh)
+      // BACKEND_URL=https://my.domain.ru   — прод-бэкенд (разработка против прода)
+      // По умолчанию — localhost:8000
+      const http = process.env.BACKEND_URL ?? 'http://localhost:8000'
+      const ws = http.replace(/^http/, 'ws') // http→ws, https→wss
+      return {
+        '/api': { target: http, changeOrigin: true },
+        '/ws':  { target: ws,   ws: true },
+      }
+    })(),
   },
 })
