@@ -145,10 +145,13 @@ export function MessageItem({
         )}
 
         <div className={styles.actions}>
-          {/* Ответ всегда уходит в тред (thread_root_id) и не виден в основной ленте — открываем тред напрямую. */}
-          <button className={styles.actionBtn} onClick={() => onOpenThread?.(msg.id)}>
-            Ответить
-          </button>
+          {/* Ответ всегда уходит в тред (thread_root_id) и не виден в основной ленте — открываем тред напрямую.
+              Внутри самого треда у ответов уже есть своё поле ввода снизу, отдельная кнопка не нужна (п.2: треды плоские). */}
+          {!isInThread && (
+            <button className={styles.actionBtn} onClick={() => onOpenThread?.(msg.id)}>
+              Ответить
+            </button>
+          )}
           {canEdit && (
             <button className={styles.actionBtn} onClick={() => onEdit?.(msg)}>
               Редактировать

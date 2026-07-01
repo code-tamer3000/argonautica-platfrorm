@@ -61,6 +61,7 @@
 
 .body { padding: var(--space-5); overflow-y: auto; }
 .bodyScroll { padding: var(--space-4); overflow-y: auto; flex: 1; min-height: 0; }
+.footer { flex: 0 0 auto; border-top: 1px solid var(--color-frame-deep); padding: var(--space-3) var(--space-4); }
 
 /* Lightbox */
 .lightbox {

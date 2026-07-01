@@ -206,6 +206,8 @@
   padding: 2px var(--space-3); border: 1px solid var(--color-frame); border-radius: var(--radius-pill);
 }
 
+.threadDivider { border-bottom: 1px solid var(--color-frame-deep); margin: var(--space-2) 0 var(--space-3); }
+
 .msg { display: flex; gap: var(--space-3); padding: 2px 0; }
 .msgAvatar { width: 36px; flex: 0 0 36px; }
 .msgBody { min-width: 0; flex: 1; }
@@ -523,8 +525,10 @@
 /* --- Форма дневника --- */
 .journalWrap {
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-frame-deep);
+  border-top: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface);
   display: flex; flex-direction: column; gap: var(--space-2);
+  flex: 0 0 auto;
 }
 .journalDone {
   font-size: var(--text-label-md); color: var(--accent);

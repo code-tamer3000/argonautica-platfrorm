@@ -24,7 +24,7 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   )
 }
 
-export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Drawer({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer?: ReactNode }) {
   useEscape(onClose)
   return (
     <div className={styles.backdrop} onClick={onClose}>
@@ -34,6 +34,7 @@ export function Drawer({ title, onClose, children }: { title: string; onClose: (
           <button className={styles.x} onClick={onClose} aria-label="Закрыть">✕</button>
         </div>
         <div className={styles.bodyScroll}>{children}</div>
+        {footer && <div className={styles.footer}>{footer}</div>}
       </div>
     </div>
   )

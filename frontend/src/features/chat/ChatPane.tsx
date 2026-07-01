@@ -159,9 +159,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} onNavigate={navigateToMessage} />
       )}
       {room.is_personal && showCalendar && <ChannelCalendar roomId={roomId} />}
-      {room.is_personal && room.created_by === user?.id && (
-        <DailyJournalForm roomId={roomId} userId={user.id} />
-      )}
       <MessageList
         ref={messageListRef}
         messages={messages}
@@ -179,6 +176,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
       <TypingIndicator roomId={roomId} users={users} />
+      {room.is_personal && room.created_by === user?.id && (
+        <DailyJournalForm roomId={roomId} userId={user.id} />
+      )}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
           в новостном — только админ. Комментировать можно через треды. */}
       {(!room.is_personal || room.created_by === user?.id) &&
