@@ -28,6 +28,7 @@ class RoomOut(BaseModel):
     unread_count: int = 0
     is_personal: bool = False
     created_by: int = 0
+    peer_id: int | None = None  # заполняется только для type='dm'
 
 
 class AddMemberRequest(BaseModel):

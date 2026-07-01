@@ -5,6 +5,7 @@ import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
 import { threadKey } from '../api/threads'
 import { useAuth } from '../features/auth/AuthContext'
+import { http } from '../lib/apiClient'
 import { wsClient } from '../lib/wsClient'
 import type { RoomOut, WsEvent } from '../lib/types'
 import { useUiStore } from '../stores/ui'
@@ -37,11 +38,12 @@ export function useRealtime(): void {
   const { data: rooms } = useRooms()
   const markTyping = useUiStore((s) => s.markTyping)
   const setOnline = useUiStore((s) => s.setOnline)
+  const setDmPeer = useUiStore((s) => s.setDmPeer)
   const meRef = useRef(user?.id ?? -1)
   meRef.current = user?.id ?? -1
   const subscribed = useRef<Set<number>>(new Set())
 
-  // Подписка на все комнаты юзера (live-сообщения и unread по всем).
+  // Подписка на все комнаты + заполняем dmPeers из peer_id, который отдаёт API.
   useEffect(() => {
     if (!rooms) return
     for (const r of rooms) {
@@ -49,8 +51,19 @@ export function useRealtime(): void {
         subscribed.current.add(r.id)
         wsClient.subscribe(r.id)
       }
+      if (r.type === 'dm' && r.peer_id != null) {
+        setDmPeer(r.id, r.peer_id)
+      }
     }
-  }, [rooms])
+  }, [rooms, setDmPeer])
+
+  // Снепшот онлайн-пользователей при загрузке, чтобы индикаторы не были пустыми.
+  useEffect(() => {
+    if (!user) return
+    http.get<number[]>('/api/users/presence').then((online) => {
+      for (const id of online) setOnline(id, true)
+    }).catch(() => {})
+  }, [user, setOnline])
 
   useEffect(() => {
     return wsClient.on((e: WsEvent) => {

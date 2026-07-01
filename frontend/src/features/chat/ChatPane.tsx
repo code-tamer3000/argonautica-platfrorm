@@ -102,7 +102,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   }
 
   const title = roomTitle(room, dmPeers, users)
-  const peerId = room.type === 'dm' ? dmPeers[roomId] : undefined
+  const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
 
   function openHeaderInfo() {

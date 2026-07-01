@@ -23,7 +23,7 @@ interface RoomButtonProps {
 
 function RoomButton({ r, selectedId, onSelect, dmPeers, online, users }: RoomButtonProps) {
   const title = roomTitle(r, dmPeers, users)
-  const peer = r.type === 'dm' ? dmPeers[r.id] : undefined
+  const peer = r.type === 'dm' ? (dmPeers[r.id] ?? r.peer_id) : undefined
   const isOnline = peer != null && online.includes(peer)
   return (
     <button

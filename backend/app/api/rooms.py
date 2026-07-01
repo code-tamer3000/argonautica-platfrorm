@@ -172,10 +172,24 @@ async def list_rooms(
         room_id: count for room_id, count in unread_rows.all()
     }
 
+    # peer_id для dm-комнат — одним батч-запросом вместо N+1.
+    dm_room_ids = [r.id for r in rooms if r.type == "dm"]
+    dm_peer_map: dict[int, int] = {}
+    if dm_room_ids:
+        peer_rows = await session.execute(
+            select(RoomMember.room_id, RoomMember.user_id).where(
+                RoomMember.room_id.in_(dm_room_ids),
+                RoomMember.user_id != current_user.id,
+            )
+        )
+        dm_peer_map = {rid: uid for rid, uid in peer_rows.all()}
+
     out: list[RoomOut] = []
     for room in rooms:
         item = RoomOut.model_validate(room)
         item.unread_count = unread.get(room.id, 0)
+        if room.type == "dm":
+            item.peer_id = dm_peer_map.get(room.id)
         out.append(item)
     return out
 

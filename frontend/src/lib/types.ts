@@ -42,6 +42,7 @@ export interface RoomOut {
   unread_count: number
   is_personal: boolean
   created_by: number
+  peer_id?: number
 }
 
 export interface MemberOut {
