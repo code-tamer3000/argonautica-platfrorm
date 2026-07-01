@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
-import { IconPlus, IconUsers } from '../../components/icons'
+import { IconBook, IconChat, IconPin, IconPlus, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import type { PublicUserOut, RoomOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
@@ -12,6 +12,8 @@ import { NewGroupModal } from './NewGroupModal'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
 
+type Tab = 'chats' | 'channels'
+
 interface RoomButtonProps {
   r: RoomOut
   selectedId: number | null
@@ -19,9 +21,10 @@ interface RoomButtonProps {
   dmPeers: Record<number, number>
   online: number[]
   users: Map<number, PublicUserOut>
+  pinned?: boolean
 }
 
-function RoomButton({ r, selectedId, onSelect, dmPeers, online, users }: RoomButtonProps) {
+function RoomButton({ r, selectedId, onSelect, dmPeers, online, users, pinned }: RoomButtonProps) {
   const title = roomTitle(r, dmPeers, users)
   const peer = r.type === 'dm' ? (dmPeers[r.id] ?? r.peer_id) : undefined
   const isOnline = peer != null && online.includes(peer)
@@ -36,10 +39,11 @@ function RoomButton({ r, selectedId, onSelect, dmPeers, online, users }: RoomBut
       </span>
       <span className={styles.roomMain}>
         <span className={styles.roomTitle}>
-          {r.type === 'channel' && !r.is_personal ? '# ' : ''}
+          {r.type === 'channel' && !r.is_personal && !r.is_news ? '# ' : ''}
           {title}
+          {pinned && <IconPin size={13} className={styles.roomPinIcon} />}
         </span>
-        <span className={styles.roomSub}>{subLabel(r.type, r.is_personal)}</span>
+        <span className={styles.roomSub}>{subLabel(r)}</span>
       </span>
       {r.unread_count > 0 && <span className={styles.unread}>{r.unread_count}</span>}
     </button>
@@ -51,9 +55,10 @@ interface Props {
   onSelect: (id: number) => void
 }
 
-const subLabel = (type: string, isPersonal = false): string =>
-  isPersonal ? 'Личный канал' :
-  type === 'channel' ? 'Канал' : type === 'group' ? 'Группа' : 'Личный чат'
+const subLabel = (r: RoomOut): string =>
+  r.is_news ? 'Новостной канал' :
+  r.is_personal ? 'Личный канал' :
+  r.type === 'channel' ? 'Канал' : r.type === 'group' ? 'Группа' : 'Личный чат'
 
 export function RoomList({ selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()
@@ -61,35 +66,67 @@ export function RoomList({ selectedId, onSelect }: Props) {
   const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const online = useUiStore((s) => s.online)
+  const [tab, setTab] = useState<Tab>('chats')
   const [q, setQ] = useState('')
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
 
-  const { dms, groups, channels } = useMemo(() => {
+  const { dms, groups, pinnedChannels, otherChannels } = useMemo(() => {
     const list = rooms ?? []
     const needle = q.trim().toLowerCase()
     const filtered = needle
       ? list.filter((r) => roomTitle(r, dmPeers, users).toLowerCase().includes(needle))
       : list
+    const channels = filtered.filter((r) => r.type === 'channel')
+
+    // Закреплённые сверху: новостной канал, затем собственный личный канал.
+    const news = channels.find((r) => r.is_news)
+    const mine = channels.find((r) => r.is_personal && r.created_by === me?.id)
+    const pinnedIds = new Set([news?.id, mine?.id].filter((x): x is number => x != null))
+    const pinned: RoomOut[] = []
+    if (news) pinned.push(news)
+    if (mine) pinned.push(mine)
+
     return {
       dms: filtered.filter((r) => r.type === 'dm'),
       groups: filtered.filter((r) => r.type === 'group'),
-      channels: filtered.filter((r) => r.type === 'channel'),
+      pinnedChannels: pinned,
+      otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
     }
-  }, [rooms, q, dmPeers, users])
+  }, [rooms, q, dmPeers, users, me?.id])
+
+  const chatsEmpty = dms.length === 0 && groups.length === 0
+  const channelsEmpty = pinnedChannels.length === 0 && otherChannels.length === 0
 
   return (
     <aside className={styles.list}>
+      <div className={styles.tabs}>
+        <button
+          className={`${styles.tab} ${tab === 'chats' ? styles.tabActive : ''}`}
+          onClick={() => setTab('chats')}
+        >
+          <IconChat size={16} /> Чаты
+        </button>
+        <button
+          className={`${styles.tab} ${tab === 'channels' ? styles.tabActive : ''}`}
+          onClick={() => setTab('channels')}
+        >
+          <IconBook size={16} /> Каналы
+        </button>
+      </div>
+
       <div className={styles.listHead}>
-        <div className={styles.headActions}>
-          <button className={styles.headBtn} onClick={() => setModal('chat')}>
-            <IconPlus size={16} /> Новый чат
-          </button>
-          {me?.can_create_groups && (
-            <button className={styles.headBtn} onClick={() => setModal('group')}>
-              <IconUsers size={16} /> Группа
+        {tab === 'chats' && (
+          <div className={styles.headActions}>
+            <button className={styles.headBtn} onClick={() => setModal('chat')}>
+              <IconPlus size={16} /> Новый чат
             </button>
-          )}
-        </div>
+            {me?.can_create_groups && (
+              <button className={styles.headBtn} onClick={() => setModal('group')}>
+                <IconUsers size={16} /> Группа
+              </button>
+            )}
+          </div>
+        )}
         <input
           className={styles.search}
           placeholder="Поиск"
@@ -116,31 +153,51 @@ export function RoomList({ selectedId, onSelect }: Props) {
           }}
         />
       )}
+
       <div className={styles.rooms}>
         {isLoading && (
           <div className="center" style={{ padding: 24 }}>
             <Spinner />
           </div>
         )}
-        {rooms && dms.length === 0 && groups.length === 0 && channels.length === 0 && (
-          <div className="muted" style={{ padding: 16, fontSize: 14 }}>Чатов нет</div>
-        )}
-        {dms.length > 0 && (
+
+        {tab === 'chats' && (
           <>
-            <div className={styles.sectionHeader}>Чаты</div>
-            {dms.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+            {rooms && chatsEmpty && (
+              <div className="muted" style={{ padding: 16, fontSize: 14 }}>Чатов нет</div>
+            )}
+            {dms.length > 0 && (
+              <>
+                <div className={styles.sectionHeader}>Чаты</div>
+                {dms.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+              </>
+            )}
+            {groups.length > 0 && (
+              <>
+                <div className={styles.sectionHeader}>Группы</div>
+                {groups.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+              </>
+            )}
           </>
         )}
-        {groups.length > 0 && (
+
+        {tab === 'channels' && (
           <>
-            <div className={styles.sectionHeader}>Группы</div>
-            {groups.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
-          </>
-        )}
-        {channels.length > 0 && (
-          <>
-            <div className={styles.sectionHeader}>Каналы</div>
-            {channels.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+            {rooms && channelsEmpty && (
+              <div className="muted" style={{ padding: 16, fontSize: 14 }}>Каналов нет</div>
+            )}
+            {pinnedChannels.length > 0 && (
+              <>
+                <div className={styles.sectionHeader}>Закреплённые</div>
+                {pinnedChannels.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} pinned />)}
+              </>
+            )}
+            {otherChannels.length > 0 && (
+              <>
+                <div className={styles.sectionHeader}>Все каналы</div>
+                {otherChannels.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+              </>
+            )}
           </>
         )}
       </div>

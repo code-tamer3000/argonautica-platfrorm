@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useDeleteMessage, useEditMessage } from '../../api/messages'
 import { usePin } from '../../api/pins'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
 import { timeHM } from '../../lib/format'
+import { renderMarkdown } from '../../lib/markdown'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
 import { Attachment } from './Attachment'
@@ -52,6 +53,10 @@ export function MessageItem({
 
   const name = author?.display_name ?? `Участник #${msg.sender_id}`
   const sticker = msg.sticker_id != null ? stickerMap.get(msg.sticker_id) : undefined
+  const contentHtml = useMemo(
+    () => (msg.content ? renderMarkdown(msg.content) : ''),
+    [msg.content],
+  )
 
   const isEditing = editingId === msg.id
   const canEdit = user?.id === msg.sender_id
@@ -105,7 +110,12 @@ export function MessageItem({
           </div>
         ) : (
           <>
-            {msg.content && <div className={styles.msgText}>{msg.content}</div>}
+            {msg.content && (
+              <div
+                className={`${styles.msgText} ${styles.markdown}`}
+                dangerouslySetInnerHTML={{ __html: contentHtml }}
+              />
+            )}
 
             {msg.sticker_id != null && (
               sticker?.image_url

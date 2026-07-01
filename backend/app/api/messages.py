@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import cast, distinct, extract, func, select, update
 from sqlalchemy import Date as SqlDate
+from sqlalchemy import cast, distinct, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -98,6 +98,14 @@ async def send_message(
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 "Only the channel owner can post here; use threads to comment",
+            )
+
+    # Новостной канал: верхнеуровневые посты — только admin. Комментарии (треды) — все.
+    if room.is_news and current_user.role != "admin":
+        if body.reply_to_message_id is None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only admins can post to the news channel; use threads to comment",
             )
 
     if body.sticker_id is not None and await session.get(Sticker, body.sticker_id) is None:
@@ -487,7 +495,11 @@ async def get_message_dates(
     await assert_room_access(session, room, current_user)
 
     start = datetime(year, month, 1, tzinfo=UTC)
-    end = datetime(year + 1, 1, 1, tzinfo=UTC) if month == 12 else datetime(year, month + 1, 1, tzinfo=UTC)
+    end = (
+        datetime(year + 1, 1, 1, tzinfo=UTC)
+        if month == 12
+        else datetime(year, month + 1, 1, tzinfo=UTC)
+    )
 
     rows = await session.execute(
         select(distinct(cast(Message.created_at, SqlDate)))

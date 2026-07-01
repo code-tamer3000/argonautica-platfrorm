@@ -6,10 +6,14 @@
 лениво только под `last_read_message_id`.
 """
 from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.room import Room, RoomMember
 from app.models.user import User
+
+NEWS_CHANNEL_NAME = "Новости"
 
 
 async def load_room(session: AsyncSession, room_id: int) -> Room:
@@ -50,6 +54,45 @@ def assert_can_pin(room: Room, user: User, membership: RoomMember | None) -> Non
     if room.type == "dm" and membership is not None:
         return
     raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to pin in this room")
+
+
+async def ensure_news_channel(session: AsyncSession) -> Room | None:
+    """Гарантировать существование единственного новостного канала.
+
+    Создаётся лениво на старте: нужен `created_by` = первый admin. Если админов
+    ещё нет (совсем свежая БД) — пропускаем, создастся при следующем старте после
+    сидирования. Частичный уникальный индекс (uq_rooms_single_news) страхует от
+    гонки blue/green — параллельный INSERT упадёт с IntegrityError, ловим.
+    """
+    existing = (
+        await session.execute(select(Room).where(Room.is_news.is_(True)))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    admin_id = (
+        await session.execute(
+            select(User.id).where(User.role == "admin").order_by(User.id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if admin_id is None:
+        return None  # некому владеть — создадим на следующем старте
+
+    room = Room(
+        type="channel",
+        name=NEWS_CHANNEL_NAME,
+        is_news=True,
+        created_by=admin_id,
+    )
+    session.add(room)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        return (
+            await session.execute(select(Room).where(Room.is_news.is_(True)))
+        ).scalar_one_or_none()
+    return room
 
 
 async def get_or_create_channel_membership(

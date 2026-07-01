@@ -21,7 +21,8 @@ import { UserProfileModal } from './UserProfileModal'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
 
-const subLabel = (type: string, isPersonal = false): string =>
+const subLabel = (type: string, isPersonal = false, isNews = false): string =>
+  isNews ? 'Новостной канал' :
   isPersonal ? 'Личный канал' :
   type === 'channel' ? 'Канал' : type === 'group' ? 'Группа' : 'Личный чат'
 
@@ -128,7 +129,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
               {room.type === 'channel' ? '# ' : ''}
               {title}
             </div>
-            <div className={styles.headerSub}>{subLabel(room.type, room.is_personal)}</div>
+            <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
           </div>
         </button>
         <div className={styles.headerActions}>
@@ -165,8 +166,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      {/* В чужом личном канале нельзя писать верхнеуровневые сообщения */}
-      {(!room.is_personal || room.created_by === user?.id) && (
+      {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
+          в новостном — только админ. Комментировать можно через треды. */}
+      {(!room.is_personal || room.created_by === user?.id) &&
+        (!room.is_news || user?.role === 'admin') && (
         <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
       )}
       {threadRootId != null && (
