@@ -11,10 +11,11 @@ import styles from './chat.module.css'
 interface Props {
   roomId: number
   rootId: number
+  canPin?: boolean
   onClose: () => void
 }
 
-export function ThreadPanel({ roomId, rootId, onClose }: Props) {
+export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [text, setText] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -43,30 +44,7 @@ export function ThreadPanel({ roomId, rootId, onClose }: Props) {
   }
 
   return (
-    <Drawer
-      title="Тред"
-      onClose={onClose}
-      footer={
-        <div className={styles.composerRow}>
-          <textarea
-            className={styles.composerInput}
-            rows={1}
-            placeholder="Ответить в тред…"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault()
-                handleSend()
-              }
-            }}
-          />
-          <Button variant="gold" onClick={handleSend} disabled={!text.trim() || send.isPending}>
-            Ответить
-          </Button>
-        </div>
-      }
-    >
+    <Drawer title="Тред" onClose={onClose}>
       {isLoading && (
         <div className="center" style={{ padding: 16 }}>
           <Spinner />
@@ -79,6 +57,7 @@ export function ThreadPanel({ roomId, rootId, onClose }: Props) {
             continuation={false}
             author={users.get(data.root.sender_id)}
             isInThread
+            canPin={canPin}
             editingId={editingId}
             onEdit={(m) => setEditingId(m.id)}
             onClearEdit={() => setEditingId(null)}
@@ -91,11 +70,32 @@ export function ThreadPanel({ roomId, rootId, onClose }: Props) {
               continuation={false}
               author={users.get(r.sender_id)}
               isInThread
+              canPin={canPin}
               editingId={editingId}
               onEdit={(m) => setEditingId(m.id)}
               onClearEdit={() => setEditingId(null)}
             />
           ))}
+          {/* Поле ответа держим в потоке сразу под репликами (а не прибитым к низу
+              панели) — на мобиле фиксированный футер уезжает вместе с клавиатурой. */}
+          <div className={styles.threadReplyRow}>
+            <textarea
+              className={styles.composerInput}
+              rows={1}
+              placeholder="Ответить в тред…"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  handleSend()
+                }
+              }}
+            />
+            <Button variant="gold" onClick={handleSend} disabled={!text.trim() || send.isPending}>
+              Ответить
+            </Button>
+          </div>
         </>
       )}
     </Drawer>
