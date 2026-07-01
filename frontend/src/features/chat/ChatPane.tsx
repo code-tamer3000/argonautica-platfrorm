@@ -105,6 +105,12 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
 
+  // Зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда; group — только
+  // владелец (created_by, роль owner не меняется после создания); dm — оба участника;
+  // channel (в т.ч. личный/новостной) — никому, кроме admin.
+  const canPin = user?.role === 'admin' || room.type === 'dm' ||
+    (room.type === 'group' && room.created_by === user?.id)
+
   function openHeaderInfo() {
     if (room?.type === 'dm') {
       if (peer) setShowProfile(true)
@@ -169,6 +175,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         editingId={editingId}
         selectedMsgId={selectedMsgId}
         highlightedMsgId={highlightedMsgId}
+        canPin={canPin}
         onEdit={(msg) => setEditingId(msg.id)}
         onClearEdit={() => setEditingId(null)}
         onOpenThread={(rootId) => setThreadRootId(rootId)}
@@ -186,7 +193,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         <Composer roomId={roomId} />
       )}
       {threadRootId != null && (
-        <ThreadPanel roomId={roomId} rootId={threadRootId} onClose={() => setThreadRootId(null)} />
+        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />

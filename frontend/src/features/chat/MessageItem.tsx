@@ -18,6 +18,7 @@ interface Props {
   editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
+  canPin?: boolean
   onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
@@ -32,6 +33,7 @@ export function MessageItem({
   editingId,
   isSelected,
   isHighlighted,
+  canPin,
   onEdit,
   onClearEdit,
   onOpenThread,
@@ -165,9 +167,11 @@ export function MessageItem({
               Удалить
             </button>
           )}
-          <button className={styles.actionBtn} onClick={() => pinMutation.mutate(msg.id)}>
-            Закрепить
-          </button>
+          {canPin && (
+            <button className={styles.actionBtn} onClick={() => pinMutation.mutate(msg.id)}>
+              Закрепить
+            </button>
+          )}
         </div>
       </div>
     </div>

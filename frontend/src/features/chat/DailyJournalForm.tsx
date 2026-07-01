@@ -62,7 +62,9 @@ export function DailyJournalForm({ roomId, userId }: Props) {
   const { data: days, refetch } = useJournalDays(roomId, now.getFullYear(), now.getMonth() + 1)
   const todayCats = new Set(days?.[today] ?? [])
   const dayClosed = JOURNAL_CATEGORIES.every((c) => todayCats.has(c))
+  const doneCount = JOURNAL_CATEGORIES.filter((c) => todayCats.has(c)).length
 
+  const [expanded, setExpanded] = useState(false)
   const [active, setActive] = useState<JournalCategory>('focus')
   const cfg = CATS.find((c) => c.key === active)!
   const key = draftKey(userId, today, active)
@@ -98,9 +100,25 @@ export function DailyJournalForm({ roomId, userId }: Props) {
     })
   }
 
+  if (!expanded) {
+    return (
+      <button className={styles.journalBar} onClick={() => setExpanded(true)}>
+        <span>{dayClosed ? '✓ Ежедневные задания выполнены' : '📓 Выполнить ежедневные задания'}</span>
+        {!dayClosed && (
+          <span className={styles.journalBarProgress}>{doneCount}/{JOURNAL_CATEGORIES.length}</span>
+        )}
+      </button>
+    )
+  }
+
   return (
     <div className={styles.journalWrap}>
-      {dayClosed && <div className={styles.journalDone}>✓ День закрыт — опубликованы все категории</div>}
+      <div className={styles.journalHead}>
+        {dayClosed && <div className={styles.journalDone}>✓ День закрыт — опубликованы все категории</div>}
+        <button className={styles.journalCollapse} onClick={() => setExpanded(false)}>
+          Свернуть ▲
+        </button>
+      </div>
 
       <div className={styles.journalTabs}>
         {CATS.map((c) => (

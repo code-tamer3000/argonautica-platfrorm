@@ -19,6 +19,7 @@ interface Props {
   editingId?: number | null
   selectedMsgId?: number | null
   highlightedMsgId?: number | null
+  canPin?: boolean
   onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
@@ -27,7 +28,7 @@ interface Props {
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
-  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
+  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId, canPin,
     onEdit, onClearEdit, onOpenThread, onSelectMsg, onAtBottomChange },
   ref,
 ) {
@@ -91,6 +92,7 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
+              canPin={canPin}
               onEdit={onEdit}
               onClearEdit={onClearEdit}
               onOpenThread={onOpenThread}

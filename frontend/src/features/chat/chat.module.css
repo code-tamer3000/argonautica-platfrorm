@@ -207,6 +207,7 @@
 }
 
 .threadDivider { border-bottom: 1px solid var(--color-frame-deep); margin: var(--space-2) 0 var(--space-3); }
+.threadReplyRow { display: flex; align-items: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
 
 .msg { display: flex; gap: var(--space-3); padding: 2px 0; }
 .msgAvatar { width: 36px; flex: 0 0 36px; }
@@ -523,6 +524,17 @@
 }
 
 /* --- Форма дневника --- */
+.journalBar {
+  display: flex; align-items: center; justify-content: space-between;
+  flex: 0 0 auto; width: 100%; box-sizing: border-box;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface); color: var(--text-secondary);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  cursor: pointer; transition: var(--transition-base);
+}
+.journalBar:hover { color: var(--text-primary); background: rgba(19, 78, 69, 0.08); }
+.journalBarProgress { color: var(--text-ghost); }
 .journalWrap {
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-frame-deep);
@@ -530,6 +542,14 @@
   display: flex; flex-direction: column; gap: var(--space-2);
   flex: 0 0 auto;
 }
+.journalHead { display: flex; align-items: center; gap: var(--space-3); }
+.journalCollapse {
+  margin-left: auto;
+  background: transparent; border: none; color: var(--text-ghost);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  cursor: pointer; padding: 2px var(--space-2);
+}
+.journalCollapse:hover { color: var(--text-primary); }
 .journalDone {
   font-size: var(--text-label-md); color: var(--accent);
   padding: var(--space-2) 0;
