@@ -76,11 +76,20 @@ def presigned_get_url(
     bucket: str,
     key: str,
     expires: int = _PRESIGN_EXPIRES,
+    download_name: str | None = None,
 ) -> str:
-    """Короткоживущий URL для чтения (GET). MinIO поддерживает range-запросы (перемотка видео)."""
+    """Короткоживущий URL для чтения (GET). MinIO поддерживает range-запросы (перемотка видео).
+
+    `download_name` задаёт `Content-Disposition: attachment` — браузер СКАЧИВАЕТ файл
+    (а не открывает инлайн). Кросс-доменный html-атрибут `download` игнорируется, поэтому
+    скачивание форсим на стороне хранилища через подписанный response-параметр.
+    """
+    params: dict[str, str] = {"Bucket": bucket, "Key": key}
+    if download_name is not None:
+        params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
     url: str = _presign_client().generate_presigned_url(
         ClientMethod="get_object",
-        Params={"Bucket": bucket, "Key": key},
+        Params=params,
         ExpiresIn=expires,
     )
     return url

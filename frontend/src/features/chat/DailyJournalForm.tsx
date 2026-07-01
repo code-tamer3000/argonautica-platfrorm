@@ -1,5 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useMessageDates, useSendMessage } from '../../api/messages'
+import {
+  JOURNAL_CATEGORIES,
+  useJournalDays,
+  useSendMessage,
+  type JournalCategory,
+} from '../../api/messages'
 import styles from './chat.module.css'
 
 interface Props {
@@ -7,75 +12,87 @@ interface Props {
   userId: number
 }
 
+interface CatConfig {
+  key: JournalCategory
+  tab: string          // короткая подпись на кнопке-табе
+  heading: string      // markdown-заголовок публикуемой записи
+  label: string        // подпись поля ввода
+  placeholder: string
+  multiline: boolean
+}
+
+const CATS: CatConfig[] = [
+  {
+    key: 'focus',
+    tab: '🎯 Фокус',
+    heading: '## 🎯 Фокус на день',
+    label: 'Фокус / концентрация дня',
+    placeholder: 'На чём фокусируешься сегодня?',
+    multiline: true,
+  },
+  {
+    key: 'notes',
+    tab: '📝 Заметки',
+    heading: '## 📝 Заметки',
+    label: 'Заметки',
+    placeholder: 'Мысли, события, наблюдения… можно со ссылками',
+    multiline: true,
+  },
+  {
+    key: 'film',
+    tab: '🎬 Фильм дня',
+    heading: '',  // название фильма само по себе — заголовок (см. publish)
+    label: 'Как бы ты назвал фильм про сегодняшний день?',
+    placeholder: 'Название дня…',
+    multiline: false,
+  },
+]
+
 function currentDateStr() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-function draftKey(userId: number, dateStr: string) {
-  return `journal-draft-${userId}-${dateStr}`
-}
-
-interface Draft {
-  intention: string
-  notes: string
-  dayTitle: string
-}
+const draftKey = (userId: number, date: string, cat: JournalCategory) =>
+  `journal-draft-${userId}-${date}-${cat}`
 
 export function DailyJournalForm({ roomId, userId }: Props) {
   const today = currentDateStr()
   const now = new Date()
-  const { data: dates, refetch } = useMessageDates(roomId, now.getFullYear(), now.getMonth() + 1)
-  const todayHasEntry = (dates ?? []).includes(today)
+  const { data: days, refetch } = useJournalDays(roomId, now.getFullYear(), now.getMonth() + 1)
+  const todayCats = new Set(days?.[today] ?? [])
+  const dayClosed = JOURNAL_CATEGORIES.every((c) => todayCats.has(c))
 
-  const key = draftKey(userId, today)
-  function loadDraft(): Draft {
-    try {
-      const raw = localStorage.getItem(key)
-      if (raw) return JSON.parse(raw) as Draft
-    } catch { /* ignore */ }
-    return { intention: '', notes: '', dayTitle: '' }
-  }
+  const [active, setActive] = useState<JournalCategory>('focus')
+  const cfg = CATS.find((c) => c.key === active)!
+  const key = draftKey(userId, today, active)
 
-  const [intention, setIntention] = useState(() => loadDraft().intention)
-  const [notes, setNotes] = useState(() => loadDraft().notes)
-  const [dayTitle, setDayTitle] = useState(() => loadDraft().dayTitle)
+  const [text, setText] = useState('')
+  // При переключении категории — подтянуть её черновик из localStorage.
+  useEffect(() => {
+    setText(localStorage.getItem(draftKey(userId, today, active)) ?? '')
+  }, [active, userId, today])
+
+  // Автосохранение черновика активной категории.
+  useEffect(() => {
+    if (text) localStorage.setItem(key, text)
+    else localStorage.removeItem(key)
+  }, [text, key])
+
   const sendMessage = useSendMessage(roomId)
 
-  // Авто-сохранение черновика в localStorage
-  useEffect(() => {
-    localStorage.setItem(key, JSON.stringify({ intention, notes, dayTitle }))
-  }, [intention, notes, dayTitle, key])
-
-  if (todayHasEntry) {
-    return (
-      <div className={styles.journalWrap}>
-        <div className={styles.journalDone}>✓ Запись дня опубликована</div>
-      </div>
-    )
-  }
-
   function publish() {
-    if (!intention.trim() || !dayTitle.trim()) return
-    // Markdown: заголовок дня + секции. Ссылки в тексте станут кликабельными.
-    const parts = [
-      `## 🎬 ${dayTitle.trim()}`,
-      '',
-      '**🎯 Намерение / концентрация**',
-      '',
-      intention.trim(),
-    ]
-    if (notes.trim()) {
-      parts.push('', '**📝 Заметки**', '', notes.trim())
-    }
-    const content = parts.join('\n')
+    const value = text.trim()
+    if (!value) return
+    // Маркер категории (невидим после рендера) + markdown-тело. Ссылки станут кликабельны.
+    const heading = cfg.key === 'film' ? `## 🎬 ${value}` : cfg.heading
+    const body = cfg.key === 'film' ? '' : `\n\n${value}`
+    const content = `<!--journal:${cfg.key}-->\n\n${heading}${body}`
 
     sendMessage.mutate({ content }, {
       onSuccess: () => {
         localStorage.removeItem(key)
-        setIntention('')
-        setNotes('')
-        setDayTitle('')
+        setText('')
         void refetch()
       },
     })
@@ -83,41 +100,51 @@ export function DailyJournalForm({ roomId, userId }: Props) {
 
   return (
     <div className={styles.journalWrap}>
-      <div className={styles.journalField}>
-        <label className={styles.journalLabel}>Намерение / концентрация дня</label>
-        <textarea
-          className={styles.journalTextarea}
-          placeholder="На чём фокусируешься сегодня?"
-          value={intention}
-          onChange={e => setIntention(e.target.value)}
-          rows={2}
-        />
+      {dayClosed && <div className={styles.journalDone}>✓ День закрыт — опубликованы все категории</div>}
+
+      <div className={styles.journalTabs}>
+        {CATS.map((c) => (
+          <button
+            key={c.key}
+            className={`${styles.journalTab} ${active === c.key ? styles.journalTabActive : ''}`}
+            onClick={() => setActive(c.key)}
+          >
+            {c.tab}
+            {todayCats.has(c.key) && <span className={styles.journalCheck}>✓</span>}
+          </button>
+        ))}
       </div>
+
       <div className={styles.journalField}>
-        <label className={styles.journalLabel}>Заметки</label>
-        <textarea
-          className={styles.journalTextarea}
-          placeholder="Мысли, события, наблюдения..."
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          rows={3}
-        />
+        <label className={styles.journalLabel}>{cfg.label}</label>
+        {cfg.multiline ? (
+          <textarea
+            className={styles.journalTextarea}
+            placeholder={cfg.placeholder}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={3}
+          />
+        ) : (
+          <input
+            className={styles.journalInput}
+            placeholder={cfg.placeholder}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        )}
       </div>
-      <div className={styles.journalField}>
-        <label className={styles.journalLabel}>Как бы ты назвал фильм про сегодняшний день?</label>
-        <input
-          className={styles.journalInput}
-          placeholder="Название дня..."
-          value={dayTitle}
-          onChange={e => setDayTitle(e.target.value)}
-        />
-      </div>
+
       <button
         className={styles.journalPublish}
         onClick={publish}
-        disabled={!intention.trim() || !dayTitle.trim() || sendMessage.isPending}
+        disabled={!text.trim() || sendMessage.isPending}
       >
-        {sendMessage.isPending ? 'Публикую...' : 'Опубликовать'}
+        {sendMessage.isPending
+          ? 'Публикую…'
+          : todayCats.has(active)
+            ? 'Опубликовать ещё'
+            : 'Опубликовать'}
       </button>
     </div>
   )

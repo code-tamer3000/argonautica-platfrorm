@@ -10,7 +10,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import Date as SqlDate
-from sqlalchemy import cast, distinct, func, select, update
+from sqlalchemy import cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -482,15 +482,34 @@ async def list_pins(
     return [_pinned_out(p, m, attachments.get(m.id, [])) for p, m in pairs]
 
 
-@router.get("/{room_id}/message-dates", response_model=list[str])
-async def get_message_dates(
+# Категории дневника личного канала. Маркер — HTML-комментарий в начале content:
+# невидим после markdown-рендера (DOMPurify вырезает комментарии), но надёжно
+# распознаётся сервером (без ложных срабатываний на обычный текст). День «закрыт»,
+# когда за сутки опубликованы все три категории.
+JOURNAL_CATEGORIES = ("focus", "notes", "film")
+
+
+def _journal_category(content: str | None) -> str | None:
+    if not content:
+        return None
+    for cat in JOURNAL_CATEGORIES:
+        if content.startswith(f"<!--journal:{cat}-->"):
+            return cat
+    return None
+
+
+@router.get("/{room_id}/journal-days", response_model=dict[str, list[str]])
+async def get_journal_days(
     room_id: int,
     year: Annotated[int, Query(ge=2020, le=2100)],
     month: Annotated[int, Query(ge=1, le=12)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[str]:
-    """Даты (YYYY-MM-DD), в которые есть верхнеуровневые сообщения — для calendar-UI."""
+) -> dict[str, list[str]]:
+    """Карта {дата YYYY-MM-DD: [категории]} за месяц — для дневника/календаря.
+
+    День считается закрытым, когда список содержит все три категории (focus/notes/film).
+    """
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
 
@@ -502,7 +521,7 @@ async def get_message_dates(
     )
 
     rows = await session.execute(
-        select(distinct(cast(Message.created_at, SqlDate)))
+        select(cast(Message.created_at, SqlDate), Message.content)
         .where(
             Message.room_id == room_id,
             Message.deleted_at.is_(None),
@@ -510,6 +529,16 @@ async def get_message_dates(
             Message.created_at >= start,
             Message.created_at < end,
         )
-        .order_by(cast(Message.created_at, SqlDate))
     )
-    return [str(d) for d in rows.scalars().all()]
+    per_day: dict[str, set[str]] = {}
+    for day, content in rows.all():
+        cat = _journal_category(content)
+        if cat is None:
+            continue
+        per_day.setdefault(str(day), set()).add(cat)
+
+    # Стабильный порядок категорий (focus, notes, film) — как в JOURNAL_CATEGORIES.
+    order = {c: i for i, c in enumerate(JOURNAL_CATEGORIES)}
+    return {
+        day: sorted(cats, key=lambda c: order[c]) for day, cats in per_day.items()
+    }

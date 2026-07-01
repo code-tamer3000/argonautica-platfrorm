@@ -28,8 +28,9 @@ else
 fi
 echo ">> active=$CURRENT, deploying → $TARGET"
 
-# 1. Свежий образ (общий platform-backend:latest для обоих цветов).
-$DC build "backend-$TARGET"
+# 1. Свежие образы: backend (общий platform-backend:latest для обоих цветов) + frontend
+#    (в его образ впечён npm-build SPA — без пересборки прод показывал бы старый UI).
+$DC build "backend-$TARGET" frontend
 
 # 2. Миграции expand/contract ДО переключения (совместимы с живым $CURRENT).
 $DC run --rm migrate
@@ -56,7 +57,11 @@ sed -i "s/backend-$CURRENT:8000/backend-$TARGET:8000/" "$ACTIVE_CONF"
 $DC exec -T nginx nginx -s reload
 echo ">> трафик переключён → backend-$TARGET"
 
-# 6. Дренаж WS (клиент реконнектится) и остановка старого цвета.
+# 6. Обновить frontend-контейнер на свежесобранном образе. Статика, пересоздание
+#    занимает доли секунды; nginx проксирует по имени сервиса `frontend` → подхватит.
+$DC up -d --no-deps frontend
+
+# 7. Дренаж WS (клиент реконнектится) и остановка старого цвета.
 sleep "$DRAIN_SECONDS"
 $DC stop "backend-$CURRENT"
 echo ">> готово. Откат: вернуть $ACTIVE_CONF на backend-$CURRENT, nginx -s reload, поднять его."
