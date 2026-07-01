@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
+import { IconBook, IconCalendar, IconChat, IconSettings, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
@@ -19,6 +20,9 @@ import styles from './appshell.module.css'
 
 export function AppShell() {
   const { user, logout } = useAuth()
+  const location = useLocation()
+  // Корневой сегмент пути — ключ для анимации появления при смене вкладки.
+  const sectionKey = '/' + (location.pathname.split('/')[1] ?? '')
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -43,24 +47,29 @@ export function AppShell() {
       <div className={styles.body}>
         <nav className={styles.sidenav}>
           <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
-            <span className={styles.navIcon}>💬</span> Чат
+            <span className={styles.navIcon}><IconChat /></span>
+            <span className={styles.navLabel}>Чат</span>
           </NavLink>
           <NavLink to="/kb" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}>📚</span> База знаний
+            <span className={styles.navIcon}><IconBook /></span>
+            <span className={styles.navLabel}>База знаний</span>
           </NavLink>
           <NavLink to="/calendar" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}>📅</span> Календарь
+            <span className={styles.navIcon}><IconCalendar /></span>
+            <span className={styles.navLabel}>Календарь</span>
           </NavLink>
           <NavLink to="/profile" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}>👤</span> Профиль
+            <span className={styles.navIcon}><IconUser /></span>
+            <span className={styles.navLabel}>Профиль</span>
           </NavLink>
           {user?.role === 'admin' && (
             <NavLink to="/admin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-              <span className={styles.navIcon}>⚙️</span> Управление
+              <span className={styles.navIcon}><IconSettings /></span>
+              <span className={styles.navLabel}>Управление</span>
             </NavLink>
           )}
         </nav>
-        <main className={styles.content}>
+        <main key={sectionKey} className={`${styles.content} ${styles.contentEnter}`}>
           <Routes>
             <Route path="/" element={<ChatLayout />} />
             <Route path="/kb" element={<KbList />} />

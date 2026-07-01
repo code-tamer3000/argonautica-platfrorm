@@ -139,8 +139,10 @@
   --divider-thickness: 1px;
   --hairline:        1px solid var(--divider-gold);
 
+  --ease-out-soft:     cubic-bezier(0.22, 1, 0.36, 1);
   --transition-fade:   opacity 200ms ease;
   --transition-color:  color 200ms ease, background-color 200ms ease;
+  --transition-base:   color 180ms ease, background-color 180ms ease, border-color 180ms ease, transform 180ms var(--ease-out-soft), box-shadow 180ms ease;
   --transition-slow:   all 800ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 

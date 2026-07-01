@@ -4,6 +4,11 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root { height: 100%; }
+/* Приложение — фикс-оболочка на весь экран: страницы скроллятся ВНУТРИ своих панелей,
+   сама страница не должна прокручиваться ни по горизонтали, ни по вертикали.
+   overflow-x:hidden + max-width гарантируют, что ни один широкий элемент не «вытолкнет»
+   макет вбок на узких экранах (частая причина «край приложения уехал вправо»). */
+html, body, #root { max-width: 100%; overflow-x: hidden; }
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 body {
@@ -41,6 +46,13 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--d
 *::-webkit-scrollbar-thumb:hover { background: var(--color-latun); }
 
 @keyframes arg-spin { to { transform: rotate(360deg); } }
+
+/* Появление: fade + лёгкий подъём (по гайдлайну дизайн-системы — drift вверх, без пружин) */
+@keyframes arg-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: arg-rise 320ms var(--ease-out-soft) both; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }

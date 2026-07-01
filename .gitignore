@@ -24,6 +24,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+.claude/
 
 # TLS-серты (self-signed локально / боевые на сервере) — никогда в git.
 docker/nginx/certs/

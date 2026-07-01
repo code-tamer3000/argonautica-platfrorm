@@ -106,3 +106,7 @@
   display: flex;
   gap: var(--space-3);
 }
+
+@media (max-width: 768px) {
+  .page { padding: var(--space-4) var(--space-4); }
+}

@@ -48,12 +48,13 @@
   background: var(--bg-surface);
   text-decoration: none;
   color: var(--text-primary);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: var(--transition-base);
 }
 
 .card:hover {
   border-color: var(--divider-gold);
   box-shadow: var(--glow-gold);
+  transform: translateY(-2px);
 }
 
 .cardHead {
@@ -204,4 +205,9 @@
   margin-top: var(--space-6);
   padding-top: var(--space-6);
   border-top: 1px solid var(--divider);
+}
+
+/* ───── Мобила: убираем широкие поля страницы ───── */
+@media (max-width: 768px) {
+  .page { padding: var(--space-4) var(--space-4); }
 }

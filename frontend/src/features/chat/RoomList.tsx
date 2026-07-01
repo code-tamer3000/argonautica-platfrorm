@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
+import { IconPlus, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
@@ -39,11 +40,11 @@ export function RoomList({ selectedId, onSelect }: Props) {
       <div className={styles.listHead}>
         <div className={styles.headActions}>
           <button className={styles.headBtn} onClick={() => setModal('chat')}>
-            ✏️ Новый чат
+            <IconPlus size={16} /> Новый чат
           </button>
           {me?.can_create_groups && (
             <button className={styles.headBtn} onClick={() => setModal('group')}>
-              👥 Группа
+              <IconUsers size={16} /> Группа
             </button>
           )}
         </div>

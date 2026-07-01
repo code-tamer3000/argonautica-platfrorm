@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useMediaUrl } from '../../api/media'
+import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
 import { guessMediaKind } from '../../lib/mediaUpload'
 import styles from './chat.module.css'
@@ -20,7 +21,7 @@ export function Attachment({ assetId }: { assetId: number }) {
   if (kind === 'video') return <video className={styles.attVideo} src={data.url} controls />
   return (
     <a className={styles.attFile} href={data.url} target="_blank" rel="noreferrer">
-      📎 Скачать файл
+      <IconAttach size={16} /> Скачать файл
     </a>
   )
 }

@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useSendMessage, type SendBody } from '../../api/messages'
 import { Button } from '../../components/Button'
+import { IconAttach, IconSmile } from '../../components/icons'
 import { mediaUpload } from '../../lib/mediaUpload'
 import type { MediaAssetOut, MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -77,8 +78,9 @@ export function Composer({ roomId, replyTo, onClearReply }: Props) {
     <div className={styles.composer}>
       {replyTo && (
         <div className={styles.contextBar}>
-          <span>↩ {replyTo.content?.slice(0, 60) ?? '[стикер/вложение]'}</span>
-          <button className={styles.iconBtn} onClick={() => onClearReply?.()}>✕</button>
+          <span className={styles.ctxLabel}>Ответ</span>
+          <span>{replyTo.content?.slice(0, 60) ?? '[стикер/вложение]'}</span>
+          <button className={styles.pendingChipX} onClick={() => onClearReply?.()} aria-label="Отменить ответ">✕</button>
         </div>
       )}
 
@@ -86,8 +88,17 @@ export function Composer({ roomId, replyTo, onClearReply }: Props) {
         <div className={styles.pendingAtt}>
           {pendingFiles.map(a => (
             <span key={a.id} className={styles.pendingChip}>
-              {a.kind === 'image' ? '🖼' : a.kind === 'video' ? '🎬' : '📎'} {a.id}
-              <button onClick={() => setPendingFiles(prev => prev.filter(f => f.id !== a.id))}>✕</button>
+              <IconAttach size={13} />
+              <span className={styles.pendingChipLabel}>
+                {a.kind === 'image' ? 'Изображение' : a.kind === 'video' ? 'Видео' : 'Файл'}
+              </span>
+              <button
+                className={styles.pendingChipX}
+                onClick={() => setPendingFiles(prev => prev.filter(f => f.id !== a.id))}
+                aria-label="Убрать вложение"
+              >
+                ✕
+              </button>
             </span>
           ))}
         </div>
@@ -102,21 +113,23 @@ export function Composer({ roomId, replyTo, onClearReply }: Props) {
         onChange={handleFileChange}
       />
 
-      <div style={{ display: 'flex', gap: 4, alignItems: 'flex-end' }}>
+      <div className={styles.composerRow}>
         <button
           className={styles.iconBtn}
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           title="Прикрепить файл"
+          aria-label="Прикрепить файл"
         >
-          {uploading ? '…' : '📎'}
+          {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
         </button>
         <button
           className={styles.iconBtn}
           onClick={() => setPickerOpen(v => !v)}
           title="Стикер"
+          aria-label="Стикер"
         >
-          😀
+          <IconSmile size={18} />
         </button>
         <textarea
           className={styles.composerInput}
@@ -125,7 +138,6 @@ export function Composer({ roomId, replyTo, onClearReply }: Props) {
           value={text}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKey}
-          style={{ flex: 1 }}
         />
         <Button
           variant="gold"
