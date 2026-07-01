@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useSendMessage } from '../../api/messages'
+import { useEffect, useRef, useState } from 'react'
+import { useMarkRead, useSendMessage } from '../../api/messages'
 import { useThread } from '../../api/threads'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
@@ -42,6 +42,21 @@ export function ThreadPanel({ roomId, rootId, onClose }: Props) {
   const [text, setText] = useState('')
   const send = useSendMessage(roomId)
   const users = useUsersMap()
+  const markRead = useMarkRead(roomId)
+
+  // Открытый тред тоже двигает last_read_message_id — иначе его ответы
+  // (id которых может быть больше, чем у последнего сообщения ленты) вечно
+  // считаются непрочитанными (п.4).
+  const lastReadRef = useRef(0)
+  useEffect(() => {
+    if (!data) return
+    const maxId = Math.max(data.root.id, ...data.replies.map((r) => r.id))
+    if (maxId > lastReadRef.current) {
+      lastReadRef.current = maxId
+      markRead.mutate(maxId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data])
 
   function handleSend() {
     if (!text.trim() || send.isPending) return
