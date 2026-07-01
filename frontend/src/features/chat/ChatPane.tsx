@@ -5,7 +5,6 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import type { MessageOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
 import { ChannelCalendar } from './ChannelCalendar'
@@ -41,11 +40,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     [query.data],
   )
 
-  const [replyTo, setReplyTo] = useState<MessageOut | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [threadRootId, setThreadRootId] = useState<number | null>(null)
   const [showPins, setShowPins] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
+  const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
@@ -53,11 +52,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
-    setReplyTo(null)
     setEditingId(null)
     setThreadRootId(null)
     setShowPins(false)
     setShowMembers(false)
+    setShowCalendar(false)
     setShowProfile(false)
     setSelectedMsgId(null)
     setHighlightedMsgId(null)
@@ -109,8 +108,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   function openHeaderInfo() {
     if (room?.type === 'dm') {
       if (peer) setShowProfile(true)
-    } else {
+    } else if (room?.type === 'group') {
       setShowMembers(true)
+    } else if (room?.is_personal) {
+      setShowCalendar((v) => !v)
     }
   }
 
@@ -122,7 +123,16 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
             <IconBack size={22} />
           </button>
         )}
-        <button className={styles.headerInfo} onClick={openHeaderInfo} title="Открыть профиль">
+        <button
+          className={styles.headerInfo}
+          onClick={openHeaderInfo}
+          title={
+            room.type === 'dm' ? 'Открыть профиль' :
+            room.type === 'group' ? 'Участники' :
+            room.is_personal ? (showCalendar ? 'Свернуть календарь' : 'Развернуть календарь') :
+            undefined
+          }
+        >
           <Avatar name={title} url={roomAvatarUrl(room, dmPeers, users)} square={room.type !== 'dm'} size={40} />
           <div className={styles.headerInfoText}>
             <div className={styles.headerTitle}>
@@ -132,19 +142,23 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
             <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
           </div>
         </button>
-        <div className={styles.headerActions}>
-          <button className={styles.headerIconBtn} onClick={() => setShowPins(v => !v)} title="Закреплённые" aria-label="Закреплённые">
-            <IconPin size={20} />
-          </button>
-          {room.type !== 'dm' && (
-            <button className={styles.headerIconBtn} onClick={() => setShowMembers(v => !v)} title="Участники" aria-label="Участники">
-              <IconUsers size={20} />
+        {room.type !== 'channel' && (
+          <div className={styles.headerActions}>
+            <button className={styles.headerIconBtn} onClick={() => setShowPins(v => !v)} title="Закреплённые" aria-label="Закреплённые">
+              <IconPin size={20} />
             </button>
-          )}
-        </div>
+            {room.type !== 'dm' && (
+              <button className={styles.headerIconBtn} onClick={() => setShowMembers(v => !v)} title="Участники" aria-label="Участники">
+                <IconUsers size={20} />
+              </button>
+            )}
+          </div>
+        )}
       </header>
-      <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} onNavigate={navigateToMessage} />
-      {room.is_personal && <ChannelCalendar roomId={roomId} />}
+      {room.type !== 'channel' && (
+        <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} onNavigate={navigateToMessage} />
+      )}
+      {room.is_personal && showCalendar && <ChannelCalendar roomId={roomId} />}
       {room.is_personal && room.created_by === user?.id && (
         <DailyJournalForm roomId={roomId} userId={user.id} />
       )}
@@ -158,7 +172,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         editingId={editingId}
         selectedMsgId={selectedMsgId}
         highlightedMsgId={highlightedMsgId}
-        onReply={(msg) => setReplyTo(msg)}
         onEdit={(msg) => setEditingId(msg.id)}
         onClearEdit={() => setEditingId(null)}
         onOpenThread={(rootId) => setThreadRootId(rootId)}
@@ -170,7 +183,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           в новостном — только админ. Комментировать можно через треды. */}
       {(!room.is_personal || room.created_by === user?.id) &&
         (!room.is_news || user?.role === 'admin') && (
-        <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+        <Composer roomId={roomId} />
       )}
       {threadRootId != null && (
         <ThreadPanel roomId={roomId} rootId={threadRootId} onClose={() => setThreadRootId(null)} />

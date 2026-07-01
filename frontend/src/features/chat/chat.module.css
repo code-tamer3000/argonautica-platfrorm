@@ -87,7 +87,7 @@
   background: var(--color-more); border: 2px solid var(--bg-surface);
 }
 
-.roomMain { flex: 1; min-width: 0; }
+.roomMain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .roomTitle {
   font-family: var(--font-t4); font-size: var(--text-ui); color: var(--text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
