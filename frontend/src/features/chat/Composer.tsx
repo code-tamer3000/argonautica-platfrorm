@@ -3,7 +3,7 @@ import { useSendMessage, type SendBody } from '../../api/messages'
 import { Button } from '../../components/Button'
 import { IconAttach, IconSmile } from '../../components/icons'
 import { mediaUpload } from '../../lib/mediaUpload'
-import type { MediaAssetOut, MessageOut } from '../../lib/types'
+import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { wsClient } from '../../lib/wsClient'
 import { StickerPicker } from './StickerPicker'
@@ -11,11 +11,9 @@ import styles from './chat.module.css'
 
 interface Props {
   roomId: number
-  replyTo?: MessageOut | null
-  onClearReply?: () => void
 }
 
-export function Composer({ roomId, replyTo, onClearReply }: Props) {
+export function Composer({ roomId }: Props) {
   const [text, setText] = useState('')
   const [pendingFiles, setPendingFiles] = useState<MediaAssetOut[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -51,10 +49,8 @@ export function Composer({ roomId, replyTo, onClearReply }: Props) {
     const body: SendBody = {}
     if (content) body.content = content
     if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
-    if (replyTo) body.reply_to_message_id = replyTo.thread_root_id ?? replyTo.id
     setText('')
     setPendingFiles([])
-    onClearReply?.()
     send.mutate(body)
   }
 
@@ -76,14 +72,6 @@ export function Composer({ roomId, replyTo, onClearReply }: Props) {
 
   return (
     <div className={styles.composer}>
-      {replyTo && (
-        <div className={styles.contextBar}>
-          <span className={styles.ctxLabel}>Ответ</span>
-          <span>{replyTo.content?.slice(0, 60) ?? '[стикер/вложение]'}</span>
-          <button className={styles.pendingChipX} onClick={() => onClearReply?.()} aria-label="Отменить ответ">✕</button>
-        </div>
-      )}
-
       {pendingFiles.length > 0 && (
         <div className={styles.pendingAtt}>
           {pendingFiles.map(a => (

@@ -5,7 +5,6 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import type { MessageOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
 import { ChannelCalendar } from './ChannelCalendar'
@@ -41,7 +40,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     [query.data],
   )
 
-  const [replyTo, setReplyTo] = useState<MessageOut | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [threadRootId, setThreadRootId] = useState<number | null>(null)
   const [showPins, setShowPins] = useState(false)
@@ -54,7 +52,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
-    setReplyTo(null)
     setEditingId(null)
     setThreadRootId(null)
     setShowPins(false)
@@ -175,7 +172,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         editingId={editingId}
         selectedMsgId={selectedMsgId}
         highlightedMsgId={highlightedMsgId}
-        onReply={(msg) => setReplyTo(msg)}
         onEdit={(msg) => setEditingId(msg.id)}
         onClearEdit={() => setEditingId(null)}
         onOpenThread={(rootId) => setThreadRootId(rootId)}
@@ -187,7 +183,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           в новостном — только админ. Комментировать можно через треды. */}
       {(!room.is_personal || room.created_by === user?.id) &&
         (!room.is_news || user?.role === 'admin') && (
-        <Composer roomId={roomId} replyTo={replyTo} onClearReply={() => setReplyTo(null)} />
+        <Composer roomId={roomId} />
       )}
       {threadRootId != null && (
         <ThreadPanel roomId={roomId} rootId={threadRootId} onClose={() => setThreadRootId(null)} />

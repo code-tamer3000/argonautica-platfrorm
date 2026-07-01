@@ -19,7 +19,6 @@ interface Props {
   editingId?: number | null
   selectedMsgId?: number | null
   highlightedMsgId?: number | null
-  onReply?: (msg: MessageOut) => void
   onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
@@ -29,7 +28,7 @@ interface Props {
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    onReply, onEdit, onClearEdit, onOpenThread, onSelectMsg, onAtBottomChange },
+    onEdit, onClearEdit, onOpenThread, onSelectMsg, onAtBottomChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -92,7 +91,6 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
-              onReply={onReply}
               onEdit={onEdit}
               onClearEdit={onClearEdit}
               onOpenThread={onOpenThread}

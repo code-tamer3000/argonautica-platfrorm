@@ -18,7 +18,6 @@ interface Props {
   editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
-  onReply?: (msg: MessageOut) => void
   onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
@@ -33,7 +32,6 @@ export function MessageItem({
   editingId,
   isSelected,
   isHighlighted,
-  onReply,
   onEdit,
   onClearEdit,
   onOpenThread,
@@ -147,7 +145,8 @@ export function MessageItem({
         )}
 
         <div className={styles.actions}>
-          <button className={styles.actionBtn} onClick={() => onReply?.(msg)}>
+          {/* Ответ всегда уходит в тред (thread_root_id) и не виден в основной ленте — открываем тред напрямую. */}
+          <button className={styles.actionBtn} onClick={() => onOpenThread?.(msg.id)}>
             Ответить
           </button>
           {canEdit && (
