@@ -59,7 +59,10 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        client_max_body_size 200m;
+        # 0 = без лимита на уровне nginx; реальный потолок держит бэкенд
+        # (media_max_upload_bytes) до выдачи presigned-PUT. Тело не буферизуем —
+        # стримим прямо в MinIO, диск nginx не забивается.
+        client_max_body_size 0;
         proxy_request_buffering off;
     }
 
@@ -104,8 +107,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # Прямые загрузки (видео) — не буферизуем тело; потолок с запасом над лимитом.
-        client_max_body_size 200m;
+        # Прямые загрузки (видео) — не буферизуем тело. Лимит держит бэкенд до
+        # выдачи presigned-PUT, поэтому здесь nginx-потолок снят (0 = без лимита).
+        client_max_body_size 0;
         proxy_request_buffering off;
     }
 }

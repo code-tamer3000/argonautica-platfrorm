@@ -1,0 +1,72 @@
+.wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.video {
+  display: block;
+  max-width: 360px;
+  max-height: 320px;
+  width: 100%;
+  border-radius: var(--radius-media);
+  background: #000;
+}
+
+/* Кнопка скорости в правом верхнем углу поверх видео. */
+.speedControl {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  z-index: 2;
+}
+
+.speedBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding: 3px var(--space-2);
+  background: rgba(11, 16, 14, 0.72);
+  color: var(--color-kost-yar);
+  border: 1px solid rgba(233, 226, 212, 0.25);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.speedBtn:hover { border-color: var(--accent); color: var(--accent-bright); }
+
+.speedMenu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-1);
+  background: rgba(11, 16, 14, 0.92);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn);
+  backdrop-filter: blur(6px);
+}
+
+.speedItem {
+  padding: var(--space-1) var(--space-4);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  text-align: center;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.speedItem:hover { background: var(--color-frame); color: var(--text-primary); }
+.speedItemActive { color: var(--accent); }
+
+@media (max-width: 768px) {
+  .video { max-width: 100%; }
+}
