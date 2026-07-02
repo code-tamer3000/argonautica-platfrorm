@@ -7,14 +7,19 @@ import {
   ChevronRight,
   MessageSquare,
   Megaphone,
+  Mic,
   Paperclip,
+  Pause,
   Pin,
+  Play,
   Plus,
   Settings,
   Smile,
   Sticker,
+  Trash2,
   User,
   Users,
+  X,
   type LucideProps,
 } from 'lucide-react'
 
@@ -41,3 +46,8 @@ export const IconChevronLeft = (p: IconProps) => <ChevronLeft {...DEFAULTS} {...
 export const IconChevronRight = (p: IconProps) => <ChevronRight {...DEFAULTS} {...p} />
 export const IconNews = (p: IconProps) => <Megaphone {...DEFAULTS} {...p} />
 export const IconSend = (p: IconProps) => <ArrowUp {...DEFAULTS} {...p} />
+export const IconMic = (p: IconProps) => <Mic {...DEFAULTS} {...p} />
+export const IconPlay = (p: IconProps) => <Play {...DEFAULTS} {...p} />
+export const IconPause = (p: IconProps) => <Pause {...DEFAULTS} {...p} />
+export const IconTrash = (p: IconProps) => <Trash2 {...DEFAULTS} {...p} />
+export const IconClose = (p: IconProps) => <X {...DEFAULTS} {...p} />

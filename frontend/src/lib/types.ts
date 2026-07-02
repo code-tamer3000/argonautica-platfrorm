@@ -3,7 +3,7 @@
 export type Role = 'participant' | 'admin'
 export type RoomType = 'dm' | 'group' | 'channel'
 export type RoomRole = 'owner' | 'member'
-export type MediaKind = 'image' | 'video' | 'file'
+export type MediaKind = 'image' | 'video' | 'file' | 'audio'
 
 export interface TokenPair {
   access_token: string
@@ -109,6 +109,8 @@ export interface MediaAssetOut {
 export interface MediaUrlOut {
   url: string
   expires_in: number
+  kind: MediaKind
+  duration: number | null
 }
 
 export interface KbItemOut {

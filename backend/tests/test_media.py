@@ -115,6 +115,67 @@ async def test_confirm_requires_intent_and_owner(
     assert by_b.status_code == 403
 
 
+# --- голосовые сообщения (audio) -------------------------------------------
+
+
+async def test_audio_upload_validation(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    user = await make_user()
+    headers = await _headers(client, user)
+
+    # audio-тип принимается для kind=audio.
+    ok = await client.post(
+        "/api/media/uploads",
+        headers=headers,
+        json={"content_type": "audio/webm", "size": 4096, "kind": "audio"},
+    )
+    assert ok.status_code == 200, ok.text
+
+    # Не-audio тип под kind=audio отклоняется.
+    mismatch = await client.post(
+        "/api/media/uploads",
+        headers=headers,
+        json={"content_type": "video/mp4", "size": 4096, "kind": "audio"},
+    )
+    assert mismatch.status_code == 400
+
+    # У аудио свой (низкий) потолок: 100 МБ проходит для видео, но не для голосового.
+    big_audio = await client.post(
+        "/api/media/uploads",
+        headers=headers,
+        json={"content_type": "audio/webm", "size": 100 * 1024 * 1024, "kind": "audio"},
+    )
+    assert big_audio.status_code == 400
+
+
+async def test_media_url_reports_kind_and_duration(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """GET /api/media/{id} отдаёт авторитетный kind и duration (для плеера)."""
+    owner = await make_user()
+    asset = MediaAsset(
+        bucket="chat-media",
+        storage_key=f"test/{owner.id}-voice.webm",
+        kind="audio",
+        mime_type="audio/webm",
+        size=2048,
+        duration=7,
+        created_by=owner.id,
+    )
+    session.add(asset)
+    await session.commit()
+    await session.refresh(asset)
+
+    resp = await client.get(
+        f"/api/media/{asset.id}", headers=await _headers(client, owner)
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["kind"] == "audio"
+    assert body["duration"] == 7
+
+
 # --- полный presigned round-trip (реальный MinIO) --------------------------
 
 
