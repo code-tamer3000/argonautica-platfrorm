@@ -25,20 +25,53 @@ function imageDims(file: File): Promise<{ width?: number; height?: number }> {
   })
 }
 
-export async function mediaUpload(file: File): Promise<MediaAssetOut> {
+/** Прогресс загрузки: доля 0..1. Вызывается по мере отправки байтов в MinIO. */
+export type UploadProgress = (fraction: number) => void
+
+/**
+ * PUT файла в MinIO с отслеживанием прогресса. fetch не отдаёт upload-прогресс,
+ * поэтому используем XMLHttpRequest (upload.onprogress).
+ */
+function putWithProgress(
+  url: string,
+  file: File,
+  onProgress?: UploadProgress,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', url)
+    xhr.setRequestHeader('Content-Type', file.type)
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(e.loaded / e.total)
+      }
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(1)
+        resolve()
+      } else {
+        reject(new Error(`Не удалось загрузить файл в хранилище (код ${xhr.status})`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('Не удалось загрузить файл в хранилище'))
+    xhr.onabort = () => reject(new Error('Загрузка отменена'))
+    xhr.send(file)
+  })
+}
+
+export async function mediaUpload(
+  file: File,
+  onProgress?: UploadProgress,
+): Promise<MediaAssetOut> {
   const kind = kindFor(file.type)
   const ticket = await http.post<UploadTicket>('/api/media/uploads', {
     content_type: file.type,
     size: file.size,
     kind,
   })
-  // Прямой PUT клиент → MinIO (минуя бэкенд).
-  const put = await fetch(ticket.upload_url, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type },
-    body: file,
-  })
-  if (!put.ok) throw new Error('Не удалось загрузить файл в хранилище')
+  // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом.
+  await putWithProgress(ticket.upload_url, file, onProgress)
   const dims = await imageDims(file)
   return http.post<MediaAssetOut>('/api/media/assets', {
     storage_key: ticket.storage_key,

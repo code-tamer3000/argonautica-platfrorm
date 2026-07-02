@@ -17,6 +17,8 @@ export function Composer({ roomId }: Props) {
   const [pendingFiles, setPendingFiles] = useState<MediaAssetOut[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // Прогресс текущей загрузки в процентах (null — загрузки нет).
+  const [progress, setProgress] = useState<number | null>(null)
   const send = useSendMessage(roomId)
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -26,13 +28,15 @@ export function Composer({ roomId }: Props) {
     if (!file) return
     e.target.value = ''
     setUploading(true)
+    setProgress(0)
     try {
-      const asset = await mediaUpload(file)
+      const asset = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
       setPendingFiles(prev => [...prev, asset])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
       setUploading(false)
+      setProgress(null)
     }
   }
 
@@ -90,6 +94,15 @@ export function Composer({ roomId }: Props) {
               </button>
             </span>
           ))}
+        </div>
+      )}
+
+      {progress !== null && (
+        <div className={styles.uploadProgress}>
+          <div className={styles.uploadBar}>
+            <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
+          </div>
+          <span className={styles.uploadPct}>{progress}%</span>
         </div>
       )}
 

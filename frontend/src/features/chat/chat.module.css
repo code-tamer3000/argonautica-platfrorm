@@ -260,6 +260,12 @@
   border-top: 1px solid var(--color-frame-deep);
   background: var(--bg-surface);
 }
+
+/* Прогресс загрузки медиа. */
+.uploadProgress { display: flex; align-items: center; gap: var(--space-2); }
+.uploadBar { flex: 1; height: 4px; background: var(--bg-deep); border-radius: 2px; overflow: hidden; }
+.uploadBarFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 120ms ease; }
+.uploadPct { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-width: 34px; text-align: right; }
 .composerRow { display: flex; align-items: flex-end; gap: var(--space-2); }
 .composerInput {
   flex: 1; resize: none; max-height: 160px; min-height: 44px;
