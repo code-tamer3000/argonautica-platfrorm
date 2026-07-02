@@ -176,8 +176,14 @@ async def test_admin_delete_user_removes_personal_footprint(
     )
     assert resp.status_code == 204
 
-    assert await session.get(User, victim.id) is None
-    assert await session.get(Room, personal.id) is None
+    # Эндпоинт коммитил в своей сессии. Читаем свежими select-запросами (а не
+    # session.get, который вернул бы закешированные в identity-map объекты).
+    assert (
+        await session.scalar(select(User.id).where(User.id == victim.id))
+    ) is None
+    assert (
+        await session.scalar(select(Room.id).where(Room.id == personal.id))
+    ) is None
     assert (
         await session.scalar(
             select(RoomMember).where(RoomMember.user_id == victim.id)

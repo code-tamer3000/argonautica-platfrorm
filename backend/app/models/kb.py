@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Text,
     func,
@@ -63,3 +64,26 @@ class KbItemMedia(Base):
     media_asset_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("media_assets.id"), primary_key=True
     )
+
+
+class KbComment(Base):
+    """Плоские комментарии участников под материалом. Мягкое удаление (п.6)."""
+
+    __tablename__ = "kb_comments"
+    __table_args__ = (
+        # Лента комментариев материала — запрос по этому индексу.
+        Index("ix_kb_comments_item_created", "kb_item_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    kb_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("kb_items.id"), nullable=False
+    )
+    author_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

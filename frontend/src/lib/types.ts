@@ -124,6 +124,14 @@ export interface KbItemOut {
   media_asset_ids: number[]
 }
 
+export interface KbCommentOut {
+  id: number
+  kb_item_id: number
+  author_id: number
+  body: string
+  created_at: string
+}
+
 export interface CalendarEventOut {
   id: number
   title: string

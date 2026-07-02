@@ -14,11 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin
 from app.db.session import get_session
-from app.models.kb import KbItem, KbItemMedia
+from app.models.kb import KbComment, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.user import User
 from app.schemas.kb import (
     AttachMediaRequest,
+    KbCommentCreate,
+    KbCommentOut,
     KbItemCreate,
     KbItemOut,
     KbItemUpdate,
@@ -186,3 +188,67 @@ async def get_item(
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
     return _to_out(item, media_ids)
+
+
+# --- комментарии участников (плоские, п.2) ---------------------------------
+
+
+@router.get("/items/{item_id}/comments", response_model=list[KbCommentOut])
+async def list_comments(
+    item_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[KbComment]:
+    """Комментарии материала (без удалённых), по возрастанию времени.
+
+    Видимость комментариев = видимость материала: черновик — только admin (404).
+    """
+    item = await load_kb_item(session, item_id)
+    assert_kb_item_visible(item, current_user)
+
+    rows = await session.execute(
+        select(KbComment)
+        .where(KbComment.kb_item_id == item_id, KbComment.deleted_at.is_(None))
+        .order_by(KbComment.created_at, KbComment.id)
+    )
+    return list(rows.scalars().all())
+
+
+@router.post("/items/{item_id}/comments", response_model=KbCommentOut, status_code=201)
+async def create_comment(
+    item_id: int,
+    body: KbCommentCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> KbComment:
+    """Оставить комментарий. Может любой участник, кто видит материал."""
+    item = await load_kb_item(session, item_id)
+    assert_kb_item_visible(item, current_user)
+
+    comment = KbComment(
+        kb_item_id=item_id,
+        author_id=current_user.id,
+        body=body.body,
+    )
+    session.add(comment)
+    await session.flush()
+    await session.refresh(comment)
+    return comment
+
+
+@router.delete("/comments/{comment_id}", status_code=204)
+async def delete_comment(
+    comment_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Мягко удалить комментарий: автор комментария или admin (п.6)."""
+    comment = await session.get(KbComment, comment_id)
+    if comment is None or comment.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Comment not found")
+    if comment.author_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed")
+
+    comment.deleted_at = datetime.now(UTC)
+    await session.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

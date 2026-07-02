@@ -6,7 +6,7 @@
 """
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class KbItemCreate(BaseModel):
@@ -46,3 +46,19 @@ class KbItemOut(BaseModel):
 
 class AttachMediaRequest(BaseModel):
     media_asset_ids: list[int]
+
+
+class KbCommentCreate(BaseModel):
+    """Новый комментарий под материалом."""
+
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class KbCommentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kb_item_id: int
+    author_id: int
+    body: str
+    created_at: datetime
