@@ -1,0 +1,83 @@
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 320px;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  background: var(--color-frame);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-pill);
+}
+
+.playBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--color-kost-yar);
+  cursor: pointer;
+}
+.playBtn:hover { background: var(--accent-bright); }
+
+/* Прогресс-полоса: залитая часть до бегунка через --pct (обновляется из JS). */
+.seek {
+  flex: 1;
+  min-width: 60px;
+  height: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--pct, 0%),
+    var(--color-frame-deep) var(--pct, 0%),
+    var(--color-frame-deep) 100%
+  );
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+}
+.seek::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+}
+
+.time {
+  flex: none;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rateBtn {
+  flex: none;
+  min-width: 34px;
+  padding: 2px var(--space-2);
+  background: transparent;
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  cursor: pointer;
+}
+.rateBtn:hover { border-color: var(--accent); color: var(--accent-bright); }
