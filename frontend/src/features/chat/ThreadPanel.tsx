@@ -6,6 +6,7 @@ import { IconSend } from '../../components/icons'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
 import { MessageItem } from './MessageItem'
+import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
 interface Props {
@@ -19,6 +20,8 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [text, setText] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
+  // Идёт запись/превью голосового ответа → прячем текстовое поле.
+  const [voiceActive, setVoiceActive] = useState(false)
   const send = useSendMessage(roomId)
   const users = useUsersMap()
   const markRead = useMarkRead(roomId)
@@ -79,20 +82,24 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
           {/* Поле ответа держим в потоке сразу под репликами (а не прибитым к низу
               панели) — на мобиле фиксированный футер уезжает вместе с клавиатурой. */}
           <div className={styles.threadReplyRow}>
-            <textarea
-              className={styles.composerInput}
-              rows={1}
-              placeholder="Ответить в тред…"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend()
-                }
-              }}
-            />
-            {!!text.trim() && (
+            {!voiceActive && (
+              <textarea
+                className={styles.composerInput}
+                rows={1}
+                placeholder="Ответить в тред…"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    handleSend()
+                  }
+                }}
+              />
+            )}
+            {/* Есть текст → отправка; иначе — голосовой ответ (VoiceComposer шлёт с
+                reply_to_message_id корня, тред остаётся плоским). */}
+            {!!text.trim() && !voiceActive ? (
               <button
                 className={styles.sendBtn}
                 onClick={handleSend}
@@ -102,6 +109,13 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
               >
                 {send.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
               </button>
+            ) : (
+              <VoiceComposer
+                onSend={(assetId) =>
+                  send.mutate({ attachment_ids: [assetId], reply_to_message_id: rootId })
+                }
+                onActiveChange={setVoiceActive}
+              />
             )}
           </div>
         </>

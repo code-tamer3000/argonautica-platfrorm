@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-MediaKind = Literal["image", "video", "file"]
+MediaKind = Literal["image", "video", "file", "audio"]
 
 
 class UploadRequest(BaseModel):
@@ -50,3 +50,7 @@ class MediaAssetOut(BaseModel):
 class MediaUrlOut(BaseModel):
     url: str
     expires_in: int
+    # Авторитетный вид медиа из media_assets — клиент не гадает по расширению URL
+    # (webm/ogg неоднозначны между audio и video).
+    kind: MediaKind
+    duration: int | None = None

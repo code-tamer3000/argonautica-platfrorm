@@ -6,6 +6,7 @@ import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { wsClient } from '../../lib/wsClient'
 import { StickerPicker } from './StickerPicker'
+import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
 interface Props {
@@ -19,6 +20,8 @@ export function Composer({ roomId }: Props) {
   const [uploading, setUploading] = useState(false)
   // Прогресс текущей загрузки в процентах (null — загрузки нет).
   const [progress, setProgress] = useState<number | null>(null)
+  // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
+  const [voiceActive, setVoiceActive] = useState(false)
   const send = useSendMessage(roomId)
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -115,35 +118,43 @@ export function Composer({ roomId }: Props) {
         onChange={handleFileChange}
       />
 
+      {/* Единый composerRow. VoiceComposer держим смонтированным ВСЕГДА (иначе при
+          старте записи он бы пересоздался и потерял состояние). Пока идёт запись/
+          превью (voiceActive) — прячем остальные контролы, VoiceComposer сам
+          растягивается в панель. */}
       <div className={styles.composerRow}>
-        <button
-          className={styles.iconBtn}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          title="Прикрепить файл"
-          aria-label="Прикрепить файл"
-        >
-          {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
-        </button>
-        <button
-          className={styles.iconBtn}
-          onClick={() => setPickerOpen(v => !v)}
-          title="Стикер"
-          aria-label="Стикер"
-        >
-          <IconSticker size={18} />
-        </button>
-        <textarea
-          className={styles.composerInput}
-          rows={1}
-          placeholder="Сообщение…"
-          value={text}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={onKey}
-        />
-        {/* Круглая кнопка отправки появляется только когда есть что отправить —
-            в пустом состоянии не занимает место и не «давит» интерфейс. */}
-        {canSend && (
+        {!voiceActive && (
+          <>
+            <button
+              className={styles.iconBtn}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Прикрепить файл"
+              aria-label="Прикрепить файл"
+            >
+              {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
+            </button>
+            <button
+              className={styles.iconBtn}
+              onClick={() => setPickerOpen(v => !v)}
+              title="Стикер"
+              aria-label="Стикер"
+            >
+              <IconSticker size={18} />
+            </button>
+            <textarea
+              className={styles.composerInput}
+              rows={1}
+              placeholder="Сообщение…"
+              value={text}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={onKey}
+            />
+          </>
+        )}
+        {/* Есть что отправить → круглая кнопка отправки; иначе — VoiceComposer
+            (в idle = кнопка-микрофон, в записи/превью = полная панель). */}
+        {canSend && !voiceActive ? (
           <button
             className={styles.sendBtn}
             onClick={submit}
@@ -153,6 +164,11 @@ export function Composer({ roomId }: Props) {
           >
             {send.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
           </button>
+        ) : (
+          <VoiceComposer
+            onSend={(assetId) => send.mutate({ attachment_ids: [assetId] })}
+            onActiveChange={setVoiceActive}
+          />
         )}
       </div>
     </div>

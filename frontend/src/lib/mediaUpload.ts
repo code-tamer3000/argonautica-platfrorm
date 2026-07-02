@@ -5,6 +5,7 @@ import type { MediaAssetOut, MediaKind, UploadTicket } from './types'
 function kindFor(type: string): MediaKind {
   if (type.startsWith('image/')) return 'image'
   if (type.startsWith('video/')) return 'video'
+  if (type.startsWith('audio/')) return 'audio'
   return 'file'
 }
 
@@ -34,13 +35,14 @@ export type UploadProgress = (fraction: number) => void
  */
 function putWithProgress(
   url: string,
-  file: File,
+  body: Blob,
+  contentType: string,
   onProgress?: UploadProgress,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
-    xhr.setRequestHeader('Content-Type', file.type)
+    xhr.setRequestHeader('Content-Type', contentType)
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(e.loaded / e.total)
@@ -56,7 +58,7 @@ function putWithProgress(
     }
     xhr.onerror = () => reject(new Error('Не удалось загрузить файл в хранилище'))
     xhr.onabort = () => reject(new Error('Загрузка отменена'))
-    xhr.send(file)
+    xhr.send(body)
   })
 }
 
@@ -71,7 +73,7 @@ export async function mediaUpload(
     kind,
   })
   // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом.
-  await putWithProgress(ticket.upload_url, file, onProgress)
+  await putWithProgress(ticket.upload_url, file, file.type, onProgress)
   const dims = await imageDims(file)
   return http.post<MediaAssetOut>('/api/media/assets', {
     storage_key: ticket.storage_key,
@@ -80,9 +82,38 @@ export async function mediaUpload(
   })
 }
 
+/**
+ * Загрузка голосового сообщения (тот же 3-шаговый presigned-поток, что и файлы).
+ *
+ * У записанного Blob нет имени, а `.type` несёт кодек (`audio/webm;codecs=opus`) —
+ * поэтому оборачиваем в File с явным типом и прокидываем длительность (секунды) в
+ * confirm: она уедет в `media_assets.duration` и покажется в плеере до подписи GET.
+ */
+export async function voiceUpload(
+  blob: Blob,
+  durationSec: number,
+  onProgress?: UploadProgress,
+): Promise<MediaAssetOut> {
+  const contentType = blob.type || 'audio/webm'
+  const ticket = await http.post<UploadTicket>('/api/media/uploads', {
+    content_type: contentType,
+    size: blob.size,
+    kind: 'audio' as MediaKind,
+  })
+  await putWithProgress(ticket.upload_url, blob, contentType, onProgress)
+  return http.post<MediaAssetOut>('/api/media/assets', {
+    storage_key: ticket.storage_key,
+    duration: Math.max(1, Math.round(durationSec)),
+  })
+}
+
 export function guessMediaKind(url: string): MediaKind {
   const path = url.split('?')[0].toLowerCase()
   if (/\.(png|jpe?g|gif|webp|avif|svg)$/.test(path)) return 'image'
+  // Аудио проверяем ДО видео: расширения webm/ogg/mp4 неоднозначны между аудио и
+  // видео — по URL их не различить. Поэтому Attachment полагается на явный kind из
+  // media_assets (assetKind), а этот эвристический разбор оставляем как фолбэк.
+  if (/\.(mp3|m4a|aac|wav|oga|opus|weba)$/.test(path)) return 'audio'
   if (/\.(mp4|webm|mov|m4v|ogg)$/.test(path)) return 'video'
   return 'file'
 }

@@ -267,6 +267,21 @@
 .uploadBarFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 120ms ease; }
 .uploadPct { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-width: 34px; text-align: right; }
 .composerRow { display: flex; align-items: flex-end; gap: var(--space-2); }
+
+/* Панель записи/предпрослушивания голосового — на месте строки ввода. */
+.voiceBar { flex: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
+.voiceBarSpacer { flex: 1; }
+.voicePreview { flex: 1; max-width: none; }
+.recLabel { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-secondary); }
+.recTime {
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.recDot {
+  width: 10px; height: 10px; flex: none; border-radius: 50%;
+  background: var(--color-error, #d9534f); animation: arg-rec-pulse 1.2s ease-in-out infinite;
+}
+@keyframes arg-rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .composerInput {
   flex: 1; resize: none; max-height: 160px; min-height: 44px;
   padding: var(--space-3) var(--space-4);

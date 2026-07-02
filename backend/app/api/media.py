@@ -53,6 +53,7 @@ def _validate_content_type(kind: str, content_type: str) -> None:
     ok = (
         (kind == "image" and content_type.startswith("image/"))
         or (kind == "video" and content_type.startswith("video/"))
+        or (kind == "audio" and content_type.startswith("audio/"))
         or (kind == "file" and content_type in _ALLOWED_FILE_MIME)
     )
     if not ok:
@@ -60,6 +61,13 @@ def _validate_content_type(kind: str, content_type: str) -> None:
             status.HTTP_400_BAD_REQUEST,
             f"content_type {content_type!r} not allowed for kind {kind!r}",
         )
+
+
+def _max_bytes_for(kind: str) -> int:
+    """Потолок размера по виду медиа: у голосовых свой низкий лимит (§6.4)."""
+    if kind == "audio":
+        return settings.media_max_audio_bytes
+    return settings.media_max_upload_bytes
 
 
 def _intent_key(storage_key: str) -> str:
@@ -76,10 +84,11 @@ async def request_upload(
         f"rl:upload:{current_user.id}", settings.rate_limit_upload_per_minute
     )
     _validate_content_type(body.kind, body.content_type)
-    if body.size > settings.media_max_upload_bytes:
+    max_size = _max_bytes_for(body.kind)
+    if body.size > max_size:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"File too large (max {settings.media_max_upload_bytes} bytes)",
+            f"File too large (max {max_size} bytes)",
         )
 
     bucket = settings.minio_bucket_media
@@ -87,7 +96,7 @@ async def request_upload(
     intent = {
         "kind": body.kind,
         "mime_type": body.content_type,
-        "max_size": settings.media_max_upload_bytes,
+        "max_size": max_size,
         "user_id": current_user.id,
     }
     await redis_client.set(
@@ -157,4 +166,9 @@ async def get_media_url(
     # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн (рендер в <img>/<video>).
     download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
     url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
-    return MediaUrlOut(url=url, expires_in=PRESIGN_EXPIRES)
+    return MediaUrlOut(
+        url=url,
+        expires_in=PRESIGN_EXPIRES,
+        kind=asset.kind,
+        duration=asset.duration,
+    )

@@ -20,7 +20,9 @@ class MediaAsset(Base):
 
     __tablename__ = "media_assets"
     __table_args__ = (
-        CheckConstraint("kind IN ('image', 'video', 'file')", name="kind_valid"),
+        CheckConstraint(
+            "kind IN ('image', 'video', 'file', 'audio')", name="kind_valid"
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

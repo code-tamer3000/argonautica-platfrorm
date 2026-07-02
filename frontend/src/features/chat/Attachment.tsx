@@ -3,6 +3,7 @@ import { useMediaUrl } from '../../api/media'
 import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
 import { VideoPlayer } from '../../components/VideoPlayer'
+import { VoicePlayer } from '../../components/VoicePlayer'
 import { downloadFile, fileNameFromUrl, guessMediaKind } from '../../lib/mediaUpload'
 import styles from './chat.module.css'
 
@@ -11,7 +12,10 @@ export function Attachment({ assetId }: { assetId: number }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   if (!data) return <span className={styles.attLoading}>загрузка…</span>
-  const kind = guessMediaKind(data.url)
+  // Вид берём из media_assets (авторитетно), а не из расширения URL: webm/ogg
+  // неоднозначны между audio и video. guessMediaKind — фолбэк для старых записей.
+  const kind = data.kind ?? guessMediaKind(data.url)
+  if (kind === 'audio') return <VoicePlayer src={data.url} duration={data.duration} />
   if (kind === 'image') {
     return (
       <>
