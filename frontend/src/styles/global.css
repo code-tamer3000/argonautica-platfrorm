@@ -3,12 +3,17 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html, body, #root { height: 100%; }
+/* --app-height задаётся из JS (lib/viewport.ts) = высота visual viewport, чтобы
+   макет не прыгал при открытии экранной клавиатуры. Фолбэк — динамические vh. */
+:root { --app-height: 100dvh; }
+html, body { height: 100%; }
+#root { height: var(--app-height, 100dvh); }
 /* Приложение — фикс-оболочка на весь экран: страницы скроллятся ВНУТРИ своих панелей,
    сама страница не должна прокручиваться ни по горизонтали, ни по вертикали.
    overflow-x:hidden + max-width гарантируют, что ни один широкий элемент не «вытолкнет»
-   макет вбок на узких экранах (частая причина «край приложения уехал вправо»). */
-html, body, #root { max-width: 100%; overflow-x: hidden; }
+   макет вбок на узких экранах (частая причина «край приложения уехал вправо»).
+   overflow:hidden на html/body не даёт браузеру самому скроллить страницу под фокус-поле. */
+html, body, #root { max-width: 100%; overflow: hidden; }
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 body {
@@ -66,3 +71,14 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--d
 .center { display: flex; align-items: center; justify-content: center; }
 .muted { color: var(--text-muted); }
 .label { font-family: var(--font-t4); font-size: var(--text-label); letter-spacing: var(--ls-label); text-transform: uppercase; color: var(--text-ghost); }
+
+/* ───────────────────── Мобила ───────────────────── */
+@media (max-width: 768px) {
+  /* Полностью фиксируем страницу: никакого «дёрганья» и rubber-band при вводе.
+     #root внутри уже ограничен по высоте --app-height (см. lib/viewport.ts). */
+  body { position: fixed; inset: 0; }
+
+  /* iOS Safari зумит вьюпорт при фокусе на поле с font-size < 16px — из-за этого
+     макет резко «съезжает». 16px убирает авто-зум. */
+  input, textarea, select { font-size: 16px; }
+}
