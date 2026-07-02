@@ -4,12 +4,21 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-6);
+  /* Скролл внутри самого экрана: когда открывается клавиатура и высота
+     уменьшается, карточка не выталкивается браузером (макет не «прыгает»),
+     а при необходимости прокручивается внутри контейнера. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background:
     radial-gradient(900px 500px at 50% -10%, rgba(19, 78, 69, 0.18), transparent 60%),
     var(--bg);
 }
 
 .card {
+  /* margin:auto вместо только flex-центрирования: при нехватке высоты (открыта
+     клавиатура) карточка прижимается с равными отступами и прокручивается внутри
+     .screen вместо того, чтобы браузер выталкивал/обрезал макет. */
+  margin: auto;
   width: 100%;
   max-width: 380px;
   display: flex;

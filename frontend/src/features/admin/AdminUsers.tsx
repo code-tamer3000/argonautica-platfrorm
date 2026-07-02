@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useAdminUsers, useCreateUser, usePatchAdminUser } from '../../api/admin'
+import { useAdminUsers, useCreateUser, useDeleteUser, usePatchAdminUser } from '../../api/admin'
+import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { toast } from '../../stores/toast'
@@ -9,8 +10,10 @@ import styles from './admin.module.css'
 
 export function AdminUsers() {
   const { data: users = [] } = useAdminUsers()
+  const { user: me } = useAuth()
   const createUser = useCreateUser()
   const patchUser = usePatchAdminUser()
+  const deleteUser = useDeleteUser()
 
   // Create user modal
   const [createOpen, setCreateOpen] = useState(false)
@@ -60,6 +63,20 @@ export function AdminUsers() {
     setEditUser(user)
     setEditCanCreate(user.can_create_groups)
     setEditRole(user.role as 'participant' | 'admin')
+  }
+
+  function handleDelete() {
+    if (!editUser) return
+    if (!window.confirm(`Удалить пользователя ${editUser.display_name} (@${editUser.username})? Действие необратимо.`)) return
+    deleteUser.mutate(editUser.id, {
+      onSuccess: () => {
+        toast('Пользователь удалён')
+        setEditUser(null)
+      },
+      onError: (err: unknown) => {
+        toast(err instanceof Error ? err.message : 'Ошибка', 'error')
+      },
+    })
   }
 
   function handleEditSave() {
@@ -219,6 +236,16 @@ export function AdminUsers() {
               </label>
             </div>
             <div className={styles.formActions}>
+              {editUser.id !== me?.id && (
+                <Button
+                  variant="danger"
+                  onClick={handleDelete}
+                  disabled={deleteUser.isPending}
+                  style={{ marginRight: 'auto' }}
+                >
+                  {deleteUser.isPending ? 'Удаляем…' : 'Удалить'}
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setEditUser(null)}>
                 Отмена
               </Button>

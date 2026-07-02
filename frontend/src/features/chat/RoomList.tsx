@@ -76,14 +76,14 @@ export function RoomList({ selectedId, onSelect }: Props) {
     const filtered = needle
       ? list.filter((r) => roomTitle(r, dmPeers, users).toLowerCase().includes(needle))
       : list
-    const channels = filtered.filter((r) => r.type === 'channel')
+    // Новостной канал вынесен в верхнеуровневую кнопку «Новости» (см. AppShell) —
+    // из списка каналов его исключаем, чтобы не дублировать.
+    const channels = filtered.filter((r) => r.type === 'channel' && !r.is_news)
 
-    // Закреплённые сверху: новостной канал, затем собственный личный канал.
-    const news = channels.find((r) => r.is_news)
+    // Закреплённые сверху: собственный личный канал.
     const mine = channels.find((r) => r.is_personal && r.created_by === me?.id)
-    const pinnedIds = new Set([news?.id, mine?.id].filter((x): x is number => x != null))
+    const pinnedIds = new Set([mine?.id].filter((x): x is number => x != null))
     const pinned: RoomOut[] = []
-    if (news) pinned.push(news)
     if (mine) pinned.push(mine)
 
     return {

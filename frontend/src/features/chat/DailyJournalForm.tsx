@@ -27,7 +27,7 @@ const CATS: CatConfig[] = [
     tab: '🎯 Фокус',
     heading: '## 🎯 Фокус на день',
     label: 'Фокус / концентрация дня',
-    placeholder: 'На чём фокусируешься сегодня?',
+    placeholder: 'Концентрация намерения на день',
     multiline: true,
   },
   {
