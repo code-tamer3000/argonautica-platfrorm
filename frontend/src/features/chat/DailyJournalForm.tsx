@@ -5,11 +5,15 @@ import {
   useSendMessage,
   type JournalCategory,
 } from '../../api/messages'
+import { IconSend } from '../../components/icons'
 import styles from './chat.module.css'
 
 interface Props {
   roomId: number
   userId: number
+  /** Сообщаем родителю, раскрыт ли виджет — чтобы он скрыл обычный composer
+      (иначе на мобиле поле дня и composer перекрывают друг друга у клавиатуры). */
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 interface CatConfig {
@@ -56,7 +60,7 @@ function currentDateStr() {
 const draftKey = (userId: number, date: string, cat: JournalCategory) =>
   `journal-draft-${userId}-${date}-${cat}`
 
-export function DailyJournalForm({ roomId, userId }: Props) {
+export function DailyJournalForm({ roomId, userId, onExpandedChange }: Props) {
   const today = currentDateStr()
   const now = new Date()
   const { data: days, refetch } = useJournalDays(roomId, now.getFullYear(), now.getMonth() + 1)
@@ -64,7 +68,13 @@ export function DailyJournalForm({ roomId, userId }: Props) {
   const dayClosed = JOURNAL_CATEGORIES.every((c) => todayCats.has(c))
   const doneCount = JOURNAL_CATEGORIES.filter((c) => todayCats.has(c)).length
 
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpandedState] = useState(false)
+  function setExpanded(v: boolean) {
+    setExpandedState(v)
+    onExpandedChange?.(v)
+  }
+  // Синхронизируем родителя при размонтировании (смена комнаты и т.п.).
+  useEffect(() => () => onExpandedChange?.(false), [onExpandedChange])
   const [active, setActive] = useState<JournalCategory>('focus')
   const cfg = CATS.find((c) => c.key === active)!
   const key = draftKey(userId, today, active)
@@ -134,36 +144,54 @@ export function DailyJournalForm({ roomId, userId }: Props) {
       </div>
 
       <div className={styles.journalField}>
-        <label className={styles.journalLabel}>{cfg.label}</label>
-        {cfg.multiline ? (
-          <textarea
-            className={styles.journalTextarea}
-            placeholder={cfg.placeholder}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            rows={3}
-          />
-        ) : (
-          <input
-            className={styles.journalInput}
-            placeholder={cfg.placeholder}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-        )}
+        <label className={styles.journalLabel}>
+          {cfg.label}
+          {todayCats.has(active) && <span className={styles.journalCheck}> ✓ уже опубликовано</span>}
+        </label>
+        {/* Поле + компактная круглая кнопка отправки (как в основном composer):
+            кнопка появляется только когда есть текст и не «давит» интерфейс. */}
+        <div className={styles.journalInputRow}>
+          {cfg.multiline ? (
+            <textarea
+              className={styles.journalTextarea}
+              placeholder={cfg.placeholder}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  publish()
+                }
+              }}
+              rows={2}
+            />
+          ) : (
+            <input
+              className={styles.journalInput}
+              placeholder={cfg.placeholder}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  publish()
+                }
+              }}
+            />
+          )}
+          {!!text.trim() && (
+            <button
+              className={styles.sendBtn}
+              onClick={publish}
+              disabled={sendMessage.isPending}
+              title="Опубликовать"
+              aria-label="Опубликовать"
+            >
+              {sendMessage.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
+            </button>
+          )}
+        </div>
       </div>
-
-      <button
-        className={styles.journalPublish}
-        onClick={publish}
-        disabled={!text.trim() || sendMessage.isPending}
-      >
-        {sendMessage.isPending
-          ? 'Публикую…'
-          : todayCats.has(active)
-            ? 'Опубликовать ещё'
-            : 'Опубликовать'}
-      </button>
     </div>
   )
 }

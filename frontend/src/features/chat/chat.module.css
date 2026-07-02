@@ -210,6 +210,8 @@
 .threadReplyRow { display: flex; align-items: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
 
 .msg { display: flex; gap: var(--space-3); padding: 2px 0; }
+/* Плавное появление нового (реалтайм/только что отправленного) сообщения. */
+.msgEnter { animation: arg-msg-in 260ms var(--ease-out-soft) both; }
 .msgAvatar { width: 36px; flex: 0 0 36px; }
 .msgBody { min-width: 0; flex: 1; }
 .msgHead { display: flex; align-items: baseline; gap: var(--space-2); }
@@ -584,6 +586,9 @@
 }
 .journalCheck { color: var(--accent); font-weight: 700; }
 .journalField { display: flex; flex-direction: column; gap: 4px; }
+.journalInputRow { display: flex; align-items: flex-end; gap: var(--space-2); }
+.journalInputRow > .journalInput,
+.journalInputRow > .journalTextarea { flex: 1; }
 .journalLabel {
   font-family: var(--font-t4); font-size: 11px; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--text-ghost);
@@ -599,13 +604,3 @@
   outline: none; border-color: var(--accent);
 }
 .journalTextarea { min-height: 56px; }
-.journalPublish {
-  align-self: flex-end;
-  padding: var(--space-2) var(--space-4);
-  background: var(--accent); color: var(--bg-base);
-  border: none; border-radius: var(--radius-btn);
-  font-family: var(--font-t4); font-size: var(--text-label-md);
-  cursor: pointer; font-weight: 600;
-  transition: opacity var(--transition-base);
-}
-.journalPublish:disabled { opacity: 0.5; cursor: not-allowed; }

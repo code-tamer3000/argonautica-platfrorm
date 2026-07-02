@@ -48,6 +48,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showProfile, setShowProfile] = useState(false)
   const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
+  const [journalExpanded, setJournalExpanded] = useState(false)
   const messageListRef = useRef<MessageListHandle>(null)
 
   // Сбросить панели при смене комнаты.
@@ -60,6 +61,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setShowProfile(false)
     setSelectedMsgId(null)
     setHighlightedMsgId(null)
+    setJournalExpanded(false)
   }, [roomId])
 
   // Вывести пира личного чата из сообщений (API не отдаёт состав dm).
@@ -184,12 +186,15 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       />
       <TypingIndicator roomId={roomId} users={users} />
       {room.is_personal && room.created_by === user?.id && (
-        <DailyJournalForm roomId={roomId} userId={user.id} />
+        <DailyJournalForm roomId={roomId} userId={user.id} onExpandedChange={setJournalExpanded} />
       )}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
-          в новостном — только админ. Комментировать можно через треды. */}
+          в новостном — только админ. Комментировать можно через треды.
+          Когда раскрыт виджет дня — прячем обычный composer, чтобы поля не
+          перекрывали друг друга над клавиатурой (у виджета своё поле ввода). */}
       {(!room.is_personal || room.created_by === user?.id) &&
-        (!room.is_news || user?.role === 'admin') && (
+        (!room.is_news || user?.role === 'admin') &&
+        !journalExpanded && (
         <Composer roomId={roomId} />
       )}
       {threadRootId != null && (

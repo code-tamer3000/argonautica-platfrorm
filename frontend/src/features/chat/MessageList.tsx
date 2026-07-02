@@ -36,6 +36,15 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
   const atBottom = useRef(true)
   const count = messages.length
 
+  // Максимальный id, известный на момент первой отрисовки ленты. Сообщения с id
+  // больше этого — «новые» (пришли в реальном времени / отправлены после открытия),
+  // только их анимируем. Историю и подгруженные старые страницы — не анимируем,
+  // чтобы не было каскада анимаций при загрузке.
+  const initialMaxId = useRef<number | null>(null)
+  if (initialMaxId.current === null && count > 0) {
+    initialMaxId.current = messages.reduce((max, m) => (m.id > max ? m.id : max), 0)
+  }
+
   useImperativeHandle(ref, () => ({
     scrollToMessage(id: number) {
       const el = containerRef.current?.querySelector(`[data-msg-id="${id}"]`)
@@ -78,8 +87,9 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
         const prev = messages[i - 1]
         const showDay = !prev || !sameDay(prev.created_at, m.created_at)
         const continuation = !showDay && !!prev && prev.sender_id === m.sender_id
+        const isNew = initialMaxId.current !== null && m.id > initialMaxId.current
         return (
-          <div key={m.id} data-msg-id={m.id}>
+          <div key={m.id} data-msg-id={m.id} className={isNew ? styles.msgEnter : undefined}>
             {showDay && (
               <div className={styles.daySep}>
                 <span>{dayLabel(m.created_at)}</span>
