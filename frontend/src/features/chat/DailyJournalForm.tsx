@@ -35,7 +35,7 @@ const CATS: CatConfig[] = [
     tab: '📝 Заметки',
     heading: '## 📝 Заметки',
     label: 'Заметки',
-    placeholder: 'Мысли, события, наблюдения… можно со ссылками',
+    placeholder: 'Процесс исследования',
     multiline: true,
   },
   {
@@ -43,7 +43,7 @@ const CATS: CatConfig[] = [
     tab: '🎬 Фильм дня',
     heading: '',  // название фильма само по себе — заголовок (см. publish)
     label: 'Как бы ты назвал фильм про сегодняшний день?',
-    placeholder: 'Название дня…',
+    placeholder: 'фильм дня',
     multiline: false,
   },
 ]
