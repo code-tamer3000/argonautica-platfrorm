@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useMediaUrl } from '../../api/media'
 import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
-import { guessMediaKind } from '../../lib/mediaUpload'
+import { downloadFile, fileNameFromUrl, guessMediaKind } from '../../lib/mediaUpload'
 import styles from './chat.module.css'
 
 export function Attachment({ assetId }: { assetId: number }) {
   const { data } = useMediaUrl(assetId)
   const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
   if (!data) return <span className={styles.attLoading}>загрузка…</span>
   const kind = guessMediaKind(data.url)
   if (kind === 'image') {
@@ -19,13 +20,21 @@ export function Attachment({ assetId }: { assetId: number }) {
     )
   }
   if (kind === 'video') return <video className={styles.attVideo} src={data.url} controls />
-  // Presigned-URL уже несёт Content-Disposition: attachment (см. backend get_media_url),
-  // поэтому браузер сам скачивает файл. HTML-атрибут `download` игнорируется для
-  // кросс-доменных ссылок и на мобиле ломает навигацию в PWA — открываем в новой
-  // вкладке, чтобы не уводить из приложения.
+  // Скачиваем через blob (см. downloadFile) — надёжно на мобиле и в iOS-PWA, где
+  // кросс-доменный `download`/`target=_blank` не срабатывают.
+  const name = fileNameFromUrl(data.url)
+  async function handleDownload() {
+    if (busy || !data) return
+    setBusy(true)
+    try {
+      await downloadFile(data.url, name)
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
-    <a className={styles.attFile} href={data.url} target="_blank" rel="noreferrer">
-      <IconAttach size={16} /> Скачать файл
-    </a>
+    <button className={styles.attFile} onClick={handleDownload} disabled={busy}>
+      <IconAttach size={16} /> {busy ? 'Скачивание…' : `Скачать ${name}`}
+    </button>
   )
 }

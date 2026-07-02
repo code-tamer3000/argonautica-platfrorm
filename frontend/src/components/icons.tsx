@@ -151,3 +151,13 @@ export function IconNews(props: IconProps) {
     </Svg>
   )
 }
+
+export function IconSend(props: IconProps) {
+  // Стрелка вверх — «отправить» (компактная кнопка composer).
+  return (
+    <Svg {...props}>
+      <path d="M12 20V5" />
+      <path d="M6 11l6-6 6 6" />
+    </Svg>
+  )
+}
