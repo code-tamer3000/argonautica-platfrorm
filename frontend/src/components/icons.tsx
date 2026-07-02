@@ -12,6 +12,7 @@ import {
   Plus,
   Settings,
   Smile,
+  Sticker,
   User,
   Users,
   type LucideProps,
@@ -35,6 +36,7 @@ export const IconBack = (p: IconProps) => <ArrowLeft {...DEFAULTS} {...p} />
 export const IconPlus = (p: IconProps) => <Plus {...DEFAULTS} {...p} />
 export const IconAttach = (p: IconProps) => <Paperclip {...DEFAULTS} {...p} />
 export const IconSmile = (p: IconProps) => <Smile {...DEFAULTS} {...p} />
+export const IconSticker = (p: IconProps) => <Sticker {...DEFAULTS} {...p} />
 export const IconChevronLeft = (p: IconProps) => <ChevronLeft {...DEFAULTS} {...p} />
 export const IconChevronRight = (p: IconProps) => <ChevronRight {...DEFAULTS} {...p} />
 export const IconNews = (p: IconProps) => <Megaphone {...DEFAULTS} {...p} />

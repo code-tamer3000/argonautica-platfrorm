@@ -1,6 +1,6 @@
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useSendMessage, type SendBody } from '../../api/messages'
-import { IconAttach, IconSend, IconSmile } from '../../components/icons'
+import { IconAttach, IconSend, IconSticker } from '../../components/icons'
 import { mediaUpload } from '../../lib/mediaUpload'
 import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -118,7 +118,7 @@ export function Composer({ roomId }: Props) {
           title="Стикер"
           aria-label="Стикер"
         >
-          <IconSmile size={18} />
+          <IconSticker size={18} />
         </button>
         <textarea
           className={styles.composerInput}
