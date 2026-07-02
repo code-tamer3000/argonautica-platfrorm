@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useKbItem } from '../../api/kb'
 import { Attachment } from '../chat/Attachment'
+import { KbComments } from './KbComments'
 import { Spinner } from '../../components/Spinner'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
@@ -45,6 +46,8 @@ export function KbViewer() {
           ))}
         </div>
       )}
+
+      <KbComments itemId={id} />
     </div>
   )
 }

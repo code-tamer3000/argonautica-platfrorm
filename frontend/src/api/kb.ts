@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { KbItemOut } from '../lib/types'
+import type { KbCommentOut, KbItemOut } from '../lib/types'
 
 export const kbItemsKey = ['kb', 'items'] as const
 export const kbItemKey = (id: number) => ['kb', 'items', id] as const
+export const kbCommentsKey = (itemId: number) => ['kb', 'items', itemId, 'comments'] as const
 
 export function useKbItems() {
   return useQuery({
@@ -78,5 +79,32 @@ export function useDetachKbMedia() {
     mutationFn: ({ id, assetId }: { id: number; assetId: number }) =>
       http.del<null>(`/api/kb/items/${id}/media/${assetId}`),
     onSuccess: (_r, { id }) => qc.invalidateQueries({ queryKey: kbItemKey(id) }),
+  })
+}
+
+// --- Комментарии под материалом (плоские) ---
+
+export function useKbComments(itemId: number) {
+  return useQuery({
+    queryKey: kbCommentsKey(itemId),
+    queryFn: () => http.get<KbCommentOut[]>(`/api/kb/items/${itemId}/comments`),
+    enabled: itemId > 0,
+  })
+}
+
+export function useCreateKbComment(itemId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: string) =>
+      http.post<KbCommentOut>(`/api/kb/items/${itemId}/comments`, { body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: kbCommentsKey(itemId) }),
+  })
+}
+
+export function useDeleteKbComment(itemId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (commentId: number) => http.del<null>(`/api/kb/comments/${commentId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: kbCommentsKey(itemId) }),
   })
 }

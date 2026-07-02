@@ -37,6 +37,7 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState<number | null>(null)
 
   const attachMedia = useAttachKbMedia()
   const detachMedia = useDetachKbMedia()
@@ -54,8 +55,9 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
+    setProgress(0)
     try {
-      const asset = await mediaUpload(file)
+      const asset = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
       if (item) {
         // Редактирование: линкуем к материалу сразу.
         attachMedia.mutate(
@@ -75,6 +77,7 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки', 'error')
     } finally {
       setUploading(false)
+      setProgress(null)
       if (fileRef.current) fileRef.current.value = ''
     }
   }
@@ -152,6 +155,14 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
         >
           {uploading ? 'Загрузка…' : 'Прикрепить медиа'}
         </Button>
+        {progress !== null && (
+          <div className={styles.uploadProgress}>
+            <div className={styles.uploadBar}>
+              <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
+            </div>
+            <span className={styles.uploadPct}>{progress}%</span>
+          </div>
+        )}
       </div>
 
       <div className={styles.formActions}>

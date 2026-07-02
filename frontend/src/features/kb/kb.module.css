@@ -207,6 +207,57 @@
   border-top: 1px solid var(--divider);
 }
 
+/* ───── Комментарии под материалом ───── */
+.comments {
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--divider);
+}
+.commentsTitle {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+.commentsCount { color: var(--text-muted); font-family: var(--font-t4); font-size: var(--text-body-sm); }
+
+.commentForm { display: flex; align-items: flex-end; gap: var(--space-2); margin-bottom: var(--space-6); }
+.commentInput {
+  flex: 1; resize: none; min-height: 44px; max-height: 160px;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-t3); font-size: var(--text-body-sm); line-height: 1.5;
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); color: var(--text-primary);
+}
+.commentInput::placeholder { color: var(--text-ghost); }
+.commentInput:focus { outline: none; border-color: var(--divider-gold); box-shadow: 0 0 0 1px var(--divider-gold); }
+.commentSend {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 44px; height: 44px; border: none; border-radius: 50%;
+  background: var(--color-zoloto); color: var(--color-bezdna); cursor: pointer;
+  transition: var(--transition-base);
+}
+.commentSend:hover:not(:disabled) { background: var(--color-zoloto-yar); }
+.commentSend:disabled { opacity: 0.6; cursor: default; }
+
+.commentsEmpty { color: var(--text-muted); font-family: var(--font-t4); font-size: var(--text-body-sm); padding: var(--space-2) 0; }
+
+.commentList { list-style: none; display: flex; flex-direction: column; gap: var(--space-4); }
+.commentItem { display: flex; gap: var(--space-3); }
+.commentBody { flex: 1; min-width: 0; }
+.commentHead { display: flex; align-items: baseline; gap: var(--space-2); }
+.commentAuthor { font-family: var(--font-t4); font-size: var(--text-ui); color: var(--text-primary); }
+.commentTime { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); }
+.commentDelete {
+  margin-left: auto; background: transparent; border: none; color: var(--text-ghost);
+  cursor: pointer; font-size: 13px; padding: 0 var(--space-1); line-height: 1;
+}
+.commentDelete:hover { color: var(--blood-bright); }
+.commentText {
+  font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-primary);
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin-top: 2px;
+}
+
 /* ───── Мобила: убираем широкие поля страницы ───── */
 @media (max-width: 768px) {
   .page { padding: var(--space-4) var(--space-4); }
