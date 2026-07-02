@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
-import { IconBook, IconCalendar, IconChat, IconSettings, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
@@ -50,6 +50,10 @@ export function AppShell() {
             <span className={styles.navIcon}><IconChat /></span>
             <span className={styles.navLabel}>Чат</span>
           </NavLink>
+          <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconNews /></span>
+            <span className={styles.navLabel}>Новости</span>
+          </NavLink>
           <NavLink to="/kb" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconBook /></span>
             <span className={styles.navLabel}>База знаний</span>
@@ -72,6 +76,7 @@ export function AppShell() {
         <main key={sectionKey} className={`${styles.content} ${styles.contentEnter}`}>
           <Routes>
             <Route path="/" element={<ChatLayout />} />
+            <Route path="/news" element={<ChatLayout autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/calendar" element={<CalendarView />} />

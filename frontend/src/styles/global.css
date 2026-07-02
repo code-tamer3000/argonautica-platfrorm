@@ -79,6 +79,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--d
   body { position: fixed; inset: 0; }
 
   /* iOS Safari зумит вьюпорт при фокусе на поле с font-size < 16px — из-за этого
-     макет резко «съезжает». 16px убирает авто-зум. */
-  input, textarea, select { font-size: 16px; }
+     макет резко «съезжает». 16px убирает авто-зум. !important нужен, потому что
+     поля с классами (.search, .searchInput, .input) задают свой font-size через
+     --text-ui (14px) и перебивают этот элемент-селектор по специфичности. */
+  input, textarea, select { font-size: 16px !important; }
 }

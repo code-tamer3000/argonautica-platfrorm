@@ -2,8 +2,9 @@
 import uuid
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from .conftest import MakeUser, auth_headers, login
+from .conftest import AddMembership, MakeRoom, MakeUser, auth_headers, login
 
 
 async def test_non_admin_cannot_create_user(
@@ -137,6 +138,99 @@ async def test_non_admin_cannot_list_users(
     tokens = await login(client, user.username, "initpass123")
     resp = await client.get(
         "/api/admin/users",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 403
+
+
+async def test_admin_delete_user_removes_personal_footprint(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """DELETE /api/admin/users/{id} удаляет юзера, его сообщения, членства и личный канал."""
+    from sqlalchemy import select
+
+    from app.models.message import Message
+    from app.models.room import Room, RoomMember
+    from app.models.user import User
+
+    admin = await make_user(role="admin", password="adminpass123")
+    victim = await make_user(role="participant")
+
+    # Личный канал жертвы + групповая комната (создал админ), где жертва — участник.
+    personal = await make_room(created_by=victim.id, type="channel", name="Victim")
+    personal.is_personal = True
+    group = await make_room(created_by=admin.id, type="group")
+    await add_membership(group.id, victim.id, "member")
+    # Сообщение жертвы в группе.
+    session.add(Message(room_id=group.id, sender_id=victim.id, content="hi"))
+    await session.commit()
+
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{victim.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 204
+
+    assert await session.get(User, victim.id) is None
+    assert await session.get(Room, personal.id) is None
+    assert (
+        await session.scalar(
+            select(RoomMember).where(RoomMember.user_id == victim.id)
+        )
+    ) is None
+    assert (
+        await session.scalar(
+            select(Message).where(Message.sender_id == victim.id)
+        )
+    ) is None
+
+
+async def test_admin_cannot_delete_self(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin", password="adminpass123")
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{admin.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 400
+
+
+async def test_admin_delete_user_blocked_by_owned_content(
+    client: AsyncClient,
+    make_user: MakeUser,
+    session: AsyncSession,
+) -> None:
+    """Удаление отклоняется 409, если юзер владеет долгоиграющим контентом (статья БЗ)."""
+    from app.models.kb import KbItem
+
+    admin = await make_user(role="admin", password="adminpass123")
+    author = await make_user(role="participant")
+    session.add(KbItem(title="Article", created_by=author.id))
+    await session.commit()
+
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{author.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 409
+
+
+async def test_non_admin_cannot_delete_user(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    user = await make_user(role="participant", password="initpass123")
+    victim = await make_user(role="participant")
+    tokens = await login(client, user.username, "initpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{victim.id}",
         headers=auth_headers(tokens["access_token"]),
     )
     assert resp.status_code == 403

@@ -1,14 +1,32 @@
 import { useEffect, useState } from 'react'
+import { useRooms } from '../../api/rooms'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useUiStore } from '../../stores/ui'
 import { ChatPane } from './ChatPane'
 import { RoomList } from './RoomList'
 import styles from './chat.module.css'
 
-export function ChatLayout() {
+interface Props {
+  /** 'news' — при заходе автоматически открыть новостной канал (кнопка «Новости»). */
+  autoOpen?: 'news'
+}
+
+export function ChatLayout({ autoOpen }: Props = {}) {
   const [roomId, setRoomId] = useState<number | null>(null)
+  const [autoOpened, setAutoOpened] = useState(false)
+  const { data: rooms } = useRooms()
   const setActiveRoom = useUiStore((s) => s.setActiveRoom)
   const isMobile = useIsMobile()
+
+  // Один раз после загрузки комнат открываем новостной канал (для маршрута /news).
+  useEffect(() => {
+    if (autoOpen !== 'news' || autoOpened || !rooms) return
+    const news = rooms.find((r) => r.is_news)
+    if (news) {
+      setRoomId(news.id)
+      setAutoOpened(true)
+    }
+  }, [autoOpen, autoOpened, rooms])
 
   useEffect(() => {
     setActiveRoom(roomId)

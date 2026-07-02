@@ -169,3 +169,5 @@
 .btn-gold:hover:not(:disabled) { background: var(--color-zoloto-yar); }
 .btn-outline { background: transparent; color: var(--text-primary); border: 1px solid var(--color-frame-deep); }
 .btn-outline:hover:not(:disabled) { border-color: var(--color-kost-dim); }
+.btn-danger { background: transparent; color: var(--blood-bright); border: 1px solid var(--blood); }
+.btn-danger:hover:not(:disabled) { background: var(--blood); color: var(--color-kost-yar); }

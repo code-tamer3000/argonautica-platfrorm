@@ -1,16 +1,22 @@
 """Админские эндпоинты. Платформа закрытая — пользователей заводит только админ."""
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, exists, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import CompoundSelect
 
-from app.api.deps import require_admin
+from app.api.deps import get_current_active_user, require_admin
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
-from app.models.room import Room
+from app.models.calendar import CalendarEvent
+from app.models.kb import KbItem, KbItemMedia
+from app.models.media import MediaAsset
+from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.room import Room, RoomMember
+from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
 from app.schemas.user import (
     AdminCreateUserRequest,
@@ -104,3 +110,146 @@ async def update_user(
         user.updated_at = datetime.now(UTC)
     await session.flush()
     return user
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Полностью удалить пользователя и его личный след.
+
+    Отказываемся удалять, если юзер владеет ДОЛГОИГРАЮЩИМ/ОБЩИМ контентом (статьи БЗ,
+    стикерпаки, события календаря, не-личные комнаты) — такое нельзя молча стереть,
+    оно видно другим. Личный след (членства, состояние прочтения, закрепы, свои
+    сообщения, личный канал) удаляем каскадно в одной транзакции.
+
+    Рассчитано на удаление служебных/тестовых учёток. Роутер уже под require_admin.
+    """
+    if user_id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя удалить самого себя")
+
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    # Долгоиграющий контент блокирует удаление — иначе он «повиснет» или исчезнет у всех.
+    blockers: list[str] = []
+    if await session.scalar(select(exists().where(KbItem.created_by == user_id))):
+        blockers.append("статьи базы знаний")
+    if await session.scalar(select(exists().where(Stickerpack.created_by == user_id))):
+        blockers.append("стикерпаки")
+    if await session.scalar(select(exists().where(CalendarEvent.created_by == user_id))):
+        blockers.append("события календаря")
+    # Комнаты, созданные юзером, кроме его личного канала (тот удалим вместе с ним).
+    shared_rooms = await session.scalar(
+        select(exists().where(Room.created_by == user_id, Room.is_personal.is_(False)))
+    )
+    if shared_rooms:
+        blockers.append("комнаты/группы")
+    if blockers:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Нельзя удалить: пользователь владеет контентом ({', '.join(blockers)}). "
+            "Сначала переназначьте или удалите его.",
+        )
+
+    # Личный канал юзера (is_personal) удаляем вместе с ним; собираем его id.
+    personal_room_ids = list(
+        (
+            await session.execute(
+                select(Room.id).where(
+                    Room.created_by == user_id, Room.is_personal.is_(True)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    room_ids_to_drop = personal_room_ids
+
+    # id сообщений юзера — нужны, чтобы снять ссылки на них перед удалением.
+    msg_ids = list(
+        (await session.execute(select(Message.id).where(Message.sender_id == user_id)))
+        .scalars()
+        .all()
+    )
+
+    # Снять FK-ссылки на сообщения удаляемого юзера (закрепы, last_read, вложения, треды).
+    if msg_ids:
+        await session.execute(
+            delete(PinnedMessage).where(PinnedMessage.message_id.in_(msg_ids))
+        )
+        await session.execute(
+            delete(MessageAttachment).where(MessageAttachment.message_id.in_(msg_ids))
+        )
+        await session.execute(
+            update(RoomMember)
+            .where(RoomMember.last_read_message_id.in_(msg_ids))
+            .values(last_read_message_id=None)
+        )
+        # Ответы в тредах на корни этого юзера — «отвязываем» (правило плоскости тредов).
+        await session.execute(
+            update(Message)
+            .where(Message.thread_root_id.in_(msg_ids))
+            .values(thread_root_id=None)
+        )
+        await session.execute(delete(Message).where(Message.sender_id == user_id))
+
+    # Закрепы, сделанные юзером, и его членства/состояние чтения.
+    await session.execute(delete(PinnedMessage).where(PinnedMessage.pinned_by == user_id))
+    await session.execute(delete(RoomMember).where(RoomMember.user_id == user_id))
+
+    # Личный канал юзера: его сообщения, закрепы, членства и сама комната.
+    if room_ids_to_drop:
+        room_msg_ids = list(
+            (
+                await session.execute(
+                    select(Message.id).where(Message.room_id.in_(room_ids_to_drop))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if room_msg_ids:
+            await session.execute(
+                delete(MessageAttachment).where(
+                    MessageAttachment.message_id.in_(room_msg_ids)
+                )
+            )
+            await session.execute(
+                delete(PinnedMessage).where(PinnedMessage.message_id.in_(room_msg_ids))
+            )
+        await session.execute(
+            delete(PinnedMessage).where(PinnedMessage.room_id.in_(room_ids_to_drop))
+        )
+        await session.execute(
+            delete(RoomMember).where(RoomMember.room_id.in_(room_ids_to_drop))
+        )
+        await session.execute(
+            delete(Message).where(Message.room_id.in_(room_ids_to_drop))
+        )
+        await session.execute(delete(Room).where(Room.id.in_(room_ids_to_drop)))
+
+    # Медиа, загруженные юзером. Снимаем его аватар (media_assets.created_by NOT NULL,
+    # обнулить нельзя — только удалить актив). Удаляем лишь те активы, что больше
+    # НИКЕМ не используются: оставшиеся FK-ссылки (чужие сообщения/БЗ/стикеры) —
+    # защитная сеть, которая корректно откатит транзакцию, если что-то ещё висит.
+    user.avatar_media_id = None
+    await session.flush()
+    referenced: CompoundSelect[tuple[Any]] = union(
+        select(MessageAttachment.media_asset_id),
+        select(KbItemMedia.media_asset_id),
+        select(Sticker.image_media_id).where(Sticker.image_media_id.isnot(None)),
+        select(User.avatar_media_id).where(User.avatar_media_id.isnot(None)),
+    )
+    await session.execute(
+        delete(MediaAsset).where(
+            MediaAsset.created_by == user_id,
+            MediaAsset.id.notin_(referenced.scalar_subquery()),
+        )
+    )
+
+    await session.delete(user)
+    await session.flush()

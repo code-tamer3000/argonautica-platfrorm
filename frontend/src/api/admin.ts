@@ -47,3 +47,14 @@ export function usePatchAdminUser() {
     onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
   })
 }
+
+export function useDeleteUser() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => http.del<void>(`/api/admin/users/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminUsersKey })
+      qc.invalidateQueries({ queryKey: usersKey })
+    },
+  })
+}

@@ -141,3 +141,13 @@ export function IconChevronRight(props: IconProps) {
     </Svg>
   )
 }
+
+export function IconNews(props: IconProps) {
+  // Рупор/анонс — «новости».
+  return (
+    <Svg {...props}>
+      <path d="M4 9v6h3l8 4V5L7 9z" />
+      <path d="M18 9a4 4 0 0 1 0 6" />
+    </Svg>
+  )
+}

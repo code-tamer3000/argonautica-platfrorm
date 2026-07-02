@@ -19,8 +19,12 @@ export function Attachment({ assetId }: { assetId: number }) {
     )
   }
   if (kind === 'video') return <video className={styles.attVideo} src={data.url} controls />
+  // Presigned-URL уже несёт Content-Disposition: attachment (см. backend get_media_url),
+  // поэтому браузер сам скачивает файл. HTML-атрибут `download` игнорируется для
+  // кросс-доменных ссылок и на мобиле ломает навигацию в PWA — открываем в новой
+  // вкладке, чтобы не уводить из приложения.
   return (
-    <a className={styles.attFile} href={data.url} download rel="noreferrer">
+    <a className={styles.attFile} href={data.url} target="_blank" rel="noreferrer">
       <IconAttach size={16} /> Скачать файл
     </a>
   )
