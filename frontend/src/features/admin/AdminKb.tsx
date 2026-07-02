@@ -19,46 +19,78 @@ interface KbFormValues {
   title: string
   body: string
   published: boolean
+  media_asset_ids: number[]
 }
 
 interface KbFormProps {
   initial?: KbItemOut
   onSubmit: (values: KbFormValues) => void
-  showMedia?: boolean
+  /** Существующий материал: медиа прикрепляем/открепляем сразу через API.
+      Без него (создание) — складываем id загруженных файлов и отдаём в onSubmit. */
   item?: KbItemOut
 }
 
-function KbForm({ initial, onSubmit, showMedia, item }: KbFormProps) {
+function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
   const [published, setPublished] = useState(initial?.published ?? false)
+  // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
+  const [stagedMedia, setStagedMedia] = useState<number[]>([])
+  const [uploading, setUploading] = useState(false)
 
   const attachMedia = useAttachKbMedia()
   const detachMedia = useDetachKbMedia()
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Прикреплённые медиа: у существующего материала — из item, у нового — staged.
+  const mediaIds = item ? item.media_asset_ids : stagedMedia
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ title, body, published })
+    onSubmit({ title, body, published, media_asset_ids: stagedMedia })
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file || !item) return
+    if (!file) return
+    setUploading(true)
     try {
       const asset = await mediaUpload(file)
-      attachMedia.mutate(
-        { id: item.id, media_asset_ids: [asset.id] },
+      if (item) {
+        // Редактирование: линкуем к материалу сразу.
+        attachMedia.mutate(
+          { id: item.id, media_asset_ids: [asset.id] },
+          {
+            onSuccess: () => toast('Медиа прикреплено'),
+            onError: (err: unknown) =>
+              toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+          },
+        )
+      } else {
+        // Создание: копим id, прилинкуем при сохранении материала.
+        setStagedMedia((prev) => [...prev, asset.id])
+        toast('Медиа добавлено')
+      }
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка загрузки', 'error')
+    } finally {
+      setUploading(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  function removeMedia(assetId: number) {
+    if (item) {
+      detachMedia.mutate(
+        { id: item.id, assetId },
         {
-          onSuccess: () => toast('Медиа прикреплено'),
+          onSuccess: () => toast('Откреплено'),
           onError: (err: unknown) =>
             toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
         },
       )
-    } catch (err) {
-      toast(err instanceof Error ? err.message : 'Ошибка загрузки', 'error')
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
+    } else {
+      setStagedMedia((prev) => prev.filter((id) => id !== assetId))
     }
   }
 
@@ -91,53 +123,36 @@ function KbForm({ initial, onSubmit, showMedia, item }: KbFormProps) {
         Опубликовано
       </label>
 
-      {showMedia && item && (
-        <div className={styles.mediaSection}>
-          <div className={styles.mediaSectionTitle}>Медиафайлы</div>
-          {item.media_asset_ids.length === 0 && (
-            <p className={styles.mediaEmpty}>Нет прикреплённых файлов</p>
-          )}
-          <div className={styles.mediaList}>
-            {item.media_asset_ids.map((assetId) => (
-              <div key={assetId} className={styles.mediaItem}>
-                <Attachment assetId={assetId} />
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() =>
-                    detachMedia.mutate(
-                      { id: item.id, assetId },
-                      {
-                        onSuccess: () => toast('Откреплено'),
-                        onError: (err: unknown) =>
-                          toast(
-                            err instanceof Error ? err.message : 'Ошибка',
-                            'error',
-                          ),
-                      },
-                    )
-                  }
-                >
-                  Открепить
-                </Button>
-              </div>
-            ))}
-          </div>
-          <input
-            ref={fileRef}
-            type="file"
-            style={{ display: 'none' }}
-            onChange={handleFileChange}
-          />
-          <Button
-            variant="outline"
-            type="button"
-            onClick={() => fileRef.current?.click()}
-          >
-            Прикрепить медиа
-          </Button>
+      <div className={styles.mediaSection}>
+        <div className={styles.mediaSectionTitle}>Медиафайлы</div>
+        {mediaIds.length === 0 && (
+          <p className={styles.mediaEmpty}>Нет прикреплённых файлов</p>
+        )}
+        <div className={styles.mediaList}>
+          {mediaIds.map((assetId) => (
+            <div key={assetId} className={styles.mediaItem}>
+              <Attachment assetId={assetId} />
+              <Button variant="outline" type="button" onClick={() => removeMedia(assetId)}>
+                {item ? 'Открепить' : 'Убрать'}
+              </Button>
+            </div>
+          ))}
         </div>
-      )}
+        <input
+          ref={fileRef}
+          type="file"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+        />
+        <Button
+          variant="outline"
+          type="button"
+          disabled={uploading}
+          onClick={() => fileRef.current?.click()}
+        >
+          {uploading ? 'Загрузка…' : 'Прикрепить медиа'}
+        </Button>
+      </div>
 
       <div className={styles.formActions}>
         <Button type="submit">Сохранить</Button>
@@ -161,7 +176,12 @@ export function AdminKb() {
 
   function handleCreate(values: KbFormValues) {
     createItem.mutate(
-      { title: values.title, body: values.body || null, published: values.published },
+      {
+        title: values.title,
+        body: values.body || null,
+        published: values.published,
+        media_asset_ids: values.media_asset_ids,
+      },
       {
         onSuccess: () => {
           toast('Создано')
@@ -254,12 +274,7 @@ export function AdminKb() {
 
       {editItem && (
         <Modal title="Редактировать" onClose={() => setEditItem(null)}>
-          <KbForm
-            initial={editItem}
-            onSubmit={handleEdit}
-            showMedia
-            item={editItem}
-          />
+          <KbForm initial={editItem} onSubmit={handleEdit} item={editItem} />
         </Modal>
       )}
     </div>

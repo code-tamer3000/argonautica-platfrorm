@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMediaUrl } from '../../api/media'
 import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
+import { VideoPlayer } from '../../components/VideoPlayer'
 import { downloadFile, fileNameFromUrl, guessMediaKind } from '../../lib/mediaUpload'
 import styles from './chat.module.css'
 
@@ -19,7 +20,7 @@ export function Attachment({ assetId }: { assetId: number }) {
       </>
     )
   }
-  if (kind === 'video') return <video className={styles.attVideo} src={data.url} controls />
+  if (kind === 'video') return <VideoPlayer src={data.url} />
   // Скачиваем через blob (см. downloadFile) — надёжно на мобиле и в iOS-PWA, где
   // кросс-доменный `download`/`target=_blank` не срабатывают.
   const name = fileNameFromUrl(data.url)

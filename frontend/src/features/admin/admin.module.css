@@ -12,13 +12,27 @@
 .form { display: flex; flex-direction: column; gap: var(--space-4); width: 100%; max-width: 480px; }
 .formRow { display: flex; flex-direction: column; gap: var(--space-2); }
 .formRow label { font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-t4); }
+
+/* Поле формы: подпись сверху, input/textarea снизу (label оборачивает контрол). */
+.label { display: flex; flex-direction: column; gap: var(--space-2); font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-t4); }
+/* Горизонтальная подпись для чекбокса. */
+.checkLabel { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-ui); color: var(--text-primary); font-family: var(--font-t4); cursor: pointer; }
+.checkLabel input { flex: 0 0 auto; }
+/* Описание в строке списка (напр. событие календаря). */
+.listDescription { font-size: 0.8rem; color: var(--text-secondary); }
+
+/* Секция медиа в форме БЗ. */
+.mediaSection { display: flex; flex-direction: column; gap: var(--space-3); }
+.mediaSectionTitle { font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-t4); text-transform: uppercase; letter-spacing: var(--ls-label-sm); }
+.mediaEmpty { font-size: var(--text-ui); color: var(--text-ghost); }
+.mediaList { display: flex; flex-direction: column; gap: var(--space-3); }
 .input { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-2) var(--space-3); color: var(--text-primary); font-size: var(--text-ui); width: 100%; box-sizing: border-box; }
 .input:focus { outline: none; border-color: var(--accent); }
 .textarea { resize: vertical; min-height: 120px; }
 .checkRow { display: flex; align-items: center; gap: var(--space-3); }
 .formActions { display: flex; justify-content: flex-end; gap: var(--space-3); padding-top: var(--space-2); }
 .mediaGrid { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
-.mediaItem { position: relative; }
+.mediaItem { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
 .mediaDetach { position: absolute; top: -6px; right: -6px; background: var(--bg-surface); border: 1px solid var(--divider); border-radius: 50%; width: 20px; height: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 10px; }
 .stickerGrid { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
 .stickerImg { width: 48px; height: 48px; object-fit: contain; border: 1px solid var(--divider); border-radius: var(--radius-btn); }
@@ -33,7 +47,25 @@
 /* ───── Мобила: узкие поля, прокручиваемый подраздел-навбар ───── */
 @media (max-width: 768px) {
   .page { padding: var(--space-4); gap: var(--space-4); }
-  .adminNav { padding: var(--space-2) var(--space-3); overflow-x: auto; flex-wrap: nowrap; }
-  .adminNavLink, .adminNavActive { white-space: nowrap; }
+  .adminNav {
+    padding: var(--space-2) var(--space-3);
+    overflow-x: auto; flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .adminNav::-webkit-scrollbar { display: none; }
+  .adminNavLink, .adminNavActive { white-space: nowrap; flex: 0 0 auto; }
   .pageHeader { flex-wrap: wrap; gap: var(--space-3); }
+
+  /* Строка списка: заголовок сверху, действия снизу отдельным рядом — иначе
+     3-4 кнопки в один ряд с заголовком «схлопываются» и выглядят смазанно. */
+  .listItem { flex-direction: column; align-items: stretch; gap: var(--space-3); }
+  .listItemMain { width: 100%; }
+  .listActions { flex-wrap: wrap; }
+  .listActions > * { flex: 1 1 auto; }
+
+  /* Модалка/форма на всю ширину экрана. */
+  .form { max-width: 100%; }
+
+  /* Медиа-строка в форме БЗ: вложение и кнопка «Открепить» друг под другом. */
+  .mediaItem { align-items: stretch; }
 }
