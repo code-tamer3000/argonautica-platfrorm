@@ -237,6 +237,61 @@ async def test_admin_not_member_manages(
     assert await _membership_count(session, room.id, target.id) == 0
 
 
+async def test_list_members_returns_all_for_member(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    member = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    await add_membership(room.id, member.id, "member")
+
+    resp = await client.get(
+        f"/api/rooms/{room.id}/members", headers=await _headers(client, member)
+    )
+    assert resp.status_code == 200
+    user_ids = {row["user_id"] for row in resp.json()}
+    assert user_ids == {owner.id, member.id}
+
+
+async def test_list_members_forbidden_for_outsider(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    outsider = await make_user()  # не состоит в группе, не admin
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+
+    resp = await client.get(
+        f"/api/rooms/{room.id}/members", headers=await _headers(client, outsider)
+    )
+    assert resp.status_code == 403
+
+
+async def test_list_members_allowed_for_admin_non_member(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    admin = await make_user(role="admin")
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+
+    resp = await client.get(
+        f"/api/rooms/{room.id}/members", headers=await _headers(client, admin)
+    )
+    assert resp.status_code == 200
+    assert {row["user_id"] for row in resp.json()} == {owner.id}
+
+
 async def test_add_nonexistent_user(
     client: AsyncClient,
     make_user: MakeUser,

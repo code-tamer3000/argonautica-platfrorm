@@ -221,6 +221,27 @@ async def _count_owners(session: AsyncSession, room_id: int) -> int:
     return result.scalar_one()
 
 
+@router.get("/{room_id}/members", response_model=list[MemberOut])
+async def list_members(
+    room_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[RoomMember]:
+    """Список участников группы. Доступ — только своим участникам/admin (п.1)."""
+    await _load_group(session, room_id)
+
+    is_member = await session.get(RoomMember, (room_id, current_user.id)) is not None
+    if not is_member and current_user.role != "admin":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+
+    result = await session.execute(
+        select(RoomMember)
+        .where(RoomMember.room_id == room_id)
+        .order_by(RoomMember.joined_at)
+    )
+    return list(result.scalars().all())
+
+
 @router.post("/{room_id}/members", response_model=MemberOut)
 async def add_member(
     room_id: int,
