@@ -1,7 +1,6 @@
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useSendMessage, type SendBody } from '../../api/messages'
-import { Button } from '../../components/Button'
-import { IconAttach, IconSmile } from '../../components/icons'
+import { IconAttach, IconSend, IconSmile } from '../../components/icons'
 import { mediaUpload } from '../../lib/mediaUpload'
 import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -70,6 +69,8 @@ export function Composer({ roomId }: Props) {
     }
   }
 
+  const canSend = !!text.trim() || pendingFiles.length > 0
+
   return (
     <div className={styles.composer}>
       {pendingFiles.length > 0 && (
@@ -127,13 +128,19 @@ export function Composer({ roomId }: Props) {
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKey}
         />
-        <Button
-          variant="gold"
-          onClick={submit}
-          disabled={(!text.trim() && pendingFiles.length === 0) || send.isPending}
-        >
-          Отправить
-        </Button>
+        {/* Круглая кнопка отправки появляется только когда есть что отправить —
+            в пустом состоянии не занимает место и не «давит» интерфейс. */}
+        {canSend && (
+          <button
+            className={styles.sendBtn}
+            onClick={submit}
+            disabled={send.isPending}
+            title="Отправить"
+            aria-label="Отправить"
+          >
+            {send.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
+          </button>
+        )}
       </div>
     </div>
   )

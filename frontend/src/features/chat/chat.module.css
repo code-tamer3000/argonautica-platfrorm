@@ -271,6 +271,16 @@
   outline: none; border-color: var(--divider-gold);
   box-shadow: 0 0 0 1px var(--divider-gold);
 }
+/* Компактная круглая кнопка отправки — появляется только при наличии текста/вложений. */
+.sendBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 44px; height: 44px; border: none; border-radius: 50%;
+  background: var(--color-zoloto); color: var(--color-bezdna); cursor: pointer;
+  transition: var(--transition-base);
+}
+.sendBtn:hover:not(:disabled) { background: var(--color-zoloto-yar); }
+.sendBtn:disabled { opacity: 0.6; cursor: default; }
+
 .spin {
   width: 16px; height: 16px; display: inline-block;
   border: 2px solid var(--color-frame-deep); border-top-color: var(--accent);
@@ -291,8 +301,11 @@
   display: inline-flex; align-items: center; gap: var(--space-2);
   padding: var(--space-2) var(--space-3); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-btn); font-family: var(--font-t4); font-size: var(--text-label-md);
-  color: var(--text-secondary);
+  color: var(--text-secondary); background: var(--bg-deep); cursor: pointer;
+  max-width: 100%; text-align: left;
 }
+.attFile:hover:not(:disabled) { border-color: var(--color-kost-dim); color: var(--text-primary); }
+.attFile:disabled { opacity: 0.6; cursor: default; }
 .attLoading { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost); padding: var(--space-2) 0; }
 .sticker { width: 120px; height: 120px; object-fit: contain; margin-top: var(--space-1); }
 

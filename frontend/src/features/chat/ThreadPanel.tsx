@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMarkRead, useSendMessage } from '../../api/messages'
 import { useThread } from '../../api/threads'
 import { useUsersMap } from '../../api/users'
-import { Button } from '../../components/Button'
+import { IconSend } from '../../components/icons'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
 import { MessageItem } from './MessageItem'
@@ -92,9 +92,17 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
                 }
               }}
             />
-            <Button variant="gold" onClick={handleSend} disabled={!text.trim() || send.isPending}>
-              Ответить
-            </Button>
+            {!!text.trim() && (
+              <button
+                className={styles.sendBtn}
+                onClick={handleSend}
+                disabled={send.isPending}
+                title="Ответить"
+                aria-label="Ответить"
+              >
+                {send.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
+              </button>
+            )}
           </div>
         </>
       )}
