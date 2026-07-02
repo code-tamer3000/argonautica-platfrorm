@@ -42,8 +42,8 @@
 .body        { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .sidenav     { width: 200px; padding: var(--space-3) 0; border-right: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; background: var(--bg-surface); flex-shrink: 0; }
 .navLink     { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); margin: 0 var(--space-2); color: var(--text-secondary); text-decoration: none; font-family: var(--font-t4); font-size: var(--text-ui); transition: var(--transition-base); }
-.navLink:hover { background: var(--color-frame); color: var(--text-primary); }
-.navLinkActive { composes: navLink; background: var(--color-more); color: var(--text-primary); }
+.navLink:hover { color: var(--text-primary); }
+.navLinkActive { composes: navLink; color: var(--text-primary); }
 .navIcon     { display: inline-flex; align-items: center; justify-content: center; width: 22px; color: inherit; }
 .navLabel    { white-space: nowrap; }
 .content     { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -52,6 +52,20 @@
    после анимации transform сбрасывается в none, чтобы не ломать
    containing block для position: fixed у drawer/modal внутри. */
 .contentEnter { animation: arg-rise 280ms var(--ease-out-soft); }
+
+/* Плавный «пилл» под активным пунктом навигации: подсветка (фон) анимируется
+   отдельным слоем через ::before, а не transition цвета текста — так highlight
+   появляется мгновенно и без джанка. */
+.navLink { position: relative; }
+.navLink::before {
+  content: ''; position: absolute; inset: 0; border-radius: var(--radius-btn);
+  background: var(--color-more); opacity: 0; transform: scale(0.96);
+  transition: opacity 160ms ease, transform 200ms var(--ease-out-soft);
+  z-index: 0; pointer-events: none;
+}
+.navLink:hover::before { opacity: 0.5; transform: scale(1); }
+.navLinkActive::before { opacity: 1; transform: scale(1); }
+.navIcon, .navLabel { position: relative; z-index: 1; }
 
 .placeholder {
   max-width: 520px;
@@ -88,13 +102,27 @@
     padding: var(--space-2) var(--space-1);
     font-size: var(--text-label);
     text-align: center;
+    /* Мгновенная смена цвета иконки/подписи при переключении раздела (без 180ms
+       фейда, из-за которого подсветка «догоняла» с лагом на мобиле). */
+    transition: color 0ms;
   }
-  .navLink:hover { background: transparent; }
-  .navLinkActive { background: transparent; color: var(--accent); }
+  /* На мобиле «пилл» — компактный золотой прямоугольник по центру пункта, а не
+     на всю ячейку; появляется мгновенно (opacity-only, без transform-джанка). */
+  .navLink::before {
+    inset: 2px var(--space-2); background: var(--divider-gold);
+    transform: none; transition: opacity 120ms ease;
+  }
+  .navLink:hover::before { opacity: 0; }
+  .navLinkActive { color: var(--accent); }
+  .navLinkActive::before { opacity: 1; transform: none; }
   .navLabel { font-size: 10px; letter-spacing: 0.02em; }
 
   /* Контент не должен заезжать под нижний бар */
   .content { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
+
+  /* На мобиле анимируем появление раздела только через opacity (без translateY):
+     transform всего поддерева тяжёл и вызывал видимый лаг переключения. */
+  .contentEnter { animation: arg-fade 200ms ease; }
 
   /* Клавиатура открыта: #root уже сжат до visual viewport (см. lib/viewport.ts).
      Прячем нижний таб-бар (он бы всё равно оказался за клавиатурой) и убираем
