@@ -95,4 +95,10 @@
 
   /* Контент не должен заезжать под нижний бар */
   .content { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
+
+  /* Клавиатура открыта: #root уже сжат до visual viewport (см. lib/viewport.ts).
+     Прячем нижний таб-бар (он бы всё равно оказался за клавиатурой) и убираем
+     его резерв, чтобы composer/поля стояли впритык над клавиатурой без зазора. */
+  :global(html[data-kb='open']) .sidenav { transform: translateY(100%); }
+  :global(html[data-kb='open']) .content { padding-bottom: 0; }
 }
