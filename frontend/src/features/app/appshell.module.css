@@ -48,11 +48,6 @@
 .navLabel    { white-space: nowrap; }
 .content     { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
-/* Появление контента при смене вкладки. Без forwards-фиксации:
-   после анимации transform сбрасывается в none, чтобы не ломать
-   containing block для position: fixed у drawer/modal внутри. */
-.contentEnter { animation: arg-rise 280ms var(--ease-out-soft); }
-
 /* Плавный «пилл» под активным пунктом навигации: подсветка (фон) анимируется
    отдельным слоем через ::before, а не transition цвета текста — так highlight
    появляется мгновенно и без джанка. */
@@ -93,6 +88,12 @@
     border-top: 1px solid var(--divider);
     background: var(--bg-surface);
     z-index: 40;
+    /* Выносим таб-бар на отдельный слой композитора. Без этого фикс-элемент на
+       мобиле НЕ перерисовывается сразу при смене активного пункта (тяжёлый
+       ремоунт <main> по key блокирует paint) — подсветка появлялась только после
+       следующего касания. Свой слой перерисовывается независимо от контента. */
+    transform: translateZ(0);
+    will-change: transform;
   }
   .navLink, .navLinkActive {
     flex: 1;
@@ -119,14 +120,8 @@
   .navLinkActive::before { opacity: 1; }
   .navLabel { font-size: 10px; letter-spacing: 0.02em; }
 
-  /* Контент не должен заезжать под нижний бар */
+  /* Контент не должен заезжать под нижний бар. */
   .content { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }
-
-  /* На мобиле убираем анимацию появления раздела совсем: ремоунт всего поддерева
-     (key на <main>) сам по себе тяжёлый, а лишние кадры анимации поверх него
-     давали видимый лаг и «подтормаживание» подсветки таб-бара. Переключение
-     должно быть мгновенным. */
-  .contentEnter { animation: none; }
 
   /* Клавиатура открыта: #root уже сжат до visual viewport (см. lib/viewport.ts).
      Прячем нижний таб-бар (он бы всё равно оказался за клавиатурой) и убираем

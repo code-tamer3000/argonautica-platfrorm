@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { Button } from '../../components/Button'
 import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
@@ -20,9 +20,6 @@ import styles from './appshell.module.css'
 
 export function AppShell() {
   const { user, logout } = useAuth()
-  const location = useLocation()
-  // Корневой сегмент пути — ключ для анимации появления при смене вкладки.
-  const sectionKey = '/' + (location.pathname.split('/')[1] ?? '')
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -73,7 +70,7 @@ export function AppShell() {
             </NavLink>
           )}
         </nav>
-        <main key={sectionKey} className={`${styles.content} ${styles.contentEnter}`}>
+        <main className={styles.content}>
           <Routes>
             <Route path="/" element={<ChatLayout />} />
             <Route path="/news" element={<ChatLayout autoOpen="news" />} />
