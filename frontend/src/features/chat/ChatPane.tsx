@@ -206,8 +206,13 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {showMembers && (
         <MembersDrawer
           roomId={roomId}
+          isOwner={room.type === 'group' && room.created_by === user?.id}
           onClose={() => setShowMembers(false)}
           onOpenDm={onOpenRoom}
+          onDeleted={() => {
+            setShowMembers(false)
+            onBack?.()
+          }}
         />
       )}
       {showProfile && peer && (
