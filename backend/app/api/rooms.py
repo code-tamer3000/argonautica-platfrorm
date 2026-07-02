@@ -4,17 +4,21 @@
 Типы: dm (состав фиксирован, дедуп по dm_key), group (членство явное, есть owner),
 channel (доступ неявный — вариант А: строк членства на всех не плодим, видны всем).
 """
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
-from app.models.message import Message
+from app.models.kb import KbItemMedia
+from app.models.media import MediaAsset
+from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.room import Room, RoomMember
+from app.models.sticker import Sticker
 from app.models.user import User
 from app.schemas.room import AddMemberRequest, CreateRoomRequest, MemberOut, RoomOut
 
@@ -308,5 +312,79 @@ async def remove_member(
         )
 
     await session.delete(membership)
+    await session.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_room(
+    room_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Удалить группу целиком (owner или platform-admin). Каскадно, в одной транзакции.
+
+    Только для type == 'group' — dm и каналы этим путём не удаляются.
+    """
+    await _load_group(session, room_id)
+
+    is_admin = current_user.role == "admin"
+    if not is_admin and not await _is_room_owner(session, room_id, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Owner or admin required")
+
+    msg_ids = list(
+        (
+            await session.execute(select(Message.id).where(Message.room_id == room_id))
+        )
+        .scalars()
+        .all()
+    )
+
+    media_ids: list[int] = []
+    if msg_ids:
+        media_ids = list(
+            (
+                await session.execute(
+                    select(MessageAttachment.media_asset_id).where(
+                        MessageAttachment.message_id.in_(msg_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await session.execute(
+            delete(MessageAttachment).where(MessageAttachment.message_id.in_(msg_ids))
+        )
+        await session.execute(
+            delete(PinnedMessage).where(PinnedMessage.message_id.in_(msg_ids))
+        )
+        # Ответы в тредах на корни этой комнаты — «отвязываем» (правило плоскости тредов).
+        await session.execute(
+            update(Message)
+            .where(Message.thread_root_id.in_(msg_ids))
+            .values(thread_root_id=None)
+        )
+
+    await session.execute(delete(PinnedMessage).where(PinnedMessage.room_id == room_id))
+    await session.execute(delete(RoomMember).where(RoomMember.room_id == room_id))
+    await session.execute(delete(Message).where(Message.room_id == room_id))
+    await session.execute(delete(Room).where(Room.id == room_id))
+
+    # Медиа, привязанные к сообщениям комнаты, но больше никем не используемые.
+    if media_ids:
+        referenced: CompoundSelect[tuple[Any]] = union(
+            select(MessageAttachment.media_asset_id),
+            select(KbItemMedia.media_asset_id),
+            select(Sticker.image_media_id).where(Sticker.image_media_id.isnot(None)),
+            select(User.avatar_media_id).where(User.avatar_media_id.isnot(None)),
+        )
+        await session.execute(
+            delete(MediaAsset).where(
+                MediaAsset.id.in_(media_ids),
+                MediaAsset.id.notin_(referenced.scalar_subquery()),
+            )
+        )
+
     await session.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

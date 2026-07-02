@@ -54,6 +54,14 @@ export function useRemoveMember(roomId: number) {
   })
 }
 
+export function useDeleteRoom() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (roomId: number) => http.del<null>(`/api/rooms/${roomId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: roomsKey }),
+  })
+}
+
 export function usePersonalChannel() {
   return useQuery({
     queryKey: ['personal-channel'],

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useRoomMembers, useRemoveMember } from '../../api/rooms'
+import { useRoomMembers, useRemoveMember, useDeleteRoom } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Drawer } from '../../components/Overlay'
@@ -10,16 +10,33 @@ import { UserProfileModal } from './UserProfileModal'
 
 interface Props {
   roomId: number
+  isOwner?: boolean
   onClose: () => void
   onOpenDm?: (roomId: number) => void
+  onDeleted?: () => void
 }
 
-export function MembersDrawer({ roomId, onClose, onOpenDm }: Props) {
+export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }: Props) {
   const { data: members, isLoading } = useRoomMembers(roomId, true)
   const remove = useRemoveMember(roomId)
+  const deleteRoom = useDeleteRoom()
   const users = useUsersMap()
   const { user: me } = useAuth()
   const [picked, setPicked] = useState<PublicUserOut | null>(null)
+
+  const canDelete = isOwner || me?.role === 'admin'
+
+  const handleDeleteRoom = () => {
+    if (!window.confirm('Удалить группу безвозвратно? Это удалит все сообщения и вложения.')) {
+      return
+    }
+    deleteRoom.mutate(roomId, {
+      onSuccess: () => {
+        onClose()
+        onDeleted?.()
+      },
+    })
+  }
 
   return (
     <Drawer title="Участники" onClose={onClose}>
@@ -89,6 +106,27 @@ export function MembersDrawer({ roomId, onClose, onOpenDm }: Props) {
           </div>
         )
       })}
+
+      {canDelete && (
+        <div style={{ paddingTop: 16, marginTop: 8, borderTop: '1px solid var(--border)' }}>
+          <button
+            onClick={handleDeleteRoom}
+            disabled={deleteRoom.isPending}
+            style={{
+              width: '100%',
+              fontSize: 13,
+              padding: '8px 12px',
+              borderRadius: 6,
+              border: '1px solid var(--danger, #e74c3c)',
+              background: 'transparent',
+              color: 'var(--danger, #e74c3c)',
+              cursor: 'pointer',
+            }}
+          >
+            Удалить группу
+          </button>
+        </div>
+      )}
 
       {picked && (
         <UserProfileModal
