@@ -33,6 +33,7 @@ from app.services.ratelimit import enforce_rate_limit
 from app.services.rooms import (
     assert_can_pin,
     assert_room_access,
+    ensure_news_channel,
     get_or_create_channel_membership,
     load_room,
 )
@@ -163,6 +164,77 @@ async def send_message(
     out = _to_out(message, list(body.attachment_ids))
     # Живая доставка подписчикам комнаты (payload самодостаточный).
     await publish_room_event(room_id, ws_schemas.message_new_event(out))
+    return out
+
+
+@router.post(
+    "/{room_id}/messages/{message_id}/repost",
+    response_model=MessageOut,
+    status_code=201,
+)
+async def repost_to_news(
+    room_id: int,
+    message_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> MessageOut:
+    """Репост сообщения в новостной канал (только admin).
+
+    Копируем текст/стикер/вложения в новый верхнеуровневый пост новостного канала,
+    сохраняя исходного автора в forwarded_from_sender_id (атрибуция «переслано от X»).
+    Доступ к исходной комнате проверяется как везде (п.1). Проверку владения ассетом
+    (в отличие от send_message) не делаем — это админский репост; доступ к медиа у
+    зрителей новостей отработает через assert_media_access (медиа привязано к живому
+    сообщению в доступной комнате).
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only admins can repost to the news channel"
+        )
+
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+
+    source = await session.get(Message, message_id)
+    if (
+        source is None
+        or source.room_id != room_id
+        or source.deleted_at is not None
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    news = await ensure_news_channel(session)
+    if news is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "News channel is not ready yet"
+        )
+    if source.room_id == news.id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Message is already in the news channel"
+        )
+
+    attachment_ids = (await _attachments_map(session, [source.id])).get(source.id, [])
+
+    repost = Message(
+        room_id=news.id,
+        sender_id=current_user.id,
+        content=source.content,
+        sticker_id=source.sticker_id,
+        # Цепочка репостов сохраняет ПЕРВОГО автора, а не промежуточного репостера.
+        forwarded_from_sender_id=source.forwarded_from_sender_id or source.sender_id,
+    )
+    session.add(repost)
+    await session.flush()
+
+    for media_asset_id in attachment_ids:
+        session.add(
+            MessageAttachment(message_id=repost.id, media_asset_id=media_asset_id)
+        )
+
+    await session.flush()
+    await session.refresh(repost)
+    out = _to_out(repost, list(attachment_ids))
+    await publish_room_event(news.id, ws_schemas.message_new_event(out))
     return out
 
 

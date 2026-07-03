@@ -1,9 +1,12 @@
 import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
-import { useSendMessage, type SendBody } from '../../api/messages'
+import { repostMessage, useSendMessage, type SendBody } from '../../api/messages'
+import { useUsersMap } from '../../api/users'
 import { IconAttach, IconSend, IconSticker } from '../../components/icons'
+import { useAutosize } from '../../hooks/useAutosize'
 import { mediaUpload } from '../../lib/mediaUpload'
 import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
 import { StickerPicker } from './StickerPicker'
 import { VoiceComposer } from './VoiceComposer'
@@ -11,9 +14,12 @@ import styles from './chat.module.css'
 
 interface Props {
   roomId: number
+  // Новостной канал: здесь композер умеет «держать» репост (pendingRepost) и даёт
+  // дописать к нему комментарий перед отправкой.
+  isNews?: boolean
 }
 
-export function Composer({ roomId }: Props) {
+export function Composer({ roomId, isNews }: Props) {
   const [text, setText] = useState('')
   const [pendingFiles, setPendingFiles] = useState<MediaAssetOut[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -22,10 +28,18 @@ export function Composer({ roomId }: Props) {
   const [progress, setProgress] = useState<number | null>(null)
   // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
   const [voiceActive, setVoiceActive] = useState(false)
+  // Идёт отправка репоста (форвард создаётся до комментария).
+  const [reposting, setReposting] = useState(false)
   const send = useSendMessage(roomId)
+  const users = useUsersMap()
+  const pendingRepost = useUiStore((s) => s.pendingRepost)
+  const setPendingRepost = useUiStore((s) => s.setPendingRepost)
+  // Репост показываем только в композере новостного канала.
+  const repost = isNews ? pendingRepost : null
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
+  const inputRef = useAutosize(text)
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -49,18 +63,43 @@ export function Composer({ roomId }: Props) {
     send.mutate({ sticker_id: stickerId })
   }
 
-  function submit() {
+  function sendBody() {
     const content = text.trim()
-    const hasContent = content || pendingFiles.length > 0
-    if (!hasContent || send.isPending) return
-    justSentRef.current = true
-    setTimeout(() => { justSentRef.current = false }, 300)
     const body: SendBody = {}
     if (content) body.content = content
     if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
     setText('')
     setPendingFiles([])
-    send.mutate(body)
+    return body
+  }
+
+  async function submit() {
+    if (send.isPending || reposting) return
+    justSentRef.current = true
+    setTimeout(() => { justSentRef.current = false }, 300)
+
+    // Репост в новости: сначала создаём форвард, затем — если что-то введено —
+    // отдельным сообщением-комментарием (Telegram-стиль: переслано + подпись ниже).
+    if (repost) {
+      setReposting(true)
+      try {
+        await repostMessage(repost.roomId, repost.message.id)
+      } catch {
+        toast('Не удалось отправить репост', 'error')
+        setReposting(false)
+        return
+      }
+      setPendingRepost(null)
+      setReposting(false)
+      const body = sendBody()
+      if (body.content || body.attachment_ids?.length) send.mutate(body)
+      toast('Отправлено в новости')
+      return
+    }
+
+    const content = text.trim()
+    if (!content && pendingFiles.length === 0) return
+    send.mutate(sendBody())
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -87,10 +126,33 @@ export function Composer({ roomId }: Props) {
     }
   }
 
-  const canSend = !!text.trim() || pendingFiles.length > 0
+  const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost
+
+  const repostAuthorId = repost
+    ? repost.message.forwarded_from_sender_id ?? repost.message.sender_id
+    : null
+  const repostAuthor =
+    repostAuthorId != null ? users.get(repostAuthorId)?.display_name ?? `Участник #${repostAuthorId}` : ''
+  const repostSnippet = repost
+    ? repost.message.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+      (repost.message.sticker_id != null ? '[стикер]' : '[вложение]')
+    : ''
 
   return (
     <div className={styles.composer}>
+      {repost && (
+        <div className={styles.contextBar}>
+          <span className={styles.ctxLabel}>Репост от {repostAuthor}:</span>
+          <span>{repostSnippet}</span>
+          <button
+            className={styles.pendingChipX}
+            onClick={() => setPendingRepost(null)}
+            aria-label="Отменить репост"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {pendingFiles.length > 0 && (
         <div className={styles.pendingAtt}>
           {pendingFiles.map(a => (
@@ -154,9 +216,10 @@ export function Composer({ roomId }: Props) {
               <IconSticker size={18} />
             </button>
             <textarea
+              ref={inputRef}
               className={styles.composerInput}
               rows={1}
-              placeholder="Сообщение…"
+              placeholder={repost ? 'Добавить сообщение к репосту…' : 'Сообщение…'}
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
@@ -170,11 +233,11 @@ export function Composer({ roomId }: Props) {
           <button
             className={styles.sendBtn}
             onClick={submit}
-            disabled={send.isPending}
+            disabled={send.isPending || reposting}
             title="Отправить"
             aria-label="Отправить"
           >
-            {send.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
+            {send.isPending || reposting ? <span className={styles.spin} /> : <IconSend size={20} />}
           </button>
         ) : (
           <VoiceComposer

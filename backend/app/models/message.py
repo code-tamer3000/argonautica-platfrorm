@@ -44,6 +44,11 @@ class Message(Base):
     sticker_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("stickers.id")
     )
+    # Репост в новостной канал: исходный автор сообщения (для атрибуции «переслано от X»).
+    # NULL = обычное (не пересланное) сообщение.
+    forwarded_from_sender_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id")
+    )
     # Денормализация на корневом сообщении — «N ответов» без пересчёта.
     reply_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_reply_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

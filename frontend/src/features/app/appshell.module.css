@@ -40,37 +40,33 @@
 }
 
 .body        { flex: 1; min-height: 0; display: flex; overflow: hidden; }
-.sidenav     { width: 200px; padding: var(--space-3) 0; border-right: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; background: var(--bg-surface); flex-shrink: 0; }
-.navLink     { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); margin: 0 var(--space-2); color: var(--text-secondary); text-decoration: none; font-family: var(--font-t4); font-size: var(--text-ui); transition: var(--transition-base); }
+.sidenav     { position: relative; width: 200px; padding: var(--space-3) 0; border-right: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; background: var(--bg-surface); flex-shrink: 0; }
+/* Контент ссылки лежит над glider'ом (z-index: 1). */
+.navLink     { position: relative; z-index: 1; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); margin: 0 var(--space-2); color: var(--text-secondary); text-decoration: none; font-family: var(--font-t4); font-size: var(--text-ui); transition: color var(--transition-base); }
 /* Hover — только для настоящей мыши. На тач-устройствах :hover «залипает» на
-   последней нажатой ссылке до следующего касания, и hover-правила ниже гасили
-   золото активной вкладки (серый цвет + скрытый индикатор). Отсюда «подсветка
-   появляется только после тапа по экрану». (hover:hover)+(pointer:fine)
+   последней нажатой ссылке до следующего касания. (hover:hover)+(pointer:fine)
    отсекает тач. */
 @media (hover: hover) and (pointer: fine) {
   .navLink:hover { color: var(--text-primary); }
-  .navLink:hover::before { opacity: 0.5; transform: scale(1); }
 }
-.navLinkActive { composes: navLink; color: var(--text-primary); }
+.navLinkActive { composes: navLink; color: var(--accent); }
 .navIcon     { display: inline-flex; align-items: center; justify-content: center; width: 22px; color: inherit; }
 .navLabel    { white-space: nowrap; }
 .content     { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
-/* Плавный «пилл» под активным пунктом навигации: подсветка (фон) анимируется
-   отдельным слоем через ::before, а не transition цвета текста — так highlight
-   появляется мгновенно и без джанка. */
-.navLink { position: relative; }
-.navLink::before {
-  content: ''; position: absolute; inset: 0; border-radius: var(--radius-btn);
-  background: var(--color-more); opacity: 0; transform: scale(0.96);
-  transition: opacity 160ms ease, transform 200ms var(--ease-out-soft);
-  z-index: 0; pointer-events: none;
+/* Единый «живой» золотой индикатор: один элемент на весь nav, который переезжает
+   под активную вкладку. Геометрию (translate + размеры) выставляет JS по рамке
+   активного пункта, а CSS-transition превращает переезд в плавную «пробегающую»
+   золотую штучку между вкладками. Никакой сине-зелёной заливки — только мягкое
+   золотое свечение (тонкая рамка + glow). */
+.navGlider {
+  position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none;
+  border-radius: var(--radius-btn);
+  background: var(--divider-gold);
+  border: 1px solid var(--divider-gold-strong);
+  box-shadow: var(--glow-gold);
+  transition: transform 280ms var(--ease-out-soft), width 280ms var(--ease-out-soft), height 280ms var(--ease-out-soft);
 }
-@media (hover: hover) and (pointer: fine) {
-  .navLink:hover::before { opacity: 0.5; transform: scale(1); }
-}
-.navLinkActive::before { opacity: 1; transform: scale(1); }
-.navIcon, .navLabel { position: relative; z-index: 1; }
 
 .placeholder {
   max-width: 520px;
@@ -91,16 +87,28 @@
     left: 0; right: 0; bottom: 0;
     width: auto;
     flex-direction: row;
+    flex-wrap: nowrap;
     gap: 0;
-    padding: var(--space-1) var(--space-2);
+    padding: var(--space-1) 0;
     padding-bottom: calc(var(--space-1) + env(safe-area-inset-bottom));
     border-right: none;
     border-top: 1px solid var(--divider);
     background: var(--bg-surface);
     z-index: 40;
+    /* Вкладок может быть больше, чем влезает на экран (у админа — 6, дальше
+       будут ещё). Пять вкладок помещаются ровно (по 20vw), остальные — за
+       краем: бар прокручивается горизонтально. Полоску прокрутки прячем. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .sidenav::-webkit-scrollbar { display: none; }
   .navLink, .navLinkActive {
-    flex: 1;
+    /* basis 20vw → ровно 5 вкладок на ширину экрана; grow заполняет остаток,
+       когда вкладок меньше пяти; shrink 0 — при 6+ вкладки не сжимаются, а
+       уезжают за край под прокрутку. */
+    flex: 1 0 20vw;
     flex-direction: column;
     gap: 2px;
     margin: 0;
@@ -111,13 +119,8 @@
        МГНОВЕННО, без «догоняющего» фейда, который и выглядел как лаг. */
     transition: none;
   }
-  /* Активный пункт: только цвет иконки/подписи + тонкая золотая черта сверху.
-     Заливки на всю ячейку (золотой «короб») больше нет. */
-  .navLink::before {
-    inset: auto 30% auto 30%; top: 0; height: 2px;
-    border-radius: 0 0 2px 2px; background: var(--accent);
-    opacity: 0; transform: none; transition: none;
-  }
+  /* Активный пункт: только цвет иконки/подписи. Индикатор — общий glider
+     (тонкая золотая черта сверху), который «пробегает» между вкладками. */
   .navLink:active { color: var(--text-primary); }
   .navLinkActive { color: var(--accent); }
   /* На тач-устройствах :active «залипает» на последней нажатой ссылке до
@@ -126,8 +129,18 @@
      пока не тапнешь по экрану. Явно возвращаем золото активной ссылке даже
      под залипшим :active — подсветка переключается сразу при тапе. */
   .navLinkActive:active { color: var(--accent); }
-  .navLinkActive::before { opacity: 1; }
   .navLabel { font-size: 10px; letter-spacing: 0.02em; }
+
+  /* Мобильный glider: не пилл-подложка, а тонкая золотая черта сверху вкладки.
+     Переезжает по X между вкладками — «живой» индикатор без сине-зелёного короба. */
+  .navGlider {
+    background: transparent; border: none; box-shadow: none; border-radius: 0;
+    transition: transform 260ms var(--ease-out-soft), width 260ms var(--ease-out-soft);
+  }
+  .navGlider::before {
+    content: ''; position: absolute; top: 0; left: 30%; right: 30%; height: 2px;
+    background: var(--accent); border-radius: 0 0 2px 2px;
+  }
 
   /* Контент не должен заезжать под нижний бар. */
   .content { padding-bottom: calc(58px + env(safe-area-inset-bottom)); }

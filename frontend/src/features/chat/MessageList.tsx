@@ -19,17 +19,15 @@ interface Props {
   editingId?: number | null
   selectedMsgId?: number | null
   highlightedMsgId?: number | null
-  canPin?: boolean
-  onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
-  onSelectMsg?: (id: number | null) => void
+  onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
-  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId, canPin,
-    onEdit, onClearEdit, onOpenThread, onSelectMsg, onAtBottomChange },
+  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
+    onClearEdit, onOpenThread, onOpenMenu, onAtBottomChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -76,7 +74,6 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
       className={styles.messages}
       ref={containerRef}
       onScroll={onScroll}
-      onClick={() => onSelectMsg?.(null)}
     >
       {loading && (
         <div className="center" style={{ padding: 8 }}>
@@ -99,14 +96,13 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               msg={m}
               continuation={continuation}
               author={users.get(m.sender_id)}
+              forwardedFrom={m.forwarded_from_sender_id != null ? users.get(m.forwarded_from_sender_id) : undefined}
               editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
-              canPin={canPin}
-              onEdit={onEdit}
               onClearEdit={onClearEdit}
               onOpenThread={onOpenThread}
-              onSelect={onSelectMsg}
+              onOpenMenu={onOpenMenu}
             />
           </div>
         )
