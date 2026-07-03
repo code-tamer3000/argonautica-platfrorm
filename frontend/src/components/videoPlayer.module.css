@@ -1,13 +1,14 @@
 .wrap {
   position: relative;
   display: inline-block;
+  width: var(--kb-player-width, auto);
   max-width: 100%;
 }
 
 .video {
   display: block;
-  max-width: 360px;
-  max-height: 320px;
+  max-width: var(--kb-player-max-width, 360px);
+  max-height: var(--kb-player-max-height, 320px);
   width: 100%;
   border-radius: var(--radius-media);
   background: #000;
@@ -68,5 +69,7 @@
 .speedItemActive { color: var(--accent); }
 
 @media (max-width: 768px) {
-  .video { max-width: 100%; }
+  .wrap { display: block; width: 100%; }
+  .video { max-width: 100%; max-height: 280px; }
 }
+

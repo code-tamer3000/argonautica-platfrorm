@@ -11,10 +11,12 @@ interface Props {
   className?: string
 }
 
-function fmt(sec: number): string {
-  if (!Number.isFinite(sec) || sec < 0) return '0:00'
-  const m = Math.floor(sec / 60)
+function fmt(sec: number, long: boolean): string {
+  if (!Number.isFinite(sec) || sec < 0) return long ? '0:00:00' : '0:00'
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
   const s = Math.floor(sec % 60)
+  if (long) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
@@ -84,6 +86,7 @@ export function VoicePlayer({ src, duration, className }: Props) {
 
   const max = total || duration || 0
   const pct = max > 0 ? (current / max) * 100 : 0
+  const long = max >= 3600
 
   return (
     <div className={`${styles.wrap} ${className ?? ''}`}>
@@ -107,7 +110,7 @@ export function VoicePlayer({ src, duration, className }: Props) {
         style={{ ['--pct' as string]: `${pct}%` }}
         aria-label="Позиция воспроизведения"
       />
-      <span className={styles.time}>{fmt(current || 0)} / {fmt(max)}</span>
+      <span className={styles.time}>{fmt(current || 0, long)} / {fmt(max, long)}</span>
       <button
         type="button"
         className={styles.rateBtn}

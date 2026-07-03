@@ -82,3 +82,7 @@
   cursor: pointer;
 }
 .rateBtn:hover { border-color: var(--accent); color: var(--accent-bright); }
+
+@media (max-width: 768px) {
+  .wrap { max-width: 100%; }
+}
