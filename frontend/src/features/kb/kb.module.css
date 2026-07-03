@@ -200,12 +200,16 @@
 
 .kbMedia {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-4);
   margin-top: var(--space-6);
   padding-top: var(--space-6);
   border-top: 1px solid var(--divider);
+  /* Размер плееров внутри KB — регулировать здесь */
+  --kb-player-width: 60%;
+  --kb-player-max-width: 100%;
+  --kb-player-max-height: 480px;
+  --kb-audio-max-width: 60%;
 }
 
 /* ───── Комментарии под материалом ───── */

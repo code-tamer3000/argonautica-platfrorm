@@ -1,8 +1,9 @@
 .wrap {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-2);
-  max-width: 320px;
+  min-width: 0;
+  max-width: var(--kb-audio-max-width, 320px);
   width: 100%;
   padding: var(--space-1) var(--space-2);
   background: var(--color-frame);
@@ -81,3 +82,7 @@
   cursor: pointer;
 }
 .rateBtn:hover { border-color: var(--accent); color: var(--accent-bright); }
+
+@media (max-width: 768px) {
+  .wrap { max-width: 100%; }
+}

@@ -111,6 +111,12 @@
   .navLink:hover::before { opacity: 0; }
   .navLink:active { color: var(--text-primary); }
   .navLinkActive { color: var(--accent); }
+  /* На тач-устройствах :active «залипает» на последней нажатой ссылке до
+     следующего касания. У .navLink:active специфичность выше, чем у
+     .navLinkActive, поэтому активный пункт оставался серым (text-primary),
+     пока не тапнешь по экрану. Явно возвращаем золото активной ссылке даже
+     под залипшим :active — подсветка переключается сразу при тапе. */
+  .navLinkActive:active { color: var(--accent); }
   .navLinkActive::before { opacity: 1; }
   .navLabel { font-size: 10px; letter-spacing: 0.02em; }
 

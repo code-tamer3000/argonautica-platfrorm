@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import {
   useKbItems,
+  useKbItem,
   useCreateKbItem,
   useUpdateKbItem,
   useDeleteKbItem,
@@ -43,8 +44,10 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const detachMedia = useDetachKbMedia()
   const fileRef = useRef<HTMLInputElement>(null)
 
-  // Прикреплённые медиа: у существующего материала — из item, у нового — staged.
-  const mediaIds = item ? item.media_asset_ids : stagedMedia
+  // Подписываемся на живые данные из кэша — обновятся после attach/detach.
+  const { data: liveItem } = useKbItem(item?.id ?? 0)
+  // Прикреплённые медиа: у существующего материала — живые из кэша, у нового — staged.
+  const mediaIds = item ? (liveItem?.media_asset_ids ?? item.media_asset_ids) : stagedMedia
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
