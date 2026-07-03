@@ -34,6 +34,7 @@ class AdminUpdateUserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     can_create_groups: bool | None = None
+    role: Role | None = None
 
 
 class ProfileUpdateRequest(BaseModel):

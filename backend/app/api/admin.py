@@ -28,7 +28,7 @@ from app.schemas.user import (
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
-_PATCHABLE_FIELDS = {"can_create_groups"}
+_PATCHABLE_FIELDS = {"can_create_groups", "role"}
 
 # Весь роутер под require_admin — каждый запрос проверяет роль на сервере (п.1).
 router = APIRouter(
