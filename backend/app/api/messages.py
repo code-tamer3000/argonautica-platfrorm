@@ -29,6 +29,7 @@ from app.schemas.message import (
     SendMessageRequest,
     ThreadOut,
 )
+from app.services.notifications import on_new_message
 from app.services.ratelimit import enforce_rate_limit
 from app.services.rooms import (
     assert_can_pin,
@@ -164,6 +165,8 @@ async def send_message(
     out = _to_out(message, list(body.attachment_ids))
     # Живая доставка подписчикам комнаты (payload самодостаточный).
     await publish_room_event(room_id, ws_schemas.message_new_event(out))
+    # Уведомления получателям (личка / ответ на сообщение / пост в новостях).
+    await on_new_message(session, message, room, current_user)
     return out
 
 
@@ -235,6 +238,8 @@ async def repost_to_news(
     await session.refresh(repost)
     out = _to_out(repost, list(attachment_ids))
     await publish_room_event(news.id, ws_schemas.message_new_event(out))
+    # Репост — новый верхнеуровневый пост в новостях: уведомить всех участников.
+    await on_new_message(session, repost, news, current_user)
     return out
 
 

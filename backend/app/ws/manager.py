@@ -32,12 +32,21 @@ class ConnectionManager:
     def __init__(self) -> None:
         self._rooms: dict[int, set[Conn]] = {}
         self._conns: set[Conn] = set()
+        # user_id -> его соединения (может быть несколько вкладок/устройств).
+        # Нужен для персональной доставки уведомлений, не привязанной к комнате.
+        self._users: dict[int, set[Conn]] = {}
 
     def register(self, conn: Conn) -> None:
         self._conns.add(conn)
+        self._users.setdefault(conn.user.id, set()).add(conn)
 
     def unregister(self, conn: Conn) -> None:
         self._conns.discard(conn)
+        peers = self._users.get(conn.user.id)
+        if peers is not None:
+            peers.discard(conn)
+            if not peers:
+                del self._users[conn.user.id]
         for room_id in list(conn.subscribed):
             self._unbind(conn, room_id)
         conn.subscribed.clear()
@@ -60,6 +69,12 @@ class ConnectionManager:
     async def fanout_room(self, room_id: int, payload: dict[str, Any]) -> None:
         """Раздать событие подписчикам комнаты; мёртвые соединения снять."""
         for conn in list(self._rooms.get(room_id, ())):
+            if not await conn.send_json(payload):
+                self.unregister(conn)
+
+    async def fanout_user(self, user_id: int, payload: dict[str, Any]) -> None:
+        """Раздать событие всем соединениям конкретного юзера (уведомления)."""
+        for conn in list(self._users.get(user_id, ())):
             if not await conn.send_json(payload):
                 self.unregister(conn)
 

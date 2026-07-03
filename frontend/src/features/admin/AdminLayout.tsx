@@ -9,6 +9,9 @@ export function AdminLayout() {
   return (
     <div className={styles.adminLayout}>
       <nav className={styles.adminNav}>
+        <NavLink to="/admin/dynamics" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Динамика
+        </NavLink>
         <NavLink to="/admin/kb" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           База знаний
         </NavLink>

@@ -16,7 +16,16 @@ export function ChatLayout({ autoOpen }: Props = {}) {
   const [autoOpened, setAutoOpened] = useState(false)
   const { data: rooms } = useRooms()
   const setActiveRoom = useUiStore((s) => s.setActiveRoom)
+  const pendingOpen = useUiStore((s) => s.pendingOpen)
+  const setPendingOpen = useUiStore((s) => s.setPendingOpen)
   const isMobile = useIsMobile()
+
+  // Открыть комнату по внешнему запросу (клик по уведомлению/колокольчику).
+  useEffect(() => {
+    if (!pendingOpen) return
+    setRoomId(pendingOpen.roomId)
+    setPendingOpen(null)
+  }, [pendingOpen, setPendingOpen])
 
   // Один раз после загрузки комнат открываем новостной канал (для маршрута /news).
   useEffect(() => {
