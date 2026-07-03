@@ -269,9 +269,9 @@
 .composerRow { display: flex; align-items: flex-end; gap: var(--space-2); }
 
 /* Панель записи/предпрослушивания голосового — на месте строки ввода. */
-.voiceBar { flex: 1; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
+.voiceBar { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
 .voiceBarSpacer { flex: 1; }
-.voicePreview { flex: 1; max-width: none; }
+.voicePreview { flex: 1; min-width: 0; max-width: none; }
 .recLabel { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-secondary); }
 .recTime {
   font-family: var(--font-t4); font-size: var(--text-label-md);
