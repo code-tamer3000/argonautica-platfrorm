@@ -229,6 +229,94 @@ async def test_admin_delete_user_blocked_by_owned_content(
     assert resp.status_code == 409
 
 
+async def test_admin_delete_user_not_blocked_by_dm(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """DM не блокирует удаление — двусторонний, теряет смысл без одного из двоих."""
+    from sqlalchemy import select
+
+    from app.models.message import Message
+    from app.models.room import Room
+
+    admin = await make_user(role="admin", password="adminpass123")
+    victim = await make_user(role="participant")
+    peer = await make_user(role="participant")
+
+    dm = await make_room(created_by=victim.id, type="dm", name=None)
+    await add_membership(dm.id, victim.id, "member")
+    await add_membership(dm.id, peer.id, "member")
+    session.add(Message(room_id=dm.id, sender_id=victim.id, content="hi"))
+    session.add(Message(room_id=dm.id, sender_id=peer.id, content="hello back"))
+    await session.commit()
+
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{victim.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 204
+
+    # DM целиком удалён, включая сообщение собеседника (не только жертвы).
+    assert (await session.scalar(select(Room.id).where(Room.id == dm.id))) is None
+    assert (
+        await session.scalar(select(Message).where(Message.room_id == dm.id))
+    ) is None
+
+
+async def test_admin_delete_user_dm_created_by_peer_also_removed(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """DM найден по членству, а не created_by — удаляется, даже если создал собеседник."""
+    from sqlalchemy import select
+
+    from app.models.room import Room
+
+    admin = await make_user(role="admin", password="adminpass123")
+    victim = await make_user(role="participant")
+    peer = await make_user(role="participant")
+
+    dm = await make_room(created_by=peer.id, type="dm", name=None)
+    await add_membership(dm.id, victim.id, "member")
+    await add_membership(dm.id, peer.id, "member")
+    await session.commit()
+
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{victim.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 204
+    assert (await session.scalar(select(Room.id).where(Room.id == dm.id))) is None
+
+
+async def test_admin_delete_user_still_blocked_by_group(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Группы/каналы по-прежнему блокируют — только dm разблокирован."""
+    admin = await make_user(role="admin", password="adminpass123")
+    owner = await make_user(role="participant")
+    room = await make_room(created_by=owner.id, type="group")
+    await add_membership(room.id, owner.id, "owner")
+
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{owner.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 409
+
+
 async def test_non_admin_cannot_delete_user(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
