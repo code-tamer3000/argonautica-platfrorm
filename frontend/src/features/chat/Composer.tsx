@@ -38,6 +38,7 @@ export function Composer({ roomId, isNews }: Props) {
   const repost = isNews ? pendingRepost : null
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
@@ -74,6 +75,8 @@ export function Composer({ roomId, isNews }: Props) {
 
   async function submit() {
     if (send.isPending || reposting) return
+    justSentRef.current = true
+    setTimeout(() => { justSentRef.current = false }, 300)
 
     // Репост в новости: сначала создаём форвард, затем — если что-то введено —
     // отдельным сообщением-комментарием (Telegram-стиль: переслано + подпись ниже).
@@ -100,7 +103,15 @@ export function Composer({ roomId, isNews }: Props) {
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    // Spurious Enter after button tap on mobile — just swallow it
+    if (justSentRef.current) {
+      e.preventDefault()
+      return
+    }
+    // On touch devices Enter inserts a newline; send button is the only trigger
+    const isTouch = window.matchMedia('(pointer: coarse)').matches
+    if (!isTouch) {
       e.preventDefault()
       submit()
     }
@@ -212,6 +223,7 @@ export function Composer({ roomId, isNews }: Props) {
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
+              enterKeyHint="enter"
             />
           </>
         )}
