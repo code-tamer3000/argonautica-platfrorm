@@ -2,56 +2,97 @@
   padding: var(--space-6) var(--space-8);
   overflow-y: auto;
   flex: 1;
-  max-width: 600px;
-}
-
-.pageTitle {
-  font-family: var(--font-t1);
-  font-size: 28px;
-  color: var(--text-primary);
-  margin-bottom: var(--space-6);
-}
-
-.section {
-  padding-bottom: var(--space-6);
-  margin-bottom: var(--space-6);
-  border-bottom: 1px solid var(--divider);
+  max-width: 560px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-
-.avatarRow {
-  display: flex;
-  align-items: center;
   gap: var(--space-5);
 }
 
-.avatarBig {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: var(--bg-surface);
-  border: 1px solid var(--divider);
+/* ── Шапка профиля ── */
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--divider);
+}
+
+.avatarWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
   flex-shrink: 0;
 }
 
-.avatarActions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.usernameRow {
+.avatarPlaceholder {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
 }
 
-.usernameValue {
+.avatarEditBtn {
+  background: none;
+  border: none;
+  color: var(--text-ghost);
+  font-size: 11px;
+  font-family: var(--font-t4);
+  cursor: pointer;
+  padding: 0;
+  letter-spacing: var(--ls-label-sm);
+  text-transform: uppercase;
+  transition: color 120ms;
+}
+.avatarEditBtn:hover:not(:disabled) { color: var(--accent); }
+.avatarEditBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.headerInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: 4px;
+}
+
+.headerName {
+  font-family: var(--font-t1);
+  font-size: clamp(20px, 3vw, 26px);
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.headerUsername {
   font-family: var(--font-t4);
   font-size: var(--text-ui);
-  color: var(--text-muted);
+  color: var(--text-ghost);
+  margin-bottom: var(--space-1);
+}
+
+.removeAvatarBtn {
+  background: none;
+  border: none;
+  color: var(--text-ghost);
+  font-size: 11px;
+  font-family: var(--font-t4);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  transition: color 120ms;
+  width: fit-content;
+}
+.removeAvatarBtn:hover { color: var(--blood-bright); }
+
+/* ── Форма редактирования ── */
+.formCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
 .field {
@@ -63,13 +104,13 @@
 .fieldLabel {
   font-family: var(--font-t4);
   font-size: var(--text-label);
-  letter-spacing: 1px;
+  letter-spacing: var(--ls-label);
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: var(--text-ghost);
 }
 
 .fieldInput {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-3);
   border: 1px solid var(--divider);
   border-radius: var(--radius-btn);
   background: var(--bg-surface);
@@ -77,15 +118,12 @@
   font-family: var(--font-t4);
   font-size: var(--text-ui);
   width: 100%;
+  transition: border-color 120ms;
 }
-
-.fieldInput:focus {
-  outline: none;
-  border-color: var(--accent);
-}
+.fieldInput:focus { outline: none; border-color: var(--accent); }
 
 .fieldTextarea {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--divider);
   border-radius: var(--radius-btn);
   background: var(--bg-surface);
@@ -93,31 +131,91 @@
   font-family: var(--font-t3);
   font-size: var(--text-ui);
   width: 100%;
-  resize: vertical;
+  resize: none;
   line-height: 1.6;
+  transition: border-color 120ms;
 }
+.fieldTextarea:focus { outline: none; border-color: var(--accent); }
 
-.fieldTextarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.actions {
+.formActions {
   display: flex;
+  justify-content: flex-end;
   gap: var(--space-3);
+  padding-top: var(--space-1);
 }
 
-/* ───── Динамика ───── */
+/* ── Карточка Динамики ── */
+.dynCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.dynTitle {
+  font-family: var(--font-t1);
+  font-size: 18px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Стрик */
 .dynStreak {
-  font-family: var(--font-t4);
-  font-size: var(--text-ui);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dynStreakIcon {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.dynStreakNum {
+  font-family: var(--font-t1);
+  font-size: 32px;
+  line-height: 1;
   color: var(--accent);
 }
 
-.dynOk {
-  font-size: var(--text-ui);
-  color: #48bb78;
+.dynStreakLabel {
   font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+  padding-top: 6px;
+}
+
+/* Статус */
+.dynStatus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-btn);
+}
+
+.dynStatusOk {
+  background: color-mix(in srgb, #48bb78 12%, transparent);
+  color: #48bb78;
+  border: 1px solid color-mix(in srgb, #48bb78 30%, transparent);
+}
+
+.dynStatusBad {
+  background: color-mix(in srgb, var(--blood-bright) 10%, transparent);
+  color: var(--blood-bright);
+  border: 1px solid color-mix(in srgb, var(--blood-bright) 25%, transparent);
+}
+
+/* Просроченные дни */
+.dynOverdueWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
 .dynOverdueList {
@@ -129,45 +227,94 @@
 .dynOverdueItem {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.dynOverdueLabel {
-  font-size: var(--text-ui);
-  color: #e53e3e;
-  flex: 1;
-}
-
-.dynPardonBtn {
-  background: color-mix(in srgb, #4299e1 15%, transparent);
-  color: #4299e1;
-  border: 1px solid color-mix(in srgb, #4299e1 40%, transparent);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--blood) 8%, transparent);
   border-radius: var(--radius-btn);
-  padding: var(--space-1) var(--space-3);
-  font-size: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--blood) 20%, transparent);
+}
+
+.dynOverdueDate {
   font-family: var(--font-t4);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 120ms ease;
-}
-
-.dynPardonBtn:hover:not(:disabled) {
-  background: color-mix(in srgb, #4299e1 25%, transparent);
-}
-
-.dynPardonBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.dynPardonInfo {
-  font-size: 0.75rem;
+  font-size: var(--text-ui);
   color: var(--text-secondary);
 }
 
+.dynPardonBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: color-mix(in srgb, #4299e1 15%, transparent);
+  color: #7ec8e3;
+  border: 1px solid color-mix(in srgb, #4299e1 35%, transparent);
+  border-radius: var(--radius-btn);
+  padding: var(--space-1) var(--space-3);
+  font-size: 12px;
+  font-family: var(--font-t4);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms, color 120ms;
+  flex-shrink: 0;
+}
+.dynPardonBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, #4299e1 25%, transparent);
+  color: #a8d8ea;
+}
+.dynPardonBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.dynNoPardons {
+  font-size: 11px;
+  color: var(--text-ghost);
+  font-family: var(--font-t4);
+  white-space: nowrap;
+}
+
+/* Индикаторы помилований */
+.dynPardons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+  border-top: 1px solid var(--divider);
+}
+
+.dynPardonDot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid;
+}
+
+.dynPardonDotFree {
+  background: color-mix(in srgb, #4299e1 12%, transparent);
+  border-color: color-mix(in srgb, #4299e1 40%, transparent);
+  color: #7ec8e3;
+}
+
+.dynPardonDotUsed {
+  background: var(--divider);
+  border-color: var(--divider);
+  color: var(--text-ghost);
+  opacity: 0.4;
+}
+
+.dynPardonsLabel {
+  font-size: 11px;
+  font-family: var(--font-t4);
+  color: var(--text-ghost);
+  margin-left: var(--space-1);
+}
+
+/* ── Мобила ── */
 @media (max-width: 768px) {
-  .page { padding: var(--space-4) var(--space-4); }
-  .dynOverdueItem { flex-direction: column; align-items: flex-start; }
-  .dynPardonBtn { width: 100%; }
+  .page { padding: var(--space-4); gap: var(--space-4); }
+  .header { gap: var(--space-4); }
+  .dynStreak { gap: var(--space-2); }
+  .dynStreakNum { font-size: 28px; }
+  .dynOverdueItem { flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+  .dynPardonBtn { width: 100%; justify-content: center; }
 }

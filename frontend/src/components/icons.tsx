@@ -1,12 +1,15 @@
 import {
   ArrowUp,
   ArrowLeft,
+  Bell,
   BookOpen,
   Calendar,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
   Copy,
   CornerUpLeft,
+  Flame,
   MessageSquare,
   Megaphone,
   Mic,
@@ -19,9 +22,11 @@ import {
   Settings,
   Smile,
   Sticker,
+  TriangleAlert,
   Trash2,
   User,
   Users,
+  Waves,
   X,
   type LucideProps,
 } from 'lucide-react'
@@ -48,6 +53,7 @@ export const IconSticker = (p: IconProps) => <Sticker {...DEFAULTS} {...p} />
 export const IconChevronLeft = (p: IconProps) => <ChevronLeft {...DEFAULTS} {...p} />
 export const IconChevronRight = (p: IconProps) => <ChevronRight {...DEFAULTS} {...p} />
 export const IconNews = (p: IconProps) => <Megaphone {...DEFAULTS} {...p} />
+export const IconBell = (p: IconProps) => <Bell {...DEFAULTS} {...p} />
 export const IconSend = (p: IconProps) => <ArrowUp {...DEFAULTS} {...p} />
 export const IconMic = (p: IconProps) => <Mic {...DEFAULTS} {...p} />
 export const IconPlay = (p: IconProps) => <Play {...DEFAULTS} {...p} />
@@ -57,3 +63,7 @@ export const IconClose = (p: IconProps) => <X {...DEFAULTS} {...p} />
 export const IconReply = (p: IconProps) => <CornerUpLeft {...DEFAULTS} {...p} />
 export const IconCopy = (p: IconProps) => <Copy {...DEFAULTS} {...p} />
 export const IconEdit = (p: IconProps) => <Pencil {...DEFAULTS} {...p} />
+export const IconFlame = (p: IconProps) => <Flame {...DEFAULTS} {...p} />
+export const IconWaves = (p: IconProps) => <Waves {...DEFAULTS} {...p} />
+export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
+export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
