@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useMyDynamics, usePardon } from '../../api/dynamics'
 import { usePatchMe } from '../../api/profile'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
@@ -7,6 +8,66 @@ import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
 import styles from './profile.module.css'
+
+function formatDate(iso: string) {
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function DynamicsSection() {
+  const { data: dyn, isLoading } = useMyDynamics()
+  const pardon = usePardon()
+
+  if (isLoading) return <div className={styles.section}><Spinner size={20} /></div>
+  if (!dyn) return null
+
+  const allGood = dyn.overdue_dates.length === 0
+
+  function handlePardon(date: string) {
+    pardon.mutate(date, {
+      onError: (err) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+    })
+  }
+
+  return (
+    <div className={styles.section}>
+      <span className={styles.fieldLabel}>Домашние задания</span>
+
+      {dyn.streak > 0 && (
+        <div className={styles.dynStreak}>🔥 Стрик: {dyn.streak} {dyn.streak === 1 ? 'день' : dyn.streak < 5 ? 'дня' : 'дней'}</div>
+      )}
+
+      {allGood ? (
+        <div className={styles.dynOk}>✓ Все задания выполнены в срок</div>
+      ) : (
+        <div className={styles.dynOverdueList}>
+          {dyn.overdue_dates.map((d) => (
+            <div key={d} className={styles.dynOverdueItem}>
+              <span className={styles.dynOverdueLabel}>✗ Не выполнено ДЗ за {formatDate(d)}</span>
+              {dyn.pardons_remaining > 0 && (
+                <button
+                  className={styles.dynPardonBtn}
+                  onClick={() => handlePardon(d)}
+                  disabled={pardon.isPending}
+                  title={`Осталось помилований: ${dyn.pardons_remaining}`}
+                >
+                  🐋 Плавы с китами
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {dyn.pardons_used > 0 && (
+        <div className={styles.dynPardonInfo}>
+          Использовано помилований: {dyn.pardons_used} / 3
+          {dyn.pardons_remaining === 0 && ' — лимит исчерпан'}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function ProfileScreen() {
   const { user, refreshMe } = useAuth()
@@ -147,6 +208,8 @@ export function ProfileScreen() {
           {patchMe.isPending ? 'Сохранение…' : 'Сохранить'}
         </Button>
       </div>
+
+      {user.role !== 'admin' && <DynamicsSection />}
     </div>
   )
 }

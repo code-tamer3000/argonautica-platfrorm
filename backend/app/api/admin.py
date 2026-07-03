@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
+from app.api.dynamics import get_all_dynamics
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
@@ -18,6 +19,7 @@ from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
+from app.schemas.journal import UserDynamicsOut
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -273,3 +275,11 @@ async def delete_user(
 
     await session.delete(user)
     await session.flush()
+
+
+@router.get("/dynamics", response_model=list[UserDynamicsOut])
+async def admin_dynamics(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[UserDynamicsOut]:
+    """Динамика ДЗ всех участников для администратора."""
+    return await get_all_dynamics(session)

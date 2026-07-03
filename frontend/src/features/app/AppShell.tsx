@@ -12,6 +12,7 @@ import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
 import { ProfileScreen } from '../profile/ProfileScreen'
 import { AdminLayout } from '../admin/AdminLayout'
+import { AdminDynamics } from '../admin/AdminDynamics'
 import { AdminKb } from '../admin/AdminKb'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
@@ -110,11 +111,12 @@ export function AppShell() {
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
+              <Route path="dynamics" element={<AdminDynamics />} />
               <Route path="kb" element={<AdminKb />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
               <Route path="users" element={<AdminUsers />} />
-              <Route index element={<Navigate to="kb" replace />} />
+              <Route index element={<Navigate to="dynamics" replace />} />
             </Route>
           </Routes>
         </main>

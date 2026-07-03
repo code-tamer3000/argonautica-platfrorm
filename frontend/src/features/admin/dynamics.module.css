@@ -1,0 +1,105 @@
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cardName {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.displayName {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.username {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.badges {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.streakBadge,
+.overdueBadge,
+.pardonBadge {
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.streakBadge {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.overdueBadge {
+  background: color-mix(in srgb, #e53e3e 15%, transparent);
+  color: #e53e3e;
+}
+
+.pardonBadge {
+  background: color-mix(in srgb, #4299e1 15%, transparent);
+  color: #4299e1;
+}
+
+/* Сетка дней — последние 14 */
+.days {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.dot {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-btn);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-family: var(--font-t4);
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.dot_closed       { background: color-mix(in srgb, #48bb78 20%, transparent); color: #48bb78; }
+.dot_today_closed { background: color-mix(in srgb, #48bb78 30%, transparent); color: #48bb78; font-weight: 700; }
+.dot_missed       { background: color-mix(in srgb, #e53e3e 15%, transparent); color: #e53e3e; }
+.dot_pardoned     { background: color-mix(in srgb, #4299e1 15%, transparent); color: #4299e1; }
+.dot_today_open   { background: var(--divider); color: var(--text-secondary); border: 1px dashed var(--text-ghost); }
+.dot_before_start { background: transparent; color: var(--text-ghost); }
+
+@media (max-width: 768px) {
+  .dot { width: 24px; height: 24px; font-size: 10px; }
+}

@@ -107,6 +107,67 @@
   gap: var(--space-3);
 }
 
+/* ───── Динамика ───── */
+.dynStreak {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--accent);
+}
+
+.dynOk {
+  font-size: var(--text-ui);
+  color: #48bb78;
+  font-family: var(--font-t4);
+}
+
+.dynOverdueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dynOverdueItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.dynOverdueLabel {
+  font-size: var(--text-ui);
+  color: #e53e3e;
+  flex: 1;
+}
+
+.dynPardonBtn {
+  background: color-mix(in srgb, #4299e1 15%, transparent);
+  color: #4299e1;
+  border: 1px solid color-mix(in srgb, #4299e1 40%, transparent);
+  border-radius: var(--radius-btn);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.8rem;
+  font-family: var(--font-t4);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease;
+}
+
+.dynPardonBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, #4299e1 25%, transparent);
+}
+
+.dynPardonBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dynPardonInfo {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
 @media (max-width: 768px) {
   .page { padding: var(--space-4) var(--space-4); }
+  .dynOverdueItem { flex-direction: column; align-items: flex-start; }
+  .dynPardonBtn { width: 100%; }
 }

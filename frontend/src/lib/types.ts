@@ -180,6 +180,34 @@ export interface AdminUserOut {
   created_at: string
 }
 
+// --- Динамика (прогресс ДЗ) ---
+export type DayStatus = 'closed' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start'
+
+export interface RecentDay {
+  date: string
+  status: DayStatus
+}
+
+export interface MyDynamicsOut {
+  streak: number
+  overdue_dates: string[]
+  pardons_used: number
+  pardons_remaining: number
+  today_progress: string[]
+  program_start: string
+}
+
+export interface UserDynamicsOut {
+  user_id: number
+  display_name: string
+  username: string
+  avatar_url: string | null
+  streak: number
+  overdue_count: number
+  pardons_used: number
+  recent_days: RecentDay[]
+}
+
 // --- WebSocket события ---
 export type WsEvent =
   | { type: 'message.new'; message: MessageOut }
