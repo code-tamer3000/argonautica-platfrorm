@@ -9,9 +9,11 @@
 from typing import Any
 
 from app.schemas.message import MessageOut
+from app.schemas.notification import NotificationOut
 
 # Типы исходящих событий.
 EVENT_MESSAGE_NEW = "message.new"
+EVENT_NOTIFICATION_NEW = "notification.new"
 EVENT_MESSAGE_EDITED = "message.edited"
 EVENT_MESSAGE_DELETED = "message.deleted"
 EVENT_PIN_ADDED = "pin.added"
@@ -31,6 +33,13 @@ def message_new_event(message: MessageOut) -> dict[str, Any]:
 
 def message_edited_event(message: MessageOut) -> dict[str, Any]:
     return {"type": EVENT_MESSAGE_EDITED, "message": message.model_dump(mode="json")}
+
+
+def notification_new_event(notification: NotificationOut) -> dict[str, Any]:
+    return {
+        "type": EVENT_NOTIFICATION_NEW,
+        "notification": notification.model_dump(mode="json"),
+    }
 
 
 def message_deleted_event(room_id: int, message_id: int) -> dict[str, Any]:

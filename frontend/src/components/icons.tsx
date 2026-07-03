@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Megaphone,
   Mic,
+  NotebookPen,
   Paperclip,
   Pause,
   Pencil,
@@ -40,6 +41,7 @@ const DEFAULTS: LucideProps = { size: 22, strokeWidth: 1.5, absoluteStrokeWidth:
 
 export const IconChat = (p: IconProps) => <MessageSquare {...DEFAULTS} {...p} />
 export const IconBook = (p: IconProps) => <BookOpen {...DEFAULTS} {...p} />
+export const IconDiary = (p: IconProps) => <NotebookPen {...DEFAULTS} {...p} />
 export const IconCalendar = (p: IconProps) => <Calendar {...DEFAULTS} {...p} />
 export const IconUser = (p: IconProps) => <User {...DEFAULTS} {...p} />
 export const IconSettings = (p: IconProps) => <Settings {...DEFAULTS} {...p} />

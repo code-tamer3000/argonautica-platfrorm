@@ -8,6 +8,7 @@ from app.models.journal import JournalPardon
 from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.notification import Notification
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
@@ -28,4 +29,5 @@ __all__ = [
     "KbComment",
     "CalendarEvent",
     "JournalPardon",
+    "Notification",
 ]

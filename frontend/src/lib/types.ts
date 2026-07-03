@@ -181,7 +181,7 @@ export interface AdminUserOut {
 }
 
 // --- Динамика (прогресс ДЗ) ---
-export type DayStatus = 'closed' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start' | 'upcoming'
+export type DayStatus = 'closed' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start'
 
 export interface RecentDay {
   date: string
@@ -205,22 +205,7 @@ export interface UserDynamicsOut {
   streak: number
   overdue_count: number
   pardons_used: number
-  active_today: boolean
-  journal_today: boolean
   recent_days: RecentDay[]
-}
-
-export interface DynamicsSummary {
-  total_participants: number
-  active_today: number
-  journal_today: number
-  no_overdue: number
-  avg_streak: number
-}
-
-export interface AdminDynamicsOut {
-  summary: DynamicsSummary
-  users: UserDynamicsOut[]
 }
 
 // --- Уведомления (колокольчик + всплывающие тосты) ---

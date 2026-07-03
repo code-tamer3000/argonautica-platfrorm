@@ -13,6 +13,11 @@ interface UiState {
   activeRoomId: number | null
   setActiveRoom: (id: number | null) => void
 
+  // Запрос «открыть комнату» извне списка (клик по уведомлению/колокольчику).
+  // ChatLayout подхватывает и сбрасывает. threadRootId зарезервирован под тред.
+  pendingOpen: { roomId: number; threadRootId?: number } | null
+  setPendingOpen: (v: { roomId: number; threadRootId?: number } | null) => void
+
   // Репост, ожидающий отправки в новостной канал (см. PendingRepost).
   pendingRepost: PendingRepost | null
   setPendingRepost: (r: PendingRepost | null) => void
@@ -35,6 +40,9 @@ const timers: Record<string, ReturnType<typeof setTimeout>> = {}
 export const useUiStore = create<UiState>((set) => ({
   activeRoomId: null,
   setActiveRoom: (id) => set({ activeRoomId: id }),
+
+  pendingOpen: null,
+  setPendingOpen: (v) => set({ pendingOpen: v }),
 
   pendingRepost: null,
   setPendingRepost: (r) => set({ pendingRepost: r }),

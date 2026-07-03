@@ -12,6 +12,7 @@ from app.api.dynamics import router as dynamics_router
 from app.api.kb import router as kb_router
 from app.api.media import router as media_router
 from app.api.messages import router as messages_router
+from app.api.notifications import router as notifications_router
 from app.api.rooms import router as rooms_router
 from app.api.stickers import router as stickers_router
 from app.api.users import router as users_router
@@ -53,6 +54,7 @@ app.include_router(users_router)
 app.include_router(stickers_router)
 app.include_router(calendar_router)
 app.include_router(dynamics_router)
+app.include_router(notifications_router)
 app.include_router(ws_router)
 
 

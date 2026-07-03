@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 _PRESENCE_CHANNEL = "presence"
 _ROOM_PATTERN = "room:*"
+_USER_PATTERN = "user:*"
 
 _listener_task: asyncio.Task[None] | None = None
 _ready: asyncio.Event | None = None
@@ -32,12 +33,24 @@ def _room_channel(room_id: int) -> str:
     return f"room:{room_id}"
 
 
+def _user_channel(user_id: int) -> str:
+    return f"user:{user_id}"
+
+
 async def publish_room_event(room_id: int, event: dict[str, Any]) -> None:
     """Опубликовать событие комнаты. Ошибку Redis глотаем — REST не должен падать."""
     try:
         await redis_client.publish(_room_channel(room_id), json.dumps(event))
     except Exception:
         logger.exception("Failed to publish room event for room %s", room_id)
+
+
+async def publish_user_event(user_id: int, event: dict[str, Any]) -> None:
+    """Опубликовать персональное событие юзеру (уведомления). Ошибку Redis глотаем."""
+    try:
+        await redis_client.publish(_user_channel(user_id), json.dumps(event))
+    except Exception:
+        logger.exception("Failed to publish user event for user %s", user_id)
 
 
 async def publish_presence(event: dict[str, Any]) -> None:
@@ -49,7 +62,7 @@ async def publish_presence(event: dict[str, Any]) -> None:
 
 async def _run_listener(ready: asyncio.Event) -> None:
     pubsub = redis_client.pubsub()
-    await pubsub.psubscribe(_ROOM_PATTERN)
+    await pubsub.psubscribe(_ROOM_PATTERN, _USER_PATTERN)
     await pubsub.subscribe(_PRESENCE_CHANNEL)
     ready.set()  # подписки активны — публикации больше не потеряются
     try:
@@ -60,6 +73,9 @@ async def _run_listener(ready: asyncio.Event) -> None:
             payload: dict[str, Any] = json.loads(message["data"])
             if channel == _PRESENCE_CHANNEL:
                 await manager.broadcast(payload)
+            elif channel.startswith("user:"):
+                user_id = int(channel.split(":", 1)[1])
+                await manager.fanout_user(user_id, payload)
             else:
                 room_id = int(channel.split(":", 1)[1])
                 await manager.fanout_room(room_id, payload)

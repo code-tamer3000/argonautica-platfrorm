@@ -52,6 +52,15 @@
 .navLinkActive { composes: navLink; color: var(--accent); }
 .navIcon     { display: inline-flex; align-items: center; justify-content: center; width: 22px; color: inherit; }
 .navLabel    { white-space: nowrap; }
+/* Кружок-бейдж непрочитанных, прижат к правому краю пункта навигации. */
+.navBadge {
+  margin-left: auto;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent); color: var(--color-bezdna);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  display: inline-flex; align-items: center; justify-content: center;
+}
 .content     { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
 /* Единый «живой» золотой индикатор: один элемент на весь nav, который переезжает
@@ -130,6 +139,17 @@
      под залипшим :active — подсветка переключается сразу при тапе. */
   .navLinkActive:active { color: var(--accent); }
   .navLabel { font-size: 10px; letter-spacing: 0.02em; }
+
+  /* В колоночной раскладке нижнего бара margin-left:auto уводил бейдж вбок/вниз.
+     Прижимаем его углом к иконке (иконка отцентрована → правее центра сверху). */
+  .navBadge {
+    position: absolute;
+    top: 2px;
+    left: calc(50% + 3px);
+    margin-left: 0;
+    min-width: 15px; height: 15px; padding: 0 3px;
+    font-size: 9px;
+  }
 
   /* Мобильный glider: не пилл-подложка, а тонкая золотая черта сверху вкладки.
      Переезжает по X между вкладками — «живой» индикатор без сине-зелёного короба. */
