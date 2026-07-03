@@ -5,6 +5,8 @@ import { useUsersMap } from '../../api/users'
 import { IconSend } from '../../components/icons'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import { useAutosize } from '../../hooks/useAutosize'
+import type { MessageOut } from '../../lib/types'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageItem } from './MessageItem'
 import { useMessageMenu } from './useMessageMenu'
@@ -16,10 +18,11 @@ interface Props {
   rootId: number
   canPin?: boolean
   isNews?: boolean
+  onRepost?: (msg: MessageOut) => void
   onClose: () => void
 }
 
-export function ThreadPanel({ roomId, rootId, canPin, isNews, onClose }: Props) {
+export function ThreadPanel({ roomId, rootId, canPin, isNews, onRepost, onClose }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [text, setText] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -28,6 +31,7 @@ export function ThreadPanel({ roomId, rootId, canPin, isNews, onClose }: Props) 
   const send = useSendMessage(roomId)
   const users = useUsersMap()
   const markRead = useMarkRead(roomId)
+  const replyRef = useAutosize(text)
   // Контекстное меню сообщений треда. «Ответить» не показываем — мы уже в треде,
   // ответ всегда уходит в корень (п.2), для этого есть поле ввода снизу.
   const msgMenu = useMessageMenu({
@@ -35,6 +39,7 @@ export function ThreadPanel({ roomId, rootId, canPin, isNews, onClose }: Props) 
     isNews: !!isNews,
     canPin: !!canPin,
     onEdit: (m) => setEditingId(m.id),
+    onRepost,
   })
 
   // Открытый тред тоже двигает last_read_message_id — иначе его ответы
@@ -97,6 +102,7 @@ export function ThreadPanel({ roomId, rootId, canPin, isNews, onClose }: Props) 
           <div className={styles.threadReplyRow}>
             {!voiceActive && (
               <textarea
+                ref={replyRef}
                 className={styles.composerInput}
                 rows={1}
                 placeholder="Ответить в тред…"

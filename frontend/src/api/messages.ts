@@ -7,7 +7,6 @@ import {
 } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
 import type { MessageOut, ReadStateOut } from '../lib/types'
-import { toast } from '../stores/toast'
 import { roomsKey } from './rooms'
 import { appendMessage } from './cache'
 
@@ -62,16 +61,11 @@ export function useDeleteMessage(roomId: number) {
   })
 }
 
-// Репост сообщения в новостной канал (только admin). Пост попадёт к подписчикам
-// новостей через WS message.new — локальный кэш не трогаем.
-export function useRepostMessage(roomId: number) {
-  return useMutation({
-    mutationFn: (id: number) =>
-      http.post<MessageOut>(`/api/rooms/${roomId}/messages/${id}/repost`, {}),
-    onSuccess: () => toast('Отправлено в новости'),
-    onError: () => toast('Не удалось отправить в новости', 'error'),
-  })
-}
+// Репост сообщения в новостной канал (только admin). sourceRoomId — комната-источник
+// (в URL), сам пост создаётся в новостном канале. Пост придёт подписчикам новостей
+// по WS message.new — локальный кэш не трогаем. Не-хук: вызывается из submit композера.
+export const repostMessage = (sourceRoomId: number, id: number): Promise<MessageOut> =>
+  http.post<MessageOut>(`/api/rooms/${sourceRoomId}/messages/${id}/repost`, {})
 
 // Категории дневника личного канала. Порядок = порядок публикации в UI.
 export type JournalCategory = 'focus' | 'notes' | 'film'

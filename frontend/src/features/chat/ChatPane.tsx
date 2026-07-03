@@ -5,6 +5,8 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import type { MessageOut } from '../../lib/types'
+import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
 import { ChannelCalendar } from './ChannelCalendar'
@@ -34,6 +36,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const users = useUsersMap()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
+  const setPendingRepost = useUiStore((s) => s.setPendingRepost)
 
   const query = useMessages(roomId)
   const markRead = useMarkRead(roomId)
@@ -57,6 +60,15 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const canPin = user?.role === 'admin' || room?.type === 'dm' ||
     (room?.type === 'group' && room.created_by === user?.id)
 
+  // Репост: «зажимаем» сообщение и уводим админа в новостной канал — там композер
+  // покажет прикреплённый репост и даст дописать комментарий перед отправкой.
+  const handleRepost = (msg: MessageOut) => {
+    const news = rooms?.find((r) => r.is_news)
+    if (!news) { toast('Новостной канал недоступен', 'error'); return }
+    setPendingRepost({ roomId, message: msg })
+    onOpenRoom?.(news.id)
+  }
+
   // Контекстное меню сообщения (общий хук для ленты и треда).
   const msgMenu = useMessageMenu({
     roomId,
@@ -64,6 +76,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     canPin: !!canPin,
     onReply: (msg) => setThreadRootId(msg.id),
     onEdit: (msg) => setEditingId(msg.id),
+    onRepost: handleRepost,
   })
 
   // Сбросить панели при смене комнаты.
@@ -201,7 +214,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {(!room.is_personal || room.created_by === user?.id) &&
         (!room.is_news || user?.role === 'admin') &&
         !journalExpanded && (
-        <Composer roomId={roomId} />
+        <Composer roomId={roomId} isNews={room.is_news} />
       )}
       {msgMenu.menu && (
         <MessageActionsMenu
@@ -211,7 +224,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         />
       )}
       {threadRootId != null && (
-        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} isNews={!!room.is_news} onClose={() => setThreadRootId(null)} />
+        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} isNews={!!room.is_news} onRepost={handleRepost} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />

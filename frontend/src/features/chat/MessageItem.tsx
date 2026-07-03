@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
@@ -40,10 +40,21 @@ export function MessageItem({
   const editMutation = useEditMessage(msg.room_id)
 
   const [editText, setEditText] = useState(msg.content ?? '')
+  const editRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (editingId === msg.id) setEditText(msg.content ?? '')
   }, [editingId, msg.id, msg.content])
+
+  // Поле редактирования растёт под объём текста (в пределах max-height из CSS), чтобы
+  // большое сообщение было видно целиком без постоянного скролла вверх-вниз.
+  useLayoutEffect(() => {
+    if (editingId !== msg.id) return
+    const el = editRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editText, editingId, msg.id])
 
   const name = author?.display_name ?? `Участник #${msg.sender_id}`
   const forwardedName =
@@ -92,8 +103,10 @@ export function MessageItem({
         {isEditing ? (
           <div className={styles.editRow}>
             <textarea
+              ref={editRef}
               className={styles.editInput}
               value={editText}
+              autoFocus
               onChange={e => setEditText(e.target.value)}
               onClick={(e) => e.stopPropagation()}
             />

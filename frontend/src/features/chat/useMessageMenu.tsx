@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useDeleteMessage, useRepostMessage } from '../../api/messages'
+import { useDeleteMessage } from '../../api/messages'
 import { usePin } from '../../api/pins'
 import {
   IconCopy, IconEdit, IconNews, IconPin, IconReply, IconTrash,
@@ -16,16 +16,18 @@ interface Options {
   // undefined → пункт «Ответить» не показываем (внутри треда — уже отвечаем, п.2).
   onReply?: (msg: MessageOut) => void
   onEdit: (msg: MessageOut) => void
+  // Репост в новости: подхватывает сообщение в композер новостного канала (навигация
+  // + pendingRepost). undefined → пункт репоста не показываем.
+  onRepost?: (msg: MessageOut) => void
 }
 
 // Общая логика контекстного меню сообщения для ленты и треда. Видимость пунктов
 // зеркалит правила бэкенда: править — только автор текста; удалять — автор или admin;
 // репост в новости — admin и не из самого новостного канала.
-export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit }: Options) {
+export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepost }: Options) {
   const { user } = useAuth()
   const pin = usePin(roomId)
   const del = useDeleteMessage(roomId)
-  const repost = useRepostMessage(roomId)
   const [menu, setMenu] = useState<{ msg: MessageOut; anchor: DOMRect } | null>(null)
 
   // Смена комнаты закрывает открытое меню (его якорь уже неактуален).
@@ -48,8 +50,8 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit }: Opti
     if (canPin) {
       items.push({ key: 'pin', label: 'Закрепить', icon: <IconPin size={18} />, onClick: () => pin.mutate(msg.id) })
     }
-    if (user?.role === 'admin' && !isNews) {
-      items.push({ key: 'repost', label: 'Репост в новости', icon: <IconNews size={18} />, onClick: () => repost.mutate(msg.id) })
+    if (onRepost && user?.role === 'admin' && !isNews) {
+      items.push({ key: 'repost', label: 'Репост в новости', icon: <IconNews size={18} />, onClick: () => onRepost(msg) })
     }
     if (user?.id === msg.sender_id || user?.role === 'admin') {
       items.push({ key: 'delete', label: 'Удалить', icon: <IconTrash size={18} />, danger: true, onClick: () => del.mutate(msg.id) })

@@ -1,9 +1,21 @@
 // Эфемерное UI-состояние: активная комната, «печатает», presence.
 import { create } from 'zustand'
+import type { MessageOut } from '../lib/types'
+
+// Репост, «зажатый» админом: держим исходную комнату и само сообщение, пока админ
+// в новостном канале дописывает к нему комментарий в композере.
+export interface PendingRepost {
+  roomId: number
+  message: MessageOut
+}
 
 interface UiState {
   activeRoomId: number | null
   setActiveRoom: (id: number | null) => void
+
+  // Репост, ожидающий отправки в новостной канал (см. PendingRepost).
+  pendingRepost: PendingRepost | null
+  setPendingRepost: (r: PendingRepost | null) => void
 
   // roomId -> userIds, печатающие прямо сейчас (с авто-истечением)
   typing: Record<number, number[]>
@@ -23,6 +35,9 @@ const timers: Record<string, ReturnType<typeof setTimeout>> = {}
 export const useUiStore = create<UiState>((set) => ({
   activeRoomId: null,
   setActiveRoom: (id) => set({ activeRoomId: id }),
+
+  pendingRepost: null,
+  setPendingRepost: (r) => set({ pendingRepost: r }),
 
   typing: {},
   online: [],
