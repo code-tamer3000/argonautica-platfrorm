@@ -25,6 +25,7 @@ export function Composer({ roomId }: Props) {
   const send = useSendMessage(roomId)
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const justSentRef = useRef(false)
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -52,6 +53,8 @@ export function Composer({ roomId }: Props) {
     const content = text.trim()
     const hasContent = content || pendingFiles.length > 0
     if (!hasContent || send.isPending) return
+    justSentRef.current = true
+    setTimeout(() => { justSentRef.current = false }, 300)
     const body: SendBody = {}
     if (content) body.content = content
     if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
@@ -61,7 +64,15 @@ export function Composer({ roomId }: Props) {
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key !== 'Enter' || e.shiftKey) return
+    // Spurious Enter after button tap on mobile — just swallow it
+    if (justSentRef.current) {
+      e.preventDefault()
+      return
+    }
+    // On touch devices Enter inserts a newline; send button is the only trigger
+    const isTouch = window.matchMedia('(pointer: coarse)').matches
+    if (!isTouch) {
       e.preventDefault()
       submit()
     }
@@ -149,6 +160,7 @@ export function Composer({ roomId }: Props) {
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
+              enterKeyHint="enter"
             />
           </>
         )}
