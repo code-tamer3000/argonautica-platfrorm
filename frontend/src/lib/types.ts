@@ -180,6 +180,56 @@ export interface AdminUserOut {
   created_at: string
 }
 
+// --- Динамика (прогресс ДЗ) ---
+export type DayStatus = 'closed' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start'
+
+export interface RecentDay {
+  date: string
+  status: DayStatus
+}
+
+export interface MyDynamicsOut {
+  streak: number
+  overdue_dates: string[]
+  pardons_used: number
+  pardons_remaining: number
+  today_progress: string[]
+  program_start: string
+}
+
+export interface UserDynamicsOut {
+  user_id: number
+  display_name: string
+  username: string
+  avatar_url: string | null
+  streak: number
+  overdue_count: number
+  pardons_used: number
+  recent_days: RecentDay[]
+}
+
+// --- Уведомления (колокольчик + всплывающие тосты) ---
+export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed'
+
+export interface NotificationOut {
+  id: number
+  kind: NotificationKind
+  room_id: number
+  // Для системных уведомлений (journal_missed) actor/message пусты, зато есть ref_date.
+  message_id: number | null
+  actor_id: number | null
+  actor_name: string | null
+  preview: string | null
+  ref_date: string | null
+  created_at: string
+  read_at: string | null
+}
+
+export interface NotificationListOut {
+  items: NotificationOut[]
+  unread_count: number
+}
+
 // --- WebSocket события ---
 export type WsEvent =
   | { type: 'message.new'; message: MessageOut }
@@ -190,6 +240,7 @@ export type WsEvent =
   | { type: 'read'; room_id: number; user_id: number; last_read_message_id: number | null }
   | { type: 'typing'; room_id: number; user_id: number }
   | { type: 'presence'; user_id: number; status: 'online' | 'offline' }
+  | { type: 'notification.new'; notification: NotificationOut }
   | { type: 'subscribed'; room_id: number }
   | { type: 'unsubscribed'; room_id: number }
   | { type: 'error'; detail: string; room_id?: number }

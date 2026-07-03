@@ -1,15 +1,19 @@
 import {
   ArrowUp,
   ArrowLeft,
+  Bell,
   BookOpen,
   Calendar,
   ChevronLeft,
   ChevronRight,
+  CircleCheck,
   Copy,
   CornerUpLeft,
+  Flame,
   MessageSquare,
   Megaphone,
   Mic,
+  NotebookPen,
   Paperclip,
   Pause,
   Pencil,
@@ -19,9 +23,11 @@ import {
   Settings,
   Smile,
   Sticker,
+  TriangleAlert,
   Trash2,
   User,
   Users,
+  Waves,
   X,
   type LucideProps,
 } from 'lucide-react'
@@ -35,6 +41,7 @@ const DEFAULTS: LucideProps = { size: 22, strokeWidth: 1.5, absoluteStrokeWidth:
 
 export const IconChat = (p: IconProps) => <MessageSquare {...DEFAULTS} {...p} />
 export const IconBook = (p: IconProps) => <BookOpen {...DEFAULTS} {...p} />
+export const IconDiary = (p: IconProps) => <NotebookPen {...DEFAULTS} {...p} />
 export const IconCalendar = (p: IconProps) => <Calendar {...DEFAULTS} {...p} />
 export const IconUser = (p: IconProps) => <User {...DEFAULTS} {...p} />
 export const IconSettings = (p: IconProps) => <Settings {...DEFAULTS} {...p} />
@@ -48,6 +55,7 @@ export const IconSticker = (p: IconProps) => <Sticker {...DEFAULTS} {...p} />
 export const IconChevronLeft = (p: IconProps) => <ChevronLeft {...DEFAULTS} {...p} />
 export const IconChevronRight = (p: IconProps) => <ChevronRight {...DEFAULTS} {...p} />
 export const IconNews = (p: IconProps) => <Megaphone {...DEFAULTS} {...p} />
+export const IconBell = (p: IconProps) => <Bell {...DEFAULTS} {...p} />
 export const IconSend = (p: IconProps) => <ArrowUp {...DEFAULTS} {...p} />
 export const IconMic = (p: IconProps) => <Mic {...DEFAULTS} {...p} />
 export const IconPlay = (p: IconProps) => <Play {...DEFAULTS} {...p} />
@@ -57,3 +65,7 @@ export const IconClose = (p: IconProps) => <X {...DEFAULTS} {...p} />
 export const IconReply = (p: IconProps) => <CornerUpLeft {...DEFAULTS} {...p} />
 export const IconCopy = (p: IconProps) => <Copy {...DEFAULTS} {...p} />
 export const IconEdit = (p: IconProps) => <Pencil {...DEFAULTS} {...p} />
+export const IconFlame = (p: IconProps) => <Flame {...DEFAULTS} {...p} />
+export const IconWaves = (p: IconProps) => <Waves {...DEFAULTS} {...p} />
+export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
+export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />

@@ -1,13 +1,13 @@
 .wrap {
   position: fixed;
   bottom: var(--space-5);
-  left: 50%;
-  transform: translateX(-50%);
+  right: var(--space-5);
   z-index: 80;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  align-items: center;
+  align-items: flex-end;
+  max-width: min(92vw, 380px);
 }
 
 .toast {
@@ -26,4 +26,50 @@
 .error {
   border-color: var(--blood);
   color: var(--blood-bright);
+}
+
+/* Мобила: приподнимаем стопку над нижним таб-баром, чтобы тосты его не перекрывали. */
+@media (max-width: 768px) {
+  .wrap {
+    right: var(--space-3);
+    left: var(--space-3);
+    align-items: stretch;
+    max-width: none;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+}
+
+.clickable:hover {
+  border-color: var(--accent);
+}
+
+/* Rich-тост уведомления: аватар + имя + текст (мини-карточка сообщения). */
+.rich {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 240px;
+  max-width: min(90vw, 360px);
+}
+.richBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.richTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.richText {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }

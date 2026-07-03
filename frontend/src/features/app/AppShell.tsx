@@ -12,15 +12,19 @@ import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
 import { ProfileScreen } from '../profile/ProfileScreen'
 import { AdminLayout } from '../admin/AdminLayout'
+import { AdminDynamics } from '../admin/AdminDynamics'
 import { AdminKb } from '../admin/AdminKb'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
+import { NotificationBell } from './NotificationBell'
+import { useNavBadges } from './useNavBadges'
 import styles from './appshell.module.css'
 
 export function AppShell() {
   const { user, logout } = useAuth()
   const location = useLocation()
+  const badges = useNavBadges()
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -60,6 +64,7 @@ export function AppShell() {
       <header className={styles.topbar}>
         <span className={styles.wordmark}>Аргонавтика</span>
         <div className={styles.spacer} />
+        <NotificationBell />
         <span className={styles.user}>
           {user?.display_name}
           {user?.role === 'admin' && <span className={styles.adminTag}>admin</span>}
@@ -77,10 +82,12 @@ export function AppShell() {
           <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
             <span className={styles.navIcon}><IconChat /></span>
             <span className={styles.navLabel}>Рубка</span>
+            {badges.rubka > 0 && <span className={styles.navBadge}>{badges.rubka > 99 ? '99+' : badges.rubka}</span>}
           </NavLink>
           <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconNews /></span>
             <span className={styles.navLabel}>Новости</span>
+            {badges.news > 0 && <span className={styles.navBadge}>{badges.news > 99 ? '99+' : badges.news}</span>}
           </NavLink>
           <NavLink to="/kb" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconBook /></span>
@@ -110,11 +117,12 @@ export function AppShell() {
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
+              <Route path="dynamics" element={<AdminDynamics />} />
               <Route path="kb" element={<AdminKb />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
               <Route path="users" element={<AdminUsers />} />
-              <Route index element={<Navigate to="kb" replace />} />
+              <Route index element={<Navigate to="dynamics" replace />} />
             </Route>
           </Routes>
         </main>

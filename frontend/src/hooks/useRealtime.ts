@@ -1,14 +1,25 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { appendMessage, bumpReplyCount, removeMessage, replaceMessage } from '../api/cache'
+import { notificationsKey } from '../api/notifications'
 import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
 import { threadKey } from '../api/threads'
+import { useUsersMap } from '../api/users'
 import { useAuth } from '../features/auth/AuthContext'
+import { useOpenNotification } from '../features/app/useOpenNotification'
 import { http } from '../lib/apiClient'
 import { wsClient } from '../lib/wsClient'
-import type { RoomOut, WsEvent } from '../lib/types'
+import type { NotificationKind, NotificationListOut, RoomOut, WsEvent } from '../lib/types'
+import { notify } from '../stores/toast'
 import { useUiStore } from '../stores/ui'
+
+const NOTIF_FALLBACK: Record<NotificationKind, string> = {
+  dm: 'Новое сообщение',
+  reply: 'Ответил(а) на ваше сообщение',
+  news: 'Новый пост в новостях',
+  journal_missed: 'День дневника не закрыт',
+}
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
   qc.setQueryData<RoomOut[]>(roomsKey, (old) => (old ? fn(old) : old))
@@ -39,8 +50,15 @@ export function useRealtime(): void {
   const markTyping = useUiStore((s) => s.markTyping)
   const setOnline = useUiStore((s) => s.setOnline)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
+  const usersMap = useUsersMap()
+  const openNotification = useOpenNotification()
   const meRef = useRef(user?.id ?? -1)
   meRef.current = user?.id ?? -1
+  // Читаем актуальные значения из листенера, не пересоздавая подписку на каждый рендер.
+  const usersRef = useRef(usersMap)
+  usersRef.current = usersMap
+  const openRef = useRef(openNotification)
+  openRef.current = openNotification
   const subscribed = useRef<Set<number>>(new Set())
 
   // Подписка на все комнаты + заполняем dmPeers из peer_id, который отдаёт API.
@@ -113,6 +131,27 @@ export function useRealtime(): void {
         case 'presence':
           setOnline(e.user_id, e.status === 'online')
           break
+        case 'notification.new': {
+          const n = e.notification
+          // Кэш колокольчика: добавить наверх + инкремент непрочитанных.
+          qc.setQueryData<NotificationListOut>(notificationsKey, (old) =>
+            old
+              ? { items: [n, ...old.items].slice(0, 50), unread_count: old.unread_count + 1 }
+              : { items: [n], unread_count: 1 },
+          )
+          // Всплывающий тост — только если пользователь не смотрит эту комнату сейчас
+          // (иначе он и так видит сообщение — дублировать не нужно).
+          if (n.room_id !== useUiStore.getState().activeRoomId) {
+            notify({
+              title: n.actor_name ?? 'Уведомление',
+              text: n.preview ?? NOTIF_FALLBACK[n.kind],
+              avatarName: n.actor_name ?? undefined,
+              avatarUrl: n.actor_id != null ? usersRef.current.get(n.actor_id)?.avatar_url ?? null : null,
+              onClick: () => openRef.current(n),
+            })
+          }
+          break
+        }
         default:
           // pin.added/removed, read, subscribed/unsubscribed, error, pong — фазы 3+
           break

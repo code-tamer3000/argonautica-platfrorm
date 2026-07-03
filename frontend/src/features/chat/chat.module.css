@@ -36,6 +36,14 @@
   color: var(--text-primary);
   border-bottom-color: var(--accent);
 }
+/* Кружок-бейдж непрочитанных на вкладке «Чаты»/«Каналы». */
+.tabBadge {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--accent); color: var(--color-bezdna);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  display: inline-flex; align-items: center; justify-content: center;
+}
 
 .listHead {
   padding: var(--space-3) var(--space-4);
