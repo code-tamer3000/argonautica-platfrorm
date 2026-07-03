@@ -91,16 +91,28 @@
     left: 0; right: 0; bottom: 0;
     width: auto;
     flex-direction: row;
+    flex-wrap: nowrap;
     gap: 0;
-    padding: var(--space-1) var(--space-2);
+    padding: var(--space-1) 0;
     padding-bottom: calc(var(--space-1) + env(safe-area-inset-bottom));
     border-right: none;
     border-top: 1px solid var(--divider);
     background: var(--bg-surface);
     z-index: 40;
+    /* Вкладок может быть больше, чем влезает на экран (у админа — 6, дальше
+       будут ещё). Пять вкладок помещаются ровно (по 20vw), остальные — за
+       краем: бар прокручивается горизонтально. Полоску прокрутки прячем. */
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .sidenav::-webkit-scrollbar { display: none; }
   .navLink, .navLinkActive {
-    flex: 1;
+    /* basis 20vw → ровно 5 вкладок на ширину экрана; grow заполняет остаток,
+       когда вкладок меньше пяти; shrink 0 — при 6+ вкладки не сжимаются, а
+       уезжают за край под прокрутку. */
+    flex: 1 0 20vw;
     flex-direction: column;
     gap: 2px;
     margin: 0;
