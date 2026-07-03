@@ -250,6 +250,11 @@
 .msgContinuation .msgText { padding-left: 0; }
 .msgMeta { font-size: var(--text-label); color: var(--text-ghost); font-family: var(--font-t4); }
 .msgPlaceholder { color: var(--text-muted); font-style: italic; }
+/* Атрибуция репоста в новостном канале: «переслано от <автор>». */
+.msgForwarded {
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  color: var(--accent); margin-bottom: 2px;
+}
 
 .typing { padding: 2px var(--space-5) var(--space-2); font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-height: 22px; }
 
@@ -332,26 +337,44 @@
 .attLoading { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost); padding: var(--space-2) 0; }
 .sticker { width: 120px; height: 120px; object-fit: contain; margin-top: var(--space-1); }
 
-/* --- Действия над сообщением --- */
-.msg:hover .actions,
-.msg[data-selected] .actions { opacity: 1; pointer-events: auto; }
+/* --- Контекстное меню действий над сообщением (Telegram-style) --- */
+.msg { cursor: pointer; }
 .msgSelected { background: rgba(19, 78, 69, 0.07); border-radius: var(--radius-btn); }
 .msgHighlighted { animation: highlightPulse 2s ease; }
 @keyframes highlightPulse {
   0%, 100% { background: transparent; }
   20% { background: rgba(19, 78, 69, 0.18); }
 }
-.actions {
-  opacity: 0; transition: var(--transition-fade);
-  display: flex; gap: var(--space-1); margin-top: var(--space-1);
+
+/* Прозрачный слой поверх всего — ловит клик вне меню, чтобы закрыть его. */
+.menuBackdrop { position: fixed; inset: 0; z-index: 60; }
+.menu {
+  position: fixed;
+  min-width: 210px;
+  padding: var(--space-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-gold);
+  display: flex; flex-direction: column;
+  animation: menu-in 140ms var(--ease-out-soft) both;
 }
-.actionBtn {
-  background: transparent; border: 1px solid transparent; border-radius: var(--radius-btn);
-  color: var(--text-muted); font-family: var(--font-t4); font-size: var(--text-label-md);
-  padding: 2px var(--space-2); cursor: pointer;
+@keyframes menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
-.actionBtn:hover { color: var(--text-primary); border-color: var(--color-frame-deep); }
-.actionDanger:hover { color: var(--blood-bright); border-color: var(--blood); }
+.menuItem {
+  display: flex; align-items: center; gap: var(--space-2);
+  width: 100%; text-align: left;
+  background: transparent; border: none; border-radius: var(--radius-btn);
+  color: var(--text-primary); font-family: var(--font-t4); font-size: var(--text-body-sm);
+  padding: var(--space-2) var(--space-3); cursor: pointer;
+}
+.menuItem:hover { background: rgba(19, 78, 69, 0.10); }
+.menuItemIcon { display: flex; color: var(--text-muted); }
+.menuItemDanger,
+.menuItemDanger .menuItemIcon { color: var(--blood-bright); }
+.menuItemDanger:hover { background: rgba(120, 20, 20, 0.12); }
 
 .threadLink {
   display: inline-block; margin-top: var(--space-1);

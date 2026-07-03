@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
 import type { MessageOut, ReadStateOut } from '../lib/types'
+import { toast } from '../stores/toast'
 import { roomsKey } from './rooms'
 import { appendMessage } from './cache'
 
@@ -58,6 +59,17 @@ export function useEditMessage(roomId: number) {
 export function useDeleteMessage(roomId: number) {
   return useMutation({
     mutationFn: (id: number) => http.del<null>(`/api/rooms/${roomId}/messages/${id}`),
+  })
+}
+
+// Репост сообщения в новостной канал (только admin). Пост попадёт к подписчикам
+// новостей через WS message.new — локальный кэш не трогаем.
+export function useRepostMessage(roomId: number) {
+  return useMutation({
+    mutationFn: (id: number) =>
+      http.post<MessageOut>(`/api/rooms/${roomId}/messages/${id}/repost`, {}),
+    onSuccess: () => toast('Отправлено в новости'),
+    onError: () => toast('Не удалось отправить в новости', 'error'),
   })
 }
 

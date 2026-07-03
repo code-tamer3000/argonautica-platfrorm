@@ -11,7 +11,9 @@ import { ChannelCalendar } from './ChannelCalendar'
 import { Composer } from './Composer'
 import { DailyJournalForm } from './DailyJournalForm'
 import { MembersDrawer } from './MembersDrawer'
+import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
+import { useMessageMenu } from './useMessageMenu'
 import { PinsBar } from './PinsBar'
 import { PinsDrawer } from './PinsDrawer'
 import { ThreadPanel } from './ThreadPanel'
@@ -46,10 +48,23 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showMembers, setShowMembers] = useState(false)
   const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
-  const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   const [journalExpanded, setJournalExpanded] = useState(false)
   const messageListRef = useRef<MessageListHandle>(null)
+
+  // Право закрепления зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда;
+  // group — только владелец; dm — оба участника; channel — никому, кроме admin.
+  const canPin = user?.role === 'admin' || room?.type === 'dm' ||
+    (room?.type === 'group' && room.created_by === user?.id)
+
+  // Контекстное меню сообщения (общий хук для ленты и треда).
+  const msgMenu = useMessageMenu({
+    roomId,
+    isNews: !!room?.is_news,
+    canPin: !!canPin,
+    onReply: (msg) => setThreadRootId(msg.id),
+    onEdit: (msg) => setEditingId(msg.id),
+  })
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
@@ -59,7 +74,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setShowMembers(false)
     setShowCalendar(false)
     setShowProfile(false)
-    setSelectedMsgId(null)
     setHighlightedMsgId(null)
     setJournalExpanded(false)
   }, [roomId])
@@ -106,12 +120,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const title = roomTitle(room, dmPeers, users)
   const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
-
-  // Зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда; group — только
-  // владелец (created_by, роль owner не меняется после создания); dm — оба участника;
-  // channel (в т.ч. личный/новостной) — никому, кроме admin.
-  const canPin = user?.role === 'admin' || room.type === 'dm' ||
-    (room.type === 'group' && room.created_by === user?.id)
 
   function openHeaderInfo() {
     if (room?.type === 'dm') {
@@ -175,13 +183,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         loading={query.isFetchingNextPage}
         users={users}
         editingId={editingId}
-        selectedMsgId={selectedMsgId}
+        selectedMsgId={msgMenu.menu?.msg.id ?? null}
         highlightedMsgId={highlightedMsgId}
-        canPin={canPin}
-        onEdit={(msg) => setEditingId(msg.id)}
         onClearEdit={() => setEditingId(null)}
         onOpenThread={(rootId) => setThreadRootId(rootId)}
-        onSelectMsg={setSelectedMsgId}
+        onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
       <TypingIndicator roomId={roomId} users={users} />
@@ -197,8 +203,15 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         !journalExpanded && (
         <Composer roomId={roomId} />
       )}
+      {msgMenu.menu && (
+        <MessageActionsMenu
+          anchor={msgMenu.menu.anchor}
+          items={msgMenu.buildItems(msgMenu.menu.msg)}
+          onClose={msgMenu.closeMenu}
+        />
+      )}
       {threadRootId != null && (
-        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} onClose={() => setThreadRootId(null)} />
+        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} isNews={!!room.is_news} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />
