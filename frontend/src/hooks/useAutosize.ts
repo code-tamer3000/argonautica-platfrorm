@@ -9,7 +9,11 @@ export function useAutosize(value: string) {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    // box-sizing: border-box — scrollHeight не включает бордер, поэтому высоту берём
+    // как scrollHeight + бордеры (offsetHeight - clientHeight). Иначе поле оказывается
+    // на пару пикселей ниже контента и скроллбар вылезает ещё до упора в max-height.
+    const border = el.offsetHeight - el.clientHeight
+    el.style.height = `${el.scrollHeight + border}px`
   }, [value])
   return ref
 }

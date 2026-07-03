@@ -53,7 +53,9 @@ export function MessageItem({
     const el = editRef.current
     if (!el) return
     el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
+    // border-box: добавляем бордеры (offsetHeight - clientHeight), иначе поле ниже
+    // контента и скроллбар появляется раньше упора в max-height.
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`
   }, [editText, editingId, msg.id])
 
   const name = author?.display_name ?? `Участник #${msg.sender_id}`

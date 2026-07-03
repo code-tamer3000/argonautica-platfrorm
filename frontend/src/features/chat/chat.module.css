@@ -299,11 +299,12 @@
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  scrollbar-width: thin; scrollbar-color: var(--color-frame-deep) transparent;
 }
 /* Тонкий thumb, вписанный в скругление: прозрачная рамка + background-clip отодвигают
-   видимую полосу от правого края, margin трека — от скругленных верх/низ углов. */
-.composerInput::-webkit-scrollbar { width: 10px; }
+   видимую полосу (≈3px) от правого края, margin трека — от скругленных верх/низ углов.
+   ВАЖНО: scrollbar-width НЕ задаём в базовом правиле — иначе Chrome берёт стандартный
+   тонкий скроллбар и игнорирует эту кастомизацию ::-webkit-scrollbar. */
+.composerInput::-webkit-scrollbar { width: 9px; }
 .composerInput::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
 .composerInput::-webkit-scrollbar-thumb {
   background: var(--color-frame-deep); border-radius: 8px;
@@ -311,6 +312,10 @@
 }
 .composerInput::-webkit-scrollbar-thumb:hover {
   background: var(--color-latun); background-clip: padding-box;
+}
+/* Firefox не поддерживает ::-webkit-scrollbar — там даём стандартный тонкий. */
+@supports not selector(::-webkit-scrollbar) {
+  .composerInput { scrollbar-width: thin; scrollbar-color: var(--color-frame-deep) transparent; }
 }
 .composerInput::placeholder { color: var(--text-ghost); }
 .composerInput:focus {
