@@ -110,8 +110,8 @@ export function AppShell() {
         </nav>
         <main className={styles.content}>
           <Routes>
-            <Route path="/" element={<ChatLayout />} />
-            <Route path="/news" element={<ChatLayout autoOpen="news" />} />
+            <Route path="/" element={<ChatLayout key="rubka" />} />
+            <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/calendar" element={<CalendarView />} />
