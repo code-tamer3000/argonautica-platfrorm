@@ -5,7 +5,11 @@ import { useUsersMap } from '../../api/users'
 import { IconSend } from '../../components/icons'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import { useAutosize } from '../../hooks/useAutosize'
+import type { MessageOut } from '../../lib/types'
+import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageItem } from './MessageItem'
+import { useMessageMenu } from './useMessageMenu'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
@@ -13,10 +17,12 @@ interface Props {
   roomId: number
   rootId: number
   canPin?: boolean
+  isNews?: boolean
+  onRepost?: (msg: MessageOut) => void
   onClose: () => void
 }
 
-export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
+export function ThreadPanel({ roomId, rootId, canPin, isNews, onRepost, onClose }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [text, setText] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -25,6 +31,16 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
   const send = useSendMessage(roomId)
   const users = useUsersMap()
   const markRead = useMarkRead(roomId)
+  const replyRef = useAutosize(text)
+  // Контекстное меню сообщений треда. «Ответить» не показываем — мы уже в треде,
+  // ответ всегда уходит в корень (п.2), для этого есть поле ввода снизу.
+  const msgMenu = useMessageMenu({
+    roomId,
+    isNews: !!isNews,
+    canPin: !!canPin,
+    onEdit: (m) => setEditingId(m.id),
+    onRepost,
+  })
 
   // Открытый тред тоже двигает last_read_message_id — иначе его ответы
   // (id которых может быть больше, чем у последнего сообщения ленты) вечно
@@ -59,11 +75,12 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
             msg={data.root}
             continuation={false}
             author={users.get(data.root.sender_id)}
+            forwardedFrom={data.root.forwarded_from_sender_id != null ? users.get(data.root.forwarded_from_sender_id) : undefined}
             isInThread
-            canPin={canPin}
             editingId={editingId}
-            onEdit={(m) => setEditingId(m.id)}
+            isSelected={msgMenu.menu?.msg.id === data.root.id}
             onClearEdit={() => setEditingId(null)}
+            onOpenMenu={msgMenu.openMenu}
           />
           <div className={styles.threadDivider} />
           {data.replies.map((r) => (
@@ -72,11 +89,12 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
               msg={r}
               continuation={false}
               author={users.get(r.sender_id)}
+              forwardedFrom={r.forwarded_from_sender_id != null ? users.get(r.forwarded_from_sender_id) : undefined}
               isInThread
-              canPin={canPin}
               editingId={editingId}
-              onEdit={(m) => setEditingId(m.id)}
+              isSelected={msgMenu.menu?.msg.id === r.id}
               onClearEdit={() => setEditingId(null)}
+              onOpenMenu={msgMenu.openMenu}
             />
           ))}
           {/* Поле ответа держим в потоке сразу под репликами (а не прибитым к низу
@@ -84,6 +102,7 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
           <div className={styles.threadReplyRow}>
             {!voiceActive && (
               <textarea
+                ref={replyRef}
                 className={styles.composerInput}
                 rows={1}
                 placeholder="Ответить в тред…"
@@ -119,6 +138,13 @@ export function ThreadPanel({ roomId, rootId, canPin, onClose }: Props) {
             )}
           </div>
         </>
+      )}
+      {msgMenu.menu && (
+        <MessageActionsMenu
+          anchor={msgMenu.menu.anchor}
+          items={msgMenu.buildItems(msgMenu.menu.msg)}
+          onClose={msgMenu.closeMenu}
+        />
       )}
     </Drawer>
   )

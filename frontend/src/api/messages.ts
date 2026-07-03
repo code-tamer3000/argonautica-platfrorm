@@ -61,6 +61,12 @@ export function useDeleteMessage(roomId: number) {
   })
 }
 
+// Репост сообщения в новостной канал (только admin). sourceRoomId — комната-источник
+// (в URL), сам пост создаётся в новостном канале. Пост придёт подписчикам новостей
+// по WS message.new — локальный кэш не трогаем. Не-хук: вызывается из submit композера.
+export const repostMessage = (sourceRoomId: number, id: number): Promise<MessageOut> =>
+  http.post<MessageOut>(`/api/rooms/${sourceRoomId}/messages/${id}/repost`, {})
+
 // Категории дневника личного канала. Порядок = порядок публикации в UI.
 export type JournalCategory = 'focus' | 'notes' | 'film'
 export const JOURNAL_CATEGORIES: JournalCategory[] = ['focus', 'notes', 'film']

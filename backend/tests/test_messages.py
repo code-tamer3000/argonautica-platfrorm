@@ -5,7 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import MediaAsset
-from app.models.room import RoomMember
+from app.models.message import MessageAttachment
+from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
 
@@ -465,3 +466,83 @@ async def test_edit_blank_content_rejected(
         json={"content": "   "},
     )
     assert resp.status_code == 422  # пустой текст не проходит валидацию
+
+
+# --- репост в новостной канал ----------------------------------------------
+
+
+async def test_admin_reposts_to_news(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Админ репостит чужое сообщение (с вложением) в новостной канал: пост в news,
+    автор = админ, исходный автор сохранён в forwarded_from_sender_id, вложение
+    продублировано (та же media_asset_id)."""
+    admin = await make_user(role="admin")
+    author = await make_user()
+    room = await make_room(created_by=author.id)
+    await add_membership(room.id, author.id, "owner")
+    await add_membership(room.id, admin.id, "member")
+
+    asset = MediaAsset(
+        bucket="chat-media",
+        storage_key="2026/07/r.png",
+        kind="image",
+        mime_type="image/png",
+        size=10,
+        created_by=author.id,
+    )
+    session.add(asset)
+    await session.commit()
+
+    author_headers = await _headers(client, author)
+    src = await _send(
+        client, author_headers, room.id, content="original", attachment_ids=[asset.id]
+    )
+
+    admin_headers = await _headers(client, admin)
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages/{src['id']}/repost", headers=admin_headers
+    )
+    assert resp.status_code == 201, resp.text
+    out = resp.json()
+
+    news = (
+        await session.execute(select(Room).where(Room.is_news.is_(True)))
+    ).scalar_one()
+    assert out["room_id"] == news.id
+    assert out["sender_id"] == admin.id
+    assert out["forwarded_from_sender_id"] == author.id
+    assert out["content"] == "original"
+    assert out["attachment_ids"] == [asset.id]
+
+    # Вложение действительно продублировано как отдельная строка связи на новом посте.
+    dup = (
+        await session.execute(
+            select(func.count())
+            .select_from(MessageAttachment)
+            .where(MessageAttachment.message_id == out["id"])
+        )
+    ).scalar_one()
+    assert dup == 1
+
+
+async def test_non_admin_cannot_repost(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    msg = await _send(client, headers, room.id, content="hi")
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages/{msg['id']}/repost", headers=headers
+    )
+    assert resp.status_code == 403

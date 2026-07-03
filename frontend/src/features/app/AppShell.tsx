@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
 import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
@@ -20,6 +20,7 @@ import styles from './appshell.module.css'
 
 export function AppShell() {
   const { user, logout } = useAuth()
+  const location = useLocation()
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -29,6 +30,30 @@ export function AppShell() {
 
   // Проводка WS-событий в кэш (один раз в корне).
   useRealtime()
+
+  // «Живой» золотой индикатор: один общий элемент, который переезжает под
+  // активную вкладку (а не отдельная подсветка на каждой ссылке). Меряем
+  // геометрию активного пункта и позиционируем glider — CSS-transition даёт
+  // эффект «пробегающей» золотой штучки между вкладками. Работает и для
+  // вертикального сайднава (десктоп), и для горизонтального таб-бара (мобила):
+  // берём offsetLeft/Top/Width/Height относительно nav (его offsetParent).
+  const navRef = useRef<HTMLElement>(null)
+  const [glider, setGlider] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    const measure = () => {
+      const active = nav.querySelector<HTMLElement>('[aria-current="page"]')
+      if (!active) return setGlider(null)
+      setGlider({ x: active.offsetLeft, y: active.offsetTop, w: active.offsetWidth, h: active.offsetHeight })
+    }
+    measure()
+    // Пересчёт при смене ориентации/раскладки (десктоп↔мобила, ресайз).
+    const ro = new ResizeObserver(measure)
+    ro.observe(nav)
+    return () => ro.disconnect()
+  }, [location.pathname, user?.role])
 
   return (
     <div className={`col ${styles.shell}`}>
@@ -42,7 +67,13 @@ export function AppShell() {
         <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
       </header>
       <div className={styles.body}>
-        <nav className={styles.sidenav}>
+        <nav ref={navRef} className={styles.sidenav}>
+          {glider && (
+            <span
+              className={styles.navGlider}
+              style={{ transform: `translate(${glider.x}px, ${glider.y}px)`, width: glider.w, height: glider.h }}
+            />
+          )}
           <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
             <span className={styles.navIcon}><IconChat /></span>
             <span className={styles.navLabel}>Рубка</span>
