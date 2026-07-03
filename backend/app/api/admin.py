@@ -19,7 +19,7 @@ from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
-from app.schemas.journal import UserDynamicsOut
+from app.schemas.journal import AdminDynamicsOut
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -277,9 +277,9 @@ async def delete_user(
     await session.flush()
 
 
-@router.get("/dynamics", response_model=list[UserDynamicsOut])
+@router.get("/dynamics", response_model=AdminDynamicsOut)
 async def admin_dynamics(
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[UserDynamicsOut]:
-    """Динамика ДЗ всех участников для администратора."""
+) -> AdminDynamicsOut:
+    """Сводка + динамика ДЗ всех участников для администратора."""
     return await get_all_dynamics(session)

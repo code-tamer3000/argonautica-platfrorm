@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-DayStatus = Literal["closed", "missed", "pardoned", "today_open", "today_closed", "before_start"]
+DayStatus = Literal["closed", "missed", "pardoned", "today_open", "today_closed", "before_start", "upcoming"]
 
 
 class RecentDay(BaseModel):
@@ -29,7 +29,22 @@ class UserDynamicsOut(BaseModel):
     streak: int
     overdue_count: int
     pardons_used: int
+    active_today: bool
+    journal_today: bool
     recent_days: list[RecentDay]
+
+
+class DynamicsSummary(BaseModel):
+    total_participants: int
+    active_today: int
+    journal_today: int
+    no_overdue: int
+    avg_streak: float
+
+
+class AdminDynamicsOut(BaseModel):
+    summary: DynamicsSummary
+    users: list[UserDynamicsOut]
 
 
 class PardonRequest(BaseModel):

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { MyDynamicsOut, UserDynamicsOut } from '../lib/types'
+import type { AdminDynamicsOut, MyDynamicsOut } from '../lib/types'
 
 export const myDynamicsKey = ['dynamics', 'me'] as const
 export const adminDynamicsKey = ['dynamics', 'admin'] as const
@@ -25,6 +25,7 @@ export function usePardon() {
 export function useAdminDynamics() {
   return useQuery({
     queryKey: adminDynamicsKey,
-    queryFn: () => http.get<UserDynamicsOut[]>('/api/admin/dynamics'),
+    queryFn: () => http.get<AdminDynamicsOut>('/api/admin/dynamics'),
+    refetchInterval: 60_000,
   })
 }

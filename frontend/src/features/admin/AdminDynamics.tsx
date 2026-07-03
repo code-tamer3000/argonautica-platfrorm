@@ -1,85 +1,169 @@
 import { useAdminDynamics } from '../../api/dynamics'
 import { Avatar } from '../../components/Avatar'
+import { IconAlert, IconCheck, IconFlame, IconUsers, IconWaves } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import type { RecentDay } from '../../lib/types'
+import type { DynamicsSummary, RecentDay, UserDynamicsOut } from '../../lib/types'
 import styles from './admin.module.css'
 import dynStyles from './dynamics.module.css'
 
+// ─── Ячейка дня ──────────────────────────────────────────────────────────────
+
 const STATUS_ICON: Record<string, string> = {
-  closed: '✓',
-  missed: '✗',
-  pardoned: '🐋',
-  today_open: '○',
+  closed:       '✓',
+  missed:       '✗',
+  pardoned:     '~',
+  today_open:   '○',
   today_closed: '✓',
   before_start: '·',
+  upcoming:     '·',
 }
 
-const STATUS_TITLE: Record<string, string> = {
-  closed: 'Выполнено',
-  missed: 'Пропущено',
-  pardoned: 'Помиловано',
-  today_open: 'Сегодня (ещё открыт)',
-  today_closed: 'Сегодня — выполнено',
-  before_start: 'До начала программы',
+const STATUS_TEXT: Record<string, string> = {
+  closed:       'Выполнено',
+  missed:       'Пропущено',
+  pardoned:     'Помиловано',
+  today_open:   'Сегодня',
+  today_closed: 'Сегодня ✓',
+  before_start: '—',
+  upcoming:     'Впереди',
 }
 
-function DayDot({ day }: { day: RecentDay }) {
-  const date = new Date(day.date + 'T00:00:00')
-  const label = date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
+
+function DayCell({ day }: { day: RecentDay }) {
+  const d = new Date(day.date + 'T00:00:00')
   return (
-    <div className={`${dynStyles.dot} ${dynStyles['dot_' + day.status]}`} title={`${label}: ${STATUS_TITLE[day.status]}`}>
-      {STATUS_ICON[day.status] ?? '·'}
+    <div className={`${dynStyles.cell} ${dynStyles['cell_' + day.status]}`}>
+      <span className={dynStyles.cellIcon}>{STATUS_ICON[day.status] ?? '·'}</span>
+      <span className={dynStyles.cellDate}>{d.getDate()} {MONTHS_SHORT[d.getMonth()]}</span>
+      <span className={dynStyles.cellLabel}>{STATUS_TEXT[day.status] ?? '—'}</span>
     </div>
   )
 }
 
+// ─── Карточка статистики ──────────────────────────────────────────────────────
+
+function StatCard({ value, label, sub, accent }: { value: string | number; label: string; sub?: string; accent?: boolean }) {
+  return (
+    <div className={`${dynStyles.statCard} ${accent ? dynStyles.statCardAccent : ''}`}>
+      <span className={dynStyles.statValue}>{value}</span>
+      <span className={dynStyles.statLabel}>{label}</span>
+      {sub && <span className={dynStyles.statSub}>{sub}</span>}
+    </div>
+  )
+}
+
+// ─── Дашборд (сводка) ────────────────────────────────────────────────────────
+
+function Dashboard({ s, total }: { s: DynamicsSummary; total: number }) {
+  return (
+    <div className={dynStyles.dashboard}>
+      <div className={dynStyles.statRow}>
+        <StatCard
+          value={`${s.active_today} / ${total}`}
+          label="Активны сегодня"
+          sub="написали хоть что-то"
+          accent
+        />
+        <StatCard
+          value={`${s.journal_today} / ${total}`}
+          label="ДЗ закрыто сегодня"
+          sub="все три категории"
+        />
+        <StatCard
+          value={`${s.no_overdue} / ${total}`}
+          label="Без просрочек"
+          sub="всё вовремя"
+        />
+        <StatCard
+          value={s.avg_streak}
+          label="Средний стрик"
+          sub="дней подряд"
+        />
+      </div>
+    </div>
+  )
+}
+
+// ─── Карточка участника ───────────────────────────────────────────────────────
+
+function UserCard({ u }: { u: UserDynamicsOut }) {
+  return (
+    <div className={`${dynStyles.card} ${u.active_today ? dynStyles.cardActive : ''}`}>
+      <div className={dynStyles.cardHeader}>
+        <div className={dynStyles.cardAvatarWrap}>
+          <Avatar name={u.display_name} url={u.avatar_url} size={36} />
+          {u.active_today && <span className={dynStyles.onlineDot} title="Активен сегодня" />}
+        </div>
+        <div className={dynStyles.cardName}>
+          <span className={dynStyles.displayName}>{u.display_name}</span>
+          <span className={dynStyles.username}>@{u.username}</span>
+        </div>
+        <div className={dynStyles.badges}>
+          {u.streak > 0 && (
+            <span className={dynStyles.streakBadge}>
+              <IconFlame size={12} /> {u.streak}
+            </span>
+          )}
+          {u.overdue_count > 0 && (
+            <span className={dynStyles.overdueBadge}>
+              <IconAlert size={12} /> {u.overdue_count}
+            </span>
+          )}
+          {u.pardons_used > 0 && (
+            <span className={dynStyles.pardonBadge}>
+              <IconWaves size={12} /> {u.pardons_used}/3
+            </span>
+          )}
+          {u.overdue_count === 0 && u.streak > 0 && (
+            <span className={dynStyles.okBadge}>
+              <IconCheck size={12} />
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className={dynStyles.days}>
+        {u.recent_days.map((d) => <DayCell key={d.date} day={d} />)}
+      </div>
+    </div>
+  )
+}
+
+// ─── Основной компонент ───────────────────────────────────────────────────────
+
 export function AdminDynamics() {
-  const { data: users, isLoading } = useAdminDynamics()
+  const { data, isLoading } = useAdminDynamics()
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
+
+  const users = data?.users ?? []
+  const summary = data?.summary
+
+  // Сортировка: сначала с просрочками, потом по убыванию стрика.
+  const sorted = [...users].sort((a, b) => {
+    if (b.overdue_count !== a.overdue_count) return b.overdue_count - a.overdue_count
+    return b.streak - a.streak
+  })
 
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
         <h1>Динамика</h1>
+        <span style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)' }}>
+          <IconUsers size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+          {summary?.total_participants ?? 0} участников
+        </span>
       </div>
 
-      {(!users || users.length === 0) && (
+      {summary && <Dashboard s={summary} total={summary.total_participants} />}
+
+      {users.length === 0 && (
         <p style={{ color: 'var(--text-secondary)' }}>Участников пока нет.</p>
       )}
 
       <div className={dynStyles.grid}>
-        {users?.map((u) => (
-          <div key={u.user_id} className={dynStyles.card}>
-            <div className={dynStyles.cardHeader}>
-              <Avatar name={u.display_name} url={u.avatar_url} size={36} />
-              <div className={dynStyles.cardName}>
-                <span className={dynStyles.displayName}>{u.display_name}</span>
-                <span className={dynStyles.username}>@{u.username}</span>
-              </div>
-              <div className={dynStyles.badges}>
-                <span className={dynStyles.streakBadge} title="Текущий стрик">
-                  🔥 {u.streak}
-                </span>
-                {u.overdue_count > 0 && (
-                  <span className={dynStyles.overdueBadge} title="Просроченных дней">
-                    ✗ {u.overdue_count}
-                  </span>
-                )}
-                {u.pardons_used > 0 && (
-                  <span className={dynStyles.pardonBadge} title={`Использовано помилований: ${u.pardons_used}/3`}>
-                    🐋 {u.pardons_used}/3
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className={dynStyles.days}>
-              {u.recent_days.map((d) => (
-                <DayDot key={d.date} day={d} />
-              ))}
-            </div>
-          </div>
-        ))}
+        {sorted.map((u) => <UserCard key={u.user_id} u={u} />)}
       </div>
     </div>
   )

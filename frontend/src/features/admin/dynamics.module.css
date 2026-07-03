@@ -1,3 +1,56 @@
+/* ── Дашборд ── */
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.statRow {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-3);
+}
+
+.statCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statCardAccent {
+  border-color: var(--divider-gold);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface));
+}
+
+.statValue {
+  font-family: var(--font-t1);
+  font-size: 26px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.statCardAccent .statValue {
+  color: var(--accent);
+}
+
+.statLabel {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.statSub {
+  font-size: 11px;
+  color: var(--text-ghost);
+  font-family: var(--font-t4);
+}
+
+/* ── Сетка участников ── */
 .grid {
   display: flex;
   flex-direction: column;
@@ -11,7 +64,28 @@
   padding: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
+  transition: border-color 120ms;
+}
+
+.cardActive {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--divider));
+}
+
+.cardAvatarWrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.onlineDot {
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #48bb78;
+  border: 2px solid var(--bg-surface);
 }
 
 .cardHeader {
@@ -47,13 +121,19 @@
   gap: var(--space-2);
   flex-shrink: 0;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .streakBadge,
 .overdueBadge,
-.pardonBadge {
+.pardonBadge,
+.okBadge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.75rem;
-  padding: 2px var(--space-2);
+  padding: 3px var(--space-2);
   border-radius: 9999px;
   white-space: nowrap;
 }
@@ -73,33 +153,108 @@
   color: #4299e1;
 }
 
-/* Сетка дней — последние 14 */
+.okBadge {
+  background: color-mix(in srgb, #48bb78 15%, transparent);
+  color: #48bb78;
+  padding: 3px 6px;
+}
+
+/* Сетка дней — 28 ячеек */
 .days {
   display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
-.dot {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-btn);
+/* Одна ячейка дня */
+.cell {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius-btn);
+  min-width: 56px;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+}
+
+.cellIcon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.cellDate {
   font-size: 11px;
   font-family: var(--font-t4);
-  cursor: default;
-  flex-shrink: 0;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.dot_closed       { background: color-mix(in srgb, #48bb78 20%, transparent); color: #48bb78; }
-.dot_today_closed { background: color-mix(in srgb, #48bb78 30%, transparent); color: #48bb78; font-weight: 700; }
-.dot_missed       { background: color-mix(in srgb, #e53e3e 15%, transparent); color: #e53e3e; }
-.dot_pardoned     { background: color-mix(in srgb, #4299e1 15%, transparent); color: #4299e1; }
-.dot_today_open   { background: var(--divider); color: var(--text-secondary); border: 1px dashed var(--text-ghost); }
-.dot_before_start { background: transparent; color: var(--text-ghost); }
+.cellLabel {
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+/* Цвета по статусу */
+.cell_closed {
+  background: color-mix(in srgb, #48bb78 18%, transparent);
+  color: #276749;
+  border-color: color-mix(in srgb, #48bb78 35%, transparent);
+}
+
+.cell_today_closed {
+  background: color-mix(in srgb, #48bb78 30%, transparent);
+  color: #276749;
+  border-color: #48bb78;
+  font-weight: 700;
+}
+
+.cell_missed {
+  background: color-mix(in srgb, #e53e3e 15%, transparent);
+  color: #9b2c2c;
+  border-color: color-mix(in srgb, #e53e3e 35%, transparent);
+}
+
+.cell_pardoned {
+  background: color-mix(in srgb, #4299e1 15%, transparent);
+  color: #2b6cb0;
+  border-color: color-mix(in srgb, #4299e1 35%, transparent);
+}
+
+.cell_today_open {
+  background: var(--bg);
+  color: var(--text-secondary);
+  border-color: var(--divider);
+  border-style: dashed;
+}
+
+.cell_before_start {
+  background: transparent;
+  color: var(--text-ghost);
+  border-color: transparent;
+}
+
+.cell_upcoming {
+  background: var(--bg);
+  color: var(--text-ghost);
+  border-color: var(--divider);
+  opacity: 0.6;
+}
+
+@media (max-width: 900px) {
+  .statRow { grid-template-columns: repeat(2, 1fr); }
+}
 
 @media (max-width: 768px) {
-  .dot { width: 24px; height: 24px; font-size: 10px; }
+  .statRow { grid-template-columns: repeat(2, 1fr); gap: var(--space-2); }
+  .statValue { font-size: 22px; }
+  .cell { min-width: 48px; padding: 5px 6px; }
+  .cellIcon { font-size: 12px; }
+  .cellDate { font-size: 10px; }
+  .cellLabel { font-size: 9px; }
+  .badges { max-width: 160px; }
 }

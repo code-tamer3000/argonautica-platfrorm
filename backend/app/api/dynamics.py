@@ -14,7 +14,7 @@ from app.models.journal import JournalPardon
 from app.models.message import Message
 from app.models.room import Room
 from app.models.user import User
-from app.schemas.journal import DayStatus, MyDynamicsOut, PardonRequest, RecentDay, UserDynamicsOut
+from app.schemas.journal import AdminDynamicsOut, DayStatus, DynamicsSummary, MyDynamicsOut, PardonRequest, RecentDay, UserDynamicsOut
 
 
 class _StatsResult(TypedDict):
@@ -28,7 +28,10 @@ router = APIRouter(prefix="/api/dynamics", tags=["dynamics"])
 
 JOURNAL_CATEGORIES = frozenset({"focus", "notes", "film"})
 MAX_PARDONS = 3
-RECENT_DAYS = 14
+PROGRAM_DAYS = 28
+# Окно вокруг сегодня: 5 прошлых + сегодня + 3 будущих = 9 ячеек.
+WINDOW_PAST = 5
+WINDOW_FUTURE = 3
 
 
 def _journal_category(content: str | None) -> str | None:
@@ -99,11 +102,20 @@ def _calc_stats(
 
 def _recent_days(closed_days: set[date], pardoned: set[date], program_start: date) -> list[RecentDay]:
     today = _platform_today()
+    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+
+    # Окно: WINDOW_PAST дней назад → сегодня → WINDOW_FUTURE дней вперёд.
+    # Хронологический порядок: старые слева, новые справа.
+    window_start = today - timedelta(days=WINDOW_PAST)
+    window_end = today + timedelta(days=WINDOW_FUTURE)
+
     result: list[RecentDay] = []
-    for i in range(RECENT_DAYS - 1, -1, -1):
-        d = today - timedelta(days=i)
-        if d < program_start:
+    d = window_start
+    while d <= window_end:
+        if d < program_start or d > program_end:
             st: DayStatus = "before_start"
+        elif d > today:
+            st = "upcoming"
         elif d == today:
             st = "today_closed" if d in closed_days else "today_open"
         elif d in closed_days:
@@ -113,6 +125,7 @@ def _recent_days(closed_days: set[date], pardoned: set[date], program_start: dat
         else:
             st = "missed"
         result.append(RecentDay(date=d, status=st))
+        d += timedelta(days=1)
     return result
 
 
@@ -211,8 +224,8 @@ async def use_pardon(
 
 # ─── Утилита для admin endpoint (в admin.py) ────────────────────────────────
 
-async def get_all_dynamics(session: AsyncSession) -> list[UserDynamicsOut]:
-    """Статистика всех участников (не-admin) для страницы Динамика в панели."""
+async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
+    """Сводка + статистика всех участников для страницы Динамика в панели."""
     program_start = settings.journal_program_start
 
     participants = list(
@@ -224,12 +237,18 @@ async def get_all_dynamics(session: AsyncSession) -> list[UserDynamicsOut]:
         .scalars()
         .all()
     )
+
     if not participants:
-        return []
+        return AdminDynamicsOut(
+            summary=DynamicsSummary(total_participants=0, active_today=0, journal_today=0, no_overdue=0, avg_streak=0.0),
+            users=[],
+        )
 
     user_ids = [u.id for u in participants]
+    today = _platform_today()
+    today_start = datetime(today.year, today.month, today.day, tzinfo=UTC)
 
-    # Личные каналы всех участников за один запрос.
+    # Личные каналы.
     room_rows = await session.execute(
         select(Room.created_by, Room.id).where(
             Room.created_by.in_(user_ids), Room.is_personal.is_(True)
@@ -237,7 +256,7 @@ async def get_all_dynamics(session: AsyncSession) -> list[UserDynamicsOut]:
     )
     room_by_user: dict[int, int] = {created_by: room_id for created_by, room_id in room_rows.all()}
 
-    # Сообщения из всех личных каналов с начала программы.
+    # Журнальные сообщения из личных каналов с начала программы.
     room_ids = list(room_by_user.values())
     since_dt = datetime(program_start.year, program_start.month, program_start.day, tzinfo=UTC)
     msg_rows = await session.execute(
@@ -251,10 +270,20 @@ async def get_all_dynamics(session: AsyncSession) -> list[UserDynamicsOut]:
         )
     )
     msgs_by_user: dict[int, list[tuple[date, str | None]]] = {}
-    for user_id, created_at, content in msg_rows.all():
-        msgs_by_user.setdefault(user_id, []).append((created_at.date(), content))
+    for uid, created_at, content in msg_rows.all():
+        msgs_by_user.setdefault(uid, []).append((created_at.date(), content))
 
-    # Все помилования участников.
+    # Кто отправил ЛЮБОЕ сообщение сегодня (активность на платформе).
+    active_rows = await session.execute(
+        select(Message.sender_id).distinct().where(
+            Message.sender_id.in_(user_ids),
+            Message.deleted_at.is_(None),
+            Message.created_at >= today_start,
+        )
+    )
+    active_today_ids: set[int] = {row[0] for row in active_rows.all()}
+
+    # Помилования.
     pardon_rows = await session.execute(
         select(JournalPardon.user_id, JournalPardon.date).where(
             JournalPardon.user_id.in_(user_ids)
@@ -264,14 +293,15 @@ async def get_all_dynamics(session: AsyncSession) -> list[UserDynamicsOut]:
     for uid, d in pardon_rows.all():
         pardons_by_user.setdefault(uid, []).append(d)
 
-    result: list[UserDynamicsOut] = []
+    users_out: list[UserDynamicsOut] = []
     for user in participants:
         messages = msgs_by_user.get(user.id, [])
         pardons = pardons_by_user.get(user.id, [])
         per_day = _calc_closed_days(messages)
         stats = _calc_stats(per_day, pardons, program_start)
         recent = _recent_days(stats["closed_days"], stats["pardoned"], program_start)
-        result.append(
+        journal_today = today in stats["closed_days"]
+        users_out.append(
             UserDynamicsOut(
                 user_id=user.id,
                 display_name=user.display_name,
@@ -280,7 +310,19 @@ async def get_all_dynamics(session: AsyncSession) -> list[UserDynamicsOut]:
                 streak=stats["streak"],
                 overdue_count=len(stats["overdue_dates"]),
                 pardons_used=len(pardons),
+                active_today=user.id in active_today_ids,
+                journal_today=journal_today,
                 recent_days=recent,
             )
         )
-    return result
+
+    total = len(users_out)
+    streaks = [u.streak for u in users_out]
+    summary = DynamicsSummary(
+        total_participants=total,
+        active_today=sum(1 for u in users_out if u.active_today),
+        journal_today=sum(1 for u in users_out if u.journal_today),
+        no_overdue=sum(1 for u in users_out if u.overdue_count == 0),
+        avg_streak=round(sum(streaks) / total, 1) if total else 0.0,
+    )
+    return AdminDynamicsOut(summary=summary, users=users_out)
