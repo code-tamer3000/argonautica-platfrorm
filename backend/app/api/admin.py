@@ -121,9 +121,11 @@ async def delete_user(
     """Полностью удалить пользователя и его личный след.
 
     Отказываемся удалять, если юзер владеет ДОЛГОИГРАЮЩИМ/ОБЩИМ контентом (статьи БЗ,
-    стикерпаки, события календаря, не-личные комнаты) — такое нельзя молча стереть,
-    оно видно другим. Личный след (членства, состояние прочтения, закрепы, свои
-    сообщения, личный канал) удаляем каскадно в одной транзакции.
+    стикерпаки, события календаря, группы/каналы) — такое нельзя молча стереть, оно
+    видно другим. Личный след (членства, состояние прочтения, закрепы, свои сообщения,
+    личный канал, DM с любым собеседником) удаляем каскадно в одной транзакции — DM
+    двусторонний и без одного из двух участников теряет смысл, поэтому блокером не
+    считается.
 
     Рассчитано на удаление служебных/тестовых учёток. Роутер уже под require_admin.
     """
@@ -142,12 +144,18 @@ async def delete_user(
         blockers.append("стикерпаки")
     if await session.scalar(select(exists().where(CalendarEvent.created_by == user_id))):
         blockers.append("события календаря")
-    # Комнаты, созданные юзером, кроме его личного канала (тот удалим вместе с ним).
+    # Группы/каналы, созданные юзером (не личный канал и не dm — те удалим вместе с ним).
     shared_rooms = await session.scalar(
-        select(exists().where(Room.created_by == user_id, Room.is_personal.is_(False)))
+        select(
+            exists().where(
+                Room.created_by == user_id,
+                Room.is_personal.is_(False),
+                Room.type != "dm",
+            )
+        )
     )
     if shared_rooms:
-        blockers.append("комнаты/группы")
+        blockers.append("группы/каналы")
     if blockers:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
@@ -167,7 +175,19 @@ async def delete_user(
         .scalars()
         .all()
     )
-    room_ids_to_drop = personal_room_ids
+    # DM юзера — по членству, а не created_by (собеседник мог быть создателем).
+    dm_room_ids = list(
+        (
+            await session.execute(
+                select(Room.id)
+                .join(RoomMember, RoomMember.room_id == Room.id)
+                .where(Room.type == "dm", RoomMember.user_id == user_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    room_ids_to_drop = personal_room_ids + dm_room_ids
 
     # id сообщений юзера — нужны, чтобы снять ссылки на них перед удалением.
     msg_ids = list(
@@ -201,7 +221,7 @@ async def delete_user(
     await session.execute(delete(PinnedMessage).where(PinnedMessage.pinned_by == user_id))
     await session.execute(delete(RoomMember).where(RoomMember.user_id == user_id))
 
-    # Личный канал юзера: его сообщения, закрепы, членства и сама комната.
+    # Личный канал и dm юзера: их сообщения, закрепы, членства и сами комнаты.
     if room_ids_to_drop:
         room_msg_ids = list(
             (

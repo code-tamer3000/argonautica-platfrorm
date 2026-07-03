@@ -61,7 +61,7 @@ export function AppShell() {
         <nav ref={navRef} className={styles.sidenav}>
           <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
             <span className={styles.navIcon}><IconChat /></span>
-            <span className={styles.navLabel}>Чат</span>
+            <span className={styles.navLabel}>Рубка</span>
           </NavLink>
           <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconNews /></span>
