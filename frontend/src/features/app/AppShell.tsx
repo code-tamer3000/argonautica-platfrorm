@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { Button } from '../../components/Button'
 import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
@@ -20,22 +20,6 @@ import styles from './appshell.module.css'
 
 export function AppShell() {
   const { user, logout } = useAuth()
-  const location = useLocation()
-  const navRef = useRef<HTMLElement>(null)
-
-  // Форсируем перерисовку таб-бара сразу при смене маршрута. На мобиле (WebView/
-  // iOS Safari) смена активного класса у NavLink НЕ красится до следующего касания —
-  // подсветка «залипала». Микро-тогл opacity + reflow заставляют браузер
-  // перерисовать содержимое (в т.ч. индикатор ::before) в этом же кадре.
-  useLayoutEffect(() => {
-    const el = navRef.current
-    if (!el) return
-    el.style.opacity = '0.999'
-    void el.offsetHeight // принудительный reflow, чтобы применилось до следующего кадра
-    requestAnimationFrame(() => {
-      if (navRef.current) navRef.current.style.opacity = ''
-    })
-  }, [location.pathname])
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -58,7 +42,7 @@ export function AppShell() {
         <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
       </header>
       <div className={styles.body}>
-        <nav ref={navRef} className={styles.sidenav}>
+        <nav className={styles.sidenav}>
           <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
             <span className={styles.navIcon}><IconChat /></span>
             <span className={styles.navLabel}>Рубка</span>
