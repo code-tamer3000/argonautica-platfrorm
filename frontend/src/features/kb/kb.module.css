@@ -199,8 +199,9 @@
 }
 
 .kbMedia {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-3);
   margin-top: var(--space-6);
   padding-top: var(--space-6);
