@@ -44,7 +44,10 @@ export function usePatchAdminUser() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: number } & PatchAdminUserBody) =>
       http.patch<UserOut>(`/api/admin/users/${id}`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: usersKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersKey })
+      qc.invalidateQueries({ queryKey: adminUsersKey })
+    },
   })
 }
 
