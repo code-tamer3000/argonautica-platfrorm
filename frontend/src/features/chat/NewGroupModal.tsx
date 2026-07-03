@@ -34,10 +34,26 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
     )
   }, [users, me?.id, q])
 
+  // Все ли отфильтрованные пользователи уже выбраны.
+  const allSelected =
+    filtered.length > 0 && filtered.every((u) => selected.has(u.id))
+
   function toggle(id: number) {
     setSelected((prev) => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allSelected) {
+        for (const u of filtered) next.delete(u.id)
+      } else {
+        for (const u of filtered) next.add(u.id)
+      }
       return next
     })
   }
@@ -78,37 +94,71 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
         maxLength={80}
         autoFocus
       />
-      <div className={styles.groupHint}>Выберите участников:</div>
+
+      <div className={styles.groupHead}>
+        <span className={styles.groupHint}>Участники</span>
+        <button
+          type="button"
+          className={styles.selectAllBtn}
+          onClick={toggleAll}
+          disabled={filtered.length === 0}
+        >
+          {allSelected ? 'Снять выбор' : 'Выбрать всех'}
+        </button>
+      </div>
+
       <input
         className={styles.search}
         placeholder="Поиск участника"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
+
       <div className={styles.userList}>
         {isLoading && (
           <div className="center" style={{ padding: 24 }}>
             <Spinner />
           </div>
         )}
-        {filtered.map((u) => (
-          <label key={u.id} className={styles.userRow}>
-            <input
-              type="checkbox"
-              checked={selected.has(u.id)}
-              onChange={() => toggle(u.id)}
-            />
-            <Avatar name={u.display_name} url={u.avatar_url} size={36} />
-            <div className={styles.userRowMain}>
-              <div className={styles.userRowName}>{u.display_name}</div>
-              <div className={styles.userRowSub}>@{u.username}</div>
-            </div>
-          </label>
-        ))}
+        {users && filtered.length === 0 && (
+          <div className={styles.emptyUsers}>Никого не найдено</div>
+        )}
+        {filtered.map((u) => {
+          const on = selected.has(u.id)
+          return (
+            <button
+              key={u.id}
+              type="button"
+              className={`${styles.userRow} ${on ? styles.userRowSelected : ''}`}
+              onClick={() => toggle(u.id)}
+              aria-pressed={on}
+            >
+              <Avatar name={u.display_name} url={u.avatar_url} size={36} />
+              <div className={styles.userRowMain}>
+                <div className={styles.userRowName}>{u.display_name}</div>
+                <div className={styles.userRowSub}>@{u.username}</div>
+              </div>
+              <span className={`${styles.userCheck} ${on ? styles.userCheckOn : ''}`}>
+                {on && (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M5 12.5l4.5 4.5L19 7"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                )}
+              </span>
+            </button>
+          )
+        })}
       </div>
+
       <div className={styles.modalActions}>
-        <span className="muted" style={{ fontSize: 13 }}>
-          Выбрано: {selected.size}
+        <span className={styles.selectedCount}>
+          Выбрано: <b>{selected.size}</b>
         </span>
         <Button variant="gold" onClick={handleCreate} disabled={submitting}>
           {submitting ? <Spinner size={16} /> : 'Создать'}

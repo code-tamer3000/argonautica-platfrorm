@@ -31,6 +31,7 @@ class MessageOut(BaseModel):
     content: str | None
     sticker_id: int | None
     thread_root_id: int | None
+    forwarded_from_sender_id: int | None
     reply_count: int
     last_reply_at: datetime | None
     created_at: datetime

@@ -5,13 +5,17 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import type { MessageOut } from '../../lib/types'
+import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
 import { ChannelCalendar } from './ChannelCalendar'
 import { Composer } from './Composer'
 import { DailyJournalForm } from './DailyJournalForm'
 import { MembersDrawer } from './MembersDrawer'
+import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
+import { useMessageMenu } from './useMessageMenu'
 import { PinsBar } from './PinsBar'
 import { PinsDrawer } from './PinsDrawer'
 import { ThreadPanel } from './ThreadPanel'
@@ -32,6 +36,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const users = useUsersMap()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
+  const setPendingRepost = useUiStore((s) => s.setPendingRepost)
 
   const query = useMessages(roomId)
   const markRead = useMarkRead(roomId)
@@ -46,10 +51,33 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showMembers, setShowMembers] = useState(false)
   const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
-  const [selectedMsgId, setSelectedMsgId] = useState<number | null>(null)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   const [journalExpanded, setJournalExpanded] = useState(false)
   const messageListRef = useRef<MessageListHandle>(null)
+
+  // Право закрепления зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда;
+  // group — только владелец; dm — оба участника; channel — никому, кроме admin.
+  const canPin = user?.role === 'admin' || room?.type === 'dm' ||
+    (room?.type === 'group' && room.created_by === user?.id)
+
+  // Репост: «зажимаем» сообщение и уводим админа в новостной канал — там композер
+  // покажет прикреплённый репост и даст дописать комментарий перед отправкой.
+  const handleRepost = (msg: MessageOut) => {
+    const news = rooms?.find((r) => r.is_news)
+    if (!news) { toast('Новостной канал недоступен', 'error'); return }
+    setPendingRepost({ roomId, message: msg })
+    onOpenRoom?.(news.id)
+  }
+
+  // Контекстное меню сообщения (общий хук для ленты и треда).
+  const msgMenu = useMessageMenu({
+    roomId,
+    isNews: !!room?.is_news,
+    canPin: !!canPin,
+    onReply: (msg) => setThreadRootId(msg.id),
+    onEdit: (msg) => setEditingId(msg.id),
+    onRepost: handleRepost,
+  })
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
@@ -59,7 +87,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setShowMembers(false)
     setShowCalendar(false)
     setShowProfile(false)
-    setSelectedMsgId(null)
     setHighlightedMsgId(null)
     setJournalExpanded(false)
   }, [roomId])
@@ -106,12 +133,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const title = roomTitle(room, dmPeers, users)
   const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
-
-  // Зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда; group — только
-  // владелец (created_by, роль owner не меняется после создания); dm — оба участника;
-  // channel (в т.ч. личный/новостной) — никому, кроме admin.
-  const canPin = user?.role === 'admin' || room.type === 'dm' ||
-    (room.type === 'group' && room.created_by === user?.id)
 
   function openHeaderInfo() {
     if (room?.type === 'dm') {
@@ -175,13 +196,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         loading={query.isFetchingNextPage}
         users={users}
         editingId={editingId}
-        selectedMsgId={selectedMsgId}
+        selectedMsgId={msgMenu.menu?.msg.id ?? null}
         highlightedMsgId={highlightedMsgId}
-        canPin={canPin}
-        onEdit={(msg) => setEditingId(msg.id)}
         onClearEdit={() => setEditingId(null)}
         onOpenThread={(rootId) => setThreadRootId(rootId)}
-        onSelectMsg={setSelectedMsgId}
+        onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
       <TypingIndicator roomId={roomId} users={users} />
@@ -195,10 +214,17 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {(!room.is_personal || room.created_by === user?.id) &&
         (!room.is_news || user?.role === 'admin') &&
         !journalExpanded && (
-        <Composer roomId={roomId} />
+        <Composer roomId={roomId} isNews={room.is_news} />
+      )}
+      {msgMenu.menu && (
+        <MessageActionsMenu
+          anchor={msgMenu.menu.anchor}
+          items={msgMenu.buildItems(msgMenu.menu.msg)}
+          onClose={msgMenu.closeMenu}
+        />
       )}
       {threadRootId != null && (
-        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} onClose={() => setThreadRootId(null)} />
+        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} isNews={!!room.is_news} onRepost={handleRepost} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />

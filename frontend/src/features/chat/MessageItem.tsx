@@ -1,12 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useDeleteMessage, useEditMessage } from '../../api/messages'
-import { usePin } from '../../api/pins'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
 import { timeHM } from '../../lib/format'
 import { renderMarkdown } from '../../lib/markdown'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
-import { useAuth } from '../auth/AuthContext'
 import { Attachment } from './Attachment'
 import styles from './chat.module.css'
 
@@ -14,44 +12,57 @@ interface Props {
   msg: MessageOut
   continuation: boolean
   author?: PublicUserOut
+  forwardedFrom?: PublicUserOut
   isInThread?: boolean
   editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
-  canPin?: boolean
-  onEdit?: (msg: MessageOut) => void
   onClearEdit?: () => void
   onOpenThread?: (rootId: number) => void
-  onSelect?: (id: number | null) => void
+  // Тап по сообщению → открыть контекстное меню действий (позиция = rect сообщения).
+  onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
 }
 
 export function MessageItem({
   msg,
   continuation,
   author,
+  forwardedFrom,
   isInThread,
   editingId,
   isSelected,
   isHighlighted,
-  canPin,
-  onEdit,
   onClearEdit,
   onOpenThread,
-  onSelect,
+  onOpenMenu,
 }: Props) {
-  const { user } = useAuth()
   const stickerMap = useStickerMap()
-  const deleteMutation = useDeleteMessage(msg.room_id)
   const editMutation = useEditMessage(msg.room_id)
-  const pinMutation = usePin(msg.room_id)
 
   const [editText, setEditText] = useState(msg.content ?? '')
+  const editRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     if (editingId === msg.id) setEditText(msg.content ?? '')
   }, [editingId, msg.id, msg.content])
 
+  // Поле редактирования растёт под объём текста (в пределах max-height из CSS), чтобы
+  // большое сообщение было видно целиком без постоянного скролла вверх-вниз.
+  useLayoutEffect(() => {
+    if (editingId !== msg.id) return
+    const el = editRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    // border-box: добавляем бордеры (offsetHeight - clientHeight), иначе поле ниже
+    // контента и скроллбар появляется раньше упора в max-height.
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`
+  }, [editText, editingId, msg.id])
+
   const name = author?.display_name ?? `Участник #${msg.sender_id}`
+  const forwardedName =
+    msg.forwarded_from_sender_id != null
+      ? forwardedFrom?.display_name ?? `Участник #${msg.forwarded_from_sender_id}`
+      : null
   const sticker = msg.sticker_id != null ? stickerMap.get(msg.sticker_id) : undefined
   const contentHtml = useMemo(
     () => (msg.content ? renderMarkdown(msg.content) : ''),
@@ -59,8 +70,6 @@ export function MessageItem({
   )
 
   const isEditing = editingId === msg.id
-  const canEdit = user?.id === msg.sender_id
-  const canDelete = user?.id === msg.sender_id || user?.role === 'admin'
 
   const msgClass = [
     styles.msg,
@@ -73,7 +82,10 @@ export function MessageItem({
     <div
       className={msgClass}
       data-selected={isSelected || undefined}
-      onClick={(e) => { e.stopPropagation(); onSelect?.(isSelected ? null : msg.id) }}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!isEditing) onOpenMenu?.(msg, e.currentTarget.getBoundingClientRect())
+      }}
     >
       <div className={styles.msgAvatar}>
         {!continuation && <Avatar name={name} url={author?.avatar_url} size={36} />}
@@ -86,12 +98,19 @@ export function MessageItem({
           </div>
         )}
 
+        {forwardedName && (
+          <div className={styles.msgForwarded}>переслано от {forwardedName}</div>
+        )}
+
         {isEditing ? (
           <div className={styles.editRow}>
             <textarea
+              ref={editRef}
               className={styles.editInput}
               value={editText}
+              autoFocus
               onChange={e => setEditText(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
             />
             <div className={styles.editActions}>
               <button
@@ -140,39 +159,11 @@ export function MessageItem({
         {msg.reply_count > 0 && !isInThread && (
           <button
             className={styles.threadLink}
-            onClick={() => onOpenThread?.(msg.id)}
+            onClick={(e) => { e.stopPropagation(); onOpenThread?.(msg.id) }}
           >
             Тред · {msg.reply_count}
           </button>
         )}
-
-        <div className={styles.actions}>
-          {/* Ответ всегда уходит в тред (thread_root_id) и не виден в основной ленте — открываем тред напрямую.
-              Внутри самого треда у ответов уже есть своё поле ввода снизу, отдельная кнопка не нужна (п.2: треды плоские). */}
-          {!isInThread && (
-            <button className={styles.actionBtn} onClick={() => onOpenThread?.(msg.id)}>
-              Ответить
-            </button>
-          )}
-          {canEdit && (
-            <button className={styles.actionBtn} onClick={() => onEdit?.(msg)}>
-              Редактировать
-            </button>
-          )}
-          {canDelete && (
-            <button
-              className={styles.actionDanger}
-              onClick={() => deleteMutation.mutate(msg.id)}
-            >
-              Удалить
-            </button>
-          )}
-          {canPin && (
-            <button className={styles.actionBtn} onClick={() => pinMutation.mutate(msg.id)}>
-              Закрепить
-            </button>
-          )}
-        </div>
       </div>
     </div>
   )

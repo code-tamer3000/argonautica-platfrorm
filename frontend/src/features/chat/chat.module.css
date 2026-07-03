@@ -250,6 +250,11 @@
 .msgContinuation .msgText { padding-left: 0; }
 .msgMeta { font-size: var(--text-label); color: var(--text-ghost); font-family: var(--font-t4); }
 .msgPlaceholder { color: var(--text-muted); font-style: italic; }
+/* Атрибуция репоста в новостном канале: «переслано от <автор>». */
+.msgForwarded {
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  color: var(--accent); margin-bottom: 2px;
+}
 
 .typing { padding: 2px var(--space-5) var(--space-2); font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-height: 22px; }
 
@@ -288,6 +293,29 @@
   font-family: var(--font-t3); font-size: var(--text-body-sm); line-height: 1.5;
   background: var(--bg-deep); border: 1px solid var(--color-frame-deep); border-radius: var(--radius-card);
   color: var(--text-primary); transition: var(--transition-base);
+  /* overflow-y: auto — полоса появляется ТОЛЬКО когда поле уперлось в max-height и
+     текст переполняет его. Плавная (инерционная) прокрутка: smooth + momentum на iOS. */
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+/* Тонкий thumb, вписанный в скругление: прозрачная рамка + background-clip отодвигают
+   видимую полосу (≈3px) от правого края, margin трека — от скругленных верх/низ углов.
+   ВАЖНО: scrollbar-width НЕ задаём в базовом правиле — иначе Chrome берёт стандартный
+   тонкий скроллбар и игнорирует эту кастомизацию ::-webkit-scrollbar. */
+.composerInput::-webkit-scrollbar { width: 9px; }
+.composerInput::-webkit-scrollbar-track { background: transparent; margin: 10px 0; }
+.composerInput::-webkit-scrollbar-thumb {
+  background: var(--color-frame-deep); border-radius: 8px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+.composerInput::-webkit-scrollbar-thumb:hover {
+  background: var(--color-latun); background-clip: padding-box;
+}
+/* Firefox не поддерживает ::-webkit-scrollbar — там даём стандартный тонкий. */
+@supports not selector(::-webkit-scrollbar) {
+  .composerInput { scrollbar-width: thin; scrollbar-color: var(--color-frame-deep) transparent; }
 }
 .composerInput::placeholder { color: var(--text-ghost); }
 .composerInput:focus {
@@ -332,26 +360,44 @@
 .attLoading { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost); padding: var(--space-2) 0; }
 .sticker { width: 120px; height: 120px; object-fit: contain; margin-top: var(--space-1); }
 
-/* --- Действия над сообщением --- */
-.msg:hover .actions,
-.msg[data-selected] .actions { opacity: 1; pointer-events: auto; }
+/* --- Контекстное меню действий над сообщением (Telegram-style) --- */
+.msg { cursor: pointer; }
 .msgSelected { background: rgba(19, 78, 69, 0.07); border-radius: var(--radius-btn); }
 .msgHighlighted { animation: highlightPulse 2s ease; }
 @keyframes highlightPulse {
   0%, 100% { background: transparent; }
   20% { background: rgba(19, 78, 69, 0.18); }
 }
-.actions {
-  opacity: 0; transition: var(--transition-fade);
-  display: flex; gap: var(--space-1); margin-top: var(--space-1);
+
+/* Прозрачный слой поверх всего — ловит клик вне меню, чтобы закрыть его. */
+.menuBackdrop { position: fixed; inset: 0; z-index: 60; }
+.menu {
+  position: fixed;
+  min-width: 210px;
+  padding: var(--space-1);
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-gold);
+  display: flex; flex-direction: column;
+  animation: menu-in 140ms var(--ease-out-soft) both;
 }
-.actionBtn {
-  background: transparent; border: 1px solid transparent; border-radius: var(--radius-btn);
-  color: var(--text-muted); font-family: var(--font-t4); font-size: var(--text-label-md);
-  padding: 2px var(--space-2); cursor: pointer;
+@keyframes menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
 }
-.actionBtn:hover { color: var(--text-primary); border-color: var(--color-frame-deep); }
-.actionDanger:hover { color: var(--blood-bright); border-color: var(--blood); }
+.menuItem {
+  display: flex; align-items: center; gap: var(--space-2);
+  width: 100%; text-align: left;
+  background: transparent; border: none; border-radius: var(--radius-btn);
+  color: var(--text-primary); font-family: var(--font-t4); font-size: var(--text-body-sm);
+  padding: var(--space-2) var(--space-3); cursor: pointer;
+}
+.menuItem:hover { background: rgba(19, 78, 69, 0.10); }
+.menuItemIcon { display: flex; color: var(--text-muted); }
+.menuItemDanger,
+.menuItemDanger .menuItemIcon { color: var(--blood-bright); }
+.menuItemDanger:hover { background: rgba(120, 20, 20, 0.12); }
 
 .threadLink {
   display: inline-block; margin-top: var(--space-1);
@@ -362,9 +408,12 @@
 
 .editRow { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-1); }
 .editInput {
-  padding: var(--space-2) var(--space-3); font-family: var(--font-t3); font-size: var(--text-body-sm);
+  width: 100%; box-sizing: border-box;
+  min-height: 2.6em; max-height: 50vh; overflow-y: auto; resize: none;
+  padding: var(--space-2) var(--space-3); font-family: var(--font-t3);
+  font-size: var(--text-body-sm); line-height: 1.5;
   background: var(--bg-deep); border: 1px solid var(--divider-gold); border-radius: var(--radius-btn);
-  color: var(--text-primary); resize: vertical;
+  color: var(--text-primary);
 }
 .editActions { display: flex; gap: var(--space-2); }
 
@@ -440,25 +489,96 @@
 .headBtn:hover { border-color: var(--divider-gold-strong); color: var(--text-primary); }
 
 /* --- Списки пользователей в модалках (новый чат / группа) --- */
-.userList { max-height: 360px; overflow-y: auto; margin-top: var(--space-3); }
+.userList {
+  max-height: 340px;
+  overflow-y: auto;
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-right: 2px;
+}
 .userRow {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-2) var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--color-frame);
-  border-radius: var(--radius-btn);
+  border: 1px solid transparent;
+  border-radius: var(--radius-card);
   cursor: pointer;
   text-align: left;
   color: var(--text-primary);
+  transition: background 0.14s ease, border-color 0.14s ease;
 }
-.userRow:hover { background: rgba(19, 78, 69, 0.12); }
+.userRow:hover { background: rgba(194, 154, 72, 0.07); }
+.userRowSelected,
+.userRowSelected:hover {
+  background: rgba(194, 154, 72, 0.13);
+  border-color: rgba(194, 154, 72, 0.4);
+}
 .userRowMain { flex: 1; min-width: 0; }
-.userRowName { font-size: var(--text-ui); font-weight: 500; }
-.userRowSub { font-size: 12px; color: var(--text-muted); }
+.userRowName {
+  font-size: var(--text-ui);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.userRowSub {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Кастомный чек-индикатор вместо стандартного чекбокса */
+.userCheck {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--color-frame-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-bezdna);
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
+}
+.userCheckOn {
+  background: var(--color-zoloto);
+  border-color: var(--color-zoloto);
+  transform: scale(1.05);
+}
+
+/* Шапка списка участников: подпись + «выбрать всех» */
+.groupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 var(--space-1);
+}
+.groupHint { font-size: 13px; color: var(--text-muted); }
+.selectAllBtn {
+  background: transparent;
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-zoloto);
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+  white-space: nowrap;
+}
+.selectAllBtn:hover {
+  background: rgba(194, 154, 72, 0.1);
+  border-color: var(--color-zoloto);
+}
+.selectAllBtn:disabled { opacity: 0.4; cursor: default; }
 
 .modalActions {
   display: flex;
@@ -467,7 +587,14 @@
   gap: var(--space-3);
   margin-top: var(--space-4);
 }
-.groupHint { font-size: 13px; color: var(--text-muted); margin: var(--space-3) 0 var(--space-2); }
+.selectedCount { font-size: 13px; color: var(--text-muted); }
+.selectedCount b { color: var(--color-zoloto); font-weight: 600; }
+.emptyUsers {
+  padding: var(--space-6) var(--space-2);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-ghost);
+}
 
 /* --- Карточка профиля пользователя --- */
 .profileCard {
