@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { Button } from '../../components/Button'
 import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
@@ -20,14 +20,6 @@ import styles from './appshell.module.css'
 
 export function AppShell() {
   const { user, logout } = useAuth()
-
-  // Корневой раздел из пути (первый сегмент). Используем как key для <nav>: при
-  // смене раздела React пересоздаёт узлы таб-бара, а не мутирует существующие.
-  // Это единственное, что надёжно чинит «залипание» подсветки на мобиле —
-  // .sidenav у нас position:fixed, а мобильные браузеры (iOS Safari) НЕ
-  // перерисовывают fixed-элемент при обновлении класса до следующего касания.
-  // Свежевставленные DOM-ноды браузер обязан отрисовать сразу.
-  const section = useLocation().pathname.split('/')[1] || 'chat'
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -50,7 +42,7 @@ export function AppShell() {
         <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
       </header>
       <div className={styles.body}>
-        <nav key={section} className={styles.sidenav}>
+        <nav className={styles.sidenav}>
           <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
             <span className={styles.navIcon}><IconChat /></span>
             <span className={styles.navLabel}>Рубка</span>
