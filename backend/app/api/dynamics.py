@@ -1,5 +1,5 @@
 """Динамика — прогресс ежедневных ДЗ. Пользовательская часть + утилиты для admin."""
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,11 +10,19 @@ from typing_extensions import TypedDict
 from app.api.deps import get_current_active_user
 from app.core.config import settings
 from app.db.session import get_session
-from app.models.journal import JournalPardon
+from app.models.journal import JournalCredit, JournalPardon
 from app.models.message import Message
 from app.models.room import Room
 from app.models.user import User
-from app.schemas.journal import AdminDynamicsOut, DayStatus, DynamicsSummary, MyDynamicsOut, PardonRequest, RecentDay, UserDynamicsOut
+from app.schemas.journal import (
+    AdminDynamicsOut,
+    DayStatus,
+    DynamicsSummary,
+    MyDynamicsOut,
+    PardonRequest,
+    RecentDay,
+    UserDynamicsOut,
+)
 
 
 class _StatsResult(TypedDict):
@@ -33,6 +41,13 @@ PROGRAM_DAYS = 28
 WINDOW_PAST = 5
 WINDOW_FUTURE = 3
 
+# Журнальный день считается по московскому времени, но с дедлайном в 03:00 МСК:
+# запись, сделанная в 00:00–02:59 МСК, засчитывается за ПРЕДЫДУЩИЙ день, и до 03:00
+# журнал показывает вчерашнюю дату как «сегодня». Технически это эквивалентно
+# суткам, начинающимся в 03:00 МСК = 00:00 UTC, поэтому «журнальный день» момента
+# времени — это его дата в UTC. Считаем явно, не полагаясь на TZ Postgres.
+MSK = timezone(timedelta(hours=3))
+
 
 def _journal_category(content: str | None) -> str | None:
     if not content:
@@ -43,9 +58,20 @@ def _journal_category(content: str | None) -> str | None:
     return None
 
 
+def _platform_day(dt: datetime) -> date:
+    """Журнальный день произвольного момента: (МСК-время − 3ч).date().
+
+    Naive-значения трактуем как UTC (так их отдаёт Postgres при TZ=UTC). Сдвиг на
+    −3ч от МСК = граница суток в 03:00 МСК: запись до 3 ночи относится к прошлому дню.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return (dt.astimezone(MSK) - timedelta(hours=3)).date()
+
+
 def _platform_today() -> date:
-    """Текущий платформенный день. День завершается в 03:00 Москвы = 00:00 UTC."""
-    return datetime.now(UTC).date()
+    """Текущий платформенный день. День завершается в 03:00 Москвы."""
+    return _platform_day(datetime.now(UTC))
 
 
 def _calc_closed_days(messages: list[tuple[date, str | None]]) -> dict[date, set[str]]:
@@ -62,12 +88,17 @@ def _calc_stats(
     per_day: dict[date, set[str]],
     pardons: list[date],
     program_start: date,
+    credits: list[date] | None = None,
 ) -> _StatsResult:
     today = _platform_today()
     yesterday = today - timedelta(days=1)
     pardoned = set(pardons)
 
+    # Дни, закрытые всеми категориями ИЛИ зачтённые админом вручную (credits) —
+    # для стрика/просрочек считаются равнозначно полностью закрытым дням.
     closed_days: set[date] = {d for d, cats in per_day.items() if JOURNAL_CATEGORIES <= cats}
+    if credits:
+        closed_days |= set(credits)
     today_cats = list(per_day.get(today, set()))
 
     # Дни с просрочкой: прошедшие дни >= program_start, не закрытые и не помилованные.
@@ -100,8 +131,14 @@ def _calc_stats(
     }
 
 
-def _recent_days(closed_days: set[date], pardoned: set[date], program_start: date) -> list[RecentDay]:
+def _recent_days(
+    closed_days: set[date],
+    pardoned: set[date],
+    program_start: date,
+    credited: set[date] | None = None,
+) -> list[RecentDay]:
     today = _platform_today()
+    credited = credited or set()
     program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
     # Окно: WINDOW_PAST дней назад → сегодня → WINDOW_FUTURE дней вперёд.
@@ -118,6 +155,9 @@ def _recent_days(closed_days: set[date], pardoned: set[date], program_start: dat
             st = "upcoming"
         elif d == today:
             st = "today_closed" if d in closed_days else "today_open"
+        elif d in credited:
+            # Зачтён админом вручную — отличаем от органически закрытого дня.
+            st = "credited"
         elif d in closed_days:
             st = "closed"
         elif d in pardoned:
@@ -139,7 +179,9 @@ async def _personal_room_id(session: AsyncSession, user_id: int) -> int | None:
 async def _load_journal_messages(
     session: AsyncSession, room_id: int, since: date
 ) -> list[tuple[date, str | None]]:
-    since_dt = datetime(since.year, since.month, since.day, tzinfo=UTC)
+    # Берём сообщения с запасом в сутки назад: запись в 00:00–02:59 МСK относится
+    # к предыдущему журнальному дню, а created_at у неё уже следующей UTC-даты.
+    since_dt = datetime(since.year, since.month, since.day, tzinfo=UTC) - timedelta(days=1)
     rows = await session.execute(
         select(Message.created_at, Message.content).where(
             Message.room_id == room_id,
@@ -148,12 +190,19 @@ async def _load_journal_messages(
             Message.created_at >= since_dt,
         )
     )
-    return [(r.created_at.date(), r.content) for r in rows.all()]
+    return [(_platform_day(r.created_at), r.content) for r in rows.all()]
 
 
 async def _load_pardons(session: AsyncSession, user_id: int) -> list[date]:
     rows = await session.execute(
         select(JournalPardon.date).where(JournalPardon.user_id == user_id)
+    )
+    return [r[0] for r in rows.all()]
+
+
+async def _load_credits(session: AsyncSession, user_id: int) -> list[date]:
+    rows = await session.execute(
+        select(JournalCredit.date).where(JournalCredit.user_id == user_id)
     )
     return [r[0] for r in rows.all()]
 
@@ -169,8 +218,9 @@ async def get_my_stats(
     room_id = await _personal_room_id(session, current_user.id)
     messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
     pardons = await _load_pardons(session, current_user.id)
+    credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start)
+    stats = _calc_stats(per_day, pardons, program_start, credits)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -209,8 +259,9 @@ async def use_pardon(
     room_id = await _personal_room_id(session, current_user.id)
     messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
     pardons = await _load_pardons(session, current_user.id)
+    credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start)
+    stats = _calc_stats(per_day, pardons, program_start, credits)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -222,7 +273,51 @@ async def use_pardon(
     )
 
 
-# ─── Утилита для admin endpoint (в admin.py) ────────────────────────────────
+# ─── Утилиты для admin endpoints (в admin.py) ───────────────────────────────
+
+
+async def credit_day(
+    session: AsyncSession, user_id: int, day: date, granted_by: int
+) -> None:
+    """Зачесть админом день пользователю (идемпотентно)."""
+    program_start = settings.journal_program_start
+    today = _platform_today()
+    if day < program_start:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "День раньше начала программы")
+    if day > today:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя зачесть будущий день")
+
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+
+    existing = await session.scalar(
+        select(JournalCredit).where(
+            JournalCredit.user_id == user_id, JournalCredit.date == day
+        )
+    )
+    if existing is None:
+        session.add(JournalCredit(user_id=user_id, date=day, granted_by=granted_by))
+        await session.flush()
+
+    # День больше не пропущен — гасим уведомление «день не закрыт» (и бейдж/тост
+    # у пользователя в реальном времени). Локальный импорт: сервис уведомлений
+    # лениво тянет хелперы этого модуля, module-level импорт создал бы цикл.
+    from app.services.notifications import clear_journal_missed_notification
+
+    await clear_journal_missed_notification(session, user_id, day)
+
+
+async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
+    """Снять ранее выданный админом зачёт дня (идемпотентно)."""
+    existing = await session.scalar(
+        select(JournalCredit).where(
+            JournalCredit.user_id == user_id, JournalCredit.date == day
+        )
+    )
+    if existing is not None:
+        await session.delete(existing)
+        await session.flush()
 
 async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
     """Сводка + статистика всех участников для страницы Динамика в панели."""
@@ -293,13 +388,24 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
     for uid, d in pardon_rows.all():
         pardons_by_user.setdefault(uid, []).append(d)
 
+    # Ручные зачёты дней админом.
+    credit_rows = await session.execute(
+        select(JournalCredit.user_id, JournalCredit.date).where(
+            JournalCredit.user_id.in_(user_ids)
+        )
+    )
+    credits_by_user: dict[int, list[date]] = {}
+    for uid, d in credit_rows.all():
+        credits_by_user.setdefault(uid, []).append(d)
+
     users_out: list[UserDynamicsOut] = []
     for user in participants:
         messages = msgs_by_user.get(user.id, [])
         pardons = pardons_by_user.get(user.id, [])
+        credits = credits_by_user.get(user.id, [])
         per_day = _calc_closed_days(messages)
-        stats = _calc_stats(per_day, pardons, program_start)
-        recent = _recent_days(stats["closed_days"], stats["pardoned"], program_start)
+        stats = _calc_stats(per_day, pardons, program_start, credits)
+        recent = _recent_days(stats["closed_days"], stats["pardoned"], program_start, set(credits))
         journal_today = today in stats["closed_days"]
         users_out.append(
             UserDynamicsOut(

@@ -181,7 +181,7 @@ export interface AdminUserOut {
 }
 
 // --- Динамика (прогресс ДЗ) ---
-export type DayStatus = 'closed' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start' | 'upcoming'
+export type DayStatus = 'closed' | 'credited' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start' | 'upcoming'
 
 export interface RecentDay {
   date: string
@@ -256,6 +256,7 @@ export type WsEvent =
   | { type: 'typing'; room_id: number; user_id: number }
   | { type: 'presence'; user_id: number; status: 'online' | 'offline' }
   | { type: 'notification.new'; notification: NotificationOut }
+  | { type: 'notification.removed'; notification_id: number; was_unread: boolean }
   | { type: 'subscribed'; room_id: number }
   | { type: 'unsubscribed'; room_id: number }
   | { type: 'error'; detail: string; room_id?: number }

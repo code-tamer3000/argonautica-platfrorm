@@ -29,3 +29,18 @@ export function useAdminDynamics() {
     refetchInterval: 60_000,
   })
 }
+
+export function useAdminCreditDay() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { userId: number; date: string; credited: boolean }) =>
+      http.post<AdminDynamicsOut>('/api/admin/dynamics/credit', {
+        user_id: vars.userId,
+        date: vars.date,
+        credited: vars.credited,
+      }),
+    onSuccess: (data) => {
+      qc.setQueryData(adminDynamicsKey, data)
+    },
+  })
+}

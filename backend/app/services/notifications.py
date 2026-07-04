@@ -12,7 +12,7 @@ import logging
 import re
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -136,6 +136,43 @@ async def on_new_message(
         logger.exception("Failed to create notifications for message %s", message.id)
 
 
+async def clear_journal_missed_notification(
+    session: AsyncSession, user_id: int, ref_date: date
+) -> None:
+    """Снять уведомление «день дневника не закрыт» за конкретный день (если было).
+
+    Вызывается, когда день перестал считаться пропущенным — например, админ зачёл
+    его вручную. Удаляем строки и шлём каждому клиенту `notification.removed`, чтобы
+    колокольчик/бейдж погасли в реальном времени. Идемпотентно; ошибку глотаем.
+    """
+    try:
+        rows = (
+            await session.execute(
+                select(Notification.id, Notification.read_at).where(
+                    Notification.user_id == user_id,
+                    Notification.kind == "journal_missed",
+                    Notification.ref_date == ref_date,
+                )
+            )
+        ).all()
+        if not rows:
+            return
+        ids = [nid for nid, _ in rows]
+        await session.execute(delete(Notification).where(Notification.id.in_(ids)))
+        await session.flush()
+        for nid, read_at in rows:
+            await publish_user_event(
+                user_id,
+                ws_schemas.notification_removed_event(nid, was_unread=read_at is None),
+            )
+    except Exception:
+        logger.exception(
+            "Failed to clear journal_missed notification for user %s date %s",
+            user_id,
+            ref_date,
+        )
+
+
 async def ensure_journal_notifications(session: AsyncSession, user: User) -> None:
     """Досоздать уведомления о незакрытых днях дневника (по одному на день).
 
@@ -152,6 +189,7 @@ async def ensure_journal_notifications(session: AsyncSession, user: User) -> Non
         from app.api.dynamics import (
             _calc_closed_days,
             _calc_stats,
+            _load_credits,
             _load_journal_messages,
             _load_pardons,
             _personal_room_id,
@@ -169,8 +207,10 @@ async def ensure_journal_notifications(session: AsyncSession, user: User) -> Non
 
         messages = await _load_journal_messages(session, room_id, program_start)
         pardons = await _load_pardons(session, user.id)
+        credits = await _load_credits(session, user.id)
         per_day = _calc_closed_days(messages)
-        stats = _calc_stats(per_day, pardons, program_start)
+        # Зачтённые админом дни не пропущены — не создаём по ним «journal_missed».
+        stats = _calc_stats(per_day, pardons, program_start, credits)
 
         # Пропущенные дни в пределах окна (не досоздаём всю историю разом).
         cutoff = today - timedelta(days=_JOURNAL_MISSED_WINDOW)

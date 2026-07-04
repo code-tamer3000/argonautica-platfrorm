@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
-from app.api.dynamics import get_all_dynamics
+from app.api.dynamics import credit_day, get_all_dynamics, uncredit_day
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
@@ -19,7 +19,7 @@ from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
-from app.schemas.journal import AdminDynamicsOut
+from app.schemas.journal import AdminCreditRequest, AdminDynamicsOut
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -282,4 +282,18 @@ async def admin_dynamics(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AdminDynamicsOut:
     """Сводка + динамика ДЗ всех участников для администратора."""
+    return await get_all_dynamics(session)
+
+
+@router.post("/dynamics/credit", response_model=AdminDynamicsOut)
+async def admin_credit_day(
+    body: AdminCreditRequest,
+    admin: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AdminDynamicsOut:
+    """Вручную зачесть (или снять зачёт) день пользователю. Возвращает свежую динамику."""
+    if body.credited:
+        await credit_day(session, body.user_id, body.date, granted_by=admin.id)
+    else:
+        await uncredit_day(session, body.user_id, body.date)
     return await get_all_dynamics(session)

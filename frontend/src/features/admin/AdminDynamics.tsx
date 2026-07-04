@@ -1,8 +1,8 @@
-import { useAdminDynamics } from '../../api/dynamics'
+import { useAdminCreditDay, useAdminDynamics } from '../../api/dynamics'
 import { Avatar } from '../../components/Avatar'
 import { IconAlert, IconCheck, IconFlame, IconUsers, IconWaves } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import type { DynamicsSummary, RecentDay, UserDynamicsOut } from '../../lib/types'
+import type { DayStatus, DynamicsSummary, RecentDay, UserDynamicsOut } from '../../lib/types'
 import styles from './admin.module.css'
 import dynStyles from './dynamics.module.css'
 
@@ -10,6 +10,7 @@ import dynStyles from './dynamics.module.css'
 
 const STATUS_ICON: Record<string, string> = {
   closed:       '✓',
+  credited:     '✓',
   missed:       '✗',
   pardoned:     '~',
   today_open:   '○',
@@ -20,6 +21,7 @@ const STATUS_ICON: Record<string, string> = {
 
 const STATUS_TEXT: Record<string, string> = {
   closed:       'Выполнено',
+  credited:     'Зачтено',
   missed:       'Пропущено',
   pardoned:     'Помиловано',
   today_open:   'Сегодня',
@@ -28,17 +30,47 @@ const STATUS_TEXT: Record<string, string> = {
   upcoming:     'Впереди',
 }
 
+// Дни, которые админ может переключать вручную: пропущенный можно зачесть,
+// зачтённый — снять. Остальные статусы не трогаем.
+const TOGGLABLE: ReadonlySet<DayStatus> = new Set<DayStatus>(['missed', 'credited'])
+
 const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
 
-function DayCell({ day }: { day: RecentDay }) {
+function DayCell({
+  day,
+  onToggle,
+  busy,
+}: {
+  day: RecentDay
+  onToggle?: (day: RecentDay) => void
+  busy?: boolean
+}) {
   const d = new Date(day.date + 'T00:00:00')
-  return (
-    <div className={`${dynStyles.cell} ${dynStyles['cell_' + day.status]}`}>
+  const label = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}`
+  const inner = (
+    <>
       <span className={dynStyles.cellIcon}>{STATUS_ICON[day.status] ?? '·'}</span>
-      <span className={dynStyles.cellDate}>{d.getDate()} {MONTHS_SHORT[d.getMonth()]}</span>
+      <span className={dynStyles.cellDate}>{label}</span>
       <span className={dynStyles.cellLabel}>{STATUS_TEXT[day.status] ?? '—'}</span>
-    </div>
+    </>
   )
+  const cls = `${dynStyles.cell} ${dynStyles['cell_' + day.status]}`
+
+  if (onToggle && TOGGLABLE.has(day.status)) {
+    const willCredit = day.status === 'missed'
+    return (
+      <button
+        type="button"
+        className={`${cls} ${dynStyles.cellToggle}`}
+        disabled={busy}
+        title={willCredit ? `Зачесть ${label}` : `Снять зачёт ${label}`}
+        onClick={() => onToggle(day)}
+      >
+        {inner}
+      </button>
+    )
+  }
+  return <div className={cls}>{inner}</div>
 }
 
 // ─── Карточка статистики ──────────────────────────────────────────────────────
@@ -87,7 +119,15 @@ function Dashboard({ s, total }: { s: DynamicsSummary; total: number }) {
 
 // ─── Карточка участника ───────────────────────────────────────────────────────
 
-function UserCard({ u }: { u: UserDynamicsOut }) {
+function UserCard({
+  u,
+  onToggleDay,
+  busy,
+}: {
+  u: UserDynamicsOut
+  onToggleDay: (userId: number, day: RecentDay) => void
+  busy: boolean
+}) {
   return (
     <div className={`${dynStyles.card} ${u.active_today ? dynStyles.cardActive : ''}`}>
       <div className={dynStyles.cardHeader}>
@@ -124,7 +164,14 @@ function UserCard({ u }: { u: UserDynamicsOut }) {
       </div>
 
       <div className={dynStyles.days}>
-        {u.recent_days.map((d) => <DayCell key={d.date} day={d} />)}
+        {u.recent_days.map((d) => (
+          <DayCell
+            key={d.date}
+            day={d}
+            busy={busy}
+            onToggle={(day) => onToggleDay(u.user_id, day)}
+          />
+        ))}
       </div>
     </div>
   )
@@ -134,6 +181,13 @@ function UserCard({ u }: { u: UserDynamicsOut }) {
 
 export function AdminDynamics() {
   const { data, isLoading } = useAdminDynamics()
+  const creditDay = useAdminCreditDay()
+
+  const handleToggleDay = (userId: number, day: RecentDay) => {
+    if (creditDay.isPending) return
+    // missed → зачесть, credited → снять зачёт.
+    creditDay.mutate({ userId, date: day.date, credited: day.status === 'missed' })
+  }
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
 
@@ -156,6 +210,10 @@ export function AdminDynamics() {
         </span>
       </div>
 
+      <p style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)', marginTop: -4 }}>
+        Кликните по пропущенному дню, чтобы зачесть его вручную (или по зачтённому — чтобы снять).
+      </p>
+
       {summary && <Dashboard s={summary} total={summary.total_participants} />}
 
       {users.length === 0 && (
@@ -163,7 +221,14 @@ export function AdminDynamics() {
       )}
 
       <div className={dynStyles.grid}>
-        {sorted.map((u) => <UserCard key={u.user_id} u={u} />)}
+        {sorted.map((u) => (
+          <UserCard
+            key={u.user_id}
+            u={u}
+            busy={creditDay.isPending}
+            onToggleDay={handleToggleDay}
+          />
+        ))}
       </div>
     </div>
   )
