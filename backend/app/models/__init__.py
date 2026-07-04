@@ -4,7 +4,7 @@
 Alembic для autogenerate (env.py делает `import app.models`).
 """
 from app.models.calendar import CalendarEvent
-from app.models.journal import JournalPardon
+from app.models.journal import JournalCredit, JournalPardon
 from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
@@ -29,5 +29,6 @@ __all__ = [
     "KbComment",
     "CalendarEvent",
     "JournalPardon",
+    "JournalCredit",
     "Notification",
 ]

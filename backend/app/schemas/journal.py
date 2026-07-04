@@ -4,7 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-DayStatus = Literal["closed", "missed", "pardoned", "today_open", "today_closed", "before_start", "upcoming"]
+DayStatus = Literal[
+    "closed", "credited", "missed", "pardoned",
+    "today_open", "today_closed", "before_start", "upcoming",
+]
 
 
 class RecentDay(BaseModel):
@@ -49,3 +52,10 @@ class AdminDynamicsOut(BaseModel):
 
 class PardonRequest(BaseModel):
     date: date
+
+
+class AdminCreditRequest(BaseModel):
+    """Админ зачитывает/снимает день пользователю."""
+    user_id: int
+    date: date
+    credited: bool = True
