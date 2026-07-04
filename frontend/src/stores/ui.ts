@@ -1,6 +1,15 @@
 // Эфемерное UI-состояние: активная комната, «печатает», presence.
 import { create } from 'zustand'
 import type { MessageOut } from '../lib/types'
+import type { JournalCategory } from '../api/messages'
+
+// Категория дневника, «заряженная» в композер личного канала: следующая отправка
+// (текст/вложение/голос/стикер) публикуется как запись этой категории. roomId — чтобы
+// не переносить выбор между комнатами (композер сверяет со своим roomId).
+export interface PendingJournal {
+  roomId: number
+  category: JournalCategory
+}
 
 // Репост, «зажатый» админом: держим исходную комнату и само сообщение, пока админ
 // в новостном канале дописывает к нему комментарий в композере.
@@ -21,6 +30,10 @@ interface UiState {
   // Репост, ожидающий отправки в новостной канал (см. PendingRepost).
   pendingRepost: PendingRepost | null
   setPendingRepost: (r: PendingRepost | null) => void
+
+  // Категория дневника, «заряженная» в композер (см. PendingJournal).
+  pendingJournal: PendingJournal | null
+  setPendingJournal: (j: PendingJournal | null) => void
 
   // roomId -> userIds, печатающие прямо сейчас (с авто-истечением)
   typing: Record<number, number[]>
@@ -46,6 +59,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   pendingRepost: null,
   setPendingRepost: (r) => set({ pendingRepost: r }),
+
+  pendingJournal: null,
+  setPendingJournal: (j) => set({ pendingJournal: j }),
 
   typing: {},
   online: [],
