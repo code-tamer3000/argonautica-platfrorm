@@ -9,21 +9,44 @@ function kindFor(type: string): MediaKind {
   return 'file'
 }
 
-function imageDims(file: File): Promise<{ width?: number; height?: number }> {
-  if (!file.type.startsWith('image/')) return Promise.resolve({})
-  return new Promise((resolve) => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      resolve({ width: img.naturalWidth, height: img.naturalHeight })
-      URL.revokeObjectURL(url)
-    }
-    img.onerror = () => {
-      resolve({})
-      URL.revokeObjectURL(url)
-    }
-    img.src = url
-  })
+/**
+ * Снять размеры изображения/видео до загрузки. Размеры уедут в media_assets и
+ * позволят плееру зарезервировать коробку с верным aspect-ratio ещё до подписи GET
+ * (без чёрного прямоугольника и скачка рамок при рендере видео).
+ */
+function mediaDims(file: File): Promise<{ width?: number; height?: number }> {
+  if (file.type.startsWith('image/')) {
+    return new Promise((resolve) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight })
+        URL.revokeObjectURL(url)
+      }
+      img.onerror = () => {
+        resolve({})
+        URL.revokeObjectURL(url)
+      }
+      img.src = url
+    })
+  }
+  if (file.type.startsWith('video/')) {
+    return new Promise((resolve) => {
+      const video = document.createElement('video')
+      const url = URL.createObjectURL(file)
+      video.onloadedmetadata = () => {
+        resolve({ width: video.videoWidth, height: video.videoHeight })
+        URL.revokeObjectURL(url)
+      }
+      video.onerror = () => {
+        resolve({})
+        URL.revokeObjectURL(url)
+      }
+      video.preload = 'metadata'
+      video.src = url
+    })
+  }
+  return Promise.resolve({})
 }
 
 /** Прогресс загрузки: доля 0..1. Вызывается по мере отправки байтов в MinIO. */
@@ -74,7 +97,7 @@ export async function mediaUpload(
   })
   // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом.
   await putWithProgress(ticket.upload_url, file, file.type, onProgress)
-  const dims = await imageDims(file)
+  const dims = await mediaDims(file)
   return http.post<MediaAssetOut>('/api/media/assets', {
     storage_key: ticket.storage_key,
     width: dims.width,

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, exists, select, union, update
+from sqlalchemy import delete, exists, func, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
@@ -13,12 +13,18 @@ from app.api.dynamics import credit_day, get_all_dynamics, uncredit_day
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
+from app.models.feedback import Feedback
 from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
+from app.schemas.feedback import (
+    FeedbackListOut,
+    FeedbackOut,
+    FeedbackResolveRequest,
+)
 from app.schemas.journal import AdminCreditRequest, AdminDynamicsOut
 from app.schemas.user import (
     AdminCreateUserRequest,
@@ -297,3 +303,53 @@ async def admin_credit_day(
     else:
         await uncredit_day(session, body.user_id, body.date)
     return await get_all_dynamics(session)
+
+
+@router.get("/feedback", response_model=FeedbackListOut)
+async def list_feedback(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> FeedbackListOut:
+    """Все обращения из раздела «Поддержка»: сначала новые. + счётчик неразобранных."""
+    rows = (
+        await session.execute(
+            select(Feedback, User.display_name)
+            .outerjoin(User, User.id == Feedback.user_id)
+            .order_by(Feedback.id.desc())
+        )
+    ).all()
+    items = [
+        FeedbackOut(
+            id=f.id,
+            kind=f.kind,
+            body=f.body,
+            user_id=f.user_id,
+            user_name=user_name,
+            created_at=f.created_at,
+            resolved_at=f.resolved_at,
+        )
+        for f, user_name in rows
+    ]
+    unresolved = (
+        await session.execute(
+            select(func.count())
+            .select_from(Feedback)
+            .where(Feedback.resolved_at.is_(None))
+        )
+    ).scalar_one()
+    return FeedbackListOut(items=items, unresolved_count=unresolved)
+
+
+@router.patch("/feedback/{feedback_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def resolve_feedback(
+    feedback_id: int,
+    body: FeedbackResolveRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Отметить обращение разобранным (resolved=True) или вернуть в работу."""
+    fb = await session.get(Feedback, feedback_id)
+    if fb is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found"
+        )
+    fb.resolved_at = datetime.now(UTC) if body.resolved else None
+    await session.flush()

@@ -1,5 +1,12 @@
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
-import { repostMessage, useSendMessage, type SendBody } from '../../api/messages'
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  buildJournalContent,
+  JOURNAL_CATEGORY_META,
+  repostMessage,
+  useSendMessage,
+  type SendBody,
+} from '../../api/messages'
 import { useUsersMap } from '../../api/users'
 import { IconAttach, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
@@ -31,15 +38,47 @@ export function Composer({ roomId, isNews }: Props) {
   // Идёт отправка репоста (форвард создаётся до комментария).
   const [reposting, setReposting] = useState(false)
   const send = useSendMessage(roomId)
+  const qc = useQueryClient()
   const users = useUsersMap()
   const pendingRepost = useUiStore((s) => s.pendingRepost)
   const setPendingRepost = useUiStore((s) => s.setPendingRepost)
+  const pendingJournal = useUiStore((s) => s.pendingJournal)
+  const setPendingJournal = useUiStore((s) => s.setPendingJournal)
+  const pendingDraft = useUiStore((s) => s.pendingDraft)
+  const setPendingDraft = useUiStore((s) => s.setPendingDraft)
   // Репост показываем только в композере новостного канала.
   const repost = isNews ? pendingRepost : null
+  // Категория дневника, «заряженная» именно в эту комнату: следующая отправка
+  // (текст/файл/голос/стикер) уходит как запись дневника этой категории.
+  const journal = pendingJournal?.roomId === roomId ? pendingJournal.category : null
+  const journalMeta = journal ? JOURNAL_CATEGORY_META[journal] : null
+
+  // Успешно опубликовали запись дневника → снимаем «заряд» и обновляем прогресс дня
+  // (бар над композером перечитает journal-days и проставит ✓).
+  function afterJournalSent() {
+    setPendingJournal(null)
+    void qc.invalidateQueries({ queryKey: ['journal-days', roomId] })
+  }
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
+
+  // Черновик, «заряженный» извне (напр. шапка ответа админа на обращение из
+  // техподдержки): один раз подставляем в текст этой комнаты, ставим фокус и
+  // курсор в конец, затем сбрасываем — дальше админ дописывает сам.
+  useEffect(() => {
+    if (pendingDraft?.roomId !== roomId) return
+    setText(pendingDraft.text)
+    setPendingDraft(null)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }, [pendingDraft, roomId, setPendingDraft, inputRef])
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -60,6 +99,16 @@ export function Composer({ roomId, isNews }: Props) {
 
   function handleSticker(stickerId: number) {
     setPickerOpen(false)
+    if (journal) {
+      // Стикер как «отписка» дня: несёт маркер+заголовок категории в content, чтобы
+      // сервер засчитал день, плюс сам стикер.
+      send.mutate(
+        { content: buildJournalContent(journal, text.trim()), sticker_id: stickerId },
+        { onSuccess: afterJournalSent },
+      )
+      setText('')
+      return
+    }
     send.mutate({ sticker_id: stickerId })
   }
 
@@ -77,6 +126,23 @@ export function Composer({ roomId, isNews }: Props) {
     if (send.isPending || reposting) return
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 300)
+
+    // Запись дневника: маркер+заголовок категории в content (+ опциональные вложения).
+    // Для «фильма дня» текст обязателен — он и есть название (заголовок записи).
+    if (journal) {
+      const value = text.trim()
+      if (journal === 'film' && !value) {
+        toast('Введите название фильма дня', 'error')
+        return
+      }
+      if (!value && pendingFiles.length === 0) return
+      const body: SendBody = { content: buildJournalContent(journal, value) }
+      if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
+      setText('')
+      setPendingFiles([])
+      send.mutate(body, { onSuccess: afterJournalSent })
+      return
+    }
 
     // Репост в новости: сначала создаём форвард, затем — если что-то введено —
     // отдельным сообщением-комментарием (Telegram-стиль: переслано + подпись ниже).
@@ -153,6 +219,19 @@ export function Composer({ roomId, isNews }: Props) {
           </button>
         </div>
       )}
+      {journalMeta && (
+        <div className={styles.contextBar}>
+          <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
+          <span>{journalMeta.placeholder}</span>
+          <button
+            className={styles.pendingChipX}
+            onClick={() => setPendingJournal(null)}
+            aria-label="Отменить запись дневника"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {pendingFiles.length > 0 && (
         <div className={styles.pendingAtt}>
           {pendingFiles.map(a => (
@@ -219,7 +298,9 @@ export function Composer({ roomId, isNews }: Props) {
               ref={inputRef}
               className={styles.composerInput}
               rows={1}
-              placeholder={repost ? 'Добавить сообщение к репосту…' : 'Сообщение…'}
+              placeholder={
+                repost ? 'Добавить сообщение к репосту…' : 'Сообщение…'
+              }
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
@@ -241,7 +322,14 @@ export function Composer({ roomId, isNews }: Props) {
           </button>
         ) : (
           <VoiceComposer
-            onSend={(assetId) => send.mutate({ attachment_ids: [assetId] })}
+            onSend={(assetId) =>
+              journal
+                ? send.mutate(
+                    { content: buildJournalContent(journal, text.trim()), attachment_ids: [assetId] },
+                    { onSuccess: afterJournalSent },
+                  )
+                : send.mutate({ attachment_ids: [assetId] })
+            }
             onActiveChange={setVoiceActive}
           />
         )}

@@ -171,4 +171,6 @@ async def get_media_url(
         expires_in=PRESIGN_EXPIRES,
         kind=asset.kind,
         duration=asset.duration,
+        width=asset.width,
+        height=asset.height,
     )

@@ -6,6 +6,7 @@ import {
   useDeleteCalendarEvent,
 } from '../../api/calendar'
 import type { CalendarEventOut } from '../../lib/types'
+import { dateTimeMsk } from '../../lib/format'
 import { useRooms } from '../../api/rooms'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
@@ -21,19 +22,25 @@ interface EventFormValues {
   room_id: string
 }
 
-function toDatetimeLocal(iso: string): string {
-  return iso.slice(0, 16)
+// Москва фиксированно UTC+3 (без переходов на летнее время с 2014), поэтому
+// конверсии МСК↔UTC делаем простым сдвигом на 3 часа.
+const MSK_OFFSET_MS = 3 * 60 * 60 * 1000
+
+// UTC ISO → строка для <input type="datetime-local"> в московском времени.
+function toDatetimeLocalMsk(iso: string): string {
+  const msk = new Date(new Date(iso).getTime() + MSK_OFFSET_MS)
+  return msk.toISOString().slice(0, 16)
+}
+
+// Значение datetime-local трактуем как МСК → UTC ISO для отправки на бэкенд.
+function mskLocalToIso(local: string): string {
+  const asUtc = new Date(`${local}Z`) // парсим введённые цифры как если бы это был UTC
+  return new Date(asUtc.getTime() - MSK_OFFSET_MS).toISOString()
 }
 
 function formatDatetime(iso: string): string {
   try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    return dateTimeMsk(iso)
   } catch {
     return iso
   }
@@ -49,10 +56,10 @@ function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [startsAt, setStartsAt] = useState(
-    initial ? toDatetimeLocal(initial.starts_at) : '',
+    initial ? toDatetimeLocalMsk(initial.starts_at) : '',
   )
   const [endsAt, setEndsAt] = useState(
-    initial?.ends_at ? toDatetimeLocal(initial.ends_at) : '',
+    initial?.ends_at ? toDatetimeLocalMsk(initial.ends_at) : '',
   )
   const [allDay, setAllDay] = useState(initial?.all_day ?? false)
   const [roomId, setRoomId] = useState(
@@ -85,7 +92,7 @@ function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
         />
       </label>
       <label className={styles.label}>
-        Начало
+        Начало (МСК)
         <input
           className={styles.input}
           type="datetime-local"
@@ -95,7 +102,7 @@ function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
         />
       </label>
       <label className={styles.label}>
-        Конец
+        Конец (МСК)
         <input
           className={styles.input}
           type="datetime-local"
@@ -148,8 +155,8 @@ export function AdminCalendar() {
       {
         title: values.title,
         description: values.description || null,
-        starts_at: new Date(values.starts_at).toISOString(),
-        ends_at: values.ends_at ? new Date(values.ends_at).toISOString() : null,
+        starts_at: mskLocalToIso(values.starts_at),
+        ends_at: values.ends_at ? mskLocalToIso(values.ends_at) : null,
         all_day: values.all_day,
         room_id: values.room_id ? Number(values.room_id) : null,
       },
@@ -171,8 +178,8 @@ export function AdminCalendar() {
         id: editEvent.id,
         title: values.title,
         description: values.description || null,
-        starts_at: new Date(values.starts_at).toISOString(),
-        ends_at: values.ends_at ? new Date(values.ends_at).toISOString() : null,
+        starts_at: mskLocalToIso(values.starts_at),
+        ends_at: values.ends_at ? mskLocalToIso(values.ends_at) : null,
         all_day: values.all_day,
       },
       {

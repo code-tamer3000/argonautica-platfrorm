@@ -694,69 +694,53 @@
   outline: 2px solid var(--divider-gold);
 }
 
-/* --- Форма дневника --- */
+/* --- Бар «отписки дня» (выбор категории дневника над композером) --- */
 .journalBar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
   flex: 0 0 auto; width: 100%; box-sizing: border-box;
-  padding: var(--space-3) var(--space-4);
-  border-top: 1px solid var(--color-frame-deep);
-  background: var(--bg-surface); color: var(--text-secondary);
-  font-family: var(--font-t4); font-size: var(--text-label-md);
-  cursor: pointer; transition: var(--transition-base);
-}
-.journalBar:hover { color: var(--text-primary); background: rgba(19, 78, 69, 0.08); }
-.journalBarProgress { color: var(--text-ghost); }
-.journalWrap {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-frame-deep);
   background: var(--bg-surface);
-  display: flex; flex-direction: column; gap: var(--space-2);
-  flex: 0 0 auto;
+  overflow: hidden;
 }
-.journalHead { display: flex; align-items: center; gap: var(--space-3); }
-.journalCollapse {
-  margin-left: auto;
-  background: transparent; border: none; color: var(--text-ghost);
+/* Свёрнутый заголовок — кликабельная «таблетка»: тап разворачивает кнопки. */
+.journalBarToggle {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 4px var(--space-3);
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn); color: var(--text-secondary);
+  cursor: pointer; transition: var(--transition-color);
+}
+.journalBarToggle:hover { color: var(--text-primary); }
+.journalBarTitle {
+  color: inherit;
   font-family: var(--font-t4); font-size: var(--text-label-md);
-  cursor: pointer; padding: 2px var(--space-2);
 }
-.journalCollapse:hover { color: var(--text-primary); }
-.journalDone {
-  font-size: var(--text-label-md); color: var(--accent);
-  padding: var(--space-2) 0;
+.journalBarProgress { color: var(--text-ghost); }
+.journalBarChevron {
+  color: var(--text-ghost);
+  transition: transform var(--transition-base, 180ms ease);
 }
-.journalTabs { display: flex; gap: var(--space-2); }
-.journalTab {
-  flex: 1;
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-  padding: var(--space-2);
+.journalBarChevronOpen { transform: rotate(90deg); }
+.journalChips {
+  display: flex; gap: var(--space-2); flex: 1 1 260px; min-width: 0; flex-wrap: wrap;
+  animation: journalReveal 220ms ease;
+}
+@keyframes journalReveal {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.journalChip {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+  padding: 4px var(--space-3);
   background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-btn); color: var(--text-muted);
   font-family: var(--font-t4); font-size: var(--text-label-md);
   cursor: pointer; transition: var(--transition-color);
 }
-.journalTab:hover { color: var(--text-primary); }
-.journalTabActive {
+.journalChip:hover { color: var(--text-primary); }
+.journalChipActive {
   color: var(--text-primary); border-color: var(--accent);
   background: rgba(19, 78, 69, 0.14);
 }
 .journalCheck { color: var(--accent); font-weight: 700; }
-.journalField { display: flex; flex-direction: column; gap: 4px; }
-.journalInputRow { display: flex; align-items: flex-end; gap: var(--space-2); }
-.journalInputRow > .journalInput,
-.journalInputRow > .journalTextarea { flex: 1; }
-.journalLabel {
-  font-family: var(--font-t4); font-size: 11px; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--text-ghost);
-}
-.journalInput, .journalTextarea {
-  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
-  border-radius: var(--radius-btn); color: var(--text-primary);
-  font-family: var(--font-body); font-size: var(--text-ui);
-  padding: var(--space-2) var(--space-3); width: 100%; box-sizing: border-box;
-  resize: vertical;
-}
-.journalInput:focus, .journalTextarea:focus {
-  outline: none; border-color: var(--accent);
-}
-.journalTextarea { min-height: 56px; }

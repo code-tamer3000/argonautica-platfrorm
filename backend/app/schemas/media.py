@@ -54,3 +54,7 @@ class MediaUrlOut(BaseModel):
     # (webm/ogg неоднозначны между audio и video).
     kind: MediaKind
     duration: int | None = None
+    # Размеры (для video/image) — чтобы плеер зарезервировал коробку с верным
+    # aspect-ratio ещё до загрузки медиа (без чёрного прямоугольника и скачка рамок).
+    width: int | None = None
+    height: int | None = None

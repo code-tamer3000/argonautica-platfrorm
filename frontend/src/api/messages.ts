@@ -71,6 +71,61 @@ export const repostMessage = (sourceRoomId: number, id: number): Promise<Message
 export type JournalCategory = 'focus' | 'notes' | 'film'
 export const JOURNAL_CATEGORIES: JournalCategory[] = ['focus', 'notes', 'film']
 
+// Метаданные категорий для UI композера/бара. `heading` — заголовок публикуемой
+// markdown-записи; для film заголовком служит сам введённый текст (название фильма).
+export interface JournalCategoryMeta {
+  key: JournalCategory
+  emoji: string
+  /** Короткая подпись на чипе и в контекст-баре композера. */
+  label: string
+  /** markdown-заголовок публикуемой записи (для film не используется). */
+  heading: string
+  placeholder: string
+  multiline: boolean
+}
+
+export const JOURNAL_CATEGORY_META: Record<JournalCategory, JournalCategoryMeta> = {
+  focus: {
+    key: 'focus',
+    emoji: '🎯',
+    label: 'Фокус на день',
+    heading: '## 🎯 Фокус на день',
+    placeholder: 'Концентрация намерения на день',
+    multiline: true,
+  },
+  notes: {
+    key: 'notes',
+    emoji: '📝',
+    label: 'Заметки',
+    heading: '## 📝 Заметки',
+    placeholder: 'Процесс исследования',
+    multiline: true,
+  },
+  film: {
+    key: 'film',
+    emoji: '🎬',
+    label: 'Фильм дня',
+    heading: '',
+    placeholder: 'Как бы ты назвал фильм про сегодняшний день?',
+    multiline: false,
+  },
+}
+
+// Собирает content журнальной записи: невидимый маркер категории (по нему сервер
+// засчитывает категорию дня, см. backend `_journal_category`) + markdown-заголовок +
+// необязательное тело. Тело может быть пустым, если запись несёт вложение/голос/стикер.
+export function buildJournalContent(category: JournalCategory, text: string): string {
+  const value = text.trim()
+  const marker = `<!--journal:${category}-->`
+  if (category === 'film') {
+    // Название фильма само по себе — заголовок; без него — нейтральный дефолт.
+    return `${marker}\n\n## 🎬 ${value || 'Фильм дня'}`
+  }
+  const heading = JOURNAL_CATEGORY_META[category].heading
+  const body = value ? `\n\n${value}` : ''
+  return `${marker}\n\n${heading}${body}`
+}
+
 // Карта {дата: [категории]} за месяц. День закрыт, когда есть все три категории.
 export type JournalDays = Record<string, JournalCategory[]>
 
