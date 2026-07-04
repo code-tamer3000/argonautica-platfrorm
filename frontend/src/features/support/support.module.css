@@ -1,0 +1,105 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  overflow-y: auto;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.title { font-family: var(--font-t1); color: var(--text-primary); }
+
+.section { display: flex; flex-direction: column; gap: var(--space-4); }
+.sectionTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label-sm);
+  color: var(--text-secondary);
+}
+.sectionHint { font-size: 0.85rem; color: var(--text-secondary); }
+.empty { font-size: var(--text-ui); color: var(--text-ghost); }
+
+/* --- Форма обращения --- */
+.form { display: flex; flex-direction: column; gap: var(--space-4); }
+.segmented {
+  display: flex;
+  gap: var(--space-2);
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: 4px;
+}
+.seg, .segActive {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-btn);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.segActive {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text-primary);
+}
+.textarea {
+  resize: vertical;
+  min-height: 120px;
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.textarea:focus { outline: none; border-color: var(--accent); }
+.formActions { display: flex; justify-content: flex-end; }
+
+/* --- FAQ (аккордеон) --- */
+.faqList { display: flex; flex-direction: column; gap: var(--space-2); }
+.faqItem {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+.faqQuestion {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-4);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+}
+.faqChevron, .faqChevronOpen {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  transition: transform 120ms ease;
+}
+.faqChevronOpen { transform: rotate(90deg); color: var(--accent); }
+.faqAnswer {
+  padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .page { padding: var(--space-4); gap: var(--space-6); }
+}

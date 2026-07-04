@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
@@ -44,6 +44,8 @@ export function Composer({ roomId, isNews }: Props) {
   const setPendingRepost = useUiStore((s) => s.setPendingRepost)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
+  const pendingDraft = useUiStore((s) => s.pendingDraft)
+  const setPendingDraft = useUiStore((s) => s.setPendingDraft)
   // Репост показываем только в композере новостного канала.
   const repost = isNews ? pendingRepost : null
   // Категория дневника, «заряженная» именно в эту комнату: следующая отправка
@@ -61,6 +63,22 @@ export function Composer({ roomId, isNews }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
+
+  // Черновик, «заряженный» извне (напр. шапка ответа админа на обращение из
+  // техподдержки): один раз подставляем в текст этой комнаты, ставим фокус и
+  // курсор в конец, затем сбрасываем — дальше админ дописывает сам.
+  useEffect(() => {
+    if (pendingDraft?.roomId !== roomId) return
+    setText(pendingDraft.text)
+    setPendingDraft(null)
+    requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (el) {
+        el.focus()
+        el.setSelectionRange(el.value.length, el.value.length)
+      }
+    })
+  }, [pendingDraft, roomId, setPendingDraft, inputRef])
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -204,7 +222,7 @@ export function Composer({ roomId, isNews }: Props) {
       {journalMeta && (
         <div className={styles.contextBar}>
           <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
-          <span>отписка дня — можно приложить файл, голос или стикер</span>
+          <span>{journalMeta.placeholder}</span>
           <button
             className={styles.pendingChipX}
             onClick={() => setPendingJournal(null)}
@@ -281,7 +299,6 @@ export function Composer({ roomId, isNews }: Props) {
               className={styles.composerInput}
               rows={1}
               placeholder={
-                journalMeta ? journalMeta.placeholder :
                 repost ? 'Добавить сообщение к репосту…' : 'Сообщение…'
               }
               value={text}

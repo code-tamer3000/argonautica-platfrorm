@@ -31,6 +31,12 @@ interface UiState {
   pendingRepost: PendingRepost | null
   setPendingRepost: (r: PendingRepost | null) => void
 
+  // Черновик, «заряженный» в композер комнаты (напр. шапка ответа админа на
+  // обращение из техподдержки). Композер той же комнаты подставляет text один раз
+  // и сбрасывает — дальше админ дописывает и отправляет сам.
+  pendingDraft: { roomId: number; text: string } | null
+  setPendingDraft: (v: { roomId: number; text: string } | null) => void
+
   // Категория дневника, «заряженная» в композер (см. PendingJournal).
   pendingJournal: PendingJournal | null
   setPendingJournal: (j: PendingJournal | null) => void
@@ -59,6 +65,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   pendingRepost: null,
   setPendingRepost: (r) => set({ pendingRepost: r }),
+
+  pendingDraft: null,
+  setPendingDraft: (v) => set({ pendingDraft: v }),
 
   pendingJournal: null,
   setPendingJournal: (j) => set({ pendingJournal: j }),
