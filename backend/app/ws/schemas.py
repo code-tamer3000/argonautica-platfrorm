@@ -14,6 +14,7 @@ from app.schemas.notification import NotificationOut
 # Типы исходящих событий.
 EVENT_MESSAGE_NEW = "message.new"
 EVENT_NOTIFICATION_NEW = "notification.new"
+EVENT_NOTIFICATION_REMOVED = "notification.removed"
 EVENT_MESSAGE_EDITED = "message.edited"
 EVENT_MESSAGE_DELETED = "message.deleted"
 EVENT_PIN_ADDED = "pin.added"
@@ -39,6 +40,15 @@ def notification_new_event(notification: NotificationOut) -> dict[str, Any]:
     return {
         "type": EVENT_NOTIFICATION_NEW,
         "notification": notification.model_dump(mode="json"),
+    }
+
+
+def notification_removed_event(notification_id: int, was_unread: bool) -> dict[str, Any]:
+    """Уведомление снято сервером (напр. админ зачёл день дневника)."""
+    return {
+        "type": EVENT_NOTIFICATION_REMOVED,
+        "notification_id": notification_id,
+        "was_unread": was_unread,
     }
 
 

@@ -213,10 +213,35 @@
   font-weight: 700;
 }
 
+.cell_credited {
+  background: color-mix(in srgb, var(--gold, #d4a017) 20%, transparent);
+  color: color-mix(in srgb, var(--gold, #d4a017) 70%, #4a3800);
+  border-color: color-mix(in srgb, var(--gold, #d4a017) 45%, transparent);
+}
+
 .cell_missed {
   background: color-mix(in srgb, #e53e3e 15%, transparent);
   color: #9b2c2c;
   border-color: color-mix(in srgb, #e53e3e 35%, transparent);
+}
+
+/* Кликабельная ячейка (админ может зачесть/снять зачёт дня) */
+.cellToggle {
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.08s ease, box-shadow 0.12s ease;
+}
+.cellToggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--gold, #d4a017) 35%, transparent);
+}
+.cellToggle:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+.cellToggle:focus-visible {
+  outline: 2px solid var(--gold, #d4a017);
+  outline-offset: 2px;
 }
 
 .cell_pardoned {

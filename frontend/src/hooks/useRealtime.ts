@@ -152,6 +152,22 @@ export function useRealtime(): void {
           }
           break
         }
+        case 'notification.removed': {
+          // Сервер снял уведомление (напр. админ зачёл день дневника) — убрать из
+          // колокольчика и, если оно было непрочитанным, уменьшить счётчик бейджа.
+          qc.setQueryData<NotificationListOut>(notificationsKey, (old) => {
+            if (!old) return old
+            const present = old.items.some((it) => it.id === e.notification_id)
+            return {
+              items: old.items.filter((it) => it.id !== e.notification_id),
+              unread_count:
+                present && e.was_unread
+                  ? Math.max(0, old.unread_count - 1)
+                  : old.unread_count,
+            }
+          })
+          break
+        }
         default:
           // pin.added/removed, read, subscribed/unsubscribed, error, pong — фазы 3+
           break
