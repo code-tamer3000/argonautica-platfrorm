@@ -114,6 +114,13 @@ def ensure_buckets() -> None:
             time.sleep(5)
 
 
+# Прогресс загрузки медиа на фронте тянет файл через `fetch` (нужен CORS на чтение
+# тела и Content-Length). MinIO по умолчанию отдаёт `Access-Control-Allow-Origin: *`
+# (env MINIO_API_CORS_ALLOW_ORIGIN, дефолт `*`), а Content-Length — CORS-safelisted,
+# поэтому отдельная настройка бакета не нужна. Если origin в проде сузят — фронт мягко
+# откатывается на прямой `<img src>` (см. useMediaProgress.failed).
+
+
 def build_storage_key(content_type: str) -> str:
     """Серверный ключ объекта: `YYYY/MM/<uuid><ext>`. Имя клиента не используем (§6.4)."""
     now = datetime.now(UTC)
