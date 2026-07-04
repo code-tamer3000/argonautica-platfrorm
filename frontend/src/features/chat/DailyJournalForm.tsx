@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import {
   JOURNAL_CATEGORIES,
   JOURNAL_CATEGORY_META,
   useJournalDays,
   type JournalCategory,
 } from '../../api/messages'
+import { IconChevronRight } from '../../components/icons'
 import { useUiStore } from '../../stores/ui'
 import styles from './chat.module.css'
 
@@ -23,6 +25,10 @@ function currentDateStr() {
 // Бар «отписки дня» над композером личного канала. Сам ввод больше не держит —
 // выбор категории «заряжает» основной composer (см. pendingJournal), там доступны
 // текст, вложения, голос и стикеры. Здесь только выбор категории и прогресс дня.
+//
+// По умолчанию свёрнут в одну строку («📓 Отписка дня  N/3»), по тапу
+// разъезжается вправо, раскрывая кнопки категорий. Если категория уже «заряжена»
+// в composer — держим раскрытым, чтобы было видно активный выбор.
 export function DailyJournalForm({ roomId }: Props) {
   const today = currentDateStr()
   const now = new Date()
@@ -35,36 +41,63 @@ export function DailyJournalForm({ roomId }: Props) {
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const active = pendingJournal?.roomId === roomId ? pendingJournal.category : null
 
+  const [open, setOpen] = useState(false)
+  const expanded = open || active != null
+
   function toggle(category: JournalCategory) {
     // Повторный тап по «заряженной» категории снимает выбор.
     setPendingJournal(active === category ? null : { roomId, category })
   }
 
+  // Сворачивание кнопок заодно снимает «заряженную» категорию — вместе с ней
+  // закрывается и context-bar «ответа на сообщение» над композером.
+  function toggleOpen() {
+    if (expanded) {
+      setOpen(false)
+      if (active != null) setPendingJournal(null)
+    } else {
+      setOpen(true)
+    }
+  }
+
   return (
-    <div className={styles.journalBar}>
-      <span className={styles.journalBarTitle}>
-        {dayClosed ? '✓ Задания дня выполнены' : '📓 Отписка дня'}
+    <div className={`${styles.journalBar} ${expanded ? styles.journalBarOpen : ''}`}>
+      <button
+        type="button"
+        className={styles.journalBarToggle}
+        onClick={toggleOpen}
+        aria-expanded={expanded}
+      >
+        <span className={styles.journalBarTitle}>
+          {dayClosed ? '✓ Задания дня выполнены' : '📓 Записи дня'}
+        </span>
         {!dayClosed && (
-          <span className={styles.journalBarProgress}> {doneCount}/{JOURNAL_CATEGORIES.length}</span>
+          <span className={styles.journalBarProgress}>{doneCount}/{JOURNAL_CATEGORIES.length}</span>
         )}
-      </span>
-      <div className={styles.journalChips}>
-        {JOURNAL_CATEGORIES.map((key) => {
-          const meta = JOURNAL_CATEGORY_META[key]
-          const done = todayCats.has(key)
-          return (
-            <button
-              key={key}
-              className={`${styles.journalChip} ${active === key ? styles.journalChipActive : ''}`}
-              onClick={() => toggle(key)}
-              title={done ? `${meta.label} — уже опубликовано сегодня` : meta.label}
-            >
-              <span>{meta.emoji} {meta.label}</span>
-              {done && <span className={styles.journalCheck}>✓</span>}
-            </button>
-          )
-        })}
-      </div>
+        <IconChevronRight
+          size={16}
+          className={`${styles.journalBarChevron} ${expanded ? styles.journalBarChevronOpen : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className={styles.journalChips}>
+          {JOURNAL_CATEGORIES.map((key) => {
+            const meta = JOURNAL_CATEGORY_META[key]
+            const done = todayCats.has(key)
+            return (
+              <button
+                key={key}
+                className={`${styles.journalChip} ${active === key ? styles.journalChipActive : ''}`}
+                onClick={() => toggle(key)}
+                title={done ? `${meta.label} — уже опубликовано сегодня` : meta.label}
+              >
+                <span>{meta.emoji} {meta.label}</span>
+                {done && <span className={styles.journalCheck}>✓</span>}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

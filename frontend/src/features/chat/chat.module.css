@@ -701,15 +701,37 @@
   padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--color-frame-deep);
   background: var(--bg-surface);
+  overflow: hidden;
 }
+/* Свёрнутый заголовок — кликабельная «таблетка»: тап разворачивает кнопки. */
+.journalBarToggle {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 4px var(--space-3);
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn); color: var(--text-secondary);
+  cursor: pointer; transition: var(--transition-color);
+}
+.journalBarToggle:hover { color: var(--text-primary); }
 .journalBarTitle {
-  color: var(--text-secondary);
+  color: inherit;
   font-family: var(--font-t4); font-size: var(--text-label-md);
 }
 .journalBarProgress { color: var(--text-ghost); }
-.journalChips { display: flex; gap: var(--space-2); flex: 1; flex-wrap: wrap; }
+.journalBarChevron {
+  color: var(--text-ghost);
+  transition: transform var(--transition-base, 180ms ease);
+}
+.journalBarChevronOpen { transform: rotate(90deg); }
+.journalChips {
+  display: flex; gap: var(--space-2); flex: 1 1 260px; min-width: 0; flex-wrap: wrap;
+  animation: journalReveal 220ms ease;
+}
+@keyframes journalReveal {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
 .journalChip {
-  display: inline-flex; align-items: center; gap: 4px;
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
   padding: 4px var(--space-3);
   background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-btn); color: var(--text-muted);
