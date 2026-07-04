@@ -14,6 +14,7 @@ import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { AdminDynamics } from '../admin/AdminDynamics'
+import { AdminMetrics } from '../admin/AdminMetrics'
 import { AdminKb } from '../admin/AdminKb'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
@@ -47,6 +48,19 @@ export function AppShell() {
   const navRef = useRef<HTMLElement>(null)
   const [glider, setGlider] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
+  // Десктоп vs мобила решает поведение индикатора (см. ниже): на десктопе он не
+  // «перебегает» между вкладками, а появляется прямо в целевом разделе; на мобиле
+  // тонкая черта плавно скользит по низу таб-бара.
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 769px)').matches,
+  )
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 769px)')
+    const onChange = () => setIsDesktop(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   useLayoutEffect(() => {
     const nav = navRef.current
     if (!nav) return
@@ -78,6 +92,11 @@ export function AppShell() {
         <nav ref={navRef} className={styles.sidenav}>
           {glider && (
             <span
+              // На десктопе key меняется на каждый переход → индикатор
+              // перемонтируется и заново проигрывает анимацию «вылезания» в целевом
+              // разделе (не едет через весь экран). На мобиле key постоянный →
+              // элемент живёт и его черта плавно скользит по низу бара.
+              key={isDesktop ? location.pathname : 'glider'}
               className={styles.navGlider}
               style={{ transform: `translate(${glider.x}px, ${glider.y}px)`, width: glider.w, height: glider.h }}
             />
@@ -126,6 +145,7 @@ export function AppShell() {
             <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route path="dynamics" element={<AdminDynamics />} />
+              <Route path="server" element={<AdminMetrics />} />
               <Route path="kb" element={<AdminKb />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
