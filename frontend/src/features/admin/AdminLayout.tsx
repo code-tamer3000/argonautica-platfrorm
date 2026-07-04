@@ -12,6 +12,9 @@ export function AdminLayout() {
         <NavLink to="/admin/dynamics" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Динамика
         </NavLink>
+        <NavLink to="/admin/server" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Сервер
+        </NavLink>
         <NavLink to="/admin/kb" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           База знаний
         </NavLink>

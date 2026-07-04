@@ -63,18 +63,26 @@
 }
 .content     { flex: 1; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 
-/* Единый «живой» золотой индикатор: один элемент на весь nav, который переезжает
-   под активную вкладку. Геометрию (translate + размеры) выставляет JS по рамке
-   активного пункта, а CSS-transition превращает переезд в плавную «пробегающую»
-   золотую штучку между вкладками. Никакой сине-зелёной заливки — только мягкое
-   золотое свечение (тонкая рамка + glow). */
+/* Единый золотой индикатор активного раздела. Геометрию (translate + размеры)
+   выставляет JS по рамке активного пункта. Не заливаем всю кнопку золотом — только
+   тонкая золотая обводка (текст активного пункта золотится через .navLinkActive).
+   Десктоп: позицию НЕ анимируем (translate применяется мгновенно); вместо «пробега»
+   между вкладками индикатор перемонтируется на каждый переход (key в AppShell) и
+   его обводка «вылезает» прямо в целевом разделе через scale-анимацию на ::before.
+   Так при прыжке через несколько разделов ничего не едет по всему экрану. */
 .navGlider {
   position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none;
+}
+.navGlider::before {
+  content: ''; position: absolute; inset: 0;
   border-radius: var(--radius-btn);
-  background: var(--divider-gold);
   border: 1px solid var(--divider-gold-strong);
-  box-shadow: var(--glow-gold);
-  transition: transform 280ms var(--ease-out-soft), width 280ms var(--ease-out-soft), height 280ms var(--ease-out-soft);
+  transform-origin: center;
+  animation: navGliderPop 220ms var(--ease-out-soft);
+}
+@keyframes navGliderPop {
+  from { opacity: 0; transform: scale(0.55); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 .placeholder {
@@ -157,9 +165,12 @@
     background: transparent; border: none; box-shadow: none; border-radius: 0;
     transition: transform 260ms var(--ease-out-soft), width 260ms var(--ease-out-soft);
   }
+  /* На мобиле ::before — не золотая обводка/«вылезание», а тонкая черта сверху,
+     скользящая вместе с glider'ом. Гасим десктопные border и pop-анимацию. */
   .navGlider::before {
-    content: ''; position: absolute; top: 0; left: 30%; right: 30%; height: 2px;
-    background: var(--accent); border-radius: 0 0 2px 2px;
+    content: ''; position: absolute; top: 0; bottom: auto; left: 30%; right: 30%; height: 2px;
+    background: var(--accent); border: none; border-radius: 0 0 2px 2px;
+    animation: none;
   }
 
   /* Контент не должен заезжать под нижний бар. */

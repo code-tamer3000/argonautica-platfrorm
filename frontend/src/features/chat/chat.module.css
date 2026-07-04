@@ -9,9 +9,17 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* При входе в раздел (Рубка/Новости — ChatLayout монтируется) весь блок со
+     списком мягко «выезжает» слева направо. transform не влияет на ширину колонки. */
+  animation: listSlideIn 300ms var(--ease-out-soft);
+}
+@keyframes listSlideIn {
+  from { opacity: 0; transform: translateX(-26px); }
+  to   { opacity: 1; transform: none; }
 }
 
 .tabs {
+  position: relative;
   display: flex;
   border-bottom: 1px solid var(--color-frame);
 }
@@ -24,7 +32,6 @@
   padding: var(--space-3);
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
   color: var(--text-muted);
   font-family: var(--font-t4);
   font-size: var(--text-ui);
@@ -34,7 +41,18 @@
 .tab:hover { color: var(--text-primary); }
 .tabActive {
   color: var(--text-primary);
-  border-bottom-color: var(--accent);
+}
+/* Золотая черта под активной вкладкой, плавно переезжающая между Чаты↔Дневники.
+   Ширина 50% (две вкладки поровну); позицию задаёт transform из RoomList. */
+.tabGlider {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 50%;
+  height: 2px;
+  background: var(--accent);
+  pointer-events: none;
+  transition: transform 260ms var(--ease-out-soft);
 }
 /* Кружок-бейдж непрочитанных на вкладке «Чаты»/«Каналы». */
 .tabBadge {
@@ -60,7 +78,13 @@
   color: var(--text-primary);
 }
 
-.rooms { flex: 1; overflow-y: auto; min-height: 0; }
+/* Список чатов/дневников «выпадает» сверху вниз — при первом показе и заново при
+   переключении вкладки Чаты↔Дневники (в RoomList на .rooms висит key={tab}). */
+.rooms { flex: 1; overflow-y: auto; min-height: 0; animation: roomsDropIn 260ms var(--ease-out-soft); }
+@keyframes roomsDropIn {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: none; }
+}
 
 .sectionHeader {
   padding: var(--space-2) var(--space-4) var(--space-1);
@@ -127,6 +151,13 @@
 
 /* --- Чат-пейн --- */
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+/* Обёртка открытого чата: заполняет .pane и при смене чата (key=roomId) мягко
+   «выезжает» снизу вверх с проявлением — вместо резкой подмены содержимого. */
+.paneEnter { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; animation: paneEnter 240ms var(--ease-out-soft); }
+@keyframes paneEnter {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
 
 .header {
   display: flex; align-items: center; gap: var(--space-3);
@@ -354,7 +385,12 @@
 
 /* --- Вложения / стикеры --- */
 .attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-.attImage { max-width: 280px; max-height: 280px; border-radius: var(--radius-media); cursor: pointer; display: block; }
+.attImageWrap { position: relative; display: inline-block; max-width: 280px; overflow: hidden; border-radius: var(--radius-media); }
+/* Пока байты картинки грузятся — резервируем видимую коробку под крутилку/процент. */
+.attImageLoading { min-width: 140px; background: var(--bg-deep); }
+.attImageLoading:not([style*="aspect-ratio"]) { min-height: 140px; }
+.attImage { max-width: 280px; max-height: 280px; border-radius: var(--radius-media); cursor: pointer; display: block; width: 100%; }
+.attImageWrap .attImage { max-width: 100%; }
 .attVideo { max-width: 320px; max-height: 280px; border-radius: var(--radius-media); }
 .attFile {
   display: inline-flex; align-items: center; gap: var(--space-2);
@@ -365,7 +401,7 @@
 }
 .attFile:hover:not(:disabled) { border-color: var(--color-kost-dim); color: var(--text-primary); }
 .attFile:disabled { opacity: 0.6; cursor: default; }
-.attLoading { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost); padding: var(--space-2) 0; }
+.attLoading { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost); padding: var(--space-2) 0; }
 .sticker { width: 120px; height: 120px; object-fit: contain; margin-top: var(--space-1); }
 
 /* --- Контекстное меню действий над сообщением (Telegram-style) --- */

@@ -52,12 +52,15 @@ export function ChatLayout({ autoOpen }: Props = {}) {
       {showPane && (
         <div className={`grow ${styles.pane}`}>
           {roomId ? (
-            <ChatPane
-              key={roomId}
-              roomId={roomId}
-              onOpenRoom={setRoomId}
-              onBack={isMobile ? () => setRoomId(null) : undefined}
-            />
+            // key по roomId → при смене чата обёртка перемонтируется и открытый
+            // чат мягко «выезжает» снизу вверх (см. .paneEnter), а не подменяется резко.
+            <div key={roomId} className={styles.paneEnter}>
+              <ChatPane
+                roomId={roomId}
+                onOpenRoom={setRoomId}
+                onBack={isMobile ? () => setRoomId(null) : undefined}
+              />
+            </div>
           ) : (
             <div className={styles.empty}>Выберите чат, чтобы начать общение</div>
           )}
