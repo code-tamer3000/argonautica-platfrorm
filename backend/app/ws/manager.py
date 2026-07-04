@@ -84,5 +84,9 @@ class ConnectionManager:
             if not await conn.send_json(payload):
                 self.unregister(conn)
 
+    def connection_count(self) -> int:
+        """Живых WebSocket-соединений в этом процессе (для админ-мониторинга)."""
+        return len(self._conns)
+
 
 manager = ConnectionManager()

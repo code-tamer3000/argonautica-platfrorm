@@ -8,10 +8,10 @@ import type { PublicUserOut, RoomOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useNavBadges } from '../app/useNavBadges'
 import { useAuth } from '../auth/AuthContext'
+import styles from './chat.module.css'
 import { NewChatModal } from './NewChatModal'
 import { NewGroupModal } from './NewGroupModal'
 import { roomAvatarUrl, roomTitle } from './util'
-import styles from './chat.module.css'
 
 export type Tab = 'chats' | 'channels'
 
@@ -54,16 +54,12 @@ function RoomButton({ r, selectedId, onSelect, dmPeers, online, users, pinned }:
 interface Props {
   selectedId: number | null
   onSelect: (id: number) => void
-  /** Активная вкладка Чаты/Дневники живёт в ChatLayout — чтобы на мобиле она не
-      сбрасывалась при возврате из открытого чата (RoomList там перемонтируется). */
-  tab: Tab
-  onTabChange: (t: Tab) => void
 }
 
 const subLabel = (r: RoomOut): string =>
   r.is_news ? 'Новостной канал' :
-  r.is_personal ? 'Личный дневник' :
-  r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
+    r.is_personal ? 'Личный дневник' :
+      r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
 
 export function RoomList({ selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()
