@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.journal import JournalPardon
 from app.models.notification import Notification
 from app.models.room import Room
 
@@ -76,6 +77,43 @@ async def test_admin_credit_and_uncredit_day(
     assert resp3.status_code == 200
     u3 = _user_in(resp3.json(), participant.id)
     assert _day_status(u3, day) == "missed"
+
+
+async def test_credit_pardoned_day_refunds_whale(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Зачёт дня, на который потрачен кит, удаляет помилование — кит возвращается."""
+    admin = await make_user(role="admin", password="adminpass123")
+    participant = await make_user(role="participant")
+    admin_tokens = await login(client, admin.username, "adminpass123")
+
+    day = date.today() - timedelta(days=1)
+    assert settings.journal_program_start <= day
+
+    # Участник потратил кита на этот день.
+    session.add(JournalPardon(user_id=participant.id, date=day))
+    await session.commit()
+
+    resp = await client.post(
+        "/api/admin/dynamics/credit",
+        headers=auth_headers(admin_tokens["access_token"]),
+        json={"user_id": participant.id, "date": day.isoformat(), "credited": True},
+    )
+    assert resp.status_code == 200, resp.text
+    u = _user_in(resp.json(), participant.id)
+    # День теперь зачтён админом, а не помилован; помилований использовано — 0.
+    assert _day_status(u, day) == "credited"
+    assert u["pardons_used"] == 0
+
+    # Помилование физически удалено — кит вернулся в пул.
+    remaining_pardons = (
+        await session.execute(
+            select(JournalPardon.id).where(
+                JournalPardon.user_id == participant.id, JournalPardon.date == day
+            )
+        )
+    ).all()
+    assert remaining_pardons == []
 
 
 async def test_credit_clears_journal_missed_notification(

@@ -30,9 +30,9 @@ const STATUS_TEXT: Record<string, string> = {
   upcoming:     'Впереди',
 }
 
-// Дни, которые админ может переключать вручную: пропущенный можно зачесть,
-// зачтённый — снять. Остальные статусы не трогаем.
-const TOGGLABLE: ReadonlySet<DayStatus> = new Set<DayStatus>(['missed', 'credited'])
+// Дни, которые админ может переключать вручную: пропущенный — зачесть; помилованный
+// (потрачен кит) — зачесть с возвратом кита; зачтённый — снять зачёт. Остальные не трогаем.
+const TOGGLABLE: ReadonlySet<DayStatus> = new Set<DayStatus>(['missed', 'pardoned', 'credited'])
 
 const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
 
@@ -57,13 +57,19 @@ function DayCell({
   const cls = `${dynStyles.cell} ${dynStyles['cell_' + day.status]}`
 
   if (onToggle && TOGGLABLE.has(day.status)) {
-    const willCredit = day.status === 'missed'
+    // credited → снять зачёт; pardoned → зачесть и вернуть кита; missed → зачесть.
+    const title =
+      day.status === 'credited'
+        ? `Снять зачёт ${label}`
+        : day.status === 'pardoned'
+          ? `Зачесть ${label} и вернуть кита`
+          : `Зачесть ${label}`
     return (
       <button
         type="button"
         className={`${cls} ${dynStyles.cellToggle}`}
         disabled={busy}
-        title={willCredit ? `Зачесть ${label}` : `Снять зачёт ${label}`}
+        title={title}
         onClick={() => onToggle(day)}
       >
         {inner}
@@ -185,8 +191,8 @@ export function AdminDynamics() {
 
   const handleToggleDay = (userId: number, day: RecentDay) => {
     if (creditDay.isPending) return
-    // missed → зачесть, credited → снять зачёт.
-    creditDay.mutate({ userId, date: day.date, credited: day.status === 'missed' })
+    // credited → снять зачёт; missed/pardoned → зачесть (для pardoned кит вернётся).
+    creditDay.mutate({ userId, date: day.date, credited: day.status !== 'credited' })
   }
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
@@ -211,7 +217,7 @@ export function AdminDynamics() {
       </div>
 
       <p style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)', marginTop: -4 }}>
-        Кликните по пропущенному дню, чтобы зачесть его вручную (или по зачтённому — чтобы снять).
+        Кликните по пропущенному дню, чтобы зачесть его вручную (по зачтённому — снять). Зачёт помилованного дня вернёт участнику потраченного кита.
       </p>
 
       {summary && <Dashboard s={summary} total={summary.total_participants} />}

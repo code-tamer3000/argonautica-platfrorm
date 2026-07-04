@@ -300,6 +300,17 @@ async def credit_day(
         session.add(JournalCredit(user_id=user_id, date=day, granted_by=granted_by))
         await session.flush()
 
+    # Если пользователь потратил на этот день помилование («кита») — возвращаем его:
+    # раз админ зачёл день, кит был не нужен. Удаляем pardon → pardons_remaining растёт.
+    pardon = await session.scalar(
+        select(JournalPardon).where(
+            JournalPardon.user_id == user_id, JournalPardon.date == day
+        )
+    )
+    if pardon is not None:
+        await session.delete(pardon)
+        await session.flush()
+
     # День больше не пропущен — гасим уведомление «день не закрыт» (и бейдж/тост
     # у пользователя в реальном времени). Локальный импорт: сервис уведомлений
     # лениво тянет хелперы этого модуля, module-level импорт создал бы цикл.
