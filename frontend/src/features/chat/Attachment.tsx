@@ -24,7 +24,7 @@ export function Attachment({ assetId }: { assetId: number }) {
       </>
     )
   }
-  if (kind === 'video') return <VideoPlayer src={data.url} />
+  if (kind === 'video') return <VideoPlayer src={data.url} width={data.width} height={data.height} />
   // Скачиваем через blob (см. downloadFile) — надёжно на мобиле и в iOS-PWA, где
   // кросс-доменный `download`/`target=_blank` не срабатывают.
   const name = fileNameFromUrl(data.url)

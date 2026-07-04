@@ -5,6 +5,9 @@ const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
 
 interface Props {
   src: string
+  // Размеры из media_assets — резервируют коробку с верным aspect-ratio до загрузки.
+  width?: number | null
+  height?: number | null
   className?: string
 }
 
@@ -15,11 +18,21 @@ interface Props {
  * десктопе — в контекстном меню. Даём отдельную кнопку-«×N» в углу: список скоростей
  * применяется к playbackRate. Остальные контролы (плей/пауза/перемотка/громкость/
  * фуллскрин) — нативные.
+ *
+ * Коробка плеера резервируется по aspect-ratio из media_assets (проп width/height),
+ * поэтому ещё до загрузки видео размер совпадает с итоговым — без чёрного прямоугольника
+ * и без скачка рамок. Для старых записей без размеров ratio уточняется по loadedmetadata.
+ * Пока кадр не готов, поверх показываем скелетон-плейсхолдер.
  */
-export function VideoPlayer({ src, className }: Props) {
+export function VideoPlayer({ src, width, height, className }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [rate, setRate] = useState(1)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  // aspect-ratio: из media_assets сразу; для старых записей — по loadedmetadata.
+  const [ratio, setRatio] = useState(
+    width && height ? width / height : undefined,
+  )
 
   function applyRate(r: number) {
     if (videoRef.current) videoRef.current.playbackRate = r
@@ -28,8 +41,24 @@ export function VideoPlayer({ src, className }: Props) {
   }
 
   return (
-    <div className={`${styles.wrap} ${className ?? ''}`}>
-      <video ref={videoRef} className={styles.video} src={src} controls playsInline preload="metadata" />
+    <div
+      className={`${styles.wrap} ${className ?? ''}`}
+      style={ratio ? ({ ['--ar' as string]: ratio } as React.CSSProperties) : undefined}
+    >
+      <video
+        ref={videoRef}
+        className={styles.video}
+        src={src}
+        controls
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={(e) => {
+          const v = e.currentTarget
+          if (!ratio && v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight)
+        }}
+        onLoadedData={() => setLoaded(true)}
+      />
+      {!loaded && <div className={styles.placeholder} aria-hidden="true" />}
       <div className={styles.speedControl}>
         <button
           type="button"

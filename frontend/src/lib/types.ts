@@ -112,6 +112,8 @@ export interface MediaUrlOut {
   expires_in: number
   kind: MediaKind
   duration: number | null
+  width: number | null
+  height: number | null
 }
 
 export interface KbItemOut {
@@ -243,6 +245,34 @@ export interface NotificationOut {
 export interface NotificationListOut {
   items: NotificationOut[]
   unread_count: number
+}
+
+// --- Поддержка: обращения (предложить улучшение / сообщить об ошибке) ---
+export type FeedbackKind = 'improvement' | 'bug'
+
+export interface FeedbackOut {
+  id: number
+  kind: FeedbackKind
+  body: string
+  user_id: number
+  user_name: string | null
+  created_at: string
+  resolved_at: string | null
+}
+
+export interface FeedbackListOut {
+  items: FeedbackOut[]
+  unresolved_count: number
+}
+
+// --- Поддержка: частые вопросы (FAQ) ---
+export interface FaqItemOut {
+  id: number
+  question: string
+  answer: string
+  sort_order: number
+  created_at: string
+  updated_at: string
 }
 
 // --- WebSocket события ---

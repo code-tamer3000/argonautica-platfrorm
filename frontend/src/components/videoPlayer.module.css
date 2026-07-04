@@ -1,17 +1,54 @@
 .wrap {
   position: relative;
-  display: inline-block;
-  width: var(--kb-player-width, auto);
+  display: block;
+  /* Ширина = min(желаемая, потолок ширины, ratio×потолок высоты): держим aspect-ratio
+     и одновременно уважаем оба потолка (для KB — свои через --kb-player-*). Так коробка
+     плеера равна итоговому размеру видео ещё до загрузки — без скачка рамок. */
+  --ar: 1.7778; /* дефолт 16:9 до того, как узнаем реальный ratio */
+  width: min(
+    var(--kb-player-width, 100%),
+    var(--kb-player-max-width, 360px),
+    calc(var(--ar) * var(--kb-player-max-height, 320px))
+  );
+  aspect-ratio: var(--ar);
   max-width: 100%;
 }
 
 .video {
+  position: absolute;
+  inset: 0;
   display: block;
-  max-width: var(--kb-player-max-width, 360px);
-  max-height: var(--kb-player-max-height, 320px);
   width: 100%;
+  height: 100%;
+  object-fit: contain;
   border-radius: var(--radius-media);
   background: #000;
+}
+
+/* Скелетон-плейсхолдер поверх коробки, пока кадр не загрузился: вместо чёрного экрана —
+   мягкое мерцание в размер будущего видео. */
+.placeholder {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--radius-media);
+  background: linear-gradient(
+    100deg,
+    var(--color-frame-deep, #1a201d) 30%,
+    var(--color-frame, #232a26) 50%,
+    var(--color-frame-deep, #1a201d) 70%
+  );
+  background-size: 200% 100%;
+  animation: videoShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes videoShimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .placeholder { animation: none; }
 }
 
 /* Кнопка скорости в правом верхнем углу поверх видео. */
@@ -69,7 +106,10 @@
 .speedItemActive { color: var(--accent); }
 
 @media (max-width: 768px) {
-  .wrap { display: block; width: 100%; }
-  .video { max-width: 100%; max-height: 280px; }
+  /* На мобиле — во всю ширину пузыря, потолок высоты ниже. Считаем по тем же
+     переменным: ширина = min(100%, ratio×280). */
+  .wrap {
+    width: min(100%, calc(var(--ar) * var(--kb-player-max-height, 280px)));
+  }
 }
 
