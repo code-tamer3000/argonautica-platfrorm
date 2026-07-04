@@ -3,6 +3,41 @@ import { ru } from 'date-fns/locale'
 
 export const timeHM = (iso: string): string => format(new Date(iso), 'HH:mm')
 
+// События календаря привязаны к московскому времени: показываем их всем в МСК,
+// а не в локальной зоне зрителя (иначе у людей из разных зон время «съезжает»).
+const MSK_TIME = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+const MSK_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Moscow',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+})
+
+const MSK_DATETIME = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+// «HH:mm» по Москве, без суффикса (суффикс МСК навешивает вызывающий код).
+export const timeHMMsk = (iso: string): string => MSK_TIME.format(new Date(iso))
+
+// «dd.MM.yyyy, HH:mm МСК» — полная дата-время события по Москве.
+export const dateTimeMsk = (iso: string): string => `${MSK_DATETIME.format(new Date(iso))} МСК`
+
+// Ключ дня «yyyy-MM-dd» по Москве — чтобы событие попало в правильную ячейку
+// календаря независимо от зоны браузера.
+export const dayKeyMsk = (iso: string): string => MSK_DAY.format(new Date(iso))
+
 export function dayLabel(iso: string): string {
   const d = new Date(iso)
   if (isToday(d)) return 'Сегодня'

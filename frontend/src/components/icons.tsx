@@ -10,6 +10,7 @@ import {
   Copy,
   CornerUpLeft,
   Flame,
+  LifeBuoy,
   MessageSquare,
   Megaphone,
   Mic,
@@ -69,3 +70,4 @@ export const IconFlame = (p: IconProps) => <Flame {...DEFAULTS} {...p} />
 export const IconWaves = (p: IconProps) => <Waves {...DEFAULTS} {...p} />
 export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
 export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
+export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />

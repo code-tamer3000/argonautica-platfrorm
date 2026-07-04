@@ -37,6 +37,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const dmPeers = useUiStore((s) => s.dmPeers)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
   const setPendingRepost = useUiStore((s) => s.setPendingRepost)
+  const setPendingJournal = useUiStore((s) => s.setPendingJournal)
 
   const query = useMessages(roomId)
   const markRead = useMarkRead(roomId)
@@ -52,7 +53,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
-  const [journalExpanded, setJournalExpanded] = useState(false)
   const messageListRef = useRef<MessageListHandle>(null)
 
   // Право закрепления зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда;
@@ -88,8 +88,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setShowCalendar(false)
     setShowProfile(false)
     setHighlightedMsgId(null)
-    setJournalExpanded(false)
-  }, [roomId])
+    setPendingJournal(null)
+  }, [roomId, setPendingJournal])
 
   // Вывести пира личного чата из сообщений (API не отдаёт состав dm).
   useEffect(() => {
@@ -205,15 +205,13 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       />
       <TypingIndicator roomId={roomId} users={users} />
       {room.is_personal && room.created_by === user?.id && (
-        <DailyJournalForm roomId={roomId} userId={user.id} onExpandedChange={setJournalExpanded} />
+        <DailyJournalForm roomId={roomId} />
       )}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
           в новостном — только админ. Комментировать можно через треды.
-          Когда раскрыт виджет дня — прячем обычный composer, чтобы поля не
-          перекрывали друг друга над клавиатурой (у виджета своё поле ввода). */}
+          Выбранная в баре «отписки дня» категория «заряжает» этот же composer. */}
       {(!room.is_personal || room.created_by === user?.id) &&
-        (!room.is_news || user?.role === 'admin') &&
-        !journalExpanded && (
+        (!room.is_news || user?.role === 'admin') && (
         <Composer roomId={roomId} isNews={room.is_news} />
       )}
       {msgMenu.menu && (

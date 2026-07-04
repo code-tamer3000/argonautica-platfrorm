@@ -143,7 +143,11 @@ export function MessageItem({
             )}
 
             {msg.attachment_ids.length > 0 && (
-              <div className={styles.attachments}>
+              // Клики по вложениям (play/seek/скорость видео, аудио-плеер, лайтбокс,
+              // «Скачать») остаются внутри плеера и не всплывают до onClick пузыря —
+              // иначе тап по медиа заодно открывал бы контекстное меню сообщения.
+              // Меню по-прежнему доступно тапом по остальной части пузыря.
+              <div className={styles.attachments} onClick={(e) => e.stopPropagation()}>
                 {msg.attachment_ids.map(id => (
                   <Attachment key={id} assetId={id} />
                 ))}

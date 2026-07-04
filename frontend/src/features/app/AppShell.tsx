@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
-import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconSupport, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
@@ -11,12 +11,15 @@ import { CalendarView } from '../calendar/CalendarView'
 import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
 import { ProfileScreen } from '../profile/ProfileScreen'
+import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { AdminDynamics } from '../admin/AdminDynamics'
 import { AdminKb } from '../admin/AdminKb'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
+import { AdminFeedback } from '../admin/AdminFeedback'
+import { AdminFaq } from '../admin/AdminFaq'
 import { NotificationBell } from './NotificationBell'
 import { useNavBadges } from './useNavBadges'
 import styles from './appshell.module.css'
@@ -101,6 +104,10 @@ export function AppShell() {
             <span className={styles.navIcon}><IconUser /></span>
             <span className={styles.navLabel}>Профиль</span>
           </NavLink>
+          <NavLink to="/support" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconSupport /></span>
+            <span className={styles.navLabel}>Техподдержка</span>
+          </NavLink>
           {user?.role === 'admin' && (
             <NavLink to="/admin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
               <span className={styles.navIcon}><IconSettings /></span>
@@ -116,12 +123,15 @@ export function AppShell() {
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/profile" element={<ProfileScreen />} />
+            <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route path="dynamics" element={<AdminDynamics />} />
               <Route path="kb" element={<AdminKb />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
               <Route path="users" element={<AdminUsers />} />
+              <Route path="feedback" element={<AdminFeedback />} />
+              <Route path="faq" element={<AdminFaq />} />
               <Route index element={<Navigate to="dynamics" replace />} />
             </Route>
           </Routes>

@@ -1,197 +1,103 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   JOURNAL_CATEGORIES,
+  JOURNAL_CATEGORY_META,
   useJournalDays,
-  useSendMessage,
   type JournalCategory,
 } from '../../api/messages'
-import { IconSend } from '../../components/icons'
+import { IconChevronRight } from '../../components/icons'
+import { useUiStore } from '../../stores/ui'
 import styles from './chat.module.css'
 
 interface Props {
   roomId: number
-  userId: number
-  /** Сообщаем родителю, раскрыт ли виджет — чтобы он скрыл обычный composer
-      (иначе на мобиле поле дня и composer перекрывают друг друга у клавиатуры). */
-  onExpandedChange?: (expanded: boolean) => void
 }
 
-interface CatConfig {
-  key: JournalCategory
-  tab: string          // короткая подпись на кнопке-табе
-  heading: string      // markdown-заголовок публикуемой записи
-  label: string        // подпись поля ввода
-  placeholder: string
-  multiline: boolean
-}
-
-const CATS: CatConfig[] = [
-  {
-    key: 'focus',
-    tab: '🎯 Фокус',
-    heading: '## 🎯 Фокус на день',
-    label: 'Фокус / концентрация дня',
-    placeholder: 'Концентрация намерения на день',
-    multiline: true,
-  },
-  {
-    key: 'notes',
-    tab: '📝 Заметки',
-    heading: '## 📝 Заметки',
-    label: 'Заметки',
-    placeholder: 'Процесс исследования',
-    multiline: true,
-  },
-  {
-    key: 'film',
-    tab: '🎬 Фильм дня',
-    heading: '',  // название фильма само по себе — заголовок (см. publish)
-    label: 'Как бы ты назвал фильм про сегодняшний день?',
-    placeholder: 'фильм дня',
-    multiline: false,
-  },
-]
-
+// Журнальный день длится до 03:00 МСК = 00:00 UTC, поэтому «текущий день»
+// совпадает с UTC-датой (так же его считает бэкенд). Локальную дату браузера
+// брать нельзя: в 00:00–02:59 МСК она уже перещёлкнулась на следующее число,
+// а журнальный день — ещё предыдущий.
 function currentDateStr() {
   const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-const draftKey = (userId: number, date: string, cat: JournalCategory) =>
-  `journal-draft-${userId}-${date}-${cat}`
-
-export function DailyJournalForm({ roomId, userId, onExpandedChange }: Props) {
+// Бар «отписки дня» над композером личного канала. Сам ввод больше не держит —
+// выбор категории «заряжает» основной composer (см. pendingJournal), там доступны
+// текст, вложения, голос и стикеры. Здесь только выбор категории и прогресс дня.
+//
+// По умолчанию свёрнут в одну строку («📓 Отписка дня  N/3»), по тапу
+// разъезжается вправо, раскрывая кнопки категорий. Если категория уже «заряжена»
+// в composer — держим раскрытым, чтобы было видно активный выбор.
+export function DailyJournalForm({ roomId }: Props) {
   const today = currentDateStr()
   const now = new Date()
-  const { data: days, refetch } = useJournalDays(roomId, now.getFullYear(), now.getMonth() + 1)
+  const { data: days } = useJournalDays(roomId, now.getUTCFullYear(), now.getUTCMonth() + 1)
   const todayCats = new Set(days?.[today] ?? [])
   const dayClosed = JOURNAL_CATEGORIES.every((c) => todayCats.has(c))
   const doneCount = JOURNAL_CATEGORIES.filter((c) => todayCats.has(c)).length
 
-  const [expanded, setExpandedState] = useState(false)
-  function setExpanded(v: boolean) {
-    setExpandedState(v)
-    onExpandedChange?.(v)
-  }
-  // Синхронизируем родителя при размонтировании (смена комнаты и т.п.).
-  useEffect(() => () => onExpandedChange?.(false), [onExpandedChange])
-  const [active, setActive] = useState<JournalCategory>('focus')
-  const cfg = CATS.find((c) => c.key === active)!
-  const key = draftKey(userId, today, active)
+  const pendingJournal = useUiStore((s) => s.pendingJournal)
+  const setPendingJournal = useUiStore((s) => s.setPendingJournal)
+  const active = pendingJournal?.roomId === roomId ? pendingJournal.category : null
 
-  const [text, setText] = useState('')
-  // При переключении категории — подтянуть её черновик из localStorage.
-  useEffect(() => {
-    setText(localStorage.getItem(draftKey(userId, today, active)) ?? '')
-  }, [active, userId, today])
+  const [open, setOpen] = useState(false)
+  const expanded = open || active != null
 
-  // Автосохранение черновика активной категории.
-  useEffect(() => {
-    if (text) localStorage.setItem(key, text)
-    else localStorage.removeItem(key)
-  }, [text, key])
-
-  const sendMessage = useSendMessage(roomId)
-
-  function publish() {
-    const value = text.trim()
-    if (!value) return
-    // Маркер категории (невидим после рендера) + markdown-тело. Ссылки станут кликабельны.
-    const heading = cfg.key === 'film' ? `## 🎬 ${value}` : cfg.heading
-    const body = cfg.key === 'film' ? '' : `\n\n${value}`
-    const content = `<!--journal:${cfg.key}-->\n\n${heading}${body}`
-
-    sendMessage.mutate({ content }, {
-      onSuccess: () => {
-        localStorage.removeItem(key)
-        setText('')
-        void refetch()
-      },
-    })
+  function toggle(category: JournalCategory) {
+    // Повторный тап по «заряженной» категории снимает выбор.
+    setPendingJournal(active === category ? null : { roomId, category })
   }
 
-  if (!expanded) {
-    return (
-      <button className={styles.journalBar} onClick={() => setExpanded(true)}>
-        <span>{dayClosed ? '✓ Ежедневные задания выполнены' : '📓 Выполнить ежедневные задания'}</span>
-        {!dayClosed && (
-          <span className={styles.journalBarProgress}>{doneCount}/{JOURNAL_CATEGORIES.length}</span>
-        )}
-      </button>
-    )
+  // Сворачивание кнопок заодно снимает «заряженную» категорию — вместе с ней
+  // закрывается и context-bar «ответа на сообщение» над композером.
+  function toggleOpen() {
+    if (expanded) {
+      setOpen(false)
+      if (active != null) setPendingJournal(null)
+    } else {
+      setOpen(true)
+    }
   }
 
   return (
-    <div className={styles.journalWrap}>
-      <div className={styles.journalHead}>
-        {dayClosed && <div className={styles.journalDone}>✓ День закрыт — опубликованы все категории</div>}
-        <button className={styles.journalCollapse} onClick={() => setExpanded(false)}>
-          Свернуть ▲
-        </button>
-      </div>
-
-      <div className={styles.journalTabs}>
-        {CATS.map((c) => (
-          <button
-            key={c.key}
-            className={`${styles.journalTab} ${active === c.key ? styles.journalTabActive : ''}`}
-            onClick={() => setActive(c.key)}
-          >
-            {c.tab}
-            {todayCats.has(c.key) && <span className={styles.journalCheck}>✓</span>}
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.journalField}>
-        <label className={styles.journalLabel}>
-          {cfg.label}
-          {todayCats.has(active) && <span className={styles.journalCheck}> ✓ уже опубликовано</span>}
-        </label>
-        {/* Поле + компактная круглая кнопка отправки (как в основном composer):
-            кнопка появляется только когда есть текст и не «давит» интерфейс. */}
-        <div className={styles.journalInputRow}>
-          {cfg.multiline ? (
-            <textarea
-              className={styles.journalTextarea}
-              placeholder={cfg.placeholder}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault()
-                  publish()
-                }
-              }}
-              rows={2}
-            />
-          ) : (
-            <input
-              className={styles.journalInput}
-              placeholder={cfg.placeholder}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  publish()
-                }
-              }}
-            />
-          )}
-          {!!text.trim() && (
-            <button
-              className={styles.sendBtn}
-              onClick={publish}
-              disabled={sendMessage.isPending}
-              title="Опубликовать"
-              aria-label="Опубликовать"
-            >
-              {sendMessage.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
-            </button>
-          )}
+    <div className={`${styles.journalBar} ${expanded ? styles.journalBarOpen : ''}`}>
+      <button
+        type="button"
+        className={styles.journalBarToggle}
+        onClick={toggleOpen}
+        aria-expanded={expanded}
+      >
+        <span className={styles.journalBarTitle}>
+          {dayClosed ? '✓ Задания дня выполнены' : '📓 Записи дня'}
+        </span>
+        {!dayClosed && (
+          <span className={styles.journalBarProgress}>{doneCount}/{JOURNAL_CATEGORIES.length}</span>
+        )}
+        <IconChevronRight
+          size={16}
+          className={`${styles.journalBarChevron} ${expanded ? styles.journalBarChevronOpen : ''}`}
+        />
+      </button>
+      {expanded && (
+        <div className={styles.journalChips}>
+          {JOURNAL_CATEGORIES.map((key) => {
+            const meta = JOURNAL_CATEGORY_META[key]
+            const done = todayCats.has(key)
+            return (
+              <button
+                key={key}
+                className={`${styles.journalChip} ${active === key ? styles.journalChipActive : ''}`}
+                onClick={() => toggle(key)}
+                title={done ? `${meta.label} — уже опубликовано сегодня` : meta.label}
+              >
+                <span>{meta.emoji} {meta.label}</span>
+                {done && <span className={styles.journalCheck}>✓</span>}
+              </button>
+            )
+          })}
         </div>
-      </div>
+      )}
     </div>
   )
 }
