@@ -8,7 +8,6 @@ import {
   isSameDay,
   isSameMonth,
   isToday,
-  parseISO,
   startOfMonth,
   startOfWeek,
   subMonths,
@@ -17,7 +16,7 @@ import { ru } from 'date-fns/locale'
 import { useCalendarEvents } from '../../api/calendar'
 import { Spinner } from '../../components/Spinner'
 import { IconChevronLeft, IconChevronRight, IconPin } from '../../components/icons'
-import { timeHM } from '../../lib/format'
+import { dayKeyMsk, timeHMMsk } from '../../lib/format'
 import type { CalendarEventOut } from '../../lib/types'
 import styles from './calendar.module.css'
 
@@ -46,7 +45,7 @@ export function CalendarView() {
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarEventOut[]>()
     for (const ev of data ?? []) {
-      const key = format(parseISO(ev.starts_at), 'yyyy-MM-dd')
+      const key = dayKeyMsk(ev.starts_at)
       const arr = map.get(key) ?? []
       arr.push(ev)
       map.set(key, arr)
@@ -133,8 +132,11 @@ export function CalendarView() {
           {selectedEvents.map((ev) => (
             <div key={ev.id} className={`${styles.event} rise`}>
               <div className={styles.eventTime}>
-                {ev.all_day ? 'Весь день' : timeHM(ev.starts_at)}
-                {ev.ends_at && !ev.all_day && ` — ${timeHM(ev.ends_at)}`}
+                {ev.all_day
+                  ? 'Весь день'
+                  : `${timeHMMsk(ev.starts_at)}${
+                      ev.ends_at ? ` — ${timeHMMsk(ev.ends_at)}` : ''
+                    } МСК`}
               </div>
               <div className={styles.eventBody}>
                 <div className={styles.eventTitle}>{ev.title}</div>

@@ -11,9 +11,13 @@ interface Props {
   roomId: number
 }
 
+// Журнальный день длится до 03:00 МСК = 00:00 UTC, поэтому «текущий день»
+// совпадает с UTC-датой (так же его считает бэкенд). Локальную дату браузера
+// брать нельзя: в 00:00–02:59 МСК она уже перещёлкнулась на следующее число,
+// а журнальный день — ещё предыдущий.
 function currentDateStr() {
   const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
 // Бар «отписки дня» над композером личного канала. Сам ввод больше не держит —
@@ -22,7 +26,7 @@ function currentDateStr() {
 export function DailyJournalForm({ roomId }: Props) {
   const today = currentDateStr()
   const now = new Date()
-  const { data: days } = useJournalDays(roomId, now.getFullYear(), now.getMonth() + 1)
+  const { data: days } = useJournalDays(roomId, now.getUTCFullYear(), now.getUTCMonth() + 1)
   const todayCats = new Set(days?.[today] ?? [])
   const dayClosed = JOURNAL_CATEGORIES.every((c) => todayCats.has(c))
   const doneCount = JOURNAL_CATEGORIES.filter((c) => todayCats.has(c)).length
