@@ -13,7 +13,7 @@ import { NewGroupModal } from './NewGroupModal'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
 
-type Tab = 'chats' | 'channels'
+export type Tab = 'chats' | 'channels'
 
 interface RoomButtonProps {
   r: RoomOut
@@ -54,6 +54,10 @@ function RoomButton({ r, selectedId, onSelect, dmPeers, online, users, pinned }:
 interface Props {
   selectedId: number | null
   onSelect: (id: number) => void
+  /** Активная вкладка Чаты/Дневники живёт в ChatLayout — чтобы на мобиле она не
+      сбрасывалась при возврате из открытого чата (RoomList там перемонтируется). */
+  tab: Tab
+  onTabChange: (t: Tab) => void
 }
 
 const subLabel = (r: RoomOut): string =>
@@ -102,6 +106,13 @@ export function RoomList({ selectedId, onSelect }: Props) {
   return (
     <aside className={styles.list}>
       <div className={styles.tabs}>
+        {/* Один общий индикатор, «пробегающий» между вкладками Чаты↔Дневники.
+            Вкладок ровно две (по 50%), поэтому X = 0% или 100% ширины глайдера. */}
+        <span
+          className={styles.tabGlider}
+          style={{ transform: `translateX(${tab === 'chats' ? '0%' : '100%'})` }}
+          aria-hidden
+        />
         <button
           className={`${styles.tab} ${tab === 'chats' ? styles.tabActive : ''}`}
           onClick={() => setTab('chats')}
@@ -158,7 +169,7 @@ export function RoomList({ selectedId, onSelect }: Props) {
         />
       )}
 
-      <div className={styles.rooms}>
+      <div key={tab} className={styles.rooms}>
         {isLoading && (
           <div className="center" style={{ padding: 24 }}>
             <Spinner />

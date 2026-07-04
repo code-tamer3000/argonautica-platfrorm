@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { ProgressRing } from './ProgressRing'
 import styles from './videoPlayer.module.css'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
@@ -58,7 +59,14 @@ export function VideoPlayer({ src, width, height, className }: Props) {
         }}
         onLoadedData={() => setLoaded(true)}
       />
-      {!loaded && <div className={styles.placeholder} aria-hidden="true" />}
+      {!loaded && (
+        <>
+          <div className={styles.placeholder} aria-hidden="true" />
+          {/* Видео стримится нативно (не тянем целиком ради перемотки), поэтому %
+              недоступен — показываем крутилку, пока не готов первый кадр. */}
+          <ProgressRing progress={null} />
+        </>
+      )}
       <div className={styles.speedControl}>
         <button
           type="button"
