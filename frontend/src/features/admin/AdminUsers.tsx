@@ -28,6 +28,7 @@ export function AdminUsers() {
   // Edit user modal
   const [editUser, setEditUser] = useState<AdminUserOut | null>(null)
   const [editCanCreate, setEditCanCreate] = useState(false)
+  const [editCanCabin, setEditCanCabin] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
 
   function handleCreateOpen() {
@@ -62,6 +63,7 @@ export function AdminUsers() {
   function handleEditOpen(user: AdminUserOut) {
     setEditUser(user)
     setEditCanCreate(user.can_create_groups)
+    setEditCanCabin(user.can_access_cabin)
     setEditRole(user.role as 'participant' | 'admin')
   }
 
@@ -82,7 +84,12 @@ export function AdminUsers() {
   function handleEditSave() {
     if (!editUser) return
     patchUser.mutate(
-      { id: editUser.id, can_create_groups: editCanCreate, role: editRole },
+      {
+        id: editUser.id,
+        can_create_groups: editCanCreate,
+        can_access_cabin: editCanCabin,
+        role: editRole,
+      },
       {
         onSuccess: () => {
           toast('Пользователь обновлён')
@@ -233,6 +240,17 @@ export function AdminUsers() {
               />
               <label htmlFor="can_create_groups" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
                 Может создавать группы
+              </label>
+            </div>
+            <div className={styles.checkRow}>
+              <input
+                type="checkbox"
+                id="can_access_cabin"
+                checked={editCanCabin}
+                onChange={(e) => setEditCanCabin(e.target.checked)}
+              />
+              <label htmlFor="can_access_cabin" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
+                Доступ к разделу «Каюта»
               </label>
             </div>
             <div className={styles.formActions}>

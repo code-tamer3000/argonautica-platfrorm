@@ -21,6 +21,7 @@ export interface UserOut {
   role: Role
   must_change_password: boolean
   can_create_groups: boolean
+  can_access_cabin: boolean
   settings: Record<string, unknown>
 }
 
@@ -178,6 +179,7 @@ export interface AdminUserOut {
   email: string | null
   role: Role
   can_create_groups: boolean
+  can_access_cabin: boolean
   is_active: boolean
   created_at: string
 }
@@ -226,12 +228,13 @@ export interface AdminDynamicsOut {
 }
 
 // --- Уведомления (колокольчик + всплывающие тосты) ---
-export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed'
+export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed' | 'cabin_granted'
 
 export interface NotificationOut {
   id: number
   kind: NotificationKind
-  room_id: number
+  // room_id пуст у уведомлений без комнаты (cabin_granted — открыт доступ к Каюте).
+  room_id: number | null
   // Для системных уведомлений (journal_missed) actor/message пусты, зато есть ref_date.
   message_id: number | null
   actor_id: number | null

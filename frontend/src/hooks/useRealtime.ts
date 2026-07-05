@@ -19,6 +19,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   reply: 'Ответил(а) на ваше сообщение',
   news: 'Новый пост в новостях',
   journal_missed: 'День дневника не закрыт',
+  cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {

@@ -73,6 +73,7 @@ async def make_user(session: AsyncSession) -> MakeUser:
         username: str | None = None,
         email: str | None = None,
         can_create_groups: bool = True,
+        can_access_cabin: bool = False,
     ) -> User:
         user = User(
             username=username or f"u_{uuid.uuid4().hex[:12]}",
@@ -82,6 +83,7 @@ async def make_user(session: AsyncSession) -> MakeUser:
             password_hash=hash_password(password),
             must_change_password=must_change,
             can_create_groups=can_create_groups,
+            can_access_cabin=can_access_cabin,
         )
         session.add(user)
         await session.commit()

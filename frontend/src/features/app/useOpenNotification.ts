@@ -10,10 +10,12 @@ export function useOpenNotification() {
   const navigate = useNavigate()
   const setPendingOpen = useUiStore((s) => s.setPendingOpen)
   return useCallback(
-    (n: { kind: NotificationKind; room_id: number }) => {
-      if (n.kind === 'news') {
+    (n: { kind: NotificationKind; room_id: number | null }) => {
+      if (n.kind === 'cabin_granted') {
+        navigate('/cabin')
+      } else if (n.kind === 'news') {
         navigate('/news')
-      } else {
+      } else if (n.room_id != null) {
         setPendingOpen({ roomId: n.room_id })
         navigate('/')
       }

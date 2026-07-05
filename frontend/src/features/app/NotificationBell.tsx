@@ -13,6 +13,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   reply: 'ответил(а) на ваше сообщение',
   news: 'новый пост в новостях',
   journal_missed: '',
+  cabin_granted: '',
 }
 
 const KIND_FALLBACK: Record<NotificationKind, string> = {
@@ -20,11 +21,13 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   reply: 'Новый ответ',
   news: 'Смотреть в новостях',
   journal_missed: 'День дневника не закрыт',
+  cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
 }
 
 // Заголовок системного уведомления (без автора).
 const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   journal_missed: 'Дневник',
+  cabin_granted: 'Каюта',
 }
 
 export function NotificationBell() {
