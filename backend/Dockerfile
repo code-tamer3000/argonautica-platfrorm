@@ -8,6 +8,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# ffmpeg — для одноразового бэкфилла постеров старых видео (scripts/backfill_video_posters.py).
+# В горячем пути видео на бэкенд не гоняем (постер снимает клиент при загрузке, CLAUDE.md п.7);
+# это чисто админ-инструмент для записей, залитых до появления постеров.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # Манифест + исходники пакета нужны, чтобы собрать и поставить `app` с зависимостями.
 COPY pyproject.toml ./
 COPY app ./app
