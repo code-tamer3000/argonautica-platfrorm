@@ -9,6 +9,9 @@ interface Props {
   // Размеры из media_assets — резервируют коробку с верным aspect-ratio до загрузки.
   width?: number | null
   height?: number | null
+  // Постер-кадр (снят на клиенте при загрузке): показывается вместо чёрного прямоугольника,
+  // пока видео не начали проигрывать. null — постера нет (старые видео), покажем скелетон.
+  poster?: string | null
   className?: string
 }
 
@@ -25,7 +28,7 @@ interface Props {
  * и без скачка рамок. Для старых записей без размеров ratio уточняется по loadedmetadata.
  * Пока кадр не готов, поверх показываем скелетон-плейсхолдер.
  */
-export function VideoPlayer({ src, width, height, className }: Props) {
+export function VideoPlayer({ src, width, height, poster, className }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [rate, setRate] = useState(1)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -50,6 +53,7 @@ export function VideoPlayer({ src, width, height, className }: Props) {
         ref={videoRef}
         className={styles.video}
         src={src}
+        poster={poster ?? undefined}
         controls
         playsInline
         preload="metadata"
@@ -59,7 +63,9 @@ export function VideoPlayer({ src, width, height, className }: Props) {
         }}
         onLoadedData={() => setLoaded(true)}
       />
-      {!loaded && (
+      {/* Есть постер — его и показывает нативный <video>, скелетон не нужен. Без
+          постера (старые видео) держим скелетон+крутилку до первого кадра. */}
+      {!loaded && !poster && (
         <>
           <div className={styles.placeholder} aria-hidden="true" />
           {/* Видео стримится нативно (не тянем целиком ради перемотки), поэтому %
