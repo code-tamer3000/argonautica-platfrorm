@@ -56,6 +56,8 @@
 | dm_key | TEXT, UNIQUE, NULL | только для dm: канонический ключ пары `"minUserId:maxUserId"`, защищает от дублей личных чатов |
 | created_by | BIGINT FK users, NOT NULL | |
 | created_at | TIMESTAMPTZ, NOT NULL | |
+| is_personal | BOOLEAN, NOT NULL, default false | личная комната-дневник участника (раздел «Динамика»): сюда падают ежедневные записи ДЗ |
+| is_news | BOOLEAN, NOT NULL, default false | новостной канал платформы (singleton); верхнеуровневые посты — только admin |
 
 ---
 
@@ -95,6 +97,7 @@
 | content | TEXT, NULL | текст; NULL, если сообщение это только стикер/вложение |
 | thread_root_id | BIGINT FK messages, NULL | NULL = верхний уровень; заполнено = ответ в треде, указывает на корень |
 | sticker_id | BIGINT FK stickers, NULL | если сообщение — стикер |
+| forwarded_from_sender_id | BIGINT FK users, NULL | репост в новостной канал: исходный автор (атрибуция «переслано от X»); NULL = обычное сообщение |
 | reply_count | INT, NOT NULL, default 0 | денормализовано на корневом сообщении |
 | last_reply_at | TIMESTAMPTZ, NULL | денормализовано на корневом сообщении |
 | created_at | TIMESTAMPTZ, NOT NULL | |
@@ -130,7 +133,7 @@
 | id | BIGSERIAL PK | |
 | bucket | TEXT, NOT NULL | бакет MinIO (напр. `chat-media`, `kb-media`) |
 | storage_key | TEXT, NOT NULL | ключ объекта в бакете (напр. `2026/06/<uuid>.mp4`) |
-| kind | TEXT, NOT NULL | `'image'` \| `'video'` \| `'file'` |
+| kind | TEXT, NOT NULL | `'image'` \| `'video'` \| `'file'` \| `'audio'` (голосовые сообщения) |
 | mime_type | TEXT, NOT NULL | |
 | size | BIGINT, NOT NULL | байты |
 | width | INT, NULL | для изображений/видео |
@@ -235,6 +238,19 @@
 
 **PK:** (`kb_item_id`, `media_asset_id`).
 
+**kb_comments** — плоские комментарии участников под материалом.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| kb_item_id | BIGINT FK kb_items, NOT NULL | |
+| author_id | BIGINT FK users, NOT NULL | |
+| body | TEXT, NOT NULL | |
+| created_at | TIMESTAMPTZ, NOT NULL | |
+| deleted_at | TIMESTAMPTZ, NULL | мягкое удаление (п.6); удалять — автор или admin |
+
+**Индекс:** (`kb_item_id`, `created_at`) — лента комментариев материала.
+
 ---
 
 ### calendar_events
@@ -249,6 +265,123 @@
 | room_id | BIGINT FK rooms, NULL | NULL = общее событие проекта; заполнено = событие комнаты/канала |
 | created_by | BIGINT FK users | обычно admin |
 | created_at | TIMESTAMPTZ, NOT NULL | |
+
+---
+
+### Динамика (журнал ежедневных ДЗ)
+
+Раздел **«Динамика»** — трекинг выполнения ежедневного ДЗ по 28-дневной программе.
+Категории дня: `focus`, `notes`, `film`; **день закрыт**, когда сданы все три.
+
+**Сами записи ДЗ — это сообщения** в личной комнате-дневнике участника
+(`rooms.is_personal = true`), отдельной таблицы записей нет. Прогресс (закрытые дни,
+стрик, просрочки) считается на лету из сообщений + двух таблиц-исключений ниже.
+
+**journal_pardons** — «помилования»: участник сам прощает себе пропущенный день
+(лимит `MAX_PARDONS = 3`).
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| user_id | BIGINT FK users, NOT NULL | |
+| date | DATE, NOT NULL | прощённый день |
+| used_at | TIMESTAMPTZ, NOT NULL | |
+
+**UNIQUE:** (`user_id`, `date`) — один прощённый день не дублируется.
+
+**journal_credits** — ручной зачёт дня админом: день считается закрытым (сдал не через
+форму, сбой по времени и т.п.). Без лимита, в отличие от помилований.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| user_id | BIGINT FK users, NOT NULL | кому зачтён день |
+| date | DATE, NOT NULL | зачтённый день |
+| granted_by | BIGINT FK users, NOT NULL | админ, поставивший зачёт |
+| granted_at | TIMESTAMPTZ, NOT NULL | |
+
+**UNIQUE:** (`user_id`, `date`).
+
+---
+
+### notifications
+Лента уведомлений участника (колокольчик в шапке). Доменные данные (нужна история,
+переживание перезагрузки, будущий web-push), поэтому Postgres, а не Redis — п.5
+CLAUDE.md про эфемерку касается typing/presence/токенов, не журнала уведомлений.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| user_id | BIGINT FK users, NOT NULL | получатель |
+| kind | TEXT, NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'journal_missed'` |
+| room_id | BIGINT FK rooms, NOT NULL | комната источника (для системных — личный дневник) |
+| message_id | BIGINT FK messages, NULL | сообщение-источник; NULL для системных (`journal_missed`) |
+| actor_id | BIGINT FK users, NULL | кто вызвал (автор сообщения); NULL для системных |
+| ref_date | DATE, NULL | для `journal_missed` — какой день не закрыт (дедуп) |
+| created_at | TIMESTAMPTZ, NOT NULL | |
+| read_at | TIMESTAMPTZ, NULL | NULL = непрочитано |
+
+**Индексы:** (`user_id`, `id`) — лента; partial по (`user_id`) `WHERE read_at IS NULL` —
+счётчик непрочитанных. Генерация — `services/notifications.py` в транзакции отправки
+сообщения; доставка в реальном времени — персональный канал `user:{id}` в Redis
+pub/sub (WS-события `notification.new` / `notification.removed`).
+
+---
+
+### Поддержка (feedback, faq)
+
+**feedback** — обращения из раздела «Поддержка» (предложить улучшение / сообщить об
+ошибке). Создаёт участник, разбирает админ в «Управлении».
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| user_id | BIGINT FK users, NOT NULL | автор (из токена, не из тела) |
+| kind | TEXT, NOT NULL, CHECK | `'improvement'` \| `'bug'` |
+| body | TEXT, NOT NULL | текст обращения |
+| created_at | TIMESTAMPTZ, NOT NULL | (индекс — лента для админа, сначала новые) |
+| resolved_at | TIMESTAMPTZ, NULL | NULL, пока админ не отметил «разобрано» |
+
+**faq_items** — частые вопросы раздела «Поддержка». Ведёт админ, читают участники.
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| question | TEXT, NOT NULL | |
+| answer | TEXT, NOT NULL | ответ/инструкция |
+| sort_order | INT, NOT NULL, default 0 | ручной порядок (меньше — выше; при равенстве по id) |
+| created_at | TIMESTAMPTZ, NOT NULL | |
+| updated_at | TIMESTAMPTZ, NOT NULL | |
+
+---
+
+### cabin_entries
+Раздел **«Каюта»** — личная психологическая проработка участника. Три подраздела
+(`kind`): дневник эмоций, протокол декатастрофизации, триггеры (построение гипотезы).
+У всех подразделов одна форма-«плашка», но набор полей отличается — поэтому поля формы
+лежат в **JSONB `data`**, а не в отдельных колонках/таблицах на каждый подраздел
+(добавить/поменять поле формы — без миграции; три таблицы-близнеца не нужны).
+Структура `data` под каждый `kind` валидируется на входе (Pydantic-схемы в
+`app/schemas/cabin.py`).
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | BIGSERIAL PK | |
+| user_id | BIGINT FK users, NOT NULL | автор записи (берётся из токена, не от клиента) |
+| kind | TEXT, NOT NULL, CHECK | `'diary'` \| `'decatastrophize'` \| `'trigger'` |
+| data | JSONB, NOT NULL | поля формы подраздела; структура зависит от `kind` |
+| created_at | TIMESTAMPTZ, NOT NULL | |
+| updated_at | TIMESTAMPTZ, NOT NULL | `onupdate=now()` |
+
+**Индекс:** (`user_id`, `kind`, `created_at`) — лента подраздела владельца (его записи
+одного kind, сначала новые).
+
+**Приватность.** Запись видит её автор; правку/удаление делает только автор. Админ
+может просматривать записи участников (как в «Динамике»/«Поддержке») — отдельные
+`/api/cabin/admin/...` под `require_admin`. Это доменные данные (Postgres), не эфемерка.
+
+**Удаление — физическое** (исключение из общего мягкого удаления п.6 CLAUDE.md):
+каюта личная, восстанавливать психо-заметку смысла нет.
 
 ---
 
@@ -289,10 +422,20 @@ messages --< message_attachments >-- media_assets
 messages --> stickers --> stickerpacks
 rooms --< pinned_messages >-- messages
 rooms --< calendar_events            (room_id nullable)
+users --< cabin_entries              (личные записи; data в JSONB по kind)
+users --< journal_pardons            (помилования пропущенных дней ДЗ)
+users --< journal_credits            (ручные зачёты дней админом)
+users --< notifications              (лента колокольчика; actor/message nullable)
+users --< feedback                   (обращения в «Поддержку»)
+faq_items                            (справочник «Поддержки», ведёт admin)
 kb_items --< kb_item_media >-- media_assets
+kb_items --< kb_comments >-- users   (комментарии участников, мягкое удаление)
 kb_items --> kb_categories           (category_id nullable, на вырост)
 media_assets                         (общая для сообщений и базы знаний)
 ```
+
+> Записи ДЗ «Динамики» — это `messages` в личной комнате (`rooms.is_personal`);
+> отдельной таблицы записей нет, прогресс считается из сообщений + pardons/credits.
 
 ---
 
@@ -310,3 +453,13 @@ media_assets                         (общая для сообщений и б
 - Дедуп личных чатов — через `rooms.dm_key` (UNIQUE).
 - id — `BIGSERIAL` (нужно для монотонности статусов прочтения).
 - Категории базы знаний — структура заложена, но **на вырост**.
+- «Каюта» — поля формы подразделов в **JSONB `data`** (один `kind`-дискриминатор,
+  без таблиц-близнецов); удаление физическое (исключение из мягкого).
+- «Динамика» — записи ДЗ хранятся как `messages` в личной комнате (`is_personal`),
+  отдельной таблицы нет; прогресс считается на лету + `journal_pardons`/`journal_credits`.
+- Новостной канал — `rooms.is_news` (singleton); репост в него — копия сообщения с
+  `forwarded_from_sender_id` (атрибуция исходного автора).
+- Уведомления, обращения «Поддержки» и FAQ — доменные данные в Postgres (нужна
+  история/статус), а не эфемерка (п.5 касается typing/presence/токенов).
+- Комментарии базы знаний (`kb_comments`) — мягкое удаление (п.6).
+- Медиа получили `kind = 'audio'` — голосовые сообщения.
