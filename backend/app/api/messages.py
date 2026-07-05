@@ -20,6 +20,7 @@ from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.sticker import Sticker
 from app.models.user import User
+from app.schemas.media import AttachmentOut
 from app.schemas.message import (
     EditMessageRequest,
     MessageOut,
@@ -29,6 +30,7 @@ from app.schemas.message import (
     SendMessageRequest,
     ThreadOut,
 )
+from app.services.media import resolve_attachments
 from app.services.notifications import on_new_message
 from app.services.ratelimit import enforce_rate_limit
 from app.services.rooms import (
@@ -61,21 +63,23 @@ async def _attachments_map(
     return result
 
 
-def _to_out(message: Message, attachment_ids: list[int]) -> MessageOut:
+def _to_out(message: Message, attachments: list[AttachmentOut]) -> MessageOut:
     out = MessageOut.model_validate(message)
-    out.attachment_ids = attachment_ids
+    out.attachments = attachments
+    # attachment_ids — для обратной совместимости со старыми клиентами (см. схему).
+    out.attachment_ids = [att.asset_id for att in attachments]
     return out
 
 
 def _pinned_out(
-    pin: PinnedMessage, message: Message, attachment_ids: list[int]
+    pin: PinnedMessage, message: Message, attachments: list[AttachmentOut]
 ) -> PinnedOut:
     return PinnedOut(
         room_id=pin.room_id,
         message_id=pin.message_id,
         pinned_by=pin.pinned_by,
         pinned_at=pin.pinned_at,
-        message=_to_out(message, attachment_ids),
+        message=_to_out(message, attachments),
     )
 
 
@@ -162,7 +166,8 @@ async def send_message(
 
     await session.flush()
     await session.refresh(message)
-    out = _to_out(message, list(body.attachment_ids))
+    resolved = await resolve_attachments(session, [message.id])
+    out = _to_out(message, resolved.get(message.id, []))
     # Живая доставка подписчикам комнаты (payload самодостаточный).
     await publish_room_event(room_id, ws_schemas.message_new_event(out))
     # Уведомления получателям (личка / ответ на сообщение / пост в новостях).
@@ -236,7 +241,8 @@ async def repost_to_news(
 
     await session.flush()
     await session.refresh(repost)
-    out = _to_out(repost, list(attachment_ids))
+    resolved = await resolve_attachments(session, [repost.id])
+    out = _to_out(repost, resolved.get(repost.id, []))
     await publish_room_event(news.id, ws_schemas.message_new_event(out))
     # Репост — новый верхнеуровневый пост в новостях: уведомить всех участников.
     await on_new_message(session, repost, news, current_user)
@@ -272,7 +278,7 @@ async def list_messages(
         stmt = stmt.where(Message.id > after)
 
     messages = list((await session.execute(stmt)).scalars().all())
-    attachments = await _attachments_map(session, [m.id for m in messages])
+    attachments = await resolve_attachments(session, [m.id for m in messages])
     return [_to_out(m, attachments.get(m.id, [])) for m in messages]
 
 
@@ -311,7 +317,9 @@ async def get_thread(
         .all()
     )
 
-    attachments = await _attachments_map(session, [root.id, *[r.id for r in replies]])
+    attachments = await resolve_attachments(
+        session, [root.id, *[r.id for r in replies]]
+    )
     return ThreadOut(
         root=_to_out(root, attachments.get(root.id, [])),
         replies=[_to_out(r, attachments.get(r.id, [])) for r in replies],
@@ -351,7 +359,7 @@ async def edit_message(
     await session.flush()
     await session.refresh(message)
 
-    attachments = await _attachments_map(session, [message.id])
+    attachments = await resolve_attachments(session, [message.id])
     out = _to_out(message, attachments.get(message.id, []))
     await publish_room_event(room_id, ws_schemas.message_edited_event(out))
     return out
@@ -504,7 +512,7 @@ async def pin_message(
             ws_schemas.pin_added_event(room_id, message_id, current_user.id),
         )
 
-    attachments = await _attachments_map(session, [message.id])
+    attachments = await resolve_attachments(session, [message.id])
     return _pinned_out(pin, message, attachments.get(message.id, []))
 
 
@@ -555,7 +563,7 @@ async def list_pins(
         .order_by(PinnedMessage.pinned_at.desc())
     )
     pairs = list(rows.all())
-    attachments = await _attachments_map(session, [m.id for _, m in pairs])
+    attachments = await resolve_attachments(session, [m.id for _, m in pairs])
     return [_pinned_out(p, m, attachments.get(m.id, [])) for p, m in pairs]
 
 

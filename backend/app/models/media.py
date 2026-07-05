@@ -28,6 +28,10 @@ class MediaAsset(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     bucket: Mapped[str] = mapped_column(Text, nullable=False)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    # Ключ уменьшенного превью в том же бакете (для картинок; None — превью нет:
+    # старые записи, видео/файлы, либо не сгенерировалось). В ленте отдаём превью,
+    # оригинал — только по клику/скачиванию. Генерится best-effort при подтверждении.
+    thumb_key: Mapped[str | None] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(Text, nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)  # байты

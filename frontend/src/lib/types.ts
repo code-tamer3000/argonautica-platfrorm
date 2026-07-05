@@ -66,6 +66,21 @@ export interface MessageOut {
   created_at: string
   edited_at: string | null
   attachment_ids: number[]
+  // Вложения с готовыми presigned-URL и превью — приходят прямо в ленте, без
+  // отдельного запроса на каждый ассет. Пусто у старых сообщений в кэше.
+  attachments: AttachmentOut[]
+}
+
+export interface AttachmentOut {
+  asset_id: number
+  url: string
+  thumb_url: string | null
+  kind: MediaKind
+  mime_type: string
+  size: number
+  width: number | null
+  height: number | null
+  duration: number | null
 }
 
 export interface ThreadOut {
@@ -114,6 +129,7 @@ export interface MediaUrlOut {
   duration: number | null
   width: number | null
   height: number | null
+  thumb_url: string | null
 }
 
 export interface ServerMetricsOut {
