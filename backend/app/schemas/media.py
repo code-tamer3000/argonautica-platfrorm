@@ -30,6 +30,11 @@ class ConfirmRequest(BaseModel):
     width: int | None = None
     height: int | None = None
     duration: int | None = None
+    # Ключ постера видео: клиент сам снял кадр при загрузке и залил отдельным
+    # объектом (тянуть видеофайл на бэкенд ради кадра дорого). Сервер лишь проверит
+    # намерение загрузки и подхватит ключ как thumb_key. Для картинок не используется
+    # (их превью генерит сам сервер).
+    thumb_storage_key: str | None = None
 
 
 class MediaAssetOut(BaseModel):

@@ -49,6 +49,77 @@ function mediaDims(file: File): Promise<{ width?: number; height?: number }> {
   return Promise.resolve({})
 }
 
+const POSTER_MAX_PX = 1024 // как серверные превью картинок — постер лёгкий
+
+/**
+ * Снять постер-кадр видео на клиенте: перематываем чуть вперёд (первый кадр часто
+ * чёрный), рисуем на canvas, отдаём WebP-Blob. Так у видео в ленте есть превью, не
+ * таща сам файл на бэкенд. Best-effort — при любой заминке (кодек не декодится в
+ * фоне, нет 2d-контекста, таймаут) возвращаем null: видео просто останется без
+ * постера. Файл локальный (object URL), canvas не «портится» CORS — читать можно.
+ */
+function capturePoster(file: File): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    const url = URL.createObjectURL(file)
+    let settled = false
+    const done = (blob: Blob | null) => {
+      if (settled) return
+      settled = true
+      URL.revokeObjectURL(url)
+      resolve(blob)
+    }
+    video.muted = true
+    video.playsInline = true
+    video.preload = 'auto'
+    video.onloadeddata = () => {
+      // Небольшой сдвиг от нуля — уводит от чёрного стартового кадра.
+      video.currentTime = Math.min(0.1, (video.duration || 1) / 2)
+    }
+    video.onseeked = () => {
+      try {
+        const w = video.videoWidth
+        const h = video.videoHeight
+        if (!w || !h) return done(null)
+        const scale = Math.min(1, POSTER_MAX_PX / Math.max(w, h))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.round(w * scale)
+        canvas.height = Math.round(h * scale)
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return done(null)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob((blob) => done(blob), 'image/webp', 0.8)
+      } catch {
+        done(null)
+      }
+    }
+    video.onerror = () => done(null)
+    video.src = url
+    // Подстраховка: не ждём вечно, если кадр так и не пришёл.
+    setTimeout(() => done(null), 10_000)
+  })
+}
+
+/**
+ * Залить постер видео в MinIO как отдельный объект и вернуть его storage_key (его
+ * подхватит confirm как thumb_storage_key). Свой media_assets постеру НЕ создаём —
+ * не зовём `/assets`. Best-effort: null при любой ошибке (постер не критичен).
+ */
+async function uploadPoster(blob: Blob): Promise<string | null> {
+  try {
+    const contentType = blob.type || 'image/webp'
+    const ticket = await http.post<UploadTicket>('/api/media/uploads', {
+      content_type: contentType,
+      size: blob.size,
+      kind: 'image' as MediaKind,
+    })
+    await putWithProgress(ticket.upload_url, blob, contentType)
+    return ticket.storage_key
+  } catch {
+    return null
+  }
+}
+
 /** Прогресс загрузки: доля 0..1. Вызывается по мере отправки байтов в MinIO. */
 export type UploadProgress = (fraction: number) => void
 
@@ -98,10 +169,18 @@ export async function mediaUpload(
   // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом.
   await putWithProgress(ticket.upload_url, file, file.type, onProgress)
   const dims = await mediaDims(file)
+  // Видео: снимаем и заливаем постер-кадр (превью для ленты). Не блокирует загрузку —
+  // если не собрался, thumb_storage_key останется пустым и видео будет без постера.
+  let thumbStorageKey: string | undefined
+  if (kind === 'video') {
+    const poster = await capturePoster(file)
+    if (poster) thumbStorageKey = (await uploadPoster(poster)) ?? undefined
+  }
   return http.post<MediaAssetOut>('/api/media/assets', {
     storage_key: ticket.storage_key,
     width: dims.width,
     height: dims.height,
+    thumb_storage_key: thumbStorageKey,
   })
 }
 

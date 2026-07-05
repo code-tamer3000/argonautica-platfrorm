@@ -68,7 +68,8 @@ export function Attachment({
   if (kind === 'audio') return <VoicePlayer src={url} duration={duration} />
   if (kind === 'image')
     return <ImageAttachment url={url} thumbUrl={thumbUrl} width={width} height={height} />
-  if (kind === 'video') return <VideoPlayer src={url} width={width} height={height} />
+  if (kind === 'video')
+    return <VideoPlayer src={url} width={width} height={height} poster={thumbUrl} />
   // Скачиваем через blob (см. downloadFile) — надёжно на мобиле и в iOS-PWA, где
   // кросс-доменный `download`/`target=_blank` не срабатывают.
   const name = fileNameFromUrl(url)
