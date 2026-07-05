@@ -9,9 +9,11 @@
 синхронный boto3 здесь приемлем. URL подписываются под публичным endpoint —
 браузеру нужен адрес, до которого он реально достучится (см. MINIO_PUBLIC_ENDPOINT).
 """
+import logging
 import mimetypes
 from datetime import UTC, datetime
 from functools import lru_cache
+from io import BytesIO
 from uuid import uuid4
 
 import boto3
@@ -26,11 +28,23 @@ from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment
 from app.models.user import User
+from app.schemas.media import AttachmentOut
 from app.services.rooms import assert_room_access, load_room
 
-# Presigned-URL должны указывать на публичный адрес MinIO (browser-facing).
-PRESIGN_EXPIRES = 900  # 15 минут — короткоживущие ссылки
+logger = logging.getLogger(__name__)
+
+# Presigned-URL для ЗАГРУЗКИ (PUT) — короткоживущие: клиент льёт файл сразу.
+PRESIGN_EXPIRES = 900  # 15 минут
 _PRESIGN_EXPIRES = PRESIGN_EXPIRES
+# Presigned-URL для ЧТЕНИЯ (GET) — длинные: одинаковая подпись в пределах жизни ссылки
+# = стабильный URL = браузер реально кэширует байты (Cache-Control на nginx). Для ~20
+# доверенных участников суточная ссылка приемлема (SigV4 позволяет до 7 дней).
+PRESIGN_GET_EXPIRES = 86_400  # 24 часа
+
+# Превью: даунскейл до квадрата THUMB_MAX_PX по длинной стороне, WebP. Хватает для
+# ленты и лайтбокса-заглушки; оригинал грузится только по клику.
+THUMB_MAX_PX = 1024
+THUMB_PREFIX = "thumbnails/"
 
 
 def _build_client(endpoint: str) -> BaseClient:
@@ -75,7 +89,7 @@ def presigned_put_url(
 def presigned_get_url(
     bucket: str,
     key: str,
-    expires: int = _PRESIGN_EXPIRES,
+    expires: int = PRESIGN_GET_EXPIRES,
     download_name: str | None = None,
 ) -> str:
     """Короткоживущий URL для чтения (GET). MinIO поддерживает range-запросы (перемотка видео).
@@ -126,6 +140,44 @@ def build_storage_key(content_type: str) -> str:
     now = datetime.now(UTC)
     ext = mimetypes.guess_extension(content_type) or ""
     return f"{now:%Y/%m}/{uuid4().hex}{ext}"
+
+
+def build_thumb_key(storage_key: str) -> str:
+    """Ключ превью в том же бакете: `thumbnails/<storage_key>.webp`."""
+    return f"{THUMB_PREFIX}{storage_key}.webp"
+
+
+def generate_image_thumbnail(bucket: str, key: str, mime_type: str) -> str | None:
+    """Best-effort превью картинки: тянем оригинал из MinIO, ужимаем, кладём рядом.
+
+    Возвращает ключ превью или None при любой ошибке — генерация превью НЕ должна
+    ронять подтверждение загрузки (битый файл, не-картинка, чуть иной формат). Тяжёлая
+    (сеть + декодирование), поэтому вызывать через run_in_threadpool. Единственное
+    место, где байты проходят через бэкенд, и то один раз на загрузку, не на просмотр.
+    """
+    try:
+        from PIL import Image, ImageOps  # локальный импорт: Pillow нужен только тут
+
+        client = _server_client()
+        obj = client.get_object(Bucket=bucket, Key=key)
+        raw = obj["Body"].read()
+        with Image.open(BytesIO(raw)) as src:
+            img = ImageOps.exif_transpose(src) or src  # учесть поворот из EXIF
+            img = img.convert("RGBA" if img.mode in ("RGBA", "LA", "P") else "RGB")
+            img.thumbnail((THUMB_MAX_PX, THUMB_MAX_PX))
+            buf = BytesIO()
+            img.save(buf, format="WEBP", quality=80, method=4)
+        thumb_key = build_thumb_key(key)
+        client.put_object(
+            Bucket=bucket,
+            Key=thumb_key,
+            Body=buf.getvalue(),
+            ContentType="image/webp",
+        )
+        return thumb_key
+    except Exception:
+        logger.warning("thumbnail generation failed for %s/%s", bucket, key, exc_info=True)
+        return None
 
 
 def stat_object(bucket: str, key: str) -> int | None:
@@ -213,4 +265,60 @@ async def presign_asset_urls(
     return {
         asset_id: presigned_get_url(bucket, key)
         for asset_id, bucket, key in rows.all()
+    }
+
+
+def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
+    """Вложение с готовыми presigned-URL (оригинал + превью). Подпись локальна, без сети."""
+    # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн.
+    download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
+    url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
+    thumb_url = (
+        presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
+    )
+    return AttachmentOut(
+        asset_id=asset.id,
+        url=url,
+        thumb_url=thumb_url,
+        kind=asset.kind,
+        mime_type=asset.mime_type,
+        size=asset.size,
+        width=asset.width,
+        height=asset.height,
+        duration=asset.duration,
+    )
+
+
+async def resolve_attachments(
+    session: AsyncSession, message_ids: list[int]
+) -> dict[int, list[AttachmentOut]]:
+    """`{message_id: [AttachmentOut, ...]}` батчем — без N+1 по сети и по БД.
+
+    Два запроса на всю ленту: связи message↔asset и сами ассеты. Подпись presigned
+    локальна. Доступ гейтится комнатой на уровне вызывающего эндпоинта (кто читает
+    сообщение — читает и вложения), поэтому per-asset проверка тут не нужна.
+    """
+    if not message_ids:
+        return {}
+    rows = await session.execute(
+        select(MessageAttachment.message_id, MessageAttachment.media_asset_id)
+        .where(MessageAttachment.message_id.in_(message_ids))
+        .order_by(MessageAttachment.media_asset_id)
+    )
+    per_message: dict[int, list[int]] = {}
+    all_ids: set[int] = set()
+    for message_id, asset_id in rows.all():
+        per_message.setdefault(message_id, []).append(asset_id)
+        all_ids.add(asset_id)
+    if not all_ids:
+        return {}
+    assets = (
+        (await session.execute(select(MediaAsset).where(MediaAsset.id.in_(all_ids))))
+        .scalars()
+        .all()
+    )
+    out_by_id = {asset.id: build_attachment_out(asset) for asset in assets}
+    return {
+        message_id: [out_by_id[aid] for aid in asset_ids if aid in out_by_id]
+        for message_id, asset_ids in per_message.items()
     }

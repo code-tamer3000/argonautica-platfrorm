@@ -27,8 +27,10 @@ from app.schemas.media import (
 )
 from app.services.media import (
     PRESIGN_EXPIRES,
+    PRESIGN_GET_EXPIRES,
     assert_media_access,
     build_storage_key,
+    generate_image_thumbnail,
     presigned_get_url,
     presigned_put_url,
     stat_object,
@@ -72,6 +74,30 @@ def _max_bytes_for(kind: str) -> int:
 
 def _intent_key(storage_key: str) -> str:
     return f"media:upload:{storage_key}"
+
+
+async def _consume_client_thumbnail(
+    user_id: int, bucket: str, thumb_storage_key: str
+) -> str | None:
+    """Проверить и «съесть» постер видео, залитый клиентом отдельным объектом.
+
+    Ключ постера обязан иметь живое намерение загрузки в Redis того же пользователя и
+    вида `image` (клиент получал ticket через `/api/media/uploads`, kind=image) — иначе
+    thumb_key можно было бы указать на чужой/произвольный объект. Проверяем факт объекта
+    в MinIO и гасим намерение (постер не станет отдельным media_assets). None — если
+    что-то не сходится: тогда видео просто останется без постера, не роняем подтверждение.
+    """
+    raw = await redis_client.get(_intent_key(thumb_storage_key))
+    if raw is None:
+        return None
+    intent = json.loads(raw)
+    if intent["user_id"] != user_id or intent["kind"] != "image":
+        return None
+    size = await run_in_threadpool(stat_object, bucket, thumb_storage_key)
+    if size is None:
+        return None
+    await redis_client.delete(_intent_key(thumb_storage_key))
+    return thumb_storage_key
 
 
 @router.post("/uploads", response_model=UploadTicket)
@@ -147,6 +173,26 @@ async def confirm_upload(
     session.add(asset)
     await session.flush()
     await session.refresh(asset)
+
+    # Превью, чтобы лента отдавала лёгкий thumbnail, а не оригинал. Best-effort —
+    # неудача превью не должна ронять подтверждение загрузки:
+    #  - картинки: сервер сам тянет оригинал из MinIO и ужимает;
+    #  - видео: постер-кадр снял клиент при загрузке и залил отдельным объектом,
+    #    сервер лишь проверяет намерение и подхватывает его ключ (тянуть видео на
+    #    бэкенд ради одного кадра дорого и против принципа «байты мимо FastAPI»).
+    thumb_key: str | None = None
+    if asset.kind == "image":
+        thumb_key = await run_in_threadpool(
+            generate_image_thumbnail, bucket, body.storage_key, intent["mime_type"]
+        )
+    elif asset.kind == "video" and body.thumb_storage_key:
+        thumb_key = await _consume_client_thumbnail(
+            current_user.id, bucket, body.thumb_storage_key
+        )
+    if thumb_key is not None:
+        asset.thumb_key = thumb_key
+        await session.flush()
+
     await redis_client.delete(_intent_key(body.storage_key))
     return asset
 
@@ -166,11 +212,15 @@ async def get_media_url(
     # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн (рендер в <img>/<video>).
     download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
     url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
+    thumb_url = (
+        presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
+    )
     return MediaUrlOut(
         url=url,
-        expires_in=PRESIGN_EXPIRES,
+        expires_in=PRESIGN_GET_EXPIRES,
         kind=asset.kind,
         duration=asset.duration,
         width=asset.width,
         height=asset.height,
+        thumb_url=thumb_url,
     )
