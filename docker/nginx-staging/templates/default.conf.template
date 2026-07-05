@@ -1,8 +1,8 @@
 # nginx тестового стенда (staging). Отдельный шаблон — прод-конфиг не трогаем.
 # Отличия от прода:
 #   - один backend (без blue-green и include active_backend.conf) — proxy_pass прямо;
-#   - весь стенд закрыт Basic Auth (кроме медиа — там своя SigV4-подпись presigned-URL);
 #   - один server на 443, server_name _ → доступ по IP (домена нет), self-signed TLS.
+# Стенд открыт (без Basic Auth) — это внутренний тестовый превью, не прод.
 # envsubst официального nginx-образа подставляет ${DOMAIN} (nginx-переменные $host и т.п.
 # не трогаются). Наружу маппится 8443:443 (см. docker-compose.staging.yml).
 
@@ -27,11 +27,6 @@ server {
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
 
-    # Basic Auth на весь стенд по умолчанию (SPA + API + WS). Пароли —
-    # docker/nginx-staging/staging.htpasswd (создаётся `htpasswd` при bootstrap).
-    auth_basic           "staging";
-    auth_basic_user_file /etc/nginx/staging.htpasswd;
-
     location /api/ {
         proxy_pass http://backend:8000;
         proxy_set_header Host $host;
@@ -43,10 +38,7 @@ server {
     # MinIO по префиксу бакета (path-style S3): один хост по IP, медиа-поддомена нет.
     # Presigned-URL path-style = https://<host>:8443/<bucket>/<key>; SigV4 подписывает
     # host+path, поэтому Host сохраняем и путь не переписываем — подпись сходится.
-    # auth_basic off: браузерный fetch за медиа не носит Basic-креды; доступ и так
-    # ограничен короткоживущей SigV4-подписью presigned-URL.
     location ~ ^/(chat-media|kb-media)/ {
-        auth_basic off;
         proxy_pass http://minio:9000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

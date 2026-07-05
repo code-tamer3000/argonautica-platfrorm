@@ -9,10 +9,11 @@
 #      сгенерить свои POSTGRES_*/MINIO_*/JWT_SECRET (openssl rand -hex 32). TELEGRAM_BOT_TOKEN
 #      оставить ПУСТЫМ (стенд бота не поднимает).
 #   3. Серт:   DOMAIN=<IP> docker/nginx-staging/make-self-signed.sh
-#   4. Пароль: htpasswd -bc docker/nginx-staging/staging.htpasswd <user> <pass>
-#   5. Открыть 8443/tcp в firewall/security-group хостинга.
-#   6. Первый подъём (дальше — автоматически этим скриптом из CI):
+#   4. Открыть 8443/tcp в firewall/security-group хостинга.
+#   5. Первый подъём (дальше — автоматически этим скриптом из CI):
 #        cd /opt/platform-staging && bash docker/deploy-staging.sh
+# Стенд открыт (без Basic Auth) — внутренний превью. Аккаунтов в свежей БД нет;
+# первого админа завести вручную (см. backend/scripts/create_users.py или прямой insert).
 # Ручные команды к стенду — всегда с `-p platform-staging`, напр.:
 #   docker compose -p platform-staging -f docker/docker-compose.staging.yml --env-file .env logs -f
 # Дальше деплой автоматический — этот скрипт из .github/workflows/deploy-staging.yml.

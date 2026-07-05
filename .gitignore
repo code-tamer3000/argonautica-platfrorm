@@ -29,8 +29,6 @@ dist/
 # TLS-серты (self-signed локально / боевые на сервере) — никогда в git.
 docker/nginx/certs/
 docker/nginx-staging/certs/
-# Basic-Auth пароли тестового стенда — секрет, генерится на сервере при bootstrap.
-docker/nginx-staging/staging.htpasswd
 
 # dev.sh — PID-файлы и логи локального окружения
 .dev/

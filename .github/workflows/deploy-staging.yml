@@ -40,7 +40,6 @@ jobs:
             --exclude='backend/.venv/' \
             --exclude='docker/nginx/certs/' \
             --exclude='docker/nginx-staging/certs/' \
-            --exclude='docker/nginx-staging/staging.htpasswd' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/platform-staging/
 

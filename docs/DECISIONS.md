@@ -99,8 +99,8 @@
   (`docker-compose.staging.yml`): своя docker-сеть, свои контейнеры и свой namespace
   volume'ов. Postgres/Redis/MinIO стенда — новые пустые тома, прод-данные не пересекаются.
 - Наружу — только nginx на `8443` (прод держит 80/443). Доступ по `https://<IP>:8443`,
-  self-signed TLS, весь стенд за **Basic Auth** (медиа-локейшены — без auth, защищены
-  SigV4-подписью presigned-URL). Свой `.env` с отдельным `JWT_SECRET`.
+  self-signed TLS. Стенд открыт (без Basic Auth) — внутренний превью. Свой `.env` с
+  отдельным `JWT_SECRET`.
 - Стенд **без blue-green** (не нужен zero-downtime) и **без сервиса `bot`**: второй
   long-polling с прод-токеном сломал бы прод-бота.
 

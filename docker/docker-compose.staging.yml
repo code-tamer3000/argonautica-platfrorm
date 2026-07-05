@@ -96,7 +96,6 @@ services:
     volumes:
       - ./nginx-staging/templates:/etc/nginx/templates:ro
       - ./nginx-staging/certs:/etc/nginx/certs:ro
-      - ./nginx-staging/staging.htpasswd:/etc/nginx/staging.htpasswd:ro
     restart: unless-stopped
 
 volumes:
