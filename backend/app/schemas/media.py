@@ -58,3 +58,24 @@ class MediaUrlOut(BaseModel):
     # aspect-ratio ещё до загрузки медиа (без чёрного прямоугольника и скачка рамок).
     width: int | None = None
     height: int | None = None
+    # Presigned-GET уменьшенного превью (картинки). None — превью нет, грузим оригинал.
+    thumb_url: str | None = None
+
+
+class AttachmentOut(BaseModel):
+    """Вложение с уже готовыми presigned-URL — встраивается прямо в payload сообщения.
+
+    Убирает per-attachment round-trip `GET /api/media/{id}`: клиент, получив ленту,
+    сразу знает адреса медиа. Доступ уже проверен на уровне комнаты (кто видит
+    сообщение — видит его вложения), поэтому отдельная проверка на ассет не нужна.
+    """
+
+    asset_id: int
+    url: str  # presigned-GET оригинала (лайтбокс, видео, скачивание файла)
+    thumb_url: str | None = None  # presigned-GET превью (лента); None — грузить оригинал
+    kind: MediaKind
+    mime_type: str
+    size: int
+    width: int | None = None
+    height: int | None = None
+    duration: int | None = None

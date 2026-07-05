@@ -15,6 +15,7 @@ dependencies = [
     "argon2-cffi",
     "python-multipart",
     "boto3",            # S3-клиент для MinIO (и будущего managed-S3)
+    "pillow",           # серверные превью изображений (thumbnail при подтверждении загрузки)
     "httpx[socks]",     # HTTP-клиент: Telegram Bot API (scripts/telegram_bot.py); socks — для прокси
 ]
 

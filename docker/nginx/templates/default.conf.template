@@ -40,6 +40,16 @@ server {
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
 
+    # Сжатие проксируемых текстовых ответов (SPA-бандл, JSON API). Медиа не жмём —
+    # картинки/видео уже сжаты (их типов нет в gzip_types).
+    gzip on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types application/json application/javascript text/css text/plain
+               application/xml image/svg+xml application/manifest+json;
+
     location /api/ {
         proxy_pass http://backend;
         proxy_set_header Host $host;
@@ -59,6 +69,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Объекты неизменяемы (ключ = uuid), а presigned-ссылка живёт сутки — можно
+        # кэшировать в браузере и не перекачивать при перерисовке/скролле назад.
+        add_header Cache-Control "private, max-age=86400, immutable" always;
         # 0 = без лимита на уровне nginx; реальный потолок держит бэкенд
         # (media_max_upload_bytes) до выдачи presigned-PUT. Тело не буферизуем —
         # стримим прямо в MinIO, диск nginx не забивается.
@@ -107,6 +120,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Объекты неизменяемы (ключ = uuid), presigned-ссылка живёт сутки — кэшируем
+        # в браузере, чтобы медиа не перекачивалось при каждой перерисовке ленты.
+        add_header Cache-Control "private, max-age=86400, immutable" always;
         # Прямые загрузки (видео) — не буферизуем тело. Лимит держит бэкенд до
         # выдачи presigned-PUT, поэтому здесь nginx-потолок снят (0 = без лимита).
         client_max_body_size 0;
