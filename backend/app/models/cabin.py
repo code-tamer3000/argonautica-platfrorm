@@ -10,6 +10,7 @@
 Поэтому в БД это доменные данные (Postgres), а не эфемерка (п.5 CLAUDE.md).
 """
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -48,7 +49,7 @@ class CabinEntry(Base):
         BigInteger, ForeignKey("users.id"), nullable=False
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

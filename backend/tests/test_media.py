@@ -140,13 +140,14 @@ async def test_audio_upload_validation(
     )
     assert mismatch.status_code == 400
 
-    # У аудио свой (низкий) потолок: 100 МБ проходит для видео, но не для голосового.
+    # Крупное аудио проходит: аудиоматериалы (лекции/записи) легитимно большие,
+    # аудиолимит поднят достаточно высоко, чтобы они не упирались в потолок.
     big_audio = await client.post(
         "/api/media/uploads",
         headers=headers,
         json={"content_type": "audio/webm", "size": 100 * 1024 * 1024, "kind": "audio"},
     )
-    assert big_audio.status_code == 400
+    assert big_audio.status_code == 200, big_audio.text
 
 
 async def test_media_url_reports_kind_and_duration(

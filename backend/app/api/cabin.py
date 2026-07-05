@@ -114,7 +114,7 @@ async def admin_list_entries(
     return [
         AdminCabinEntryOut(
             id=e.id,
-            kind=e.kind,  # type: ignore[arg-type]
+            kind=e.kind,
             data=e.data,
             created_at=e.created_at,
             updated_at=e.updated_at,

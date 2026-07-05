@@ -5,7 +5,7 @@
 в БД кладём как dict (модель хранит JSONB).
 """
 from datetime import datetime
-from typing import Annotated, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -58,7 +58,7 @@ class DecatastrophizeData(BaseModel):
 
 
 CabinData = Annotated[
-    Union[DiaryData, TriggerData, DecatastrophizeData],
+    DiaryData | TriggerData | DecatastrophizeData,
     Field(discriminator="kind"),
 ]
 
@@ -72,7 +72,7 @@ class CabinEntryCreate(BaseModel):
 class CabinEntryOut(BaseModel):
     id: int
     kind: CabinKind
-    data: dict
+    data: dict[str, Any]
     created_at: datetime
     updated_at: datetime
 
