@@ -287,6 +287,57 @@ export interface FaqItemOut {
   updated_at: string
 }
 
+// --- Каюта: личная психологическая проработка ---
+export type CabinKind = 'diary' | 'decatastrophize' | 'trigger'
+
+// Поля формы каждого подраздела (лежат в data записи). Все текстовые —
+// необязательные (можно заполнить частично), strength ограничен 0..10.
+export interface DiaryData {
+  kind: 'diary'
+  date: string
+  trigger: string
+  thoughts: string
+  emotion: string
+  strength: number
+  body: string
+  reaction: string
+  recovery: string
+}
+export interface TriggerData {
+  kind: 'trigger'
+  age: string
+  trigger: string
+  thoughts: string
+  emotion: string
+  strength: number
+  body: string
+  reaction: string
+  pattern: string
+}
+export interface DecatastrophizeData {
+  kind: 'decatastrophize'
+  topic: string
+  fear: string
+  probability: string
+  worst_best: string
+  resources: string
+  new_idea: string
+}
+export type CabinData = DiaryData | TriggerData | DecatastrophizeData
+
+export interface CabinEntryOut {
+  id: number
+  kind: CabinKind
+  data: CabinData
+  created_at: string
+  updated_at: string
+}
+export interface AdminCabinEntryOut extends CabinEntryOut {
+  user_id: number
+  display_name: string
+  username: string
+}
+
 // --- WebSocket события ---
 export type WsEvent =
   | { type: 'message.new'; message: MessageOut }

@@ -1,13 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
-import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconSupport, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconDiary, IconNews, IconSettings, IconSupport, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
 import { useAuth } from '../auth/AuthContext'
 import { ChatLayout } from '../chat/ChatLayout'
 import { CalendarView } from '../calendar/CalendarView'
+import { CabinScreen } from '../cabin/CabinScreen'
 import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
 import { ProfileScreen } from '../profile/ProfileScreen'
@@ -119,6 +120,10 @@ export function AppShell() {
             <span className={styles.navIcon}><IconCalendar /></span>
             <span className={styles.navLabel}>Календарь</span>
           </NavLink>
+          <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconDiary /></span>
+            <span className={styles.navLabel}>Каюта</span>
+          </NavLink>
           <NavLink to="/profile" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconUser /></span>
             <span className={styles.navLabel}>Профиль</span>
@@ -141,6 +146,7 @@ export function AppShell() {
             <Route path="/kb" element={<KbList />} />
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/calendar" element={<CalendarView />} />
+            <Route path="/cabin" element={<CabinScreen />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
