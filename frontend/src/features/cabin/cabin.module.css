@@ -51,6 +51,46 @@
 /* --- Список плашек (компактные, раскрывающиеся) --- */
 .list { display: flex; flex-direction: column; gap: var(--space-3); }
 
+/* --- Группа записей за одну дату (дневник) --- */
+.dateGroup {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  overflow: hidden;
+}
+.dateHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.dateLabel {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-t4);
+  font-size: 0.92rem;
+  color: var(--text-primary);
+}
+.dateCount {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-ghost);
+  background: var(--bg-surface);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+}
+.dateItems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
+}
+
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--divider);

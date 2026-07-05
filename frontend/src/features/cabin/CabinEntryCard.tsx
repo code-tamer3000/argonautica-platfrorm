@@ -4,6 +4,83 @@ import type { CabinEntryOut, CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS } from './cabinFields'
 import styles from './cabin.module.css'
 
+/** Список записей подраздела. Если у подраздела задан `groupBy` (дневник — по
+ * дате), записи собираются в раскрывающиеся группы; иначе — плоский список.
+ * `renderEntry` возвращает карточку/форму на запись (у личного экрана — с
+ * действиями и inline-редактированием, у админки — read-only). */
+export function CabinEntryList({
+  kind,
+  entries,
+  renderEntry,
+}: {
+  kind: CabinKind
+  entries: CabinEntryOut[]
+  renderEntry: (entry: CabinEntryOut) => ReactNode
+}) {
+  const section = CABIN_SECTIONS[kind]
+  const groupBy = section.groupBy
+
+  if (!groupBy) {
+    return <div className={styles.list}>{entries.map(renderEntry)}</div>
+  }
+
+  // Группируем по значению поля, сохраняя порядок первого появления (записи уже
+  // отсортированы — сначала новые).
+  const groups: { label: string; items: CabinEntryOut[] }[] = []
+  const byLabel = new Map<string, CabinEntryOut[]>()
+  for (const e of entries) {
+    const raw = (e.data as unknown as Record<string, unknown>)[groupBy]
+    const label = String(raw ?? '').trim() || 'Без даты'
+    let items = byLabel.get(label)
+    if (!items) {
+      items = []
+      byLabel.set(label, items)
+      groups.push({ label, items })
+    }
+    items.push(e)
+  }
+
+  return (
+    <div className={styles.list}>
+      {groups.map((g) => (
+        <DateGroup key={g.label} label={g.label} count={g.items.length}>
+          {g.items.map(renderEntry)}
+        </DateGroup>
+      ))}
+    </div>
+  )
+}
+
+/** Раскрывающаяся группа записей за одну дату. */
+function DateGroup({
+  label,
+  count,
+  children,
+}: {
+  label: string
+  count: number
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className={styles.dateGroup}>
+      <button
+        type="button"
+        className={styles.dateHead}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span className={styles.chevron} data-open={open}>
+          <IconChevronRight size={16} />
+        </span>
+        <span className={styles.dateLabel}>{label}</span>
+        <span className={styles.dateCount}>{count}</span>
+      </button>
+      {open && <div className={styles.dateItems}>{children}</div>}
+    </div>
+  )
+}
+
 export function StrengthBadge({ value }: { value: number }) {
   return (
     <span className={styles.strengthBadge}>
@@ -39,9 +116,9 @@ export function CabinEntryCard({
   // Заголовок плашки — первое поле (дата/возраст/тема); если пусто — «Без названия».
   const headline = String(data[section.titleField] || '').trim() || 'Без названия'
 
-  // Заполненные поля (кроме заголовочного) как пары «лейбл → значение».
+  // Заполненные поля (кроме заголовочного и поля группировки) как пары «лейбл → значение».
   const rows = section.fields
-    .filter((f) => f.name !== section.titleField)
+    .filter((f) => f.name !== section.titleField && f.name !== section.groupBy)
     .map((f) => ({ f, value: data[f.name] }))
     .filter(({ f, value }) =>
       f.kind === 'strength' ? Number(value) > 0 : String(value ?? '').trim() !== '',

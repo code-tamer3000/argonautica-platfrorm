@@ -11,7 +11,7 @@ import { IconPlus, IconEdit, IconTrash, IconClose } from '../../components/icons
 import { toast } from '../../stores/toast'
 import type { CabinData, CabinEntryOut, CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS, emptyData, type FieldSpec } from './cabinFields'
-import { CabinEntryCard } from './CabinEntryCard'
+import { CabinEntryCard, CabinEntryList } from './CabinEntryCard'
 import styles from './cabin.module.css'
 
 const KINDS: CabinKind[] = ['diary', 'decatastrophize', 'trigger']
@@ -69,8 +69,10 @@ export function CabinScreen() {
         <p className={styles.empty}>Пока нет записей. Добавьте первую — заполните форму выше.</p>
       )}
 
-      <div className={styles.list}>
-        {entries?.map((entry) =>
+      <CabinEntryList
+        kind={kind}
+        entries={entries ?? []}
+        renderEntry={(entry) =>
           editing === entry.id ? (
             <EntryForm
               key={entry.id}
@@ -85,9 +87,9 @@ export function CabinScreen() {
               entry={entry}
               actions={<EntryActions kind={kind} entry={entry} onEdit={() => setEditing(entry.id)} />}
             />
-          ),
-        )}
-      </div>
+          )
+        }
+      />
     </div>
   )
 }

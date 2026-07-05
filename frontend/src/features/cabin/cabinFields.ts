@@ -20,20 +20,22 @@ export function todayStr(): string {
 
 /** Заголовки, подзаголовки и наборы полей для каждого подраздела «Каюты».
  *
- * Порядок полей = порядок столбцов в исходных таблицах автора. Первое поле
- * (date/age/topic) идёт в заголовок плашки. */
+ * `titleField` идёт в заголовок карточки. `groupBy` (если задан) — поле, по
+ * которому записи группируются в раскрывающиеся секции (у дневника — дата: за
+ * одну дату может быть несколько записей, поэтому дата не заголовок, а группа). */
 export const CABIN_SECTIONS: Record<
   CabinKind,
-  { title: string; subtitle: string; fields: FieldSpec[]; titleField: string }
+  { title: string; subtitle: string; fields: FieldSpec[]; titleField: string; groupBy?: string }
 > = {
   diary: {
     title: 'Дневник эмоций',
     subtitle:
       'Фиксируйте триггерное событие и раскладывайте реакцию на составляющие: ' +
       'мысли, эмоции, телесные ощущения. Пишите коротко и по делу.',
-    titleField: 'date',
+    titleField: 'trigger',
+    groupBy: 'date',
     fields: [
-      { name: 'date', label: 'Дата', kind: 'short', hint: 'по умолчанию — сегодня', today: true },
+      { name: 'date', label: 'Дата', kind: 'short', today: true },
       { name: 'trigger', label: 'Триггерное событие', hint: 'что произошло?', kind: 'long' },
       { name: 'thoughts', label: 'Автоматические мысли — установки', hint: 'что я думаю?', kind: 'long' },
       { name: 'emotion', label: 'Эмоция — жертва/палач', hint: 'что я чувствую?', kind: 'long' },

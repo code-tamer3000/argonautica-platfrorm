@@ -4,7 +4,7 @@ import { Avatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Spinner'
 import type { CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS } from '../cabin/cabinFields'
-import { CabinEntryCard } from '../cabin/CabinEntryCard'
+import { CabinEntryCard, CabinEntryList } from '../cabin/CabinEntryCard'
 import cabin from '../cabin/cabin.module.css'
 import styles from './admin.module.css'
 
@@ -106,8 +106,10 @@ function UserEntries({ userId }: { userId: number }) {
         <p className={cabin.empty}>В этом разделе у участника пока нет записей.</p>
       )}
 
-      <div className={cabin.list}>
-        {entries?.map((entry) => (
+      <CabinEntryList
+        kind={kind}
+        entries={entries ?? []}
+        renderEntry={(entry) => (
           <CabinEntryCard
             key={entry.id}
             kind={kind}
@@ -119,8 +121,8 @@ function UserEntries({ userId }: { userId: number }) {
               </span>
             }
           />
-        ))}
-      </div>
+        )}
+      />
     </>
   )
 }
