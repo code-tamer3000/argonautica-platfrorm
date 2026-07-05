@@ -9,7 +9,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin
@@ -18,6 +18,7 @@ from app.models.cabin import CabinEntry
 from app.models.user import User
 from app.schemas.cabin import (
     AdminCabinEntryOut,
+    AdminCabinUser,
     CabinEntryCreate,
     CabinEntryOut,
     CabinKind,
@@ -92,6 +93,31 @@ async def delete_entry(
     сообщений из п.6): восстанавливать личную психо-заметку смысла нет."""
     entry = await _own_entry(session, current_user.id, kind, entry_id)
     await session.delete(entry)
+
+
+@router.get("/admin/users", response_model=list[AdminCabinUser])
+async def admin_list_users(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    _: Annotated[User, Depends(require_admin)],
+) -> list[AdminCabinUser]:
+    """Участники, у которых есть хоть одна запись в Каюте — для выбора в админке.
+    Сначала те, кто вносил записи недавно (по последней записи)."""
+    stmt = (
+        select(
+            User.id,
+            User.display_name,
+            User.username,
+            func.count(CabinEntry.id).label("total"),
+        )
+        .join(CabinEntry, CabinEntry.user_id == User.id)
+        .group_by(User.id, User.display_name, User.username)
+        .order_by(func.max(CabinEntry.created_at).desc())
+    )
+    rows = await session.execute(stmt)
+    return [
+        AdminCabinUser(user_id=uid, display_name=dn, username=un, total=total)
+        for uid, dn, un, total in rows.all()
+    ]
 
 
 @router.get("/admin/{kind}", response_model=list[AdminCabinEntryOut])

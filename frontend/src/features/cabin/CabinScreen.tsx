@@ -11,6 +11,7 @@ import { IconPlus, IconEdit, IconTrash, IconClose } from '../../components/icons
 import { toast } from '../../stores/toast'
 import type { CabinData, CabinEntryOut, CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS, emptyData, type FieldSpec } from './cabinFields'
+import { CabinEntryCard } from './CabinEntryCard'
 import styles from './cabin.module.css'
 
 const KINDS: CabinKind[] = ['diary', 'decatastrophize', 'trigger']
@@ -78,11 +79,11 @@ export function CabinScreen() {
               onDone={() => setEditing(null)}
             />
           ) : (
-            <EntryCard
+            <CabinEntryCard
               key={entry.id}
               kind={kind}
               entry={entry}
-              onEdit={() => setEditing(entry.id)}
+              actions={<EntryActions kind={kind} entry={entry} onEdit={() => setEditing(entry.id)} />}
             />
           ),
         )}
@@ -91,7 +92,7 @@ export function CabinScreen() {
   )
 }
 
-function EntryCard({
+function EntryActions({
   kind,
   entry,
   onEdit,
@@ -100,20 +101,7 @@ function EntryCard({
   entry: CabinEntryOut
   onEdit: () => void
 }) {
-  const section = CABIN_SECTIONS[kind]
   const del = useDeleteCabinEntry(kind)
-  const data = entry.data as unknown as Record<string, unknown>
-
-  // Заголовок плашки — первое поле (дата/возраст/тема); если пусто — «Без названия».
-  const headline = String(data[section.titleField] || '').trim() || 'Без названия'
-
-  // Показываем заполненные поля (кроме заголовочного) как пары «лейбл → значение».
-  const rows = section.fields
-    .filter((f) => f.name !== section.titleField)
-    .map((f) => ({ f, value: data[f.name] }))
-    .filter(({ f, value }) =>
-      f.kind === 'strength' ? Number(value) > 0 : String(value ?? '').trim() !== '',
-    )
 
   function handleDelete() {
     if (!confirm('Удалить эту запись?')) return
@@ -123,45 +111,19 @@ function EntryCard({
   }
 
   return (
-    <article className={`${styles.card} rise`}>
-      <header className={styles.cardHead}>
-        <h3 className={styles.cardTitle}>{headline}</h3>
-        <div className={styles.cardActions}>
-          <button className={styles.iconBtn} onClick={onEdit} aria-label="Редактировать">
-            <IconEdit size={16} />
-          </button>
-          <button
-            className={styles.iconBtn}
-            onClick={handleDelete}
-            disabled={del.isPending}
-            aria-label="Удалить"
-          >
-            <IconTrash size={16} />
-          </button>
-        </div>
-      </header>
-      <dl className={styles.cardBody}>
-        {rows.map(({ f, value }) => (
-          <div className={styles.cardRow} key={f.name}>
-            <dt className={styles.cardLabel}>{f.label}</dt>
-            <dd className={styles.cardValue}>
-              {f.kind === 'strength' ? <StrengthBadge value={Number(value)} /> : String(value)}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </article>
-  )
-}
-
-function StrengthBadge({ value }: { value: number }) {
-  return (
-    <span className={styles.strengthBadge}>
-      <span className={styles.strengthBar}>
-        <span className={styles.strengthFill} style={{ width: `${value * 10}%` }} />
-      </span>
-      {value}/10
-    </span>
+    <>
+      <button className={styles.iconBtn} onClick={onEdit} aria-label="Редактировать">
+        <IconEdit size={16} />
+      </button>
+      <button
+        className={styles.iconBtn}
+        onClick={handleDelete}
+        disabled={del.isPending}
+        aria-label="Удалить"
+      >
+        <IconTrash size={16} />
+      </button>
+    </>
   )
 }
 

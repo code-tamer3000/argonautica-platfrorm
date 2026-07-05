@@ -7,6 +7,15 @@ export interface FieldSpec {
   hint?: string
   /** short — однострочный input; long — textarea; strength — ползунок 0..10. */
   kind: 'short' | 'long' | 'strength'
+  /** Подставлять сегодняшнюю дату в новую запись (для поля «Дата»). */
+  today?: boolean
+}
+
+/** Сегодняшняя дата в формате ДД.ММ.ГГГГ (как в таблицах автора). */
+export function todayStr(): string {
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`
 }
 
 /** Заголовки, подзаголовки и наборы полей для каждого подраздела «Каюты».
@@ -24,7 +33,7 @@ export const CABIN_SECTIONS: Record<
       'мысли, эмоции, телесные ощущения. Пишите коротко и по делу.',
     titleField: 'date',
     fields: [
-      { name: 'date', label: 'Дата', kind: 'short', hint: 'например 27.09' },
+      { name: 'date', label: 'Дата', kind: 'short', hint: 'по умолчанию — сегодня', today: true },
       { name: 'trigger', label: 'Триггерное событие', hint: 'что произошло?', kind: 'long' },
       { name: 'thoughts', label: 'Автоматические мысли — установки', hint: 'что я думаю?', kind: 'long' },
       { name: 'emotion', label: 'Эмоция — жертва/палач', hint: 'что я чувствую?', kind: 'long' },
@@ -93,10 +102,14 @@ export const CABIN_SECTIONS: Record<
   },
 }
 
-/** Пустая заготовка data для нового элемента подраздела. */
+/** Пустая заготовка data для нового элемента подраздела.
+ * Поля с `today` (дата) сразу заполняются сегодняшней датой. */
 export function emptyData(kind: CabinKind): CabinData {
   const base = Object.fromEntries(
-    CABIN_SECTIONS[kind].fields.map((f) => [f.name, f.kind === 'strength' ? 0 : '']),
+    CABIN_SECTIONS[kind].fields.map((f) => [
+      f.name,
+      f.kind === 'strength' ? 0 : f.today ? todayStr() : '',
+    ]),
   )
   return { ...base, kind } as CabinData
 }

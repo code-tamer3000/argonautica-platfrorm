@@ -48,29 +48,62 @@
 
 .addBtn { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--space-2); }
 
-/* --- Список плашек --- */
-.list { display: flex; flex-direction: column; gap: var(--space-4); }
+/* --- Список плашек (компактные, раскрывающиеся) --- */
+.list { display: flex; flex-direction: column; gap: var(--space-3); }
 
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--divider);
   border-radius: var(--radius-card);
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-4);
 }
 .cardHead {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-  padding-bottom: var(--space-3);
-  border-bottom: 1px solid var(--divider);
+  gap: var(--space-2);
 }
-.cardTitle {
+/* Заголовок-кнопка: клик по нему разворачивает/сворачивает плашку. */
+.cardToggle {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--text-ghost);
+  transition: transform 150ms ease;
+}
+.chevron[data-open='true'] { transform: rotate(90deg); }
+.cardTitle {
+  min-width: 0;
+  margin: 0;
   font-family: var(--font-t4);
-  font-size: 1.05rem;
+  font-size: 0.98rem;
   color: var(--text-primary);
-  word-break: break-word;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cardMeta {
+  margin: 2px 0 0 24px;
+  font-size: 0.72rem;
+  color: var(--text-ghost);
+}
+.cardPreview {
+  margin: var(--space-1) 0 0 24px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .cardActions { display: flex; gap: var(--space-1); flex-shrink: 0; }
 .iconBtn {
@@ -89,21 +122,28 @@
 .iconBtn:hover { background: var(--bg); color: var(--accent); }
 .iconBtn:disabled { opacity: 0.5; cursor: default; }
 
-.cardBody { display: flex; flex-direction: column; gap: var(--space-3); margin: 0; }
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--divider);
+}
 .cardRow { display: flex; flex-direction: column; gap: 2px; }
 .cardLabel {
   font-family: var(--font-t4);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: var(--ls-label-sm);
   color: var(--text-secondary);
 }
 .cardValue {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   color: var(--text-primary);
   white-space: pre-wrap;
-  line-height: 1.5;
+  line-height: 1.45;
   word-break: break-word;
 }
 
@@ -128,6 +168,34 @@
   height: 100%;
   background: var(--accent);
   border-radius: var(--radius-pill);
+}
+
+/* --- Выбор участника (админский просмотр) --- */
+.userGrid { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.userChip, .userChipActive {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.userChipActive {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text-primary);
+}
+.userChipName { font-family: var(--font-t4); }
+.userChipCount {
+  font-size: 0.72rem;
+  color: var(--text-ghost);
+  background: var(--bg);
+  border-radius: var(--radius-pill);
+  padding: 1px 7px;
 }
 
 /* --- Форма --- */

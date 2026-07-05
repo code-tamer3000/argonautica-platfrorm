@@ -113,3 +113,36 @@ async def test_admin_view_requires_admin(
     hp = await _headers(client, participant)
     resp = await client.get("/api/cabin/admin/diary", headers=hp)
     assert resp.status_code == 403
+
+
+async def test_admin_users_lists_authors_with_counts(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    participant = await make_user()
+    admin = await make_user(role="admin")
+    hp = await _headers(client, participant)
+    hadm = await _headers(client, admin)
+
+    # Две записи в разных подразделах — считаются в общий total участника.
+    await client.post("/api/cabin/diary", headers=hp, json=_diary())
+    await client.post(
+        "/api/cabin/trigger",
+        headers=hp,
+        json={"data": {"kind": "trigger", "age": "5", "strength": 3}},
+    )
+
+    resp = await client.get("/api/cabin/admin/users", headers=hadm)
+    assert resp.status_code == 200
+    mine = [u for u in resp.json() if u["user_id"] == participant.id]
+    assert len(mine) == 1
+    assert mine[0]["total"] == 2
+    assert mine[0]["display_name"]
+
+
+async def test_admin_users_requires_admin(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    participant = await make_user()
+    hp = await _headers(client, participant)
+    resp = await client.get("/api/cabin/admin/users", headers=hp)
+    assert resp.status_code == 403

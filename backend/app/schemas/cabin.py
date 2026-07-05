@@ -83,3 +83,12 @@ class AdminCabinEntryOut(CabinEntryOut):
     user_id: int
     display_name: str
     username: str
+
+
+class AdminCabinUser(BaseModel):
+    """Участник в админском списке Каюты: автор + сколько у него записей всего."""
+
+    user_id: int
+    display_name: str
+    username: str
+    total: int

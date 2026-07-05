@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis.asyncio import Redis
 from sqlalchemy import delete, exists, func, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +10,6 @@ from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
 from app.api.dynamics import credit_day, get_all_dynamics, uncredit_day
-from app.core.redis import get_redis
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
@@ -28,7 +26,6 @@ from app.schemas.feedback import (
     FeedbackResolveRequest,
 )
 from app.schemas.journal import AdminCreditRequest, AdminDynamicsOut
-from app.schemas.metrics import ServerMetricsOut
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -36,7 +33,6 @@ from app.schemas.user import (
     AdminUserOut,
     UserOut,
 )
-from app.services.system_metrics import collect
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
@@ -357,16 +353,3 @@ async def resolve_feedback(
         )
     fb.resolved_at = datetime.now(UTC) if body.resolved else None
     await session.flush()
-
-
-@router.get("/metrics", response_model=ServerMetricsOut)
-async def server_metrics(
-    redis: Annotated[Redis, Depends(get_redis)],
-) -> dict[str, Any]:
-    """Мгновенный снимок нагрузки сервера для реалтайм-мониторинга.
-
-    Клиент опрашивает раз в пару секунд; скорости (CPU %, сеть) — дельта к прошлому
-    снимку, чей сырой counter лежит в Redis. Стоимость запроса — чтение нескольких
-    файлов /proc + один GET/SET в Redis, нагрузку почти не поднимает.
-    """
-    return await collect(redis)

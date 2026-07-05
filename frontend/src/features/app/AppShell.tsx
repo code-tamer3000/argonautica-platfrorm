@@ -15,13 +15,13 @@ import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { AdminDynamics } from '../admin/AdminDynamics'
-import { AdminMetrics } from '../admin/AdminMetrics'
 import { AdminKb } from '../admin/AdminKb'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
 import { AdminFeedback } from '../admin/AdminFeedback'
 import { AdminFaq } from '../admin/AdminFaq'
+import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
 import { useNavBadges } from './useNavBadges'
 import styles from './appshell.module.css'
@@ -151,7 +151,7 @@ export function AppShell() {
             <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route path="dynamics" element={<AdminDynamics />} />
-              <Route path="server" element={<AdminMetrics />} />
+              <Route path="cabin" element={<AdminCabin />} />
               <Route path="kb" element={<AdminKb />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />

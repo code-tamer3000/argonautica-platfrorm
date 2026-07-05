@@ -1,18 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { AdminUserOut, ServerMetricsOut, UserOut } from '../lib/types'
+import type { AdminUserOut, UserOut } from '../lib/types'
 import { usersKey } from './users'
-
-/** Реалтайм-метрики сервера: опрос раз в 2 с (скорости считаются как дельта на бэке). */
-export function useServerMetrics() {
-  return useQuery({
-    queryKey: ['admin', 'metrics'],
-    queryFn: () => http.get<ServerMetricsOut>('/api/admin/metrics'),
-    refetchInterval: 2000,
-    refetchIntervalInBackground: false,
-    gcTime: 0,
-  })
-}
 
 export const adminUsersKey = ['admin', 'users'] as const
 

@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { CabinData, CabinEntryOut, CabinKind } from '../lib/types'
+import type {
+  AdminCabinEntryOut,
+  AdminCabinUser,
+  CabinData,
+  CabinEntryOut,
+  CabinKind,
+} from '../lib/types'
 
 export const cabinKey = (kind: CabinKind) => ['cabin', kind] as const
 
@@ -38,5 +44,25 @@ export function useDeleteCabinEntry(kind: CabinKind) {
   return useMutation({
     mutationFn: (id: number) => http.del<null>(`/api/cabin/${kind}/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: cabinKey(kind) }),
+  })
+}
+
+// ─── Админский просмотр (только для роли admin) ───────────────────────────────
+
+/** Участники, у которых есть записи в Каюте (для выбора в админке). */
+export function useAdminCabinUsers() {
+  return useQuery({
+    queryKey: ['cabin', 'admin', 'users'] as const,
+    queryFn: () => http.get<AdminCabinUser[]>('/api/cabin/admin/users'),
+  })
+}
+
+/** Записи участника в подразделе (админский просмотр, только чтение). */
+export function useAdminCabinEntries(kind: CabinKind, userId: number | null) {
+  return useQuery({
+    queryKey: ['cabin', 'admin', kind, userId] as const,
+    enabled: userId != null,
+    queryFn: () =>
+      http.get<AdminCabinEntryOut[]>(`/api/cabin/admin/${kind}?user_id=${userId}`),
   })
 }

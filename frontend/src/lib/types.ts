@@ -116,18 +116,6 @@ export interface MediaUrlOut {
   height: number | null
 }
 
-export interface ServerMetricsOut {
-  ts: number
-  uptime_seconds: number
-  cpu_percent: number | null
-  load_avg: [number, number, number] | null
-  mem: { total: number; used: number } | null
-  net: { tx_bytes_sec: number; rx_bytes_sec: number }
-  ws_connections: number
-  redis: { connected_clients: number | null; used_memory: number | null }
-  db_pool: { size: number | null; checked_out: number | null }
-}
-
 export interface KbItemOut {
   id: number
   category_id: number | null
@@ -336,6 +324,12 @@ export interface AdminCabinEntryOut extends CabinEntryOut {
   user_id: number
   display_name: string
   username: string
+}
+export interface AdminCabinUser {
+  user_id: number
+  display_name: string
+  username: string
+  total: number
 }
 
 // --- WebSocket события ---

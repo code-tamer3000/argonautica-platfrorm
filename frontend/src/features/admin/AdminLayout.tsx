@@ -12,8 +12,8 @@ export function AdminLayout() {
         <NavLink to="/admin/dynamics" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Динамика
         </NavLink>
-        <NavLink to="/admin/server" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
-          Сервер
+        <NavLink to="/admin/cabin" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Каюта
         </NavLink>
         <NavLink to="/admin/kb" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           База знаний
