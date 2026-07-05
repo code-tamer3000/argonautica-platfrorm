@@ -369,3 +369,132 @@ async def test_image_thumbnail_and_attachment_in_feed(
     assert att["kind"] == "image"
     assert att["url"] and att["thumb_url"]
     assert att["width"] == 1200 and att["height"] == 800
+
+
+async def test_video_client_poster_becomes_thumb(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    """Видео: клиент отдельным объектом заливает постер-кадр и передаёт его ключ в
+    confirm как thumb_storage_key — сервер подхватывает его как thumb_url (видеофайл
+    на бэкенд не тянется). Постер своего media_assets не получает.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+
+    # 1) Заливаем «видео» (байты произвольные — сервер их не декодирует).
+    video_bytes = b"\x00\x01\x02\x03" * 64
+    vticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            json={"content_type": "video/mp4", "size": len(video_bytes), "kind": "video"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            vticket["upload_url"],
+            content=video_bytes,
+            headers={"Content-Type": "video/mp4"},
+        )
+        assert put.status_code == 200, put.text
+
+    # 2) Заливаем постер (как это делает клиент) — БЕЗ подтверждения /assets.
+    buf = BytesIO()
+    Image.new("RGB", (640, 360), (30, 30, 30)).save(buf, format="WEBP")
+    poster = buf.getvalue()
+    pticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            json={"content_type": "image/webp", "size": len(poster), "kind": "image"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            pticket["upload_url"],
+            content=poster,
+            headers={"Content-Type": "image/webp"},
+        )
+        assert put.status_code == 200, put.text
+
+    # 3) Подтверждаем видео, передавая ключ постера.
+    asset = (
+        await client.post(
+            "/api/media/assets",
+            headers=headers,
+            json={
+                "storage_key": vticket["storage_key"],
+                "width": 640,
+                "height": 360,
+                "thumb_storage_key": pticket["storage_key"],
+            },
+        )
+    ).json()
+
+    url_out = (await client.get(f"/api/media/{asset['id']}", headers=headers)).json()
+    assert url_out["kind"] == "video"
+    assert url_out["thumb_url"] is not None
+    async with httpx.AsyncClient() as real:
+        thumb = await real.get(url_out["thumb_url"])
+        assert thumb.status_code == 200
+
+
+async def test_video_poster_key_from_other_user_ignored(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    """thumb_storage_key нельзя указать на чужой объект: намерение загрузки постера
+    принадлежит другому пользователю → сервер его не подхватывает (thumb_url = None).
+    """
+    attacker = await make_user()
+    victim = await make_user()
+    a_headers = await _headers(client, attacker)
+    v_headers = await _headers(client, victim)
+
+    # Жертва заливает картинку (создаёт намерение под своим user_id).
+    from io import BytesIO
+
+    from PIL import Image
+
+    buf = BytesIO()
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(buf, format="WEBP")
+    poster = buf.getvalue()
+    vp = (
+        await client.post(
+            "/api/media/uploads",
+            headers=v_headers,
+            json={"content_type": "image/webp", "size": len(poster), "kind": "image"},
+        )
+    ).json()
+
+    # Атакующий заливает своё видео и пытается присвоить ему чужой ключ постера.
+    video_bytes = b"\x00" * 128
+    vt = (
+        await client.post(
+            "/api/media/uploads",
+            headers=a_headers,
+            json={"content_type": "video/mp4", "size": len(video_bytes), "kind": "video"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        await real.put(
+            vt["upload_url"], content=video_bytes, headers={"Content-Type": "video/mp4"}
+        )
+
+    asset = (
+        await client.post(
+            "/api/media/assets",
+            headers=a_headers,
+            json={
+                "storage_key": vt["storage_key"],
+                "thumb_storage_key": vp["storage_key"],
+            },
+        )
+    ).json()
+    url_out = (await client.get(f"/api/media/{asset['id']}", headers=a_headers)).json()
+    assert url_out["thumb_url"] is None

@@ -591,3 +591,19 @@ round-trip'ов, а не размера файлов. Три слоя оптим
 - `pytest` — 143 passed (+1 тест: реальная картинка → превью генерится и отдаётся
   отдельным presigned-URL; лента несёт вложение с готовыми url/thumb_url). `ruff`,
   `mypy`, фронтовый `npm run build` — зелёные. Миграция накатывается (`alembic upgrade head`).
+
+### Дополнено — постеры видео + backfill старых фото (2026-07-05)
+- **Постер видео** снимает клиент при загрузке (`capturePoster`: `<video>`→canvas→WebP)
+  и льёт отдельным объектом, ключ передаёт в `confirm` как `thumb_storage_key`
+  ([lib/mediaUpload.ts](../frontend/src/lib/mediaUpload.ts)). Сервер проверяет намерение
+  загрузки этого ключа (тот же user, kind image) и подхватывает как `thumb_key`
+  ([api/media.py](../backend/app/api/media.py) `_consume_client_thumbnail`,
+  схема `ConfirmRequest.thumb_storage_key`). Видеофайл на бэкенд не тянется (п.7).
+  Постер идёт в `poster` у `<video>` — нет чёрного прямоугольника до плея
+  ([VideoPlayer.tsx](../frontend/src/components/VideoPlayer.tsx),
+  [Attachment.tsx](../frontend/src/features/chat/Attachment.tsx)).
+- **Backfill** ранее загруженных картинок без превью — разовый
+  [scripts/backfill_thumbnails.py](../backend/scripts/backfill_thumbnails.py)
+  (идемпотентно, пачками, best-effort; см. [OPERATIONS.md](OPERATIONS.md)).
+- Проверено: `pytest` — 145 passed (+2 теста: постер видео становится thumb_url;
+  чужой ключ постера не подхватывается). `ruff`, `mypy`, `npm run build` — зелёные.
