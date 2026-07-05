@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from app.schemas.media import AttachmentOut
+
 
 class SendMessageRequest(BaseModel):
     """Отправка сообщения. content nullable, но сообщение должно нести хоть что-то:
@@ -36,7 +38,10 @@ class MessageOut(BaseModel):
     last_reply_at: datetime | None
     created_at: datetime
     edited_at: datetime | None
+    # attachment_ids оставлен для обратной совместимости (старые клиенты); новые
+    # клиенты используют attachments с готовыми presigned-URL и превью.
     attachment_ids: list[int] = []
+    attachments: list[AttachmentOut] = []
 
 
 class ThreadOut(BaseModel):

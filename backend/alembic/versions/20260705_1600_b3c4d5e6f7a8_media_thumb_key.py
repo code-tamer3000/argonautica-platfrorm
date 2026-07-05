@@ -1,0 +1,35 @@
+"""media_assets.thumb_key (серверные превью изображений)
+
+Revision ID: b3c4d5e6f7a8
+Revises: a2b3c4d5e6f7
+Create Date: 2026-07-05 16:00:00.000000
+
+Превью картинок генерятся при подтверждении загрузки и хранятся отдельным объектом
+в том же бакете; ссылку на объект держим в media_assets.thumb_key. В ленте отдаём
+превью (лёгкое), оригинал — по клику.
+
+Обратная совместимость (blue-green, п.8): add column nullable, без server_default —
+старый код (blue) колонку не читает и не пишет, продолжает работать. Миграция
+накатывается ДО кода, который начинает заполнять thumb_key. DROP не делаем.
+"""
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+
+from alembic import op
+
+revision: str = "b3c4d5e6f7a8"
+down_revision: str | None = "a2b3c4d5e6f7"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.add_column(
+        "media_assets",
+        sa.Column("thumb_key", sa.Text(), nullable=True),
+    )
+
+
+def downgrade() -> None:
+    op.drop_column("media_assets", "thumb_key")

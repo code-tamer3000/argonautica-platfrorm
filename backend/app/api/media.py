@@ -27,8 +27,10 @@ from app.schemas.media import (
 )
 from app.services.media import (
     PRESIGN_EXPIRES,
+    PRESIGN_GET_EXPIRES,
     assert_media_access,
     build_storage_key,
+    generate_image_thumbnail,
     presigned_get_url,
     presigned_put_url,
     stat_object,
@@ -147,6 +149,17 @@ async def confirm_upload(
     session.add(asset)
     await session.flush()
     await session.refresh(asset)
+
+    # Превью для картинок — генерим сразу, чтобы лента отдавала лёгкий thumbnail.
+    # Best-effort: ошибка (битый файл, не-картинка) не должна ронять подтверждение.
+    if asset.kind == "image":
+        thumb_key = await run_in_threadpool(
+            generate_image_thumbnail, bucket, body.storage_key, intent["mime_type"]
+        )
+        if thumb_key is not None:
+            asset.thumb_key = thumb_key
+            await session.flush()
+
     await redis_client.delete(_intent_key(body.storage_key))
     return asset
 
@@ -166,11 +179,15 @@ async def get_media_url(
     # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн (рендер в <img>/<video>).
     download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
     url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
+    thumb_url = (
+        presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
+    )
     return MediaUrlOut(
         url=url,
-        expires_in=PRESIGN_EXPIRES,
+        expires_in=PRESIGN_GET_EXPIRES,
         kind=asset.kind,
         duration=asset.duration,
         width=asset.width,
         height=asset.height,
+        thumb_url=thumb_url,
     )

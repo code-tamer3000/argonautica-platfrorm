@@ -7,6 +7,6 @@ export function useMediaUrl(assetId: number | null) {
     queryKey: ['media', assetId],
     queryFn: () => http.get<MediaUrlOut>(`/api/media/${assetId}`),
     enabled: assetId != null,
-    staleTime: 10 * 60_000, // presigned живёт 15 минут
+    staleTime: 12 * 60 * 60_000, // presigned-GET живёт 24 ч — не перезапрашиваем зря
   })
 }

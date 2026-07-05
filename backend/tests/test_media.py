@@ -300,3 +300,73 @@ async def test_cannot_attach_someone_elses_asset(
     )
     assert good.status_code == 201
     assert good.json()["attachment_ids"] == [own.id]
+
+
+# --- превью + presigned-URL прямо в ленте (быстрая доставка) ----------------
+
+
+async def test_image_thumbnail_and_attachment_in_feed(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Реальная картинка: при подтверждении генерится превью (thumb_url), а лента
+    отдаёт вложение с готовыми presigned-URL — без per-asset round-trip.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+
+    buf = BytesIO()
+    Image.new("RGB", (1200, 800), (100, 140, 200)).save(buf, format="PNG")
+    data = buf.getvalue()
+
+    ticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            json={"content_type": "image/png", "size": len(data), "kind": "image"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            ticket["upload_url"], content=data, headers={"Content-Type": "image/png"}
+        )
+        assert put.status_code == 200, put.text
+
+    asset = (
+        await client.post(
+            "/api/media/assets",
+            headers=headers,
+            json={"storage_key": ticket["storage_key"], "width": 1200, "height": 800},
+        )
+    ).json()
+
+    # Превью сгенерировалось и отдаётся отдельным presigned-URL.
+    url_out = (await client.get(f"/api/media/{asset['id']}", headers=headers)).json()
+    assert url_out["thumb_url"] is not None
+    async with httpx.AsyncClient() as real:
+        thumb = await real.get(url_out["thumb_url"])
+        assert thumb.status_code == 200
+        assert thumb.headers["content-type"] == "image/webp"
+
+    # Лента несёт вложение с готовыми ссылками — клиенту не нужен запрос на ассет.
+    await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "фото", "attachment_ids": [asset["id"]]},
+    )
+    feed = (
+        await client.get(f"/api/rooms/{room.id}/messages", headers=headers)
+    ).json()
+    att = feed[0]["attachments"][0]
+    assert att["asset_id"] == asset["id"]
+    assert att["kind"] == "image"
+    assert att["url"] and att["thumb_url"]
+    assert att["width"] == 1200 and att["height"] == 800

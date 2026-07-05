@@ -142,15 +142,21 @@ export function MessageItem({
                 : <span className={styles.msgPlaceholder}>[стикер]</span>
             )}
 
-            {msg.attachment_ids.length > 0 && (
+            {(msg.attachments?.length ?? msg.attachment_ids.length) > 0 && (
               // Клики по вложениям (play/seek/скорость видео, аудио-плеер, лайтбокс,
               // «Скачать») остаются внутри плеера и не всплывают до onClick пузыря —
               // иначе тап по медиа заодно открывал бы контекстное меню сообщения.
               // Меню по-прежнему доступно тапом по остальной части пузыря.
               <div className={styles.attachments} onClick={(e) => e.stopPropagation()}>
-                {msg.attachment_ids.map(id => (
-                  <Attachment key={id} assetId={id} />
-                ))}
+                {/* Новый путь: presigned-URL уже в ленте. Фолбэк на id — для старых
+                    сообщений в кэше, где attachments ещё нет. */}
+                {msg.attachments?.length
+                  ? msg.attachments.map(att => (
+                      <Attachment key={att.asset_id} attachment={att} />
+                    ))
+                  : msg.attachment_ids.map(id => (
+                      <Attachment key={id} assetId={id} />
+                    ))}
               </div>
             )}
           </>
