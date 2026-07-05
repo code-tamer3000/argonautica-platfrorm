@@ -142,3 +142,10 @@ POSTGRES_USER=app POSTGRES_PASSWORD=secret POSTGRES_DB=platform \
 - **Секреты** — только в `.env` (gitignore). Postgres/Redis/MinIO наружу не публикуются.
 - **Фронт:** когда появится `frontend/dist`, смонтировать его в nginx вместо
   `docker/nginx/html` (placeholder) — location `/` уже отдаёт SPA с `try_files`.
+- **Staging и 502 после деплоя.** Стенд (`deploy-staging.sh`) без blue-green: `up -d`
+  ПЕРЕСОЗДАЁТ backend/frontend, и они получают новые IP в docker-сети. nginx резолвит
+  имена апстримов один раз при старте и кэширует IP — поэтому после пересоздания он
+  держит устаревшие адреса и отдаёт **502 на все запросы**, хотя сами контейнеры
+  `healthy`. Лечится перезапуском nginx (`… restart nginx`); в `deploy-staging.sh` это
+  уже делается автоматически в конце. Признак именно этой причины: `curl` к backend
+  напрямую (`docker exec … :8000/api/health`) отдаёт 200, а через nginx — 502.

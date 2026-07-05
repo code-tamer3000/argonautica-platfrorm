@@ -41,4 +41,11 @@ $DC run --rm migrate
 echo ">> staging: подъём стенда"
 $DC up -d
 
-echo ">> staging: готово. Доступ: https://<IP>:8443 (за Basic Auth)."
+# nginx резолвит имена апстримов (backend/frontend) один раз при старте и кэширует их
+# IP. При up -d backend/frontend ПЕРЕСОЗДАЮТСЯ и получают новые IP в docker-сети, а
+# nginx остаётся прежним → держит устаревшие IP и отдаёт 502 на все запросы. Поэтому
+# после подъёма принудительно перезапускаем nginx, чтобы он перечитал адреса апстримов.
+echo ">> staging: перезапуск nginx (обновить IP апстримов)"
+$DC restart nginx
+
+echo ">> staging: готово. Доступ: https://<IP>:8443."
