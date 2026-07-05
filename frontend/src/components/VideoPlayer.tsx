@@ -60,11 +60,16 @@ export function VideoPlayer({ src, width, height, poster, className }: Props) {
         onLoadedMetadata={(e) => {
           const v = e.currentTarget
           if (!ratio && v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight)
+          // Снимаем заглушку уже по метадате: на мобиле `loadeddata` (первый кадр) с
+          // `preload="metadata"` часто не приходит до старта воспроизведения, а метадата
+          // приходит всегда — иначе спиннер висел бы вечно поверх готового к игре видео.
+          setLoaded(true)
         }}
         onLoadedData={() => setLoaded(true)}
       />
       {/* Есть постер — его и показывает нативный <video>, скелетон не нужен. Без
-          постера (старые видео) держим скелетон+крутилку до первого кадра. */}
+          постера (старые видео) держим скелетон+крутилку до метадаты, дальше показываем
+          нативный плеер с кнопкой play. Заглушка не блокирует тап (pointer-events:none). */}
       {!loaded && !poster && (
         <>
           <div className={styles.placeholder} aria-hidden="true" />

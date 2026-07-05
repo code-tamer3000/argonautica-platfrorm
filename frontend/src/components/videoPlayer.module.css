@@ -31,6 +31,10 @@
   position: absolute;
   inset: 0;
   z-index: 1;
+  /* НЕ перехватывать тапы: заглушка лежит поверх <video>, и без этого на мобиле она
+     съедала касание по нативной кнопке «play» — видео не стартовало, спиннер висел
+     вечно (на десктопе кадр декодировался сам и заглушка снималась, на мобиле нет). */
+  pointer-events: none;
   border-radius: var(--radius-media);
   background: linear-gradient(
     100deg,
