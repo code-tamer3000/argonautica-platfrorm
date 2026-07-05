@@ -1,0 +1,105 @@
+# Тестовый стенд (staging) из ветки develop. ПОЛНОСТЬЮ изолирован от прод-стека
+# (docker-compose.prod.yml): отдельное имя проекта → своя сеть, свои контейнеры и свой
+# namespace volume'ов (platform-staging_*). Прод-данные НЕ затрагиваются.
+#
+# Отличия от прода:
+#   - имя проекта platform-staging — КЛЮЧЕВАЯ изоляция (иначе совпали бы контейнеры/
+#     сеть/volume'ы прод-проекта). Задаётся флагом `-p platform-staging` в
+#     deploy-staging.sh (top-level `name:` не поддерживается docker-compose v1);
+#   - один backend (без blue-green — стенду не нужен zero-downtime);
+#   - наружу торчит только nginx на 8443 (прод занимает 80/443);
+#   - НЕТ сервиса bot (прод-бот на long-polling с тем же токеном сломался бы от 2-го поллера);
+#   - свой nginx-шаблон + Basic Auth (docker/nginx-staging).
+#
+# Первый запуск / bootstrap — см. шапку docker/deploy-staging.sh.
+# Деплой новой версии: docker/deploy-staging.sh (вызывается из CI на push в develop).
+
+x-backend: &backend
+  build:
+    context: ../backend
+  image: platform-staging-backend:latest
+  env_file: ../.env
+  environment:
+    UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+  depends_on:
+    - postgres
+    - redis
+    - minio
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
+  # One-shot: применить миграции. profiles → не стартует на `up`, только явным
+  # `run --rm migrate` (первый запуск / deploy-staging.sh перед подъёмом backend).
+  migrate:
+    <<: *backend
+    profiles: ["migrate"]
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  # Единственный backend — blue-green стенду не нужен.
+  backend:
+    <<: *backend
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      # Наружу только 8443 (прод держит 80/443 на этом же сервере).
+      - "8443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN}
+    volumes:
+      - ./nginx-staging/templates:/etc/nginx/templates:ro
+      - ./nginx-staging/certs:/etc/nginx/certs:ro
+      - ./nginx-staging/staging.htpasswd:/etc/nginx/staging.htpasswd:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:

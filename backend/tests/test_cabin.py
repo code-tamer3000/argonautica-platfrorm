@@ -75,11 +75,13 @@ async def test_cannot_edit_or_delete_others(
     eid = created["id"]
 
     # Чужая правка/удаление → 404 (не раскрываем существование).
-    assert (await client.put(f"/api/cabin/diary/{eid}", headers=ho, json=_diary(trigger="x"))).status_code == 404
+    upd = await client.put(f"/api/cabin/diary/{eid}", headers=ho, json=_diary(trigger="x"))
+    assert upd.status_code == 404
     assert (await client.delete(f"/api/cabin/diary/{eid}", headers=ho)).status_code == 404
 
     # Свою — можно.
-    assert (await client.put(f"/api/cabin/diary/{eid}", headers=ha, json=_diary(trigger="x"))).status_code == 200
+    upd = await client.put(f"/api/cabin/diary/{eid}", headers=ha, json=_diary(trigger="x"))
+    assert upd.status_code == 200
     assert (await client.delete(f"/api/cabin/diary/{eid}", headers=ha)).status_code == 204
 
 

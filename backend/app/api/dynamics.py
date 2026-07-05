@@ -346,7 +346,13 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
 
     if not participants:
         return AdminDynamicsOut(
-            summary=DynamicsSummary(total_participants=0, active_today=0, journal_today=0, no_overdue=0, avg_streak=0.0),
+            summary=DynamicsSummary(
+                total_participants=0,
+                active_today=0,
+                journal_today=0,
+                no_overdue=0,
+                avg_streak=0.0,
+            ),
             users=[],
         )
 

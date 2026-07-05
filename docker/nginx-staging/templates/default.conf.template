@@ -1,0 +1,81 @@
+# nginx тестового стенда (staging). Отдельный шаблон — прод-конфиг не трогаем.
+# Отличия от прода:
+#   - один backend (без blue-green и include active_backend.conf) — proxy_pass прямо;
+#   - весь стенд закрыт Basic Auth (кроме медиа — там своя SigV4-подпись presigned-URL);
+#   - один server на 443, server_name _ → доступ по IP (домена нет), self-signed TLS.
+# envsubst официального nginx-образа подставляет ${DOMAIN} (nginx-переменные $host и т.п.
+# не трогаются). Наружу маппится 8443:443 (см. docker-compose.staging.yml).
+
+# Карта для WebSocket-апгрейда.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name _;
+
+    # Self-signed серт под ${DOMAIN} (= IP стенда). Генерится при bootstrap
+    # (docker/nginx-staging/make-self-signed.sh), в git не коммитится.
+    ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/certs/${DOMAIN}.key;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    # Basic Auth на весь стенд по умолчанию (SPA + API + WS). Пароли —
+    # docker/nginx-staging/staging.htpasswd (создаётся `htpasswd` при bootstrap).
+    auth_basic           "staging";
+    auth_basic_user_file /etc/nginx/staging.htpasswd;
+
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # MinIO по префиксу бакета (path-style S3): один хост по IP, медиа-поддомена нет.
+    # Presigned-URL path-style = https://<host>:8443/<bucket>/<key>; SigV4 подписывает
+    # host+path, поэтому Host сохраняем и путь не переписываем — подпись сходится.
+    # auth_basic off: браузерный fetch за медиа не носит Basic-креды; доступ и так
+    # ограничен короткоживущей SigV4-подписью presigned-URL.
+    location ~ ^/(chat-media|kb-media)/ {
+        auth_basic off;
+        proxy_pass http://minio:9000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Тело не буферизуем — стримим прямо в MinIO; потолок держит бэкенд.
+        client_max_body_size 0;
+        proxy_request_buffering off;
+    }
+
+    # WebSocket. Клиент умеет реконнект (при рестарте стенда сокеты рвутся).
+    location /ws {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+    }
+
+    # SPA: статику отдаёт frontend-контейнер (try_files внутри него).
+    location / {
+        proxy_pass http://frontend:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
