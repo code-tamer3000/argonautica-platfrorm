@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, require_admin
+from app.api.deps import require_admin, require_cabin_access
 from app.db.session import get_session
 from app.models.cabin import CabinEntry
 from app.models.user import User
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/cabin", tags=["cabin"])
 @router.get("/{kind}", response_model=list[CabinEntryOut])
 async def list_entries(
     kind: CabinKind,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_cabin_access)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[CabinEntry]:
     """Записи текущего пользователя в подразделе `kind`, сначала новые."""
@@ -46,7 +46,7 @@ async def list_entries(
 async def create_entry(
     kind: CabinKind,
     body: CabinEntryCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_cabin_access)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CabinEntry:
     """Создать «плашку» в подразделе. `kind` в URL и в data должны совпадать."""
@@ -67,7 +67,7 @@ async def update_entry(
     kind: CabinKind,
     entry_id: int,
     body: CabinEntryCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_cabin_access)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CabinEntry:
     """Заменить содержимое своей записи. Чужую/несуществующую — 404."""
@@ -86,7 +86,7 @@ async def update_entry(
 async def delete_entry(
     kind: CabinKind,
     entry_id: int,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_cabin_access)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> None:
     """Удалить свою запись. Каюта — личное, физическое удаление (не soft-delete

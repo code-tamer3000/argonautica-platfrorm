@@ -31,6 +31,10 @@ export function AppShell() {
   const location = useLocation()
   const badges = useNavBadges()
 
+  // Каюта закрыта по умолчанию — видна, только если админ выдал доступ (у самого
+  // админа доступ есть всегда). Прячем и пункт навигации, и маршрут.
+  const canCabin = user?.can_access_cabin || user?.role === 'admin'
+
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
     wsClient.start()
@@ -120,10 +124,12 @@ export function AppShell() {
             <span className={styles.navIcon}><IconCalendar /></span>
             <span className={styles.navLabel}>Календарь</span>
           </NavLink>
-          <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconDiary /></span>
-            <span className={styles.navLabel}>Каюта</span>
-          </NavLink>
+          {canCabin && (
+            <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+              <span className={styles.navIcon}><IconDiary /></span>
+              <span className={styles.navLabel}>Каюта</span>
+            </NavLink>
+          )}
           <NavLink to="/profile" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconUser /></span>
             <span className={styles.navLabel}>Профиль</span>
@@ -146,7 +152,7 @@ export function AppShell() {
             <Route path="/kb" element={<KbList />} />
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/calendar" element={<CalendarView />} />
-            <Route path="/cabin" element={<CabinScreen />} />
+            <Route path="/cabin" element={canCabin ? <CabinScreen /> : <Navigate to="/" replace />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>

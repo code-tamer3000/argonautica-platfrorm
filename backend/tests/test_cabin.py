@@ -20,7 +20,7 @@ def _diary(**over: object) -> dict:
 
 
 async def test_create_and_list_own(client: AsyncClient, make_user: MakeUser) -> None:
-    user = await make_user()
+    user = await make_user(can_access_cabin=True)
     h = await _headers(client, user)
 
     resp = await client.post("/api/cabin/diary", headers=h, json=_diary())
@@ -35,8 +35,8 @@ async def test_create_and_list_own(client: AsyncClient, make_user: MakeUser) -> 
 
 
 async def test_entries_are_private(client: AsyncClient, make_user: MakeUser) -> None:
-    author = await make_user()
-    other = await make_user()
+    author = await make_user(can_access_cabin=True)
+    other = await make_user(can_access_cabin=True)
     ha = await _headers(client, author)
     ho = await _headers(client, other)
 
@@ -49,7 +49,7 @@ async def test_entries_are_private(client: AsyncClient, make_user: MakeUser) -> 
 
 
 async def test_kind_mismatch_rejected(client: AsyncClient, make_user: MakeUser) -> None:
-    user = await make_user()
+    user = await make_user(can_access_cabin=True)
     h = await _headers(client, user)
     # data.kind=diary, но URL — trigger.
     resp = await client.post("/api/cabin/trigger", headers=h, json=_diary())
@@ -57,7 +57,7 @@ async def test_kind_mismatch_rejected(client: AsyncClient, make_user: MakeUser) 
 
 
 async def test_strength_out_of_range(client: AsyncClient, make_user: MakeUser) -> None:
-    user = await make_user()
+    user = await make_user(can_access_cabin=True)
     h = await _headers(client, user)
     resp = await client.post("/api/cabin/diary", headers=h, json=_diary(strength=11))
     assert resp.status_code == 422
@@ -66,8 +66,8 @@ async def test_strength_out_of_range(client: AsyncClient, make_user: MakeUser) -
 async def test_cannot_edit_or_delete_others(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    author = await make_user()
-    other = await make_user()
+    author = await make_user(can_access_cabin=True)
+    other = await make_user(can_access_cabin=True)
     ha = await _headers(client, author)
     ho = await _headers(client, other)
 
@@ -88,7 +88,7 @@ async def test_cannot_edit_or_delete_others(
 async def test_admin_sees_participant_entries(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    participant = await make_user()
+    participant = await make_user(can_access_cabin=True)
     admin = await make_user(role="admin")
     hp = await _headers(client, participant)
     hadm = await _headers(client, admin)
@@ -118,7 +118,7 @@ async def test_admin_view_requires_admin(
 async def test_admin_users_lists_authors_with_counts(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    participant = await make_user()
+    participant = await make_user(can_access_cabin=True)
     admin = await make_user(role="admin")
     hp = await _headers(client, participant)
     hadm = await _headers(client, admin)
@@ -146,3 +146,62 @@ async def test_admin_users_requires_admin(
     hp = await _headers(client, participant)
     resp = await client.get("/api/cabin/admin/users", headers=hp)
     assert resp.status_code == 403
+
+
+async def test_cabin_closed_by_default(client: AsyncClient, make_user: MakeUser) -> None:
+    """Без выданного доступа личные эндпоинты Каюты отдают 403."""
+    user = await make_user()  # can_access_cabin=False по умолчанию
+    h = await _headers(client, user)
+    assert (await client.get("/api/cabin/diary", headers=h)).status_code == 403
+    assert (
+        await client.post("/api/cabin/diary", headers=h, json=_diary())
+    ).status_code == 403
+
+
+async def test_admin_grant_opens_access_and_notifies(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Админ выдаёт доступ через PATCH — участник получает доступ и уведомление."""
+    participant = await make_user()
+    admin = await make_user(role="admin")
+    hp = await _headers(client, participant)
+    hadm = await _headers(client, admin)
+
+    # До выдачи — закрыто.
+    assert (await client.get("/api/cabin/diary", headers=hp)).status_code == 403
+
+    resp = await client.patch(
+        f"/api/admin/users/{participant.id}",
+        headers=hadm,
+        json={"can_access_cabin": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["can_access_cabin"] is True
+
+    # Доступ открылся.
+    assert (await client.get("/api/cabin/diary", headers=hp)).status_code == 200
+
+    # В ленте участника появилось системное уведомление о выдаче (без комнаты).
+    feed = (await client.get("/api/notifications", headers=hp)).json()
+    granted = [n for n in feed["items"] if n["kind"] == "cabin_granted"]
+    assert len(granted) == 1
+    assert granted[0]["room_id"] is None
+    assert granted[0]["actor_id"] is None
+
+
+async def test_admin_grant_is_idempotent_no_duplicate_notification(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Повторный PATCH с уже открытым доступом не плодит уведомления."""
+    participant = await make_user()
+    admin = await make_user(role="admin")
+    hp = await _headers(client, participant)
+    hadm = await _headers(client, admin)
+
+    body = {"can_access_cabin": True}
+    await client.patch(f"/api/admin/users/{participant.id}", headers=hadm, json=body)
+    await client.patch(f"/api/admin/users/{participant.id}", headers=hadm, json=body)
+
+    feed = (await client.get("/api/notifications", headers=hp)).json()
+    granted = [n for n in feed["items"] if n["kind"] == "cabin_granted"]
+    assert len(granted) == 1
