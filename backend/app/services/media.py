@@ -147,6 +147,23 @@ def build_thumb_key(storage_key: str) -> str:
     return f"{THUMB_PREFIX}{storage_key}.webp"
 
 
+def _encode_webp_thumbnail(raw: bytes) -> bytes:
+    """Ужать байты картинки до квадрата THUMB_MAX_PX и вернуть WebP-байты.
+
+    Общий кодек для превью картинок и постеров видео (тот же формат/размер = одинаковая
+    лёгкость в ленте). Учитывает поворот из EXIF и приводит режим к RGB/RGBA.
+    """
+    from PIL import Image, ImageOps  # локальный импорт: Pillow нужен только тут
+
+    with Image.open(BytesIO(raw)) as src:
+        img = ImageOps.exif_transpose(src) or src  # учесть поворот из EXIF
+        img = img.convert("RGBA" if img.mode in ("RGBA", "LA", "P") else "RGB")
+        img.thumbnail((THUMB_MAX_PX, THUMB_MAX_PX))
+        buf = BytesIO()
+        img.save(buf, format="WEBP", quality=80, method=4)
+    return buf.getvalue()
+
+
 def generate_image_thumbnail(bucket: str, key: str, mime_type: str) -> str | None:
     """Best-effort превью картинки: тянем оригинал из MinIO, ужимаем, кладём рядом.
 
@@ -156,27 +173,85 @@ def generate_image_thumbnail(bucket: str, key: str, mime_type: str) -> str | Non
     место, где байты проходят через бэкенд, и то один раз на загрузку, не на просмотр.
     """
     try:
-        from PIL import Image, ImageOps  # локальный импорт: Pillow нужен только тут
-
         client = _server_client()
         obj = client.get_object(Bucket=bucket, Key=key)
-        raw = obj["Body"].read()
-        with Image.open(BytesIO(raw)) as src:
-            img = ImageOps.exif_transpose(src) or src  # учесть поворот из EXIF
-            img = img.convert("RGBA" if img.mode in ("RGBA", "LA", "P") else "RGB")
-            img.thumbnail((THUMB_MAX_PX, THUMB_MAX_PX))
-            buf = BytesIO()
-            img.save(buf, format="WEBP", quality=80, method=4)
+        webp = _encode_webp_thumbnail(obj["Body"].read())
         thumb_key = build_thumb_key(key)
         client.put_object(
-            Bucket=bucket,
-            Key=thumb_key,
-            Body=buf.getvalue(),
-            ContentType="image/webp",
+            Bucket=bucket, Key=thumb_key, Body=webp, ContentType="image/webp"
         )
         return thumb_key
     except Exception:
         logger.warning("thumbnail generation failed for %s/%s", bucket, key, exc_info=True)
+        return None
+
+
+def generate_video_poster(bucket: str, key: str) -> tuple[str | None, int | None]:
+    """Постер-кадр + длительность для видео, залитого без клиентского постера (ffmpeg).
+
+    Возвращает `(thumb_key | None, duration_seconds | None)`. Best-effort: любая ошибка
+    (нет ffmpeg, битый файл, объекта нет) → `(None, None)`, ничего не роняем.
+
+    ВНИМАНИЕ: тянет видеофайл на бэкенд — это против принципа «байты видео мимо FastAPI»
+    (CLAUDE.md п.7). Отсюда — только офлайн-бэкфилл старых записей (постер новых видео
+    снимает клиент при загрузке), НЕ горячий путь. Вызывать через run_in_threadpool.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    tmp_path: str | None = None
+    try:
+        client = _server_client()
+        obj = client.get_object(Bucket=bucket, Key=key)
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as tmp:
+            tmp_path = tmp.name
+            for chunk in obj["Body"].iter_chunks(1024 * 1024):
+                tmp.write(chunk)
+
+        duration = _ffprobe_duration(tmp_path)
+        # Кадр берём на 1-й секунде (первый кадр часто чёрный/интро); для совсем коротких
+        # клипов — с нуля. `-ss` до `-i` = быстрый seek по ключевым кадрам.
+        seek = "0" if duration is not None and duration < 2 else "1"
+        proc = subprocess.run(
+            ["ffmpeg", "-v", "error", "-y", "-ss", seek, "-i", tmp_path,
+             "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "pipe:1"],
+            capture_output=True, timeout=120,
+        )
+        if proc.returncode != 0 or not proc.stdout:
+            logger.warning(
+                "ffmpeg poster failed for %s/%s: %s",
+                bucket, key, proc.stderr[:500].decode("utf-8", "replace"),
+            )
+            return None, duration
+
+        webp = _encode_webp_thumbnail(proc.stdout)
+        thumb_key = build_thumb_key(key)
+        client.put_object(
+            Bucket=bucket, Key=thumb_key, Body=webp, ContentType="image/webp"
+        )
+        return thumb_key, duration
+    except Exception:
+        logger.warning("video poster generation failed for %s/%s", bucket, key, exc_info=True)
+        return None, None
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
+def _ffprobe_duration(path: str) -> int | None:
+    """Длительность видео в секундах через ffprobe (округлённо) или None при ошибке."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=30,
+        )
+        val = out.stdout.strip()
+        return round(float(val)) if val else None
+    except Exception:
         return None
 
 
