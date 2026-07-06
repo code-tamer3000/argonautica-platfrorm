@@ -1,113 +1,86 @@
-# CLAUDE.md — Контекст проекта
+# Argonautica — Agent Instructions
 
-Постоянная память проекта для Claude Code. Читается в начале каждой сессии.
-Держать кратким и актуальным. Детали — в `docs/`.
+Commercial educational platform (~20–30 users): knowledge base + real-time chat,
+plus Tasks, Dynamics (daily-homework journal), News, Notifications, Cabin (каюта,
+private psych journaling), Support. Mobile access is PWA (no native apps).
+Stack: FastAPI, PostgreSQL, Redis (pub/sub), React/Vite, MinIO, Nginx, Docker Compose.
 
-## Что это
-Платформа для образовательного проекта: **база знаний** (материалы автора) +
-**реалтайм-чат** участников (личные чаты, группы, каналы, треды под сообщениями).
-Плюс разделы: **Динамика** (журнал ежедневных ДЗ), **Новости** (канал + репост),
-**Каюта** (личная психо-проработка), **Поддержка** (обращения + FAQ), уведомления-
-колокольчик. Детали разделов — в `docs/PLATFORM_SPEC.md` §4.
-~20–30 активных пользователей. Мобильный доступ — **PWA** (без нативных приложений).
+## Commands — the ONLY way to run things
 
-## Стек
-- **PostgreSQL** — БД (SQLAlchemy async + Alembic).
-- **Redis** — pub/sub между воркерами + всё эфемерное состояние.
-- **FastAPI** — бэкенд: REST (`/api`) + WebSocket (`/ws`).
-- **React + Vite** — фронт, собирается как PWA.
-- **MinIO** — медиа (S3-совместимо), доступ через presigned URL.
-- **nginx** — прокси, HTTPS, переключатель blue/green.
-- Всё в **Docker Compose**. Деплой — **blue-green** (zero-downtime).
+| Action            | Command                     |
+|-------------------|-----------------------------|
+| All checks        | `make test`                 |
+| Backend tests     | `make test-backend`         |
+| Frontend tests¹   | `make test-frontend`        |
+| Lint + typecheck  | `make lint`                 |
+| Apply migrations  | `make migrate-test`         |
+| New migration     | `make migration m="<name>"` |
+| Test env up/down  | `make up-test` / `make down-test` |
 
-## Структура монорепо
-- `backend/` — FastAPI. `app/` (core, db, models, schemas, api, ws, services),
-  `alembic/` (миграции), `tests/`.
-- `frontend/` — React + Vite (`src/`: api, components, features, hooks, lib).
-- `docker/` — compose-файлы, nginx-конфиг.
-- `docs/` — PLATFORM_SPEC.md, DATA_MODEL.md, DECISIONS.md.
-- `CLAUDE.md` — этот файл.
+¹ `test-frontend` currently runs typecheck only (`tsc --noEmit`) — no frontend test runner exists yet.
 
-## Ключевые правила (НЕ нарушать)
-1. **Авторизация на каждом запросе.** Любое чтение/действие в комнате проверяет
-   членство и роль на сервере. Никогда не доверять id/room_id от клиента (IDOR — для
-   чата угроза №1).
-2. **Треды плоские.** Ответ всегда привязан к `thread_root_id` корня, никогда к
-   другому ответу. При ответе на ответ берём его `thread_root_id`, не его id.
-3. **Каналы — неявный доступ (вариант А).** Строки `room_members` для каналов не
-   создаём на всех; лениво, только чтобы хранить `last_read_message_id`. Видимость
-   канала — правило в коде («участник платформы видит все каналы»), не данные.
-4. **Статусы прочтения — через `last_read_message_id`**, без таблицы прочтений.
-   Поэтому id сообщений — монотонный `BIGSERIAL`, не UUID.
-5. **Эфемерное состояние — только в Redis**, не в Postgres: «печатает», presence,
-   refresh-токены/сессии, счётчики rate-limit.
-6. **Мягкое удаление** сообщений (`deleted_at`), не физическое.
-7. **Медиа — через `media_assets` + MinIO.** Бакеты приватны; доступ — presigned URL
-   после проверки прав. Загрузка/чтение напрямую клиент↔MinIO (presigned-PUT/GET),
-   НЕ гонять файлы через FastAPI.
-8. **Миграции обратно-совместимые (expand/contract).** Требование blue-green: blue и
-   green делят один Postgres. Никаких RENAME/DROP колонки в один шаг — сначала add +
-   выкатить код, потом отдельным релизом drop.
-9. **Секреты — только в `.env`** (в `.gitignore`), никогда в git. Postgres/Redis/
-   MinIO не публиковать наружу — снаружи торчит только nginx.
+Hard rules:
+- NEVER run pytest, alembic, npm, or vite directly. Always via `make` targets — they
+  define the correct environment. (Currently local venv/compose; will move to a
+  dedicated test compose stack later. Makefile internals may change, target names will not.)
+- NEVER touch `docker/docker-compose.prod.yml`, `docker/deploy.sh`, `.env`, or `docker/nginx/certs/`.
+- If a `make` target fails for environment reasons (not code reasons), stop and report — do not improvise workarounds.
 
-## Конвенции кода
-**Backend:** Python 3.12+, async везде (async SQLAlchemy, async-эндпоинты). Типизация
-обязательна. Pydantic — для схем запросов/ответов. Раскладка: `models/` (SQLAlchemy),
-`schemas/` (Pydantic), `api/` (роутеры REST), `ws/` (WebSocket), `services/`
-(бизнес-логика, в т.ч. работа с MinIO), `core/` (config, security/JWT, redis).   
-S3-клиент — boto3 (работает с MinIO, упрощает будущий переезд на managed-S3).
+> Current reality (not yet Dockerized): `make` wraps the host backend venv
+> (`backend/.venv`) and the dev compose stack (`docker/docker-compose.yml`).
 
-**Frontend:** React + TypeScript. UI — строго по дизайн-системе проекта (см.
-@frontend/design-system/README.md) от туда берем всю стелистику, но не структуру. Клиент
-обязан уметь **переподключение WebSocket** (при blue-green деплое сокеты рвутся).
+## Architecture facts (one line each; details in docs/)
 
-## Документация (ОБЯЗАТЕЛЬНО обновлять)
-Любое изменение кода Claude Code фиксирует в `docs/` **в той же задаче** (до коммита) —
-доки не должны отставать от кода. Куда что писать:
-- **Новая/изменённая таблица, поле, индекс, миграция** → `docs/DATA_MODEL.md`
-  (сущность + карта связей + список решений).
-- **Архитектурное решение / trade-off** (почему так, а не иначе) → `docs/DECISIONS.md`.
-- **Новая фича или раздел** → функциональный пункт в `docs/PLATFORM_SPEC.md` §4
-  **и** запись-стадия в `docs/PROGRESS.md` (что сделано + чем проверено).
-- **Инфра/деплой** → `docs/DEPLOY.md` / `docs/OPERATIONS.md`.
-- Крупный новый раздел платформы — обновить и перечень в `CLAUDE.md` («Что это»).
+- Message IDs: BIGSERIAL, monotonic. No UUIDs for messages (read receipts depend on monotonic ids).
+- Threads: flat, single level, via `thread_root_id`. A reply always points at the root, never at another reply.
+- Channels: implicit access — NO `room_members` rows for regular channel members (lazy, only to store read state). Writes to channels: admins only.
+- Deletion: soft delete everywhere (`deleted_at`). Exception: Cabin entries are hard-deleted.
+- Read receipts: `last_read_message_id` per member, no per-message table.
+- Auth: JWT (stateless access + Redis-whitelisted refresh). Users are admin-provisioned (TG username + one-time password), no self-signup.
+- Media: MinIO presigned URLs; uploads/downloads bypass FastAPI (only image-thumbnail generation reads bytes server-side).
+- Realtime: Redis pub/sub. Ephemeral state (typing, presence, sessions, rate-limit, bot state) lives ONLY in Redis, never Postgres.
+- Migrations: expand/contract ONLY (blue-green deploy, shared Postgres). Never drop/rename a column in the same release that stops writing it.
+- Authorization on EVERY request: membership/role checked server-side; never trust client-supplied ids (IDOR is threat #1).
 
-Правило-минимум: если PR меняет схему/поведение/фичу, а `docs/` в нём не тронуты —
-это недоделанная задача. Мелкие внутренние рефакторы без внешнего эффекта — можно без доков.
+## Docs index — read ONLY what the task needs
 
-## Git-процесс
-- `main` (прод) / `develop` (интеграция) / `feature/*` (по фиче, через PR).
-- Параллельная разработка — `git worktree` на каждую feature-ветку.
+| File                       | Covers                                                    |
+|----------------------------|-----------------------------------------------------------|
+| docs/DATA_MODEL.md         | every table: fields, types, constraints, indexes, relations |
+| docs/AUTH.md               | JWT flow, Redis whitelist, provisioning, roles, per-flag grants |
+| docs/ROOMS.md              | rooms, DMs, groups, channels, membership, dedup, news channel |
+| docs/MESSAGES.md           | send/edit/delete, threads, pins, read receipts, stickers, typing/presence, repost, WS events |
+| docs/FILES.md              | MinIO presigned flow, thumbnails, limits, media access    |
+| docs/API_CONVENTIONS.md    | endpoint/error/pagination patterns, authz, rate limits    |
+| docs/FRONTEND.md           | React structure, state, API/WS clients, PWA, design system |
+| docs/DEPLOY.md             | environments, blue-green, CI/CD, what NOT to touch (reference) |
+| docs/KB.md                 | knowledge base: items, media, comments, publish/visibility |
+| docs/TASKS.md              | tasks: common/individual, assignments, submissions, review |
+| docs/CABIN.md              | каюта: 3 subkinds, JSONB data, access grant, admin view   |
+| docs/DYNAMICS.md           | daily-homework journal (28 days), pardons, credits, stats |
+| docs/NOTIFICATIONS.md      | bell feed: kinds, generation, realtime delivery           |
+| docs/SUPPORT.md            | feedback (bug/improvement) + FAQ                          |
+| docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
+| docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
 
-### Автоматизация workflow (коммиты/PR/мёрж)
-Платформа в целом стабильна — правки не так критичны, поэтому по умолчанию
-Claude Code действует автономно, без промежуточных подтверждений:
+Do not read the whole docs/ directory. Pick from the index. Historical/vision docs are in docs/archive/.
 
-- **Коммиты.** Не коммитить после каждого мелкого шага. Коммит делается один раз
-  в конце задачи, когда изменения проверены и готовы (тесты/typecheck прошли).
-- **Размер правки — на усмотрение Клода** по контексту задачи (не по числу файлов):
-  - **Мелкая** (баг-фикс, мелкий рефактор, правка текста/стилей и т.п.) — коммитить
-    и пушить **прямо в `develop`**, без отдельной feature-ветки и PR.
-  - **Крупная** (новая фича, миграция БД, изменения затрагивающие много модулей) —
-    отдельная `feature/*`-ветка, PR в `develop`.
-- **PR и мёрж в `develop`.** Для крупных правок Claude Code сам создаёт PR
-  (`gh pr create`) из feature-ветки в `develop` и **сам мёржит его**, если CI
-  зелёный — без ожидания ручного review. Ходить в GitHub UI руками для этого
-  не требуется.
-- **`develop` → `main` — всегда вручную.** Автомёрж не распространяется на релиз
-  в `main`; PR develop→main создаётся, но мёржит его пользователь сам, когда
-  готов катить релиз.
-- Если CI не зелёный — не мёржить, чинить или сообщать пользователю, что
-  требуется решение.
+New feature docs: fold into the closest core domain file if <50 lines AND a natural home exists; otherwise a standalone docs/<DOMAIN>.md added to this index.
 
-## Запуск (dev)
-1. `cp .env.example .env`, заполнить значения.
-2. `docker compose -f docker/docker-compose.yml up -d` — postgres, redis, minio.
-3. Backend: `alembic upgrade head`, затем uvicorn.
-4. Frontend: в `frontend/` — `npm install && npm run dev`.
+## Git & PR rules
 
-## Документы
-- `docs/PLATFORM_SPEC.md` — полная спецификация (функции, инфра, безопасность).
-- `docs/DATA_MODEL.md` — таблицы, поля, связи, эфемерное состояние.
-- `docs/DECISIONS.md` — лог принятых решений.
+- Base branch: `develop`. Prod branch: `main`. Feature branches: `feature/<slug>`.
+- Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`).
+- Commit once at the end of a task, after `make lint && make test` pass (not after every step).
+- Small change (bugfix, minor refactor, text/style) → commit straight to `develop`.
+  Large change (new feature, migration, cross-module) → `feature/*` branch + PR into `develop`.
+- PRs into `develop` may be self-merged when CI is green (no manual review wait). `develop` → `main` is ALWAYS merged manually by the user.
+- If the spec is ambiguous: make the smallest reasonable assumption, implement it, and list it explicitly under **Assumptions**. Never guess silently, never expand scope.
+- Any change that alters behavior described in docs/ MUST update the corresponding docs/ file in the SAME task.
+
+## Testing rules
+
+- New endpoint → integration test (httpx against the app, real test DB).
+- Bug fix → regression test that fails before the fix.
+- Do not mock PostgreSQL or Redis in integration tests — the test compose provides real ones.
+- Frontend has no test runner yet; the gate is `tsc --noEmit`. When vitest is added, cover components with logic (skip snapshot-only tests).
