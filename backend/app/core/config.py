@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # Формат: YYYY-MM-DD. Переопределяется через JOURNAL_PROGRAM_START=2026-07-10 в .env.
     journal_program_start: date = date(2026, 7, 3)
 
+    # --- Задачи ---
+    # «Горит» дедлайн, если до него осталось не больше стольких дней (считается на
+    # чтение). Переопределяется через TASK_DEADLINE_SOON_DAYS в .env.
+    task_deadline_soon_days: int = 2
+
     # --- Rate limiting (§6.6) ---
     # Эфемерные счётчики в Redis. Выключатель — для тестов/инцидентов.
     rate_limit_enabled: bool = True
