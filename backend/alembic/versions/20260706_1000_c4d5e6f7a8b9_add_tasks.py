@@ -1,7 +1,7 @@
 """add tasks
 
 Revision ID: c4d5e6f7a8b9
-Revises: b3c4d5e6f7a8
+Revises: a2b3c4d5e6f7
 Create Date: 2026-07-06 10:00:00.000000
 
 Раздел «Задачи»: задачи (общие/индивидуальные), назначения с жизненным циклом сдачи,
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c4d5e6f7a8b9"
-down_revision: str | None = "b3c4d5e6f7a8"
+down_revision: str | None = "a2b3c4d5e6f7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

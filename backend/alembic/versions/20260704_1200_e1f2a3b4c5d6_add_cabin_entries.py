@@ -1,7 +1,7 @@
 """add cabin_entries table
 
 Revision ID: e1f2a3b4c5d6
-Revises: d0e1f2a3b4c5
+Revises: b3c4d5e6f7a8
 Create Date: 2026-07-04 12:00:00.000000
 
 Раздел «Каюта»: личные записи участника (дневник эмоций / декатастрофизация /
@@ -18,7 +18,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "e1f2a3b4c5d6"
-down_revision: str | None = "d0e1f2a3b4c5"
+down_revision: str | None = "b3c4d5e6f7a8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
