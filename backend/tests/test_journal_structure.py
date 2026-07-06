@@ -20,7 +20,6 @@ from app.api.dynamics import (
 
 from .conftest import MakeUser, auth_headers, login
 
-
 # ─── Чистая логика шкалы заданий ────────────────────────────────────────────
 
 def _timeline():
