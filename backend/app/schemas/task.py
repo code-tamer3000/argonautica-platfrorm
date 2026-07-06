@@ -23,6 +23,8 @@ class TaskCreate(BaseModel):
     kb_item_id: int | None = None
     deadline_at: datetime | None = None
     assignee_ids: list[int] = []
+    # Медиа условия задачи (создаёт admin). Ассеты должны существовать.
+    media_asset_ids: list[int] = []
 
 
 class TaskUpdate(BaseModel):
@@ -35,6 +37,8 @@ class TaskUpdate(BaseModel):
     body: str | None = None
     deadline_at: datetime | None = None
     kb_item_id: int | None = None
+    # None — не трогаем набор медиа; список — ЗАМЕНЯЕТ весь набор целиком.
+    media_asset_ids: list[int] | None = None
 
 
 class TaskOut(BaseModel):
@@ -48,6 +52,7 @@ class TaskOut(BaseModel):
     deadline_at: datetime | None
     created_by: int
     created_at: datetime
+    attachments: list[AttachmentOut] = []
 
 
 class TaskWithStatusOut(TaskOut):

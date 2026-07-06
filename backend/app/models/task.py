@@ -53,6 +53,22 @@ class Task(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # мягкое удаление
 
 
+class TaskMedia(Base):
+    """Связь задачи с файлами/видео описания (через общую media_assets).
+
+    Медиа самого условия задачи (создаёт/правит admin), зеркало TaskSubmissionMedia.
+    """
+
+    __tablename__ = "task_media"
+
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), primary_key=True
+    )
+    media_asset_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("media_assets.id"), primary_key=True
+    )
+
+
 class TaskAssignment(Base):
     """Назначение задачи юзеру + жизненный цикл сдачи.
 

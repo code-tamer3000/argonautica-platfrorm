@@ -493,3 +493,9 @@ media_assets                         (общая для сообщений и б
   история/статус), а не эфемерка (п.5 касается typing/presence/токенов).
 - Комментарии базы знаний (`kb_comments`) — мягкое удаление (п.6).
 - Медиа получили `kind = 'audio'` — голосовые сообщения.
+- **Задачи** — раздел «Задачи»: таблицы `tasks`, `task_assignments`, `task_submissions`,
+  `task_submission_media`, `task_comments`, **`task_media`** (медиа условия задачи,
+  связь tasks↔media_assets; expand-only миграция `d5e6f7a8b9c0`). Видимость: `common` →
+  любой активный участник; `individual` → адресат / admin. Лениво создаём `task_assignments`
+  при первой сдаче для `common`. Ревью меняет статус назначения. `TaskMedia` ≈ зеркало
+  `TaskSubmissionMedia`, но для условия задачи (создаёт/правит admin).

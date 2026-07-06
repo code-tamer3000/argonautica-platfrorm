@@ -18,6 +18,7 @@ from app.models.task import (
     Task,
     TaskAssignment,
     TaskComment,
+    TaskMedia,
     TaskSubmission,
     TaskSubmissionMedia,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "Notification",
     "Task",
     "TaskAssignment",
+    "TaskMedia",
     "TaskSubmission",
     "TaskSubmissionMedia",
     "TaskComment",

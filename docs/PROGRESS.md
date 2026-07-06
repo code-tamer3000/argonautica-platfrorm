@@ -848,6 +848,43 @@ round-trip'ов, а не размера файлов. Три слоя оптим
 
 ---
 
+---
+
+## Стадия 22 — Раздел «Задачи»: медиа условия + единый MediaComposer (2026-07-06)
+
+### Реализовано
+- **Таблица `task_media`** — медиа условия задачи (admin прикрепляет фото/видео/аудио
+  к заданию); миграция `d5e6f7a8b9c0`
+  ([alembic/versions/20260706_1200_d5e6f7a8b9c0_add_task_media.py](../backend/alembic/versions/20260706_1200_d5e6f7a8b9c0_add_task_media.py)).
+  Зеркало `task_submission_media` (сдачи). Expand-only (CLAUDE.md п.8).
+- **Бэкенд**: `create_task`/`update_task` принимают `media_asset_ids` и сохраняют в
+  `task_media`; `get_task`/`list_tasks` возвращают `attachments` батчем через
+  `resolve_task_attachments` ([api/tasks.py](../backend/app/api/tasks.py),
+  [services/media.py](../backend/app/services/media.py)). Доступ к медиа задачи
+  проверяется в `assert_media_access` (видимость задачи → common=всем, individual=адресат/admin).
+- **`MediaComposer`** — единый переиспользуемый компонент
+  ([components/MediaComposer.tsx](../frontend/src/components/MediaComposer.tsx)):
+  textarea (Markdown) + загрузка файлов с прогрессом + чипы ожидающих вложений.
+  Кнопку отправки рисует родитель.
+  - `MediaChip { id, kind }` — минимальный тип вложения, совместим с `MediaAssetOut` и
+    `AttachmentOut`.
+  - Мобильный `onFocus` scroll-fix: после анимации клавиатуры (~350 мс) прокручивает
+    textarea в видимую область ближайшего scrollable-контейнера.
+  - `tabIndex={-1}` на hidden file input — убирает его из iOS-навигации тулбара клавиатуры.
+- **`TaskComposer`** (сдача участника) использует `MediaComposer`
+  ([features/tasks/TaskComposer.tsx](../frontend/src/features/tasks/TaskComposer.tsx)).
+- **`AdminTasks`** — форма создания/редактирования задачи заменила plain textarea на
+  `MediaComposer`; pre-populate из `initial.attachments`; отправляет `media_asset_ids`
+  ([features/admin/AdminTasks.tsx](../frontend/src/features/admin/AdminTasks.tsx)).
+- **`SubmissionComments`** — убран `<form>` (заменён на `<div>`), кнопка отправки
+  стала `type="button"` — меньше навигационных полей для iOS-тулбара
+  ([features/tasks/TaskDetail.tsx](../frontend/src/features/tasks/TaskDetail.tsx)).
+
+### Проверено
+- `npx tsc --noEmit` — 0 ошибок. `python -m py_compile` — синтаксис чистый.
+
+---
+
 > **Прочие изменения фронта, вошедшие попутно** (стадии 18–21): личные комнаты и
 > новостной раздел в навигации (`/news`), создание DM/групп через модалки
 > ([NewChatModal](../frontend/src/features/chat/NewChatModal.tsx),

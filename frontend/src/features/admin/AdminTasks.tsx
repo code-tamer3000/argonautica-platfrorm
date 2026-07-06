@@ -12,6 +12,7 @@ import {
 import { useKbItems } from '../../api/kb'
 import { useUsers } from '../../api/users'
 import { Button } from '../../components/Button'
+import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
@@ -35,6 +36,7 @@ interface TaskFormValues {
   deadline_at: string | null
   kb_item_id: number | null
   assignee_ids: number[]
+  media: MediaChip[]
 }
 
 // datetime-local ↔ ISO. Значение инпута — локальное время без зоны; для бэкенда
@@ -63,6 +65,10 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   const [deadline, setDeadline] = useState(isoToLocalInput(initial?.deadline_at ?? null))
   const [kbItemId, setKbItemId] = useState<number | null>(initial?.kb_item_id ?? null)
   const [assignees, setAssignees] = useState<number[]>([])
+  // При редактировании инициализируем вложения из existing attachments.
+  const [media, setMedia] = useState<MediaChip[]>(
+    () => (initial?.attachments ?? []).map((a) => ({ id: a.asset_id, kind: a.kind }))
+  )
 
   const { data: kbItems = [] } = useKbItems()
   const { data: users = [] } = useUsers()
@@ -81,6 +87,7 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
       deadline_at: localInputToIso(deadline),
       kb_item_id: kbItemId,
       assignee_ids: assignees,
+      media,
     })
   }
 
@@ -122,15 +129,17 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
         />
       </label>
 
-      <label className={styles.label}>
+      <div className={styles.label}>
         Описание
-        <textarea
-          className={`${styles.input} ${styles.textarea}`}
-          rows={6}
+        <MediaComposer
           value={body}
-          onChange={(e) => setBody(e.target.value)}
+          onChange={setBody}
+          attachments={media}
+          onAttachmentsChange={setMedia}
+          placeholder="Условие задачи (поддерживается Markdown)…"
+          rows={6}
         />
-      </label>
+      </div>
 
       <label className={styles.label}>
         Дедлайн (необязательно)
@@ -226,6 +235,7 @@ export function AdminTasks() {
         deadline_at: values.deadline_at,
         kb_item_id: values.kb_item_id,
         assignee_ids: values.type === 'individual' ? values.assignee_ids : undefined,
+        media_asset_ids: values.media.map((m) => m.id),
       },
       {
         onSuccess: () => {
@@ -246,6 +256,7 @@ export function AdminTasks() {
         body: values.body || null,
         deadline_at: values.deadline_at,
         kb_item_id: values.kb_item_id,
+        media_asset_ids: values.media.map((m) => m.id),
       },
       {
         onSuccess: () => {
