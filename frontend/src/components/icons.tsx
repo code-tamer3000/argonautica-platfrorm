@@ -25,6 +25,7 @@ import {
   Settings,
   Smile,
   Sticker,
+  Sun,
   TriangleAlert,
   Trash2,
   User,
@@ -73,3 +74,4 @@ export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
 export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
 export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
 export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
+export const IconGenkeys = (p: IconProps) => <Sun {...DEFAULTS} {...p} />
