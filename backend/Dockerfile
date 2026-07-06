@@ -1,6 +1,11 @@
 # Прод-образ бэкенда. Slim + non-root. Миграции — отдельным one-shot (см. compose),
 # в рантайме контейнера только uvicorn (blue+green не должны гонять alembic параллельно).
-FROM python:3.12-slim
+#
+# Multi-stage: `base` = the full prod image content; `test` = base + pinned dev
+# tooling (used only by docker-compose.test.yaml, build target: test); `runtime`
+# is the DEFAULT (last) stage so target-less builds (prod/staging compose) resolve
+# to the clean prod image and never to `test`.
+FROM python:3.12-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -39,3 +44,16 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=5 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).status==200 else 1)"
 
 ENTRYPOINT ["docker-entrypoint.sh"]
+
+# --- test: hermetic test/CI image = prod base + PINNED dev tooling ------------
+# Built on demand (docker-compose.test.yaml, target: test). NOT the final stage,
+# so a target-less build never ships pytest/ruff/mypy into prod.
+FROM base AS test
+USER root
+COPY requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+USER appuser
+
+# --- runtime: DEFAULT stage = the prod image (identical to base) --------------
+# Must stay LAST so prod/staging builds (no --target) resolve here, not to test.
+FROM base AS runtime

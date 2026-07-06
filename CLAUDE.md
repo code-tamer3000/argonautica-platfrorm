@@ -84,3 +84,4 @@ New feature docs: fold into the closest core domain file if <50 lines AND a natu
 - Bug fix → regression test that fails before the fix.
 - Do not mock PostgreSQL or Redis in integration tests — the test compose provides real ones.
 - Frontend has no test runner yet; the gate is `tsc --noEmit`. When vitest is added, cover components with logic (skip snapshot-only tests).
+- `make migration` autogenerate re-reports 3 phantom index diffs — see docs/DATA_MODEL.md "Migrations gotchas"; NEVER commit those index drops/recreates.
