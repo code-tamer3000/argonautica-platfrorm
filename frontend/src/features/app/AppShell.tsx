@@ -17,6 +17,7 @@ import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { AdminDynamics } from '../admin/AdminDynamics'
+import { AdminJournal } from '../admin/AdminJournal'
 import { AdminKb } from '../admin/AdminKb'
 import { AdminTasks } from '../admin/AdminTasks'
 import { AdminCalendar } from '../admin/AdminCalendar'
@@ -167,6 +168,7 @@ export function AppShell() {
             <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route path="dynamics" element={<AdminDynamics />} />
+              <Route path="journal" element={<AdminJournal />} />
               <Route path="cabin" element={<AdminCabin />} />
               <Route path="kb" element={<AdminKb />} />
               <Route path="tasks" element={<AdminTasks />} />

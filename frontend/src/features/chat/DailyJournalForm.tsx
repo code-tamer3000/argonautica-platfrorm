@@ -1,10 +1,6 @@
 import { useState } from 'react'
-import {
-  JOURNAL_CATEGORIES,
-  JOURNAL_CATEGORY_META,
-  useJournalDays,
-  type JournalCategory,
-} from '../../api/messages'
+import { useJournalDays } from '../../api/messages'
+import { useJournalStructure } from '../../api/journal'
 import { IconChevronRight } from '../../components/icons'
 import { useUiStore } from '../../stores/ui'
 import styles from './chat.module.css'
@@ -33,9 +29,11 @@ export function DailyJournalForm({ roomId }: Props) {
   const today = currentDateStr()
   const now = new Date()
   const { data: days } = useJournalDays(roomId, now.getUTCFullYear(), now.getUTCMonth() + 1)
+  const { data: structure } = useJournalStructure()
+  const sections = structure?.sections ?? []
   const todayCats = new Set(days?.[today] ?? [])
-  const dayClosed = JOURNAL_CATEGORIES.every((c) => todayCats.has(c))
-  const doneCount = JOURNAL_CATEGORIES.filter((c) => todayCats.has(c)).length
+  const dayClosed = sections.length > 0 && sections.every((s) => todayCats.has(s.key))
+  const doneCount = sections.filter((s) => todayCats.has(s.key)).length
 
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
@@ -44,8 +42,11 @@ export function DailyJournalForm({ roomId }: Props) {
   const [open, setOpen] = useState(false)
   const expanded = open || active != null
 
-  function toggle(category: JournalCategory) {
-    // Повторный тап по «заряженной» категории снимает выбор.
+  // Пока структура не загружена / задание без разделов — бар скрыт.
+  if (sections.length === 0) return null
+
+  function toggle(category: string) {
+    // Повторный тап по «заряженному» разделу снимает выбор.
     setPendingJournal(active === category ? null : { roomId, category })
   }
 
@@ -72,7 +73,7 @@ export function DailyJournalForm({ roomId }: Props) {
           {dayClosed ? '✓ Задания дня выполнены' : '📓 Записи дня'}
         </span>
         {!dayClosed && (
-          <span className={styles.journalBarProgress}>{doneCount}/{JOURNAL_CATEGORIES.length}</span>
+          <span className={styles.journalBarProgress}>{doneCount}/{sections.length}</span>
         )}
         <IconChevronRight
           size={16}
@@ -81,17 +82,16 @@ export function DailyJournalForm({ roomId }: Props) {
       </button>
       {expanded && (
         <div className={styles.journalChips}>
-          {JOURNAL_CATEGORIES.map((key) => {
-            const meta = JOURNAL_CATEGORY_META[key]
-            const done = todayCats.has(key)
+          {sections.map((section) => {
+            const done = todayCats.has(section.key)
             return (
               <button
-                key={key}
-                className={`${styles.journalChip} ${active === key ? styles.journalChipActive : ''}`}
-                onClick={() => toggle(key)}
-                title={done ? `${meta.label} — уже опубликовано сегодня` : meta.label}
+                key={section.key}
+                className={`${styles.journalChip} ${active === section.key ? styles.journalChipActive : ''}`}
+                onClick={() => toggle(section.key)}
+                title={done ? `${section.label} — уже опубликовано сегодня` : section.label}
               >
-                <span>{meta.emoji} {meta.label}</span>
+                <span>{section.emoji} {section.label}</span>
                 {done && <span className={styles.journalCheck}>✓</span>}
               </button>
             )

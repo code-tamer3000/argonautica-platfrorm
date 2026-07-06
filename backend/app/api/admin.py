@@ -9,7 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
-from app.api.dynamics import credit_day, get_all_dynamics, uncredit_day
+from app.api.dynamics import (
+    create_program,
+    credit_day,
+    delete_program,
+    get_all_dynamics,
+    list_programs,
+    uncredit_day,
+    update_program,
+)
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
@@ -25,7 +33,13 @@ from app.schemas.feedback import (
     FeedbackOut,
     FeedbackResolveRequest,
 )
-from app.schemas.journal import AdminCreditRequest, AdminDynamicsOut
+from app.schemas.journal import (
+    AdminCreditRequest,
+    AdminDynamicsOut,
+    JournalProgramIn,
+    JournalProgramOut,
+    JournalProgramUpdate,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -308,6 +322,46 @@ async def admin_credit_day(
     else:
         await uncredit_day(session, body.user_id, body.date)
     return await get_all_dynamics(session)
+
+
+# ─── Структура дневника (задания) ───────────────────────────────────────────
+
+@router.get("/journal/programs", response_model=list[JournalProgramOut])
+async def admin_list_programs(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[JournalProgramOut]:
+    """Все задания дневника с разделами (по возрастанию даты старта)."""
+    return await list_programs(session)
+
+
+@router.post("/journal/programs", response_model=JournalProgramOut, status_code=201)
+async def admin_create_program(
+    body: JournalProgramIn,
+    admin: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JournalProgramOut:
+    """Создать новое задание (версию структуры), действующее с `starts_on`."""
+    return await create_program(session, body, created_by=admin.id)
+
+
+@router.patch("/journal/programs/{program_id}", response_model=JournalProgramOut)
+async def admin_update_program(
+    program_id: int,
+    body: JournalProgramUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JournalProgramOut:
+    """Изменить задание. Замена набора разделов у прошлого/активного задания
+    пересчитает те дни — фронтенд предупреждает об этом."""
+    return await update_program(session, program_id, body)
+
+
+@router.delete("/journal/programs/{program_id}", status_code=204)
+async def admin_delete_program(
+    program_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Удалить задание (кроме самого раннего)."""
+    await delete_program(session, program_id)
 
 
 @router.get("/feedback", response_model=FeedbackListOut)
