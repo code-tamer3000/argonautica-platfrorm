@@ -62,6 +62,7 @@ Hard rules:
 | docs/SUPPORT.md            | feedback (bug/improvement) + FAQ                          |
 | docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
+| docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
 
 Do not read the whole docs/ directory. Pick from the index. Historical/vision docs are in docs/archive/.
 

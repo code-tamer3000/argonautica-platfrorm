@@ -1,7 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
-import { IconBook, IconCalendar, IconChat, IconDiary, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
@@ -28,7 +28,14 @@ import { AdminFaq } from '../admin/AdminFaq'
 import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
 import { useNavBadges } from './useNavBadges'
+import { Spinner } from '../../components/Spinner'
 import styles from './appshell.module.css'
+
+// Раздел «Генные ключи» тянет 64 markdown-файла — держим его в отдельном чанке,
+// чтобы не раздувать основной бандл (грузится только при заходе в раздел).
+const GeneKeysScreen = lazy(() =>
+  import('../genkeys/GeneKeysScreen').then((m) => ({ default: m.GeneKeysScreen })),
+)
 
 export function AppShell() {
   const { user, logout } = useAuth()
@@ -133,6 +140,10 @@ export function AppShell() {
             <span className={styles.navIcon}><IconCalendar /></span>
             <span className={styles.navLabel}>Календарь</span>
           </NavLink>
+          <NavLink to="/genkeys" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconGenkeys /></span>
+            <span className={styles.navLabel}>Генные ключи</span>
+          </NavLink>
           {canCabin && (
             <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
               <span className={styles.navIcon}><IconDiary /></span>
@@ -163,6 +174,14 @@ export function AppShell() {
             <Route path="/tasks" element={<TasksList />} />
             <Route path="/tasks/:taskId" element={<TaskDetail />} />
             <Route path="/calendar" element={<CalendarView />} />
+            <Route
+              path="/genkeys"
+              element={
+                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
+                  <GeneKeysScreen />
+                </Suspense>
+              }
+            />
             <Route path="/cabin" element={canCabin ? <CabinScreen /> : <Navigate to="/" replace />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/support" element={<SupportScreen />} />

@@ -1,0 +1,477 @@
+/* Gene Keys — interactive I-Ching wheel + reading panel. */
+
+.screen {
+  /* Family colors for sector fills — drawn from the Argonautica palette so the
+     wheel reads as part of the product, not a foreign infographic. */
+  --gk-fire: var(--color-krov);
+  --gk-water: var(--color-more);
+  --gk-gold: var(--color-latun);
+  --gk-stone: var(--color-frame-deep);
+
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 30% 30%, rgba(19, 78, 69, 0.18), transparent 60%),
+    var(--bg);
+}
+
+/* --- Stage (wheel side) --------------------------------------------------- */
+
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  transition: flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wheelWrap {
+  position: relative;
+  width: min(72vh, 92%, 780px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  /* Wheel slides toward the left edge when a reading opens. */
+  transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.screenOpen .wheelWrap {
+  transform: translateX(-4%) scale(0.94);
+}
+
+.wheelSvg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  user-select: none;
+}
+
+/* --- Rings ---------------------------------------------------------------- */
+/* Rotation is JS-driven (see useRings.ts): idle drift + ease-to-assemble under
+   the focused key. We only hint the compositor here. */
+.ring {
+  will-change: transform;
+}
+/* Concentric dividers between the three rings (and around the hub / outer rim). */
+.ringBound {
+  fill: none;
+  stroke: var(--divider-gold);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+/* --- Outer ring: 64 Gene Keys -------------------------------------------- */
+
+.keyCell {
+  cursor: pointer;
+  color: var(--text-muted);
+  outline: none;
+}
+.keyFill {
+  fill: var(--fam);
+  opacity: 0.22;
+  stroke: var(--bg);
+  stroke-width: 1;
+  transition: opacity 220ms ease, stroke 220ms ease;
+}
+.keyNum {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  font-weight: 500;
+  fill: currentColor;
+  transition: fill 220ms ease;
+}
+/* Invisible but hit-testable — covers the sector without the stroke gaps. */
+.keyHit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+}
+/* Hovered key — gold, matching the chain lighting up on the inner rings. */
+.keyCell:hover,
+.keyHover {
+  color: var(--color-bezdna);
+}
+.keyCell:hover .keyFill,
+.keyHover .keyFill {
+  fill: var(--accent-bright);
+  opacity: 0.9;
+  stroke: var(--accent);
+}
+.keyCell:hover .keyNum,
+.keyHover .keyNum {
+  font-weight: 600;
+}
+.keySelected .keyFill {
+  fill: var(--accent-bright);
+  opacity: 0.95;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.keySelected {
+  color: var(--color-bezdna);
+}
+.keySelected .keyNum {
+  font-weight: 600;
+}
+.keyCell:focus-visible .keyFill {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+/* --- Inner rings 1-2: bigram sectors ------------------------------------- */
+
+.lineCell {
+  color: var(--color-kost-muted);
+  transition: color 260ms ease;
+}
+.lineFill {
+  /* Subtle so the outer key ring stays the focus. */
+  fill: var(--color-frame);
+  stroke: var(--bg);
+  stroke-width: 1;
+  opacity: 0.5;
+  transition: opacity 260ms ease, fill 260ms ease;
+}
+/* The ancestry chain of the focused key lights up gold on every ring. */
+.cellOn {
+  color: var(--color-bezdna);
+}
+.cellOn .lineFill {
+  opacity: 0.95;
+  fill: var(--accent-bright);
+  stroke: var(--accent);
+}
+/* --- Golden growth spokes (focus) ---------------------------------------- */
+/* When a key is focused, a golden line grows from the center out along the
+   assembled ray, with nodes at each ring boundary. */
+@keyframes gkGrow {
+  from {
+    stroke-dashoffset: var(--len, 340);
+    opacity: 0;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+.growthLine {
+  stroke: var(--accent-bright);
+  stroke-linecap: round;
+  stroke-dasharray: 420;
+  filter: drop-shadow(0 0 3px rgba(217, 180, 90, 0.45));
+  animation: gkGrow 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Density tiers: the coarse ÷4 cuts are boldest and appear first; finer rings
+   are thinner and fade in slightly later, so the grid "grows" outward. */
+.edgeL1 .growthLine {
+  stroke-width: 2;
+  opacity: 0.9;
+}
+.edgeL2 .growthLine {
+  stroke-width: 1.3;
+  opacity: 0.6;
+  animation-delay: 90ms;
+}
+.edgeL3 .growthLine {
+  stroke-width: 0.9;
+  opacity: 0.4;
+  animation-delay: 180ms;
+}
+
+/* --- Hub (Taiji / focused hexagram) -------------------------------------- */
+
+.hubRim {
+  fill: var(--bg-deep);
+  stroke: var(--divider-gold);
+  stroke-width: 1.5;
+}
+@keyframes gkFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.centerHex {
+  animation: gkFadeIn 260ms ease both;
+  pointer-events: none;
+}
+.centerHexLine {
+  fill: var(--accent-bright);
+}
+
+/* --- Caption (below the wheel) ------------------------------------------- */
+
+.caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  min-height: 84px;
+  transition: opacity 300ms ease;
+}
+.screenOpen .caption {
+  opacity: 0;
+}
+.captionTitle {
+  font-family: var(--font-t1);
+  font-size: clamp(22px, 2.6vw, 32px);
+  color: var(--text-primary);
+}
+.captionNum {
+  font-family: var(--font-t1);
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.05;
+  color: var(--accent);
+}
+.captionName {
+  font-family: var(--font-t3);
+  font-size: clamp(15px, 1.6vw, 19px);
+  color: var(--text-primary);
+  max-width: 40ch;
+}
+.captionPartner {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  color: var(--accent);
+}
+.captionHint {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  margin-top: var(--space-1);
+}
+
+/* --- Reading pane --------------------------------------------------------- */
+
+.readingPane {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--divider-gold);
+  background: var(--bg-surface);
+  transition: flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.screenOpen .readingPane {
+  flex-basis: min(560px, 46%);
+  width: min(560px, 46%);
+}
+
+.reading {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: min(560px, 46vw);
+}
+
+.readingHead {
+  padding: var(--space-6) var(--space-6) var(--space-4);
+  border-bottom: 1px solid var(--divider);
+}
+.readingHeadTop {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.readingHex {
+  flex: 0 0 auto;
+  padding-top: var(--space-1);
+}
+.readingTitleWrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.readingNum {
+  display: block;
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.readingName {
+  font-family: var(--font-t1);
+  font-size: clamp(22px, 2.4vw, 30px);
+  line-height: 1.15;
+  color: var(--text-primary);
+  margin: var(--space-1) 0 0;
+}
+.readingClose {
+  flex: 0 0 auto;
+  appearance: none;
+  background: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.readingClose:hover {
+  color: var(--text-primary);
+  border-color: var(--divider-gold-strong);
+}
+
+/* Spectrum triad */
+.spectrum {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+.spectrumCell {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top-width: 3px;
+}
+.cellShadow {
+  border-top-color: var(--color-krov);
+}
+.cellGift {
+  border-top-color: var(--color-zoloto);
+}
+.cellSiddhi {
+  border-top-color: var(--color-kost-yar);
+}
+.spectrumLabel {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.spectrumValue {
+  font-family: var(--font-t3);
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+/* Characteristics */
+.chars {
+  margin: var(--space-5) 0 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.charRow {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.charLabel {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.charValue {
+  font-family: var(--font-t3);
+  font-size: 15px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Reading body (scrolls) */
+.readingBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-12);
+}
+.readingError {
+  color: var(--blood-bright);
+  font-family: var(--font-t3);
+}
+
+/* Markdown body — mirrors KB article styling. */
+.articleBody {
+  font-family: var(--font-t3);
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  max-width: 68ch;
+}
+.articleBody h2 {
+  font-family: var(--font-t1);
+  font-size: var(--text-h2);
+  color: var(--accent);
+  margin: var(--space-8) 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.articleBody h3 {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin: var(--space-6) 0 var(--space-2);
+}
+.articleBody h4 {
+  font-family: var(--font-t4);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.articleBody p {
+  margin-bottom: var(--space-3);
+}
+.articleBody ul,
+.articleBody ol {
+  padding-left: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+.articleBody blockquote {
+  border-left: 3px solid var(--divider-gold);
+  padding-left: var(--space-4);
+  color: var(--text-muted);
+  margin: var(--space-4) 0;
+}
+.articleBody strong {
+  color: var(--text-primary);
+}
+
+/* --- Mobile: stack wheel over reading ------------------------------------- */
+@media (max-width: 900px) {
+  .screen {
+    flex-direction: column;
+  }
+  .screenOpen .wheelWrap {
+    transform: translateY(-2%) scale(0.9);
+  }
+  .readingPane {
+    border-left: none;
+    border-top: 1px solid var(--divider-gold);
+  }
+  .screenOpen .readingPane {
+    flex-basis: 60%;
+    width: 100%;
+  }
+  .reading {
+    width: 100%;
+  }
+  .charRow {
+    grid-template-columns: 120px 1fr;
+  }
+}
