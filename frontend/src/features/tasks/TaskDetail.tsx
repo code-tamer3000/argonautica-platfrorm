@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -248,8 +248,7 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
   const del = useDeleteTaskComment(submissionId)
   const [text, setText] = useState('')
 
-  function submit(e?: FormEvent) {
-    e?.preventDefault()
+  function submit() {
     const value = text.trim()
     if (!value || create.isPending) return
     create.mutate(value, {
@@ -276,7 +275,7 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
 
   return (
     <div className={styles.comments}>
-      <form className={styles.commentForm} onSubmit={submit}>
+      <div className={styles.commentForm}>
         <textarea
           className={styles.commentInput}
           placeholder="Комментарий…"
@@ -288,7 +287,8 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
         {!!text.trim() && (
           <button
             className={styles.commentSend}
-            type="submit"
+            type="button"
+            onClick={submit}
             disabled={create.isPending}
             title="Отправить"
             aria-label="Отправить"
@@ -296,7 +296,7 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
             <IconSend size={16} />
           </button>
         )}
-      </form>
+      </div>
 
       <ul className={styles.commentList}>
         {list.map((c) => {

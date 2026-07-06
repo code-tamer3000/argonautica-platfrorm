@@ -16,6 +16,7 @@ export interface TaskOut {
   deadline_at: string | null
   created_by: number
   created_at: string
+  attachments: AttachmentOut[]
 }
 
 export interface TaskWithStatusOut extends TaskOut {
@@ -108,6 +109,7 @@ export interface TaskCreateBody {
   kb_item_id?: number | null
   deadline_at?: string | null
   assignee_ids?: number[]
+  media_asset_ids?: number[]
 }
 
 export interface TaskUpdateBody {
@@ -115,6 +117,7 @@ export interface TaskUpdateBody {
   body?: string | null
   deadline_at?: string | null
   kb_item_id?: number | null
+  media_asset_ids?: number[]
 }
 
 export function useCreateTask() {

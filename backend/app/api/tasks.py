@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +26,7 @@ from app.models.task import (
     Task,
     TaskAssignment,
     TaskComment,
+    TaskMedia,
     TaskSubmission,
     TaskSubmissionMedia,
 )
@@ -44,7 +46,10 @@ from app.schemas.task import (
     TaskUpdate,
     TaskWithStatusOut,
 )
-from app.services.media import resolve_submission_attachments
+from app.services.media import (
+    resolve_submission_attachments,
+    resolve_task_attachments,
+)
 from app.services.ratelimit import enforce_rate_limit
 from app.services.tasks import (
     assert_task_visible,
@@ -91,7 +96,7 @@ async def create_task(
     body: TaskCreate,
     current_admin: Annotated[User, Depends(require_admin)],
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> Task:
+) -> TaskOut:
     """Создать задачу. individual требует ≥1 существующего адресата (иначе 422).
 
     Для individual создаём строки назначений сразу; для common — лениво при сдаче.
@@ -102,7 +107,6 @@ async def create_task(
     if body.type == "individual":
         assignee_ids = list(dict.fromkeys(body.assignee_ids))
         if not assignee_ids:
-            # 422 как у pydantic-валидации (константа Starlette переименована).
             raise HTTPException(
                 422, "Individual task requires at least one assignee"
             )
@@ -123,6 +127,20 @@ async def create_task(
 
     for uid in assignee_ids:
         session.add(TaskAssignment(task_id=task.id, user_id=uid))
+
+    media_ids = list(dict.fromkeys(body.media_asset_ids))
+    if media_ids:
+        found = await session.execute(
+            select(MediaAsset.id).where(
+                MediaAsset.id.in_(media_ids),
+                MediaAsset.created_by == current_admin.id,
+            )
+        )
+        if set(found.scalars().all()) != set(media_ids):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+        for asset_id in media_ids:
+            session.add(TaskMedia(task_id=task.id, media_asset_id=asset_id))
+
     await session.flush()
 
     if task.deadline_at is not None:
@@ -132,7 +150,18 @@ async def create_task(
     await fan_out_task_event(
         session, task, ws_schemas.task_created_event(task.id, task.type, task.title)
     )
-    return task
+    attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
+    return TaskOut(
+        id=task.id,
+        type=task.type,
+        title=task.title,
+        body=task.body,
+        kb_item_id=task.kb_item_id,
+        deadline_at=task.deadline_at,
+        created_by=task.created_by,
+        created_at=task.created_at,
+        attachments=attachments,
+    )
 
 
 @router.patch("/{task_id}", response_model=TaskOut)
@@ -141,7 +170,7 @@ async def update_task(
     body: TaskUpdate,
     current_admin: Annotated[User, Depends(require_admin)],
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> Task:
+) -> TaskOut:
     """Частичное обновление whitelisted-полей. Ресинк календаря, фан-аут task.updated."""
     task = await load_task(session, task_id)
 
@@ -151,12 +180,40 @@ async def update_task(
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:
             setattr(task, field, value)
+
+    # media_asset_ids: None — не трогаем; список — заменяем весь набор целиком.
+    if "media_asset_ids" in changes and changes["media_asset_ids"] is not None:
+        new_ids = list(dict.fromkeys(changes["media_asset_ids"]))
+        await session.execute(sa_delete(TaskMedia).where(TaskMedia.task_id == task.id))
+        if new_ids:
+            found = await session.execute(
+                select(MediaAsset.id).where(
+                    MediaAsset.id.in_(new_ids),
+                    MediaAsset.created_by == current_admin.id,
+                )
+            )
+            if set(found.scalars().all()) != set(new_ids):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+            for asset_id in new_ids:
+                session.add(TaskMedia(task_id=task.id, media_asset_id=asset_id))
+
     await session.flush()
 
     await sync_task_calendar_event(session, task)
     await session.refresh(task)
     await fan_out_task_event(session, task, ws_schemas.task_updated_event(task.id))
-    return task
+    attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
+    return TaskOut(
+        id=task.id,
+        type=task.type,
+        title=task.title,
+        body=task.body,
+        kb_item_id=task.kb_item_id,
+        deadline_at=task.deadline_at,
+        created_by=task.created_by,
+        created_at=task.created_at,
+        attachments=attachments,
+    )
 
 
 @router.delete("/{task_id}", status_code=204)
@@ -373,6 +430,8 @@ async def list_tasks(
             submitted_counts[tid] = submitted
             accepted_counts[tid] = accepted
 
+    task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
+
     items = [
         TaskWithStatusOut(
             id=t.id,
@@ -383,6 +442,7 @@ async def list_tasks(
             deadline_at=t.deadline_at,
             created_by=t.created_by,
             created_at=t.created_at,
+            attachments=task_attachments.get(t.id, []),
             my_status=(a.status if (a := my_assignments.get(t.id)) else None),
             late=bool(a.late) if (a := my_assignments.get(t.id)) else False,
             deadline_soon=deadline_soon(t, now, days),
@@ -433,6 +493,7 @@ async def get_task(
         )
     ).one()
     total, submitted, accepted = agg
+    task_attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
     return TaskWithStatusOut(
         id=task.id,
         type=task.type,
@@ -442,6 +503,7 @@ async def get_task(
         deadline_at=task.deadline_at,
         created_by=task.created_by,
         created_at=task.created_at,
+        attachments=task_attachments,
         my_status=my.status if my else None,
         late=bool(my.late) if my else False,
         deadline_soon=deadline_soon(task, now, settings.task_deadline_soon_days),
