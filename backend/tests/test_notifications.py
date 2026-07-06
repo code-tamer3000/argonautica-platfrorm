@@ -22,6 +22,27 @@ async def _headers(client: AsyncClient, user: User) -> dict[str, str]:
     return auth_headers(tokens["access_token"])
 
 
+def _patch_timeline_start(monkeypatch: pytest.MonkeyPatch, start_date: object) -> None:
+    """Заставить шкалу заданий стартовать в start_date с разделами focus/notes/film.
+
+    program_start теперь берётся из БД-шкалы (сид-задание с 2026-07-03), а не из
+    settings, поэтому тесты, которым нужен один завершённый день, подменяют шкалу.
+    """
+    from app.api import dynamics as dyn
+
+    keys = ("focus", "notes", "film")
+    version = dyn.ProgramVersion(
+        starts_on=start_date,  # type: ignore[arg-type]
+        keys=frozenset(keys),
+        order={k: i for i, k in enumerate(keys)},
+    )
+
+    async def _fake(_session: object) -> list["dyn.ProgramVersion"]:
+        return [version]
+
+    monkeypatch.setattr(dyn, "load_timeline", _fake)
+
+
 async def _send(
     client: AsyncClient, headers: dict[str, str], room_id: int, **body: object
 ) -> dict:
@@ -264,7 +285,7 @@ async def test_journal_missed_skips_closed_day(
     today = datetime.now(UTC).date()
     yesterday = today - timedelta(days=1)
     # Программа стартовала вчера — единственный завершённый день = вчера.
-    monkeypatch.setattr(settings, "journal_program_start", yesterday)
+    _patch_timeline_start(monkeypatch, yesterday)
 
     user = await make_user()
     room = await _make_personal(session, user)
@@ -285,7 +306,7 @@ async def test_journal_missed_skips_pardoned_day(
 ) -> None:
     today = datetime.now(UTC).date()
     yesterday = today - timedelta(days=1)
-    monkeypatch.setattr(settings, "journal_program_start", yesterday)
+    _patch_timeline_start(monkeypatch, yesterday)
 
     user = await make_user()
     await _make_personal(session, user)

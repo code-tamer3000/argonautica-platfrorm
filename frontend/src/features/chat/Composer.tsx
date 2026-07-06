@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } fro
 import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
-  JOURNAL_CATEGORY_META,
   repostMessage,
   useSendMessage,
   type SendBody,
 } from '../../api/messages'
+import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
 import { IconAttach, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
@@ -48,10 +48,14 @@ export function Composer({ roomId, isNews }: Props) {
   const setPendingDraft = useUiStore((s) => s.setPendingDraft)
   // Репост показываем только в композере новостного канала.
   const repost = isNews ? pendingRepost : null
-  // Категория дневника, «заряженная» именно в эту комнату: следующая отправка
-  // (текст/файл/голос/стикер) уходит как запись дневника этой категории.
-  const journal = pendingJournal?.roomId === roomId ? pendingJournal.category : null
-  const journalMeta = journal ? JOURNAL_CATEGORY_META[journal] : null
+  // Раздел дневника, «заряженный» именно в эту комнату: следующая отправка
+  // (текст/файл/голос/стикер) уходит как запись дневника этого раздела. Мета
+  // раздела берётся из активного задания (см. api/journal.ts).
+  const { data: structure } = useJournalStructure()
+  const journalKey = pendingJournal?.roomId === roomId ? pendingJournal.category : null
+  const journalMeta = journalKey
+    ? structure?.sections.find((s) => s.key === journalKey) ?? null
+    : null
 
   // Успешно опубликовали запись дневника → снимаем «заряд» и обновляем прогресс дня
   // (бар над композером перечитает journal-days и проставит ✓).
@@ -99,11 +103,11 @@ export function Composer({ roomId, isNews }: Props) {
 
   function handleSticker(stickerId: number) {
     setPickerOpen(false)
-    if (journal) {
-      // Стикер как «отписка» дня: несёт маркер+заголовок категории в content, чтобы
+    if (journalMeta) {
+      // Стикер как «отписка» дня: несёт маркер+заголовок раздела в content, чтобы
       // сервер засчитал день, плюс сам стикер.
       send.mutate(
-        { content: buildJournalContent(journal, text.trim()), sticker_id: stickerId },
+        { content: buildJournalContent(journalMeta, text.trim()), sticker_id: stickerId },
         { onSuccess: afterJournalSent },
       )
       setText('')
@@ -127,16 +131,16 @@ export function Composer({ roomId, isNews }: Props) {
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 300)
 
-    // Запись дневника: маркер+заголовок категории в content (+ опциональные вложения).
-    // Для «фильма дня» текст обязателен — он и есть название (заголовок записи).
-    if (journal) {
+    // Запись дневника: маркер+заголовок раздела в content (+ опциональные вложения).
+    // Для раздела-«заголовка» (input_type='title') текст обязателен — он и есть заголовок.
+    if (journalMeta) {
       const value = text.trim()
-      if (journal === 'film' && !value) {
-        toast('Введите название фильма дня', 'error')
+      if (journalMeta.input_type === 'title' && !value) {
+        toast(`Введите: ${journalMeta.label}`, 'error')
         return
       }
       if (!value && pendingFiles.length === 0) return
-      const body: SendBody = { content: buildJournalContent(journal, value) }
+      const body: SendBody = { content: buildJournalContent(journalMeta, value) }
       if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
       setText('')
       setPendingFiles([])
@@ -323,9 +327,9 @@ export function Composer({ roomId, isNews }: Props) {
         ) : (
           <VoiceComposer
             onSend={(assetId) =>
-              journal
+              journalMeta
                 ? send.mutate(
-                    { content: buildJournalContent(journal, text.trim()), attachment_ids: [assetId] },
+                    { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [assetId] },
                     { onSuccess: afterJournalSent },
                   )
                 : send.mutate({ attachment_ids: [assetId] })

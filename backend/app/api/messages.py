@@ -5,7 +5,7 @@
 другому ответу. Удаление мягкое (п.6). Прочтения — через `last_read_message_id`
 без отдельной таблицы (п.4).
 """
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -567,22 +567,6 @@ async def list_pins(
     return [_pinned_out(p, m, attachments.get(m.id, [])) for p, m in pairs]
 
 
-# Категории дневника личного канала. Маркер — HTML-комментарий в начале content:
-# невидим после markdown-рендера (DOMPurify вырезает комментарии), но надёжно
-# распознаётся сервером (без ложных срабатываний на обычный текст). День «закрыт»,
-# когда за сутки опубликованы все три категории.
-JOURNAL_CATEGORIES = ("focus", "notes", "film")
-
-
-def _journal_category(content: str | None) -> str | None:
-    if not content:
-        return None
-    for cat in JOURNAL_CATEGORIES:
-        if content.startswith(f"<!--journal:{cat}-->"):
-            return cat
-    return None
-
-
 @router.get("/{room_id}/journal-days", response_model=dict[str, list[str]])
 async def get_journal_days(
     room_id: int,
@@ -591,10 +575,14 @@ async def get_journal_days(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, list[str]]:
-    """Карта {дата YYYY-MM-DD: [категории]} за месяц — для дневника/календаря.
+    """Карта {дата YYYY-MM-DD: [ключи разделов]} за месяц — для дневника/календаря.
 
-    День считается закрытым, когда список содержит все три категории (focus/notes/film).
+    День закрыт, когда за сутки опубликованы все разделы задания, активного в этот
+    день (набор разделов может меняться между заданиями — см. dynamics.load_timeline).
     """
+    # Маркер категории и шкала заданий живут в dynamics — единый источник правды.
+    from app.api.dynamics import _journal_category, active_version_for, load_timeline
+
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
 
@@ -605,6 +593,7 @@ async def get_journal_days(
         else datetime(year, month + 1, 1, tzinfo=UTC)
     )
 
+    timeline = await load_timeline(session)
     rows = await session.execute(
         select(cast(Message.created_at, SqlDate), Message.content)
         .where(
@@ -615,15 +604,17 @@ async def get_journal_days(
             Message.created_at < end,
         )
     )
-    per_day: dict[str, set[str]] = {}
+    per_day: dict[date, set[str]] = {}
     for day, content in rows.all():
         cat = _journal_category(content)
         if cat is None:
             continue
-        per_day.setdefault(str(day), set()).add(cat)
+        per_day.setdefault(day, set()).add(cat)
 
-    # Стабильный порядок категорий (focus, notes, film) — как в JOURNAL_CATEGORIES.
-    order = {c: i for i, c in enumerate(JOURNAL_CATEGORIES)}
-    return {
-        day: sorted(cats, key=lambda c: order[c]) for day, cats in per_day.items()
-    }
+    # Порядок ключей в дне — по позициям разделов задания, активного В ЭТОТ день.
+    def _ordered(day: date, cats: set[str]) -> list[str]:
+        version = active_version_for(day, timeline)
+        order = version.order if version else {}
+        return sorted(cats, key=lambda c: (order.get(c, len(order)), c))
+
+    return {str(day): _ordered(day, cats) for day, cats in per_day.items()}

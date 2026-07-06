@@ -257,6 +257,39 @@ export interface AdminDynamicsOut {
   users: UserDynamicsOut[]
 }
 
+// --- Структура дневника (задания) ---
+
+export type JournalInputType = 'text' | 'title'
+
+export interface JournalSection {
+  key: string
+  emoji: string
+  label: string
+  heading: string
+  placeholder: string
+  input_type: JournalInputType
+  position: number
+}
+
+// Активное на сегодня задание — для виджета и композера участника.
+export interface JournalStructure {
+  program_id: number | null
+  starts_on: string | null
+  title: string | null
+  description: string | null
+  sections: JournalSection[]
+}
+
+// Задание в админке (со своей датой старта).
+export interface JournalProgram {
+  id: number
+  starts_on: string
+  title: string | null
+  description: string | null
+  created_by: number | null
+  sections: JournalSection[]
+}
+
 // --- Уведомления (колокольчик + всплывающие тосты) ---
 export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed' | 'cabin_granted'
 

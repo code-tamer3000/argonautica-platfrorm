@@ -7,7 +7,12 @@ from app.models.cabin import CabinEntry
 from app.models.calendar import CalendarEvent
 from app.models.faq import FaqItem
 from app.models.feedback import Feedback
-from app.models.journal import JournalCredit, JournalPardon
+from app.models.journal import (
+    JournalCredit,
+    JournalPardon,
+    JournalProgram,
+    JournalSection,
+)
 from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
@@ -44,6 +49,8 @@ __all__ = [
     "Feedback",
     "JournalPardon",
     "JournalCredit",
+    "JournalProgram",
+    "JournalSection",
     "Notification",
     "Task",
     "TaskAssignment",

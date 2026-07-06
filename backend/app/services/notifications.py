@@ -15,7 +15,6 @@ from datetime import date, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.room import Room, RoomMember
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 _PREVIEW_LEN = 120
 # Служебный маркер категорий дневника в начале content — в превью не нужен.
-_JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z]+-->")
+_JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z0-9_]+-->")
 # Насколько глубоко назад досоздаём «пропущенные дни», если юзер долго не заходил.
 _JOURNAL_MISSED_WINDOW = 14
 
@@ -224,9 +223,12 @@ async def ensure_journal_notifications(session: AsyncSession, user: User) -> Non
             _load_pardons,
             _personal_room_id,
             _platform_today,
+            _timeline_start,
+            load_timeline,
         )
 
-        program_start = settings.journal_program_start
+        timeline = await load_timeline(session)
+        program_start = _timeline_start(timeline)
         today = _platform_today()
         if today - timedelta(days=1) < program_start:
             return  # ещё не наступил ни один завершённый день программы
@@ -240,7 +242,7 @@ async def ensure_journal_notifications(session: AsyncSession, user: User) -> Non
         credits = await _load_credits(session, user.id)
         per_day = _calc_closed_days(messages)
         # Зачтённые админом дни не пропущены — не создаём по ним «journal_missed».
-        stats = _calc_stats(per_day, pardons, program_start, credits)
+        stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
 
         # Пропущенные дни в пределах окна (не досоздаём всю историю разом).
         cutoff = today - timedelta(days=_JOURNAL_MISSED_WINDOW)

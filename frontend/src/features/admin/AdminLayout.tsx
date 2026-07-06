@@ -12,6 +12,9 @@ export function AdminLayout() {
         <NavLink to="/admin/dynamics" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Динамика
         </NavLink>
+        <NavLink to="/admin/journal" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Дневник
+        </NavLink>
         <NavLink to="/admin/cabin" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Каюта
         </NavLink>

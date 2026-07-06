@@ -201,8 +201,37 @@ See [CALENDAR.md](CALENDAR.md).
 | created_by | BIGINT | FK users | usually admin |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 
-## Dynamics (journal_pardons / journal_credits)
-Homework entries are `messages` in the personal room — no entry table. See [DYNAMICS.md](DYNAMICS.md).
+## Dynamics (journal_programs / journal_sections / journal_pardons / journal_credits)
+Homework entries are `messages` in the personal room — no entry table. The diary
+**structure** is versioned by date (задания). See [DYNAMICS.md](DYNAMICS.md).
+
+**journal_programs** — a diary-structure version (задание) effective from `starts_on`.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| starts_on | DATE | NOT NULL, UNIQUE | active on day D = greatest `starts_on <= D` |
+| title | TEXT | NULL | |
+| description | TEXT | NULL | |
+| created_by | BIGINT | FK users, NULL | NULL = system/seed program |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**journal_sections** — one section of a задание (order via `position`).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| program_id | BIGINT | FK journal_programs ON DELETE CASCADE, NOT NULL | |
+| key | TEXT | NOT NULL | slug `[a-z0-9_]+`, used in `<!--journal:{key}-->` marker |
+| position | INT | NOT NULL | display/order |
+| emoji | TEXT | NOT NULL, default '' | |
+| label | TEXT | NOT NULL | chip caption |
+| heading | TEXT | NOT NULL, default '' | markdown heading of the entry (empty for `title`) |
+| placeholder | TEXT | NOT NULL, default '' | composer hint |
+| input_type | TEXT | NOT NULL, default 'text' | `'text'` \| `'title'` |
+
+**UNIQUE:** (`program_id`, `key`), (`program_id`, `position`). **INDEX:** (`program_id`).
+
 
 **journal_pardons** — self-forgiven missed day (limit 3).
 
@@ -367,6 +396,7 @@ rooms --< pinned_messages >-- messages
 rooms --< calendar_events              (room_id nullable)
 users --< cabin_entries                (JSONB data by kind)
 users --< journal_pardons / journal_credits
+journal_programs --< journal_sections  (ON DELETE CASCADE; versioned diary structure)
 users --< notifications                (actor/message/room nullable)
 users --< feedback ;  faq_items        (standalone)
 kb_items --< kb_item_media >-- media_assets
