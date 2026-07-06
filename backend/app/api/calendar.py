@@ -15,6 +15,7 @@ from app.api.deps import get_current_active_user, require_admin
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
 from app.models.room import Room, RoomMember
+from app.models.task import Task, TaskAssignment
 from app.models.user import User
 from app.schemas.calendar import (
     CalendarEventCreate,
@@ -119,6 +120,21 @@ async def list_events(
             CalendarEvent.room_id.in_(accessible_rooms),
         )
     )
+    # Дедлайн-события индивидуальных задач адресны: видны только адресату задачи и
+    # админу (анти-IDOR, п.1). Общие задачи и обычные события — всем.
+    if current_user.role != "admin":
+        my_individual_tasks = select(TaskAssignment.task_id).where(
+            TaskAssignment.user_id == current_user.id
+        )
+        visible_task_ids = select(Task.id).where(
+            or_(Task.type == "common", Task.id.in_(my_individual_tasks))
+        )
+        stmt = stmt.where(
+            or_(
+                CalendarEvent.task_id.is_(None),
+                CalendarEvent.task_id.in_(visible_task_ids),
+            )
+        )
     if room_id is not None:
         stmt = stmt.where(CalendarEvent.room_id == room_id)
     if from_ is not None:
@@ -143,4 +159,10 @@ async def get_event(
     if event.room_id is not None:
         room = await load_room(session, event.room_id)
         await assert_room_access(session, room, current_user)
+    if event.task_id is not None:
+        # Видимость дедлайн-события = видимость задачи (individual — только адресат/админ).
+        from app.services.tasks import assert_task_visible, load_task
+
+        task = await load_task(session, event.task_id)
+        await assert_task_visible(session, task, current_user)
     return event

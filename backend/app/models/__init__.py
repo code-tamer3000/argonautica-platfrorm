@@ -14,6 +14,13 @@ from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.notification import Notification
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
+from app.models.task import (
+    Task,
+    TaskAssignment,
+    TaskComment,
+    TaskSubmission,
+    TaskSubmissionMedia,
+)
 from app.models.user import User
 
 __all__ = [
@@ -37,4 +44,9 @@ __all__ = [
     "JournalPardon",
     "JournalCredit",
     "Notification",
+    "Task",
+    "TaskAssignment",
+    "TaskSubmission",
+    "TaskSubmissionMedia",
+    "TaskComment",
 ]

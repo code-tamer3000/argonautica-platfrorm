@@ -18,6 +18,9 @@ export function AdminLayout() {
         <NavLink to="/admin/kb" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           База знаний
         </NavLink>
+        <NavLink to="/admin/tasks" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Задачи
+        </NavLink>
         <NavLink to="/admin/calendar" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Календарь
         </NavLink>

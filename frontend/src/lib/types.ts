@@ -162,6 +162,8 @@ export interface CalendarEventOut {
   ends_at: string | null
   all_day: boolean
   room_id: number | null
+  // Заполнено = автоуправляемое дедлайн-событие задачи.
+  task_id: number | null
   created_by: number
   created_at: string
 }
@@ -367,3 +369,9 @@ export type WsEvent =
   | { type: 'unsubscribed'; room_id: number }
   | { type: 'error'; detail: string; room_id?: number }
   | { type: 'pong' }
+  // --- Задачи (приходят по тому же per-user каналу, что и notification.new) ---
+  | { type: 'task.created'; task_id: number }
+  | { type: 'task.updated'; task_id: number }
+  | { type: 'submission.new'; task_id: number }
+  | { type: 'submission.status'; task_id: number; assignment_id: number; status: string }
+  | { type: 'task.comment.new'; submission_id: number; task_id: number }

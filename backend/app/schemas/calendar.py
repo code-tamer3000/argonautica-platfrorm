@@ -45,5 +45,7 @@ class CalendarEventOut(BaseModel):
     ends_at: datetime | None
     all_day: bool
     room_id: int | None
+    # Заполнено = автоуправляемое дедлайн-событие задачи (см. services/tasks.py).
+    task_id: int | None = None
     created_by: int
     created_at: datetime

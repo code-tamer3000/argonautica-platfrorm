@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
-import { IconBook, IconCalendar, IconChat, IconDiary, IconNews, IconSettings, IconSupport, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconDiary, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
@@ -11,11 +11,14 @@ import { CalendarView } from '../calendar/CalendarView'
 import { CabinScreen } from '../cabin/CabinScreen'
 import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
+import { TasksList } from '../tasks/TasksList'
+import { TaskDetail } from '../tasks/TaskDetail'
 import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { AdminDynamics } from '../admin/AdminDynamics'
 import { AdminKb } from '../admin/AdminKb'
+import { AdminTasks } from '../admin/AdminTasks'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
@@ -120,6 +123,11 @@ export function AppShell() {
             <span className={styles.navIcon}><IconBook /></span>
             <span className={styles.navLabel}>База знаний</span>
           </NavLink>
+          <NavLink to="/tasks" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconTasks /></span>
+            <span className={styles.navLabel}>Задачи</span>
+            {badges.tasks > 0 && <span className={styles.navBadge}>{badges.tasks > 99 ? '99+' : badges.tasks}</span>}
+          </NavLink>
           <NavLink to="/calendar" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconCalendar /></span>
             <span className={styles.navLabel}>Календарь</span>
@@ -151,6 +159,8 @@ export function AppShell() {
             <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route path="/kb/:itemId" element={<KbViewer />} />
+            <Route path="/tasks" element={<TasksList />} />
+            <Route path="/tasks/:taskId" element={<TaskDetail />} />
             <Route path="/calendar" element={<CalendarView />} />
             <Route path="/cabin" element={canCabin ? <CabinScreen /> : <Navigate to="/" replace />} />
             <Route path="/profile" element={<ProfileScreen />} />
@@ -159,6 +169,7 @@ export function AppShell() {
               <Route path="dynamics" element={<AdminDynamics />} />
               <Route path="cabin" element={<AdminCabin />} />
               <Route path="kb" element={<AdminKb />} />
+              <Route path="tasks" element={<AdminTasks />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
               <Route path="users" element={<AdminUsers />} />
