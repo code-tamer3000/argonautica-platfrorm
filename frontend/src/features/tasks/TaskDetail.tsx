@@ -93,6 +93,15 @@ export function TaskDetail() {
         <div className={styles.articleBody} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
       )}
 
+      {/* Медиа условия задачи (прикреплённое админом) — видно всем, кто видит задачу. */}
+      {task.attachments.length > 0 && (
+        <div className={styles.submissionMedia}>
+          {task.attachments.map((att) => (
+            <Attachment key={att.asset_id} attachment={att} />
+          ))}
+        </div>
+      )}
+
       {/* Участник: композер сдачи + свой статус (админ сам задачи не сдаёт). */}
       {!isAdmin && (
         <section className={styles.section}>
