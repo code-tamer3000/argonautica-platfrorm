@@ -3,10 +3,11 @@ import { useMyDynamics, usePardon } from '../../api/dynamics'
 import { usePatchMe } from '../../api/profile'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
-import { IconAlert, IconCheck, IconFlame, IconWaves } from '../../components/icons'
+import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
+import { useThemeStore, type Theme } from '../../stores/theme'
 import { useAuth } from '../auth/AuthContext'
 import styles from './profile.module.css'
 
@@ -104,6 +105,35 @@ function DynamicsSection() {
             ? `Осталось помилований: ${dyn.pardons_remaining}`
             : 'Все помилования использованы'}
         </span>
+      </div>
+    </div>
+  )
+}
+
+const THEME_OPTIONS: { value: Theme; label: string; icon: typeof IconSun }[] = [
+  { value: 'dark', label: 'Тёмная', icon: IconMoon },
+  { value: 'light', label: 'Светлая', icon: IconSun },
+]
+
+function ThemeSection() {
+  const theme = useThemeStore((s) => s.theme)
+  const setTheme = useThemeStore((s) => s.setTheme)
+
+  return (
+    <div className={styles.settingCard}>
+      <h2 className={styles.settingTitle}>Оформление</h2>
+      <div className={styles.themeToggle} role="group" aria-label="Тема оформления">
+        {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+          <button
+            key={value}
+            className={styles.themeOption + (theme === value ? ' ' + styles.themeOptionActive : '')}
+            onClick={() => setTheme(value)}
+            aria-pressed={theme === value}
+          >
+            <Icon size={18} />
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -237,6 +267,9 @@ export function ProfileScreen() {
           </div>
         )}
       </div>
+
+      {/* Оформление — доступно всем */}
+      <ThemeSection />
 
       {/* Динамика — только для участников */}
       {user.role !== 'admin' && <DynamicsSection />}
