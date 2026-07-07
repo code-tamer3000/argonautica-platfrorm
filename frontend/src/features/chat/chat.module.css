@@ -389,16 +389,14 @@
    (например, шапка сообщения). Между медиа и текстом ниже отступ даёт .msgText. */
 .attachments:not(:first-child) { margin-top: var(--space-2); }
 .attachments + .msgText, .sticker + .msgText { margin-top: var(--space-2); }
-.attImageWrap { position: relative; display: inline-block; max-width: 280px; max-height: 360px; overflow: hidden; border-radius: var(--radius-media); }
+.attImageWrap { position: relative; display: inline-block; max-width: 280px; overflow: hidden; border-radius: var(--radius-media); }
 /* Пока байты картинки грузятся — резервируем видимую коробку под крутилку/процент. */
 .attImageLoading { min-width: 140px; background: var(--bg-deep); }
 .attImageLoading:not([style*="aspect-ratio"]) { min-height: 140px; }
-/* Картинка заполняет коробку, но никогда не искажается: object-fit сохраняет пропорции.
-   Когда пропорции известны, aspect-ratio на .attImageWrap задаёт форму коробки; когда
-   нет — коробка ужимается по натуральным размерам картинки (max-width/height ограничивают). */
-.attImage { max-width: 280px; max-height: 360px; border-radius: var(--radius-media); cursor: pointer; display: block; object-fit: contain; }
-/* Есть aspect-ratio: коробка держит форму, картинка растягивается по ней без искажений. */
-.attImageWrap[style*="aspect-ratio"] .attImage { width: 100%; height: 100%; max-width: 100%; max-height: 100%; }
+/* height: auto держит натуральные пропорции при width:100% (иначе max-height обрезал бы
+   высоту и искажал фото). object-fit: contain — страховка, когда коробке задан aspect-ratio. */
+.attImage { max-width: 280px; max-height: 360px; height: auto; border-radius: var(--radius-media); cursor: pointer; display: block; width: 100%; object-fit: contain; }
+.attImageWrap .attImage { max-width: 100%; }
 .attVideo { max-width: 320px; max-height: 280px; border-radius: var(--radius-media); }
 .attFile {
   display: inline-flex; align-items: center; gap: var(--space-2);
@@ -687,7 +685,6 @@
 
   /* Стикер-пикер не должен уезжать за край */
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
-  .attImageWrap { max-width: 100%; }
   .attImage, .attVideo { max-width: 100%; }
 }
 
