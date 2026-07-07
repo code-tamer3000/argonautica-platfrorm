@@ -321,6 +321,13 @@
   margin-top: var(--space-1);
 }
 
+/* --- Mobile picker (by number / by hexagram) ----------------------------- */
+/* Hidden on desktop — the wheel is the interface there. Shown only in the
+   mobile media query below, where the 64 sectors are too small to tap. */
+.picker {
+  display: none;
+}
+
 /* --- Reading pane --------------------------------------------------------- */
 
 .readingPane {
@@ -549,11 +556,39 @@
   .screen {
     flex-direction: column;
   }
+  /* Mobile: title, wheel and picker stack in a scrollable, top-aligned column so
+     nothing overlaps and the picker is always reachable. The wheel is trimmed a
+     little (not shrunk hard) so the whole set fits without fighting for space. */
+  .stage {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-4) 0 var(--space-8);
+    gap: var(--space-2);
+  }
+  .wheelWrap {
+    flex: 0 0 auto;
+    width: min(66vw, 340px);
+  }
+  /* Title first, then the wheel — caption comes BEFORE the wheel visually on
+     mobile so the picker sits directly under the wheel with no gap dance. */
+  .caption {
+    order: -1;
+    min-height: 0;
+  }
+  /* The hover hint is meaningless on touch (no hover) and just adds a jumpy line
+     whose text changes with focus — drop it on mobile. */
+  .captionHint {
+    display: none;
+  }
   /* When a reading is open, collapse the wheel stage to a slim strip so the
      text gets the room — and the reading pane scrolls its full content. */
   .screenOpen .stage {
     flex: 0 0 34%;
     min-height: 0;
+    overflow: hidden;
+    justify-content: center;
+    padding: 0;
   }
   .screenOpen .wheelWrap {
     transform: scale(0.86);
@@ -585,5 +620,183 @@
   }
   .charRow {
     grid-template-columns: 110px 1fr;
+  }
+
+  /* Direct key selection — shown only on mobile. Hidden once a reading opens
+     (the screen conditionally unmounts it, but keep it out of the strip too). */
+  .picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: min(92%, 420px);
+    flex: 0 0 auto;
+    margin-top: var(--space-2);
+  }
+  .screenOpen .picker {
+    display: none;
+  }
+  /* Reserve the tall-tab (hexagram) height for BOTH tabs so switching between
+     "по номеру" and "по гексаграмме" doesn't jump the layout. */
+  .pickerBody {
+    min-height: 232px;
+  }
+
+  .pickerTabs {
+    display: flex;
+    gap: var(--space-1);
+    padding: 3px;
+    border: 1px solid var(--divider-gold);
+    border-radius: 999px;
+    background: var(--bg-surface);
+  }
+  .pickerTab,
+  .pickerTabActive {
+    flex: 1 1 0;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-t4);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 200ms ease, color 200ms ease;
+  }
+  .pickerTabActive {
+    background: var(--accent);
+    color: var(--color-bezdna);
+  }
+
+  .pickerForm {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'field go'
+      'hint  hint';
+    gap: var(--space-2) var(--space-3);
+    align-items: end;
+  }
+  .pickerField {
+    grid-area: field;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .pickerLabel {
+    font-family: var(--font-t4);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-ghost);
+  }
+  .pickerInput {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--divider-gold);
+    border-radius: var(--radius-btn);
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-t2);
+    font-size: 18px;
+  }
+  .pickerInput:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .pickerGo {
+    grid-area: go;
+    padding: var(--space-2) var(--space-5);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-btn);
+    background: var(--accent);
+    color: var(--color-bezdna);
+    font-family: var(--font-t4);
+    font-size: 14px;
+    cursor: pointer;
+    transition: opacity 200ms ease;
+  }
+  .pickerGo:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .pickerHint {
+    grid-area: hint;
+    min-height: 16px;
+    font-family: var(--font-t3);
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  /* By-hexagram: two columns of eight trigram buttons + a resolve row. */
+  .hexPicker {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+  .trigramCol {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .trigramGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-1);
+    width: 100%;
+  }
+  .trigramBtn,
+  .trigramBtnActive {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: var(--space-2) 4px;
+    border: 1px solid var(--divider-gold);
+    border-radius: var(--radius-btn);
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 200ms ease, background 200ms ease, color 200ms ease;
+  }
+  .trigramBtnActive {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-surface));
+    color: var(--text-primary);
+  }
+  .trigramLines {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 30px;
+  }
+  .trigramLineYang,
+  .trigramLineYin {
+    display: flex;
+    justify-content: space-between;
+    gap: 5px;
+    height: 4px;
+  }
+  .trigramSeg {
+    flex: 1 1 auto;
+    height: 100%;
+    border-radius: 2px;
+    background: currentColor;
+  }
+  .trigramName {
+    font-family: var(--font-t4);
+    font-size: 11px;
+    line-height: 1;
+  }
+  .hexResult {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    min-height: 40px;
+    align-items: center;
+  }
+  .hexResult .pickerGo {
+    grid-area: auto;
   }
 }

@@ -185,7 +185,7 @@ export function AppShell() {
           </NavLink>
           <NavLink to="/genkeys" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconGenkeys /></span>
-            <span className={styles.navLabel}>Генные ключи</span>
+            <span className={styles.navLabel}>Генные замки</span>
           </NavLink>
           {canCabin && (
             <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
