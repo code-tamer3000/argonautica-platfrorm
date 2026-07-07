@@ -384,7 +384,11 @@
 }
 
 /* --- Вложения / стикеры --- */
-.attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Медиа идут первыми в пузыре; отступ нужен только когда над ними есть что-то
+   (например, шапка сообщения). Между медиа и текстом ниже отступ даёт .msgText. */
+.attachments:not(:first-child) { margin-top: var(--space-2); }
+.attachments + .msgText, .sticker + .msgText { margin-top: var(--space-2); }
 .attImageWrap { position: relative; display: inline-block; max-width: 280px; overflow: hidden; border-radius: var(--radius-media); }
 /* Пока байты картинки грузятся — резервируем видимую коробку под крутилку/процент. */
 .attImageLoading { min-width: 140px; background: var(--bg-deep); }
