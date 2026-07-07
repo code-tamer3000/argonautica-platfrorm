@@ -145,6 +145,32 @@ export function partnerOf(n: number): number | undefined {
   return HEX_TO_NUMBER.get(invert(k.hexagram))
 }
 
+// --- Trigram lookup (for the mobile picker) --------------------------------
+// A hexagram is two trigrams: lower = lines 1-3 (bottom), upper = lines 4-6.
+// Each is 3 bits, '1'=yang solid, '0'=yin broken, bottom line first.
+
+/** The 8 trigrams, in the classic bottom-up bit order, with their names. */
+export interface Trigram {
+  bits: string // 3 chars, line1(bottom)..line3(top)
+  name: string
+  glyph: string // ☰ family
+}
+export const TRIGRAMS: Trigram[] = [
+  { bits: '111', name: 'Небо', glyph: '☰' },
+  { bits: '011', name: 'Озеро', glyph: '☱' },
+  { bits: '101', name: 'Огонь', glyph: '☲' },
+  { bits: '001', name: 'Гром', glyph: '☳' },
+  { bits: '110', name: 'Ветер', glyph: '☴' },
+  { bits: '010', name: 'Вода', glyph: '☵' },
+  { bits: '100', name: 'Гора', glyph: '☶' },
+  { bits: '000', name: 'Земля', glyph: '☷' },
+]
+
+/** Key number from a lower + upper trigram (each 3 bits). */
+export function keyByTrigrams(lower: string, upper: string): number | undefined {
+  return HEX_TO_NUMBER.get(lower + upper)
+}
+
 // --- Precomputed sectors + leaves -----------------------------------------
 
 export interface RingSector {

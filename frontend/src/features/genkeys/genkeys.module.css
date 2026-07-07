@@ -321,6 +321,13 @@
   margin-top: var(--space-1);
 }
 
+/* --- Mobile picker (by number / by hexagram) ----------------------------- */
+/* Hidden on desktop — the wheel is the interface there. Shown only in the
+   mobile media query below, where the 64 sectors are too small to tap. */
+.picker {
+  display: none;
+}
+
 /* --- Reading pane --------------------------------------------------------- */
 
 .readingPane {
@@ -585,5 +592,177 @@
   }
   .charRow {
     grid-template-columns: 110px 1fr;
+  }
+
+  /* Direct key selection — shown only on mobile. Hidden once a reading opens
+     (the screen conditionally unmounts it, but keep it out of the strip too). */
+  .picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    width: min(92%, 420px);
+    margin-top: var(--space-2);
+  }
+  .screenOpen .picker {
+    display: none;
+  }
+
+  .pickerTabs {
+    display: flex;
+    gap: var(--space-1);
+    padding: 3px;
+    border: 1px solid var(--divider-gold);
+    border-radius: 999px;
+    background: var(--bg-surface);
+  }
+  .pickerTab,
+  .pickerTabActive {
+    flex: 1 1 0;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-t4);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 200ms ease, color 200ms ease;
+  }
+  .pickerTabActive {
+    background: var(--accent);
+    color: var(--color-bezdna);
+  }
+
+  .pickerForm {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'field go'
+      'hint  hint';
+    gap: var(--space-2) var(--space-3);
+    align-items: end;
+  }
+  .pickerField {
+    grid-area: field;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .pickerLabel {
+    font-family: var(--font-t4);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-ghost);
+  }
+  .pickerInput {
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--divider-gold);
+    border-radius: var(--radius-btn);
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: var(--font-t2);
+    font-size: 18px;
+  }
+  .pickerInput:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .pickerGo {
+    grid-area: go;
+    padding: var(--space-2) var(--space-5);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-btn);
+    background: var(--accent);
+    color: var(--color-bezdna);
+    font-family: var(--font-t4);
+    font-size: 14px;
+    cursor: pointer;
+    transition: opacity 200ms ease;
+  }
+  .pickerGo:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .pickerHint {
+    grid-area: hint;
+    min-height: 16px;
+    font-family: var(--font-t3);
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  /* By-hexagram: two columns of eight trigram buttons + a resolve row. */
+  .hexPicker {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+  .trigramCol {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .trigramGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-1);
+    width: 100%;
+  }
+  .trigramBtn,
+  .trigramBtnActive {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: var(--space-2) 4px;
+    border: 1px solid var(--divider-gold);
+    border-radius: var(--radius-btn);
+    background: var(--bg-surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 200ms ease, background 200ms ease, color 200ms ease;
+  }
+  .trigramBtnActive {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-surface));
+    color: var(--text-primary);
+  }
+  .trigramLines {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 30px;
+  }
+  .trigramLineYang,
+  .trigramLineYin {
+    display: flex;
+    justify-content: space-between;
+    gap: 5px;
+    height: 4px;
+  }
+  .trigramSeg {
+    flex: 1 1 auto;
+    height: 100%;
+    border-radius: 2px;
+    background: currentColor;
+  }
+  .trigramName {
+    font-family: var(--font-t4);
+    font-size: 11px;
+    line-height: 1;
+  }
+  .hexResult {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: center;
+    min-height: 40px;
+    align-items: center;
+  }
+  .hexResult .pickerGo {
+    grid-area: auto;
   }
 }

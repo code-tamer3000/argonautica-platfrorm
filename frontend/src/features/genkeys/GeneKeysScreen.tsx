@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GeneKeysWheel } from './GeneKeysWheel'
 import { GeneKeyReading } from './GeneKeyReading'
+import { GeneKeyPicker } from './GeneKeyPicker'
 import { getKey, partnerOf } from './wheel'
 import styles from './genkeys.module.css'
 
@@ -85,11 +86,15 @@ export function GeneKeysScreen() {
             </>
           ) : (
             <>
-              <span className={styles.captionTitle}>Генные Ключи</span>
-              <span className={styles.captionHint}>наведитесь на ключ · раскроется гексаграмма</span>
+              <span className={styles.captionTitle}>Генные замки</span>
+              <span className={styles.captionHint}>наведитесь на замок · раскроется гексаграмма</span>
             </>
           )}
         </div>
+
+        {/* Mobile-only: sectors are too small to tap, so offer direct selection
+            by number or by assembling the hexagram from its two trigrams. */}
+        {!open && <GeneKeyPicker onSelect={handleSelect} />}
       </section>
 
       <div className={styles.readingPane} aria-hidden={!open}>

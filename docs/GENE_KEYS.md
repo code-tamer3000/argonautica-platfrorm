@@ -1,7 +1,11 @@
-# Gene Keys (Генные Ключи)
+# Gene Keys (Генные замки)
 
 > Frontend-only feature. Static content (64 keys), no backend/DB. Route `/genkeys`,
 > visible to all logged-in users (sidenav item). Added 2026-07.
+>
+> UI label is **«Генные замки»** (nav item, wheel caption). The route, code
+> identifiers, and content filenames stay `genkeys`/`GeneKeys` — the rename is
+> user-facing text only.
 
 ## What it is
 
@@ -61,6 +65,21 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
   stack into one radial column (assembled hexagram), then the wheel slides left
   and the reading panel opens on the right. Esc / close button dismisses.
 
+## Mobile picker (`GeneKeyPicker.tsx`)
+
+On mobile (`max-width: 900px`) the 64 wheel sectors are too small to tap
+reliably, so a picker appears **below the wheel** (hidden on desktop via CSS;
+also hidden once a reading is open). Two tabs, both resolving to a key number
+that opens the reading through the same `onSelect` as a wheel click:
+
+- **По номеру** — a number field (1–64) + «Открыть»; the matched key's name
+  previews live below.
+- **По гексаграмме** — pick the **lower** trigram then the **upper** (eight
+  I-Ching trigrams each, drawn as stacked yang/yin lines); `keyByTrigrams(lower,
+  upper)` in `wheel.ts` concatenates them (`lower+upper` = full hexagram) and
+  looks up the number. All 64 lower×upper combinations resolve, so it never
+  dead-ends. `TRIGRAMS` (bits + Russian names) also lives in `wheel.ts`.
+
 ## Files
 
 - `wheel.ts` — geometry, palette, lookups, `PLACED`/`LEAVES`, `partnerOf`.
@@ -68,6 +87,7 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 - `GeneKeysWheel.tsx` — the SVG (rings, keys, ticks, golden edges, hub).
 - `YinYang.tsx` — Taiji hub mark. `Hexagram.tsx` — hexagram for the reading panel.
 - `GeneKeyReading.tsx` — spectrum triad + characteristics + lazy markdown body.
+- `GeneKeyPicker.tsx` — mobile-only by-number / by-hexagram key selection.
 - `GeneKeysScreen.tsx` — composition + hover/select/partner state.
 - `genkeys.module.css` — all styling.
 - `content/*.md` — the 64 source files. `genkeys.data.ts` — generated metadata.
