@@ -1,144 +1,41 @@
-# Деплой
+# Deploy (reference — what NOT to touch)
 
-Прод-стек целиком в Docker Compose. **Наружу торчит только nginx** (80/443);
-Postgres/Redis/MinIO живут в docker-сети без проброса портов. Деплой —
-**blue-green** (zero-downtime): две копии backend (`blue`/`green`) на одном
-Postgres/Redis/MinIO, nginx переключает трафик. Миграции —
-**expand/contract** (обратно-совместимые), применяются ДО переключения.
+> Source: docs/archive/{DEPLOY.md, PLATFORM_SPEC.md §5/§7, DECISIONS.md, OPERATIONS.md}, restructured 2026-07-06.
+> Agents rarely change deploy. This is the minimum to avoid breaking it. Full runbooks are in docs/archive/{DEPLOY.md, OPERATIONS.md}.
 
-Файлы: [docker/docker-compose.prod.yml](../docker/docker-compose.prod.yml),
-[docker/nginx/](../docker/nginx/), [docker/deploy.sh](../docker/deploy.sh),
-[backend/Dockerfile](../backend/Dockerfile).
+## Do NOT touch (from an agent task)
 
-## Текущее окружение
+- `docker/docker-compose.prod.yml`, `docker/docker-compose.staging.yml`
+- `docker/deploy.sh`, `docker/deploy-staging.sh`, `docker/backup.sh`
+- `docker/nginx/**`, `docker/nginx-staging/**`, and any `certs/`
+- `.env` and `.env.*` (secrets — never commit; only `.env.example` is tracked)
+- `.github/workflows/*` unless the task is explicitly about CI/CD
 
-| Ветка | Окружение | Сервер | Триггер деплоя |
+## Topology
+
+- Only **nginx** is exposed (80/443). Postgres/Redis/MinIO live in the docker network with no host ports. Everything in Docker Compose.
+- **Blue-green** (zero-downtime): two backend copies (`blue`/`green`) share one Postgres/Redis/MinIO. nginx flips traffic. Stateful services are never duplicated.
+
+## The one rule that constrains schema work
+
+**Migrations are expand/contract only.** Blue and green share one Postgres, so old and new code must both work against the schema during a switch. Never rename/drop a column in the same release that stops writing it: add + ship code first, drop in a later release. (Column renames = add new + copy + later drop.) This is why every migration in this repo is additive.
+
+## Environments
+
+| Branch | Environment | Server | Trigger |
 |---|---|---|---|
-| `main` | **Production** | `193.233.245.210` | merge PR → GitHub Actions автоматически |
-| `develop` | — | — | CI (тесты/линт), деплоя нет |
+| `main` | Production | `193.233.245.210` (`platform.argonautica-systems.ru`) | merge → GitHub Actions (`deploy-prod.yml`) → rsync + `docker/deploy.sh` |
+| `develop` | Staging | same host, `/opt/platform-staging`, port **8443**, isolated compose project | push → `Deploy → staging` → `deploy-staging.sh` |
+| PR (any) | — | — | CI: ruff + mypy + pytest (`ci.yml`) |
 
-**GitHub Actions:** [.github/workflows/deploy-prod.yml](../.github/workflows/deploy-prod.yml) — rsync кода на сервер (без `.env`, без `docker/nginx/certs/`), затем SSH → `bash docker/deploy.sh`.
+- Staging is isolated (separate compose project, own network/volumes/`.env`/`JWT_SECRET`), no blue-green, **no `bot` service** (a second long-poller on the prod token would break the prod bot — see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)).
+- Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx restarts (`deploy-staging.sh` restarts it automatically).
 
-**SSH-доступ к серверу** (`~/.ssh/config`):
-```
-Host platform
-    HostName 193.233.245.210
-    User root
-    IdentityFile ~/.ssh/gh_actions
-    IdentitiesOnly yes
-```
-Подключение: `ssh platform`.
+## Local dev vs prod
 
-## 1. Подготовка сервера (VPS)
-- Ubuntu + Docker Engine + Compose plugin (`docker compose`).
-- Клонировать репозиторий, `cd` в корень.
-- `cp .env.example .env` и заполнить: реальные пароли Postgres/MinIO, длинный
-  `JWT_SECRET` (`openssl rand -hex 32`), `DOMAIN`/`MEDIA_DOMAIN`,
-  `MINIO_PUBLIC_ENDPOINT=https://${MEDIA_DOMAIN}`, `DATABASE_URL`/`REDIS_URL` на
-  docker-имена (`postgres`/`redis`). `.env` НЕ коммитить.
-- DNS: `DOMAIN` и `MEDIA_DOMAIN` → IP сервера.
+- One codebase; only `.env` differs per environment. Names are fixed in `backend/app/core/config.py`; values are per-env. Dev compose (`docker/docker-compose.yml`) exposes ports and runs backend/frontend on the host (see CLAUDE.md commands).
+- Key nuance: `MINIO_ENDPOINT` (internal, server-side calls) and `MINIO_PUBLIC_ENDPOINT` (browser-facing, used to sign presigned URLs) are **different addresses** in prod.
 
-## 2. TLS-сертификаты
-nginx читает `docker/nginx/certs/${DOMAIN}.{crt,key}` и `${MEDIA_DOMAIN}.{crt,key}`.
+## Backups
 
-- **Локальная проверка / стейджинг:** self-signed —
-  `DOMAIN=localhost MEDIA_DOMAIN=media.localhost docker/nginx/make-self-signed.sh`.
-- **Прод (Let's Encrypt):** выписать боевые серты (certbot webroot — nginx уже отдаёт
-  `/.well-known/acme-challenge/` из тома `certbot_webroot`), затем разложить/симлинкнуть
-  fullchain→`${DOMAIN}.crt`, privkey→`${DOMAIN}.key` (и для медиа-домена) в
-  `docker/nginx/certs/`. Обновление по cron + `docker compose exec nginx nginx -s reload`.
-
-## 3. Первый запуск
-```sh
-docker/nginx/make-self-signed.sh                                  # или боевые серты
-docker compose -f docker/docker-compose.prod.yml --env-file .env run --rm migrate
-docker compose -f docker/docker-compose.prod.yml --env-file .env up -d
-```
-`up` поднимает Postgres/Redis/MinIO, `backend-blue` (+`green`) и nginx (трафик → blue по
-[active_backend.conf](../docker/nginx/active_backend.conf)). Проверка:
-`curl -k https://${DOMAIN}/api/health`.
-
-## 4. Деплой новой версии (blue-green)
-```sh
-git pull
-docker/deploy.sh
-```
-Скрипт: собрать образ → `run --rm migrate` (expand-миграции, совместимы с живым цветом)
-→ поднять второй цвет → дождаться `healthy` → переписать `active_backend.conf` →
-`nginx -s reload` → дренаж WS → остановить старый цвет. Сокеты при переключении рвутся —
-клиент переподключается сам.
-
-## 5. Откат
-Вернуть `active_backend.conf` на прежний цвет, `docker compose … exec nginx nginx -s reload`,
-при необходимости поднять прежний контейнер (`… up -d --no-deps backend-<color>`). Старый
-образ/контейнер остаётся до следующего деплоя.
-
-## 6. Резервное копирование
-
-Скрипт: [`docker/backup.sh`](../docker/backup.sh).
-
-### Что делает скрипт
-
-1. Находит контейнер `postgres` динамически через `docker compose ps -q postgres`.
-2. Запускает `pg_dump` внутри контейнера, пайпит вывод через `gzip` в файл
-   `/tmp/backup_YYYY-MM-DD_HH.sql.gz`.
-3. Загружает архив в bucket `backups` в MinIO. Использует `mc` (MinIO client),
-   при его отсутствии — fallback на `python3 + boto3`.
-4. Удаляет из bucket объекты старше 30 дней (`mc rm --older-than 30d` или boto3).
-5. Удаляет временный файл с диска.
-6. Завершается с ненулевым кодом при любой ошибке (`set -euo pipefail`).
-
-### Подготовка
-
-**Сделать скрипт исполняемым** (один раз после клонирования):
-```sh
-chmod +x docker/backup.sh
-```
-
-**Настроить алиас `mc`** (MinIO client должен быть установлен на хосте):
-```sh
-mc alias set minio "$MINIO_ENDPOINT" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
-```
-Bucket `backups` создаётся скриптом автоматически при первом запуске.
-
-Если `mc` не установлен, скрипт использует `python3 + boto3` (boto3 должен быть
-доступен в системном python или в venv).
-
-### Ручной запуск
-
-Запускать из корня репозитория с `.env` в текущей директории:
-```sh
-set -a; source .env; set +a
-docker/backup.sh
-```
-
-Или передать переменные явно:
-```sh
-POSTGRES_USER=app POSTGRES_PASSWORD=secret POSTGRES_DB=platform \
-  MINIO_ENDPOINT=http://localhost:9000 \
-  MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=secret \
-  docker/backup.sh
-```
-
-### Настройка cron
-
-Пример: запускать каждый день в 03:00, логировать в `/var/log/backup.log`:
-```
-0 3 * * * cd /path/to/repo && set -a && source .env && set +a && /path/to/repo/docker/backup.sh >> /var/log/backup.log 2>&1
-```
-
-Или если переменные уже в окружении cron-пользователя:
-```
-0 3 * * * /path/to/repo/docker/backup.sh >> /var/log/backup.log 2>&1
-```
-
-Проверить последний запуск: `tail -50 /var/log/backup.log`.
-
-## Заметки
-- **Только expand/contract миграции** (blue и green делят один Postgres): сначала
-  add-колонка + выкатка кода, отдельным релизом — drop. Никаких RENAME/DROP в один шаг.
-- **Память** (VPS 2 ядра/4 ГБ): в момент деплоя недолго живут оба цвета; `deploy.sh`
-  гасит старый после переключения, в покое работает один.
-- **Секреты** — только в `.env` (gitignore). Postgres/Redis/MinIO наружу не публикуются.
-- **Фронт:** когда появится `frontend/dist`, смонтировать его в nginx вместо
-  `docker/nginx/html` (placeholder) — location `/` уже отдаёт SPA с `try_files`.
+`docker/backup.sh` (cron, daily) — `pg_dump | gzip` → MinIO bucket `backups`, 30-day retention. Runbook in archived DEPLOY §6.

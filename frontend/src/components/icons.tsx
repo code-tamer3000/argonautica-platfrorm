@@ -9,6 +9,7 @@ import {
   CircleCheck,
   Copy,
   CornerUpLeft,
+  Dna,
   Flame,
   LifeBuoy,
   MessageSquare,
@@ -21,6 +22,7 @@ import {
   Pin,
   Play,
   Plus,
+  ListChecks,
   Settings,
   Smile,
   Sticker,
@@ -71,3 +73,5 @@ export const IconWaves = (p: IconProps) => <Waves {...DEFAULTS} {...p} />
 export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
 export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
 export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
+export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
+export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />

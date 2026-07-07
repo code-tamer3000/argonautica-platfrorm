@@ -4,6 +4,12 @@ import { appendMessage, bumpReplyCount, removeMessage, replaceMessage } from '..
 import { notificationsKey } from '../api/notifications'
 import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
+import {
+  submissionCommentsKey,
+  taskKey,
+  taskSubmissionsKey,
+  tasksKey,
+} from '../api/tasks'
 import { threadKey } from '../api/threads'
 import { useUsersMap } from '../api/users'
 import { useAuth } from '../features/auth/AuthContext'
@@ -19,6 +25,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   reply: 'Ответил(а) на ваше сообщение',
   news: 'Новый пост в новостях',
   journal_missed: 'День дневника не закрыт',
+  cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
@@ -168,6 +175,33 @@ export function useRealtime(): void {
           })
           break
         }
+        case 'task.created':
+          qc.invalidateQueries({ queryKey: tasksKey })
+          notify({ title: 'Задачи', text: 'Новая задача' })
+          break
+        case 'task.updated':
+          qc.invalidateQueries({ queryKey: tasksKey })
+          qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
+          break
+        case 'submission.new':
+          // Новая сдача (для админа/автора общей задачи) — обновить треки и списки.
+          qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
+          qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
+          qc.invalidateQueries({ queryKey: tasksKey })
+          break
+        case 'submission.status': {
+          // Ревью прошло: статус назначения изменился (принято/возвращено).
+          qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
+          qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
+          qc.invalidateQueries({ queryKey: tasksKey })
+          if (e.status === 'accepted') notify({ title: 'Задачи', text: 'Задача принята' })
+          else if (e.status === 'returned') notify({ title: 'Задачи', text: 'Задача возвращена на доработку' })
+          break
+        }
+        case 'task.comment.new':
+          qc.invalidateQueries({ queryKey: submissionCommentsKey(e.submission_id) })
+          qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
+          break
         default:
           // pin.added/removed, read, subscribed/unsubscribed, error, pong — фазы 3+
           break

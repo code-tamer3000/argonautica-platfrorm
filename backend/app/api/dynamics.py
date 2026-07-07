@@ -1,16 +1,19 @@
 """Динамика — прогресс ежедневных ДЗ. Пользовательская часть + утилиты для admin."""
+import re
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from typing_extensions import TypedDict
 
 from app.api.deps import get_current_active_user
 from app.core.config import settings
 from app.db.session import get_session
-from app.models.journal import JournalCredit, JournalPardon
+from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
 from app.models.message import Message
 from app.models.room import Room
 from app.models.user import User
@@ -18,6 +21,11 @@ from app.schemas.journal import (
     AdminDynamicsOut,
     DayStatus,
     DynamicsSummary,
+    JournalProgramIn,
+    JournalProgramOut,
+    JournalProgramUpdate,
+    JournalSectionOut,
+    JournalStructureOut,
     MyDynamicsOut,
     PardonRequest,
     RecentDay,
@@ -34,12 +42,68 @@ class _StatsResult(TypedDict):
 
 router = APIRouter(prefix="/api/dynamics", tags=["dynamics"])
 
-JOURNAL_CATEGORIES = frozenset({"focus", "notes", "film"})
 MAX_PARDONS = 3
 PROGRAM_DAYS = 28
 # Окно вокруг сегодня: 5 прошлых + сегодня + 3 будущих = 9 ячеек.
 WINDOW_PAST = 5
 WINDOW_FUTURE = 3
+
+# Невидимый маркер категории в начале сообщения-записи: <!--journal:focus-->.
+_JOURNAL_MARKER = re.compile(r"^<!--journal:([a-z0-9_]+)-->")
+
+
+@dataclass
+class ProgramVersion:
+    """Одна версия структуры дневника («задание»), действующая с `starts_on`."""
+
+    starts_on: date
+    keys: frozenset[str]
+    order: dict[str, int] = field(default_factory=dict)  # key -> position
+
+
+Timeline = list[ProgramVersion]
+
+
+async def load_timeline(session: AsyncSession) -> Timeline:
+    """Шкала заданий по возрастанию `starts_on`: ключи разделов + их порядок.
+
+    Задание без разделов в шкалу не попадает (inner join) — оно не может гейтить
+    день. Активное задание дня D — с максимальным `starts_on <= D`.
+    """
+    rows = await session.execute(
+        select(JournalProgram.starts_on, JournalSection.key, JournalSection.position)
+        .join(JournalSection, JournalSection.program_id == JournalProgram.id)
+        .order_by(JournalProgram.starts_on, JournalSection.position)
+    )
+    by_start: dict[date, dict[str, int]] = {}
+    for starts_on, key, position in rows.all():
+        by_start.setdefault(starts_on, {})[key] = position
+    return [
+        ProgramVersion(starts_on=d, keys=frozenset(order), order=order)
+        for d, order in sorted(by_start.items())
+    ]
+
+
+def active_version_for(day: date, timeline: Timeline) -> ProgramVersion | None:
+    """Задание, активное в день D — с максимальным `starts_on <= D`."""
+    active: ProgramVersion | None = None
+    for version in timeline:
+        if version.starts_on <= day:
+            active = version
+        else:
+            break
+    return active
+
+
+def required_keys_for(day: date, timeline: Timeline) -> frozenset[str]:
+    """Набор ключей задания, активного в этот день (пусто до первого задания)."""
+    version = active_version_for(day, timeline)
+    return version.keys if version else frozenset()
+
+
+def _timeline_start(timeline: Timeline) -> date:
+    """Начало программы = старт самого раннего задания (fallback — настройка)."""
+    return timeline[0].starts_on if timeline else settings.journal_program_start
 
 # Журнальный день считается по московскому времени, но с дедлайном в 03:00 МСК:
 # запись, сделанная в 00:00–02:59 МСК, засчитывается за ПРЕДЫДУЩИЙ день, и до 03:00
@@ -50,12 +114,11 @@ MSK = timezone(timedelta(hours=3))
 
 
 def _journal_category(content: str | None) -> str | None:
+    """Ключ раздела из маркера в начале записи, любой (не по фиксированному списку)."""
     if not content:
         return None
-    for cat in JOURNAL_CATEGORIES:
-        if content.startswith(f"<!--journal:{cat}-->"):
-            return cat
-    return None
+    m = _JOURNAL_MARKER.match(content)
+    return m.group(1) if m else None
 
 
 def _platform_day(dt: datetime) -> date:
@@ -88,25 +151,37 @@ def _calc_stats(
     per_day: dict[date, set[str]],
     pardons: list[date],
     program_start: date,
+    timeline: Timeline,
     credits: list[date] | None = None,
 ) -> _StatsResult:
     today = _platform_today()
     yesterday = today - timedelta(days=1)
     pardoned = set(pardons)
 
-    # Дни, закрытые всеми категориями ИЛИ зачтённые админом вручную (credits) —
-    # для стрика/просрочек считаются равнозначно полностью закрытым дням.
-    closed_days: set[date] = {d for d, cats in per_day.items() if JOURNAL_CATEGORIES <= cats}
+    # Дни, закрытые ВСЕМИ разделами задания, активного В ЭТОТ день, ИЛИ зачтённые
+    # админом вручную (credits) — для стрика/просрочек считаются равнозначно.
+    # required_keys_for учитывает смену структуры: прошлый день оценивается по
+    # заданию, действовавшему тогда, поэтому история не ломается.
+    closed_days: set[date] = {
+        d
+        for d, cats in per_day.items()
+        if (req := required_keys_for(d, timeline)) and req <= cats
+    }
     if credits:
         closed_days |= set(credits)
     today_cats = list(per_day.get(today, set()))
 
-    # Дни с просрочкой: прошедшие дни >= program_start, не закрытые и не помилованные.
+    # Дни с просрочкой: прошедшие дни >= program_start с непустым заданием,
+    # не закрытые и не помилованные.
     overdue_dates: list[date] = []
     if yesterday >= program_start:
         check = program_start
         while check <= yesterday:
-            if check not in closed_days and check not in pardoned:
+            if (
+                required_keys_for(check, timeline)
+                and check not in closed_days
+                and check not in pardoned
+            ):
                 overdue_dates.append(check)
             check += timedelta(days=1)
 
@@ -214,13 +289,14 @@ async def get_my_stats(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MyDynamicsOut:
-    program_start = settings.journal_program_start
+    timeline = await load_timeline(session)
+    program_start = _timeline_start(timeline)
     room_id = await _personal_room_id(session, current_user.id)
     messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start, credits)
+    stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -238,7 +314,8 @@ async def use_pardon(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MyDynamicsOut:
-    program_start = settings.journal_program_start
+    timeline = await load_timeline(session)
+    program_start = _timeline_start(timeline)
     today = _platform_today()
 
     if body.date >= today:
@@ -261,7 +338,7 @@ async def use_pardon(
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start, credits)
+    stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -273,14 +350,185 @@ async def use_pardon(
     )
 
 
+# ─── Структура дневника (задания) ───────────────────────────────────────────
+
+async def load_programs(session: AsyncSession) -> list[JournalProgram]:
+    """Все задания с разделами, по возрастанию `starts_on`."""
+    result = await session.execute(
+        select(JournalProgram)
+        .options(selectinload(JournalProgram.sections))
+        .order_by(JournalProgram.starts_on)
+    )
+    return list(result.scalars().all())
+
+
+def _active_program(programs: list[JournalProgram], day: date) -> JournalProgram | None:
+    active: JournalProgram | None = None
+    for p in programs:
+        if p.starts_on <= day:
+            active = p
+        else:
+            break
+    return active
+
+
+def _section_out(s: JournalSection) -> JournalSectionOut:
+    return JournalSectionOut(
+        key=s.key,
+        emoji=s.emoji,
+        label=s.label,
+        heading=s.heading,
+        placeholder=s.placeholder,
+        input_type="title" if s.input_type == "title" else "text",
+        position=s.position,
+    )
+
+
+def _program_out(p: JournalProgram) -> JournalProgramOut:
+    return JournalProgramOut(
+        id=p.id,
+        starts_on=p.starts_on,
+        title=p.title,
+        description=p.description,
+        created_by=p.created_by,
+        sections=[_section_out(s) for s in p.sections],
+    )
+
+
+@router.get("/structure", response_model=JournalStructureOut)
+async def get_structure(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JournalStructureOut:
+    """Активное на сегодня задание — разделы для виджета/композера участника."""
+    programs = await load_programs(session)
+    active = _active_program(programs, _platform_today())
+    if active is None:
+        return JournalStructureOut(
+            program_id=None, starts_on=None, title=None, description=None, sections=[]
+        )
+    return JournalStructureOut(
+        program_id=active.id,
+        starts_on=active.starts_on,
+        title=active.title,
+        description=active.description,
+        sections=[_section_out(s) for s in active.sections],
+    )
+
+
 # ─── Утилиты для admin endpoints (в admin.py) ───────────────────────────────
+
+
+async def list_programs(session: AsyncSession) -> list[JournalProgramOut]:
+    return [_program_out(p) for p in await load_programs(session)]
+
+
+async def create_program(
+    session: AsyncSession, body: JournalProgramIn, created_by: int
+) -> JournalProgramOut:
+    exists = await session.scalar(
+        select(JournalProgram.id).where(JournalProgram.starts_on == body.starts_on)
+    )
+    if exists is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Задание с такой датой старта уже есть"
+        )
+    program = JournalProgram(
+        starts_on=body.starts_on,
+        title=body.title,
+        description=body.description,
+        created_by=created_by,
+    )
+    program.sections = [
+        JournalSection(
+            key=s.key,
+            position=i,
+            emoji=s.emoji,
+            label=s.label,
+            heading=s.heading,
+            placeholder=s.placeholder,
+            input_type=s.input_type,
+        )
+        for i, s in enumerate(body.sections)
+    ]
+    session.add(program)
+    await session.flush()
+    await session.refresh(program, ["sections"])
+    return _program_out(program)
+
+
+async def update_program(
+    session: AsyncSession, program_id: int, body: JournalProgramUpdate
+) -> JournalProgramOut:
+    program = await session.scalar(
+        select(JournalProgram)
+        .options(selectinload(JournalProgram.sections))
+        .where(JournalProgram.id == program_id)
+    )
+    if program is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Задание не найдено")
+
+    fields = body.model_fields_set
+    if "starts_on" in fields and body.starts_on is not None:
+        clash = await session.scalar(
+            select(JournalProgram.id).where(
+                JournalProgram.starts_on == body.starts_on,
+                JournalProgram.id != program_id,
+            )
+        )
+        if clash is not None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "Задание с такой датой старта уже есть"
+            )
+        program.starts_on = body.starts_on
+    if "title" in fields:
+        program.title = body.title
+    if "description" in fields:
+        program.description = body.description
+    if body.sections is not None:
+        # Полная замена набора разделов (delete-orphan подчистит старые).
+        program.sections = [
+            JournalSection(
+                key=s.key,
+                position=i,
+                emoji=s.emoji,
+                label=s.label,
+                heading=s.heading,
+                placeholder=s.placeholder,
+                input_type=s.input_type,
+            )
+            for i, s in enumerate(body.sections)
+        ]
+    await session.flush()
+    await session.refresh(program, ["sections"])
+    return _program_out(program)
+
+
+async def delete_program(session: AsyncSession, program_id: int) -> None:
+    programs = await load_programs(session)
+    if not any(p.id == program_id for p in programs):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Задание не найдено")
+    # Нельзя удалить самое раннее задание — оно задаёт начало программы, и без него
+    # дни между его стартом и следующим заданием остались бы без структуры.
+    earliest = min(programs, key=lambda p: p.starts_on)
+    if earliest.id == program_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Нельзя удалить самое раннее задание"
+        )
+    program = await session.get(JournalProgram, program_id)
+    if program is not None:
+        await session.delete(program)
+        await session.flush()
+
+
+
 
 
 async def credit_day(
     session: AsyncSession, user_id: int, day: date, granted_by: int
 ) -> None:
     """Зачесть админом день пользователю (идемпотентно)."""
-    program_start = settings.journal_program_start
+    program_start = _timeline_start(await load_timeline(session))
     today = _platform_today()
     if day < program_start:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "День раньше начала программы")
@@ -332,7 +580,8 @@ async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
 
 async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
     """Сводка + статистика всех участников для страницы Динамика в панели."""
-    program_start = settings.journal_program_start
+    timeline = await load_timeline(session)
+    program_start = _timeline_start(timeline)
 
     participants = list(
         (
@@ -346,7 +595,13 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
 
     if not participants:
         return AdminDynamicsOut(
-            summary=DynamicsSummary(total_participants=0, active_today=0, journal_today=0, no_overdue=0, avg_streak=0.0),
+            summary=DynamicsSummary(
+                total_participants=0,
+                active_today=0,
+                journal_today=0,
+                no_overdue=0,
+                avg_streak=0.0,
+            ),
             users=[],
         )
 
@@ -415,7 +670,7 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
         pardons = pardons_by_user.get(user.id, [])
         credits = credits_by_user.get(user.id, [])
         per_day = _calc_closed_days(messages)
-        stats = _calc_stats(per_day, pardons, program_start, credits)
+        stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
         recent = _recent_days(stats["closed_days"], stats["pardoned"], program_start, set(credits))
         journal_today = today in stats["closed_days"]
         users_out.append(

@@ -45,6 +45,10 @@ class User(Base):
     can_create_groups: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
+    # Доступ к разделу «Каюта» (по умолчанию закрыт; админ выдаёт вручную).
+    can_access_cabin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

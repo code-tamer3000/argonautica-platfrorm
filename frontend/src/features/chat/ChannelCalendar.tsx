@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { JOURNAL_CATEGORIES, useJournalDays } from '../../api/messages'
+import { useJournalDays } from '../../api/messages'
+import { useJournalStructure } from '../../api/journal'
 import styles from './chat.module.css'
 
 interface Props {
@@ -23,11 +24,15 @@ export function ChannelCalendar({ roomId }: Props) {
   const [month, setMonth] = useState(now.getMonth() + 1)
 
   const { data: days } = useJournalDays(roomId, year, month)
+  const { data: structure } = useJournalStructure()
+  const sectionKeys = structure?.sections.map((s) => s.key) ?? []
   const today = todayStr()
 
-  // День закрыт (зелёный) — опубликованы все категории; частичный — есть, но не все.
+  // День закрыт (зелёный) — опубликованы все разделы активного задания; частичный —
+  // есть, но не все. (Раскраска считает по текущему заданию; сам зачёт дня в Динамике
+  // бэкенд считает по заданию, действовавшему в тот день.)
   const isClosed = (dateStr: string) =>
-    JOURNAL_CATEGORIES.every((c) => (days?.[dateStr] ?? []).includes(c))
+    sectionKeys.length > 0 && sectionKeys.every((k) => (days?.[dateStr] ?? []).includes(k))
   const isPartial = (dateStr: string) =>
     !isClosed(dateStr) && (days?.[dateStr]?.length ?? 0) > 0
 
@@ -77,8 +82,8 @@ export function ChannelCalendar({ roomId }: Props) {
                 isToday ? styles.calendarDayToday : '',
               ].filter(Boolean).join(' ')}
               title={
-                closed ? 'День закрыт — все категории'
-                  : partial ? `Публикаций: ${days?.[dateStr]?.length ?? 0}/3`
+                closed ? 'День закрыт — все разделы'
+                  : partial ? `Публикаций: ${days?.[dateStr]?.length ?? 0}/${sectionKeys.length}`
                     : undefined
               }
             >

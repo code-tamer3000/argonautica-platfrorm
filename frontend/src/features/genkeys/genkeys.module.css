@@ -1,0 +1,589 @@
+/* Gene Keys — interactive I-Ching wheel + reading panel. */
+
+.screen {
+  /* Family colors for sector fills — drawn from the Argonautica palette so the
+     wheel reads as part of the product, not a foreign infographic. */
+  --gk-fire: var(--color-krov);
+  --gk-water: var(--color-more);
+  --gk-gold: var(--color-latun);
+  --gk-stone: var(--color-frame-deep);
+
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 30% 30%, rgba(19, 78, 69, 0.18), transparent 60%),
+    var(--bg);
+}
+
+/* --- Stage (wheel side) --------------------------------------------------- */
+
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  transition: flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wheelWrap {
+  position: relative;
+  width: min(72vh, 92%, 780px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  /* Wheel slides toward the left edge when a reading opens. */
+  transition: transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.screenOpen .wheelWrap {
+  transform: translateX(-4%) scale(0.94);
+}
+
+.wheelSvg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  user-select: none;
+}
+
+/* --- Rings ---------------------------------------------------------------- */
+/* Rotation is JS-driven (see useRings.ts): idle drift + ease-to-assemble under
+   the focused key. We only hint the compositor here. */
+.ring {
+  will-change: transform;
+}
+/* Concentric dividers between the three rings (and around the hub / outer rim). */
+.ringBound {
+  fill: none;
+  stroke: var(--divider-gold);
+  stroke-width: 1;
+  opacity: 0.5;
+}
+
+/* --- Outer ring: 64 Gene Keys -------------------------------------------- */
+
+.keyCell {
+  cursor: pointer;
+  color: var(--text-muted);
+  outline: none;
+}
+.keyFill {
+  fill: var(--fam);
+  opacity: 0.22;
+  stroke: var(--bg);
+  stroke-width: 1;
+  transition: opacity 220ms ease, stroke 220ms ease;
+}
+.keyNum {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  font-weight: 500;
+  fill: currentColor;
+  transition: fill 220ms ease;
+}
+/* Invisible but hit-testable — covers the sector without the stroke gaps. */
+.keyHit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+}
+/* Hovered key — gold, matching the chain lighting up on the inner rings. */
+.keyCell:hover,
+.keyHover {
+  color: var(--color-bezdna);
+}
+.keyCell:hover .keyFill,
+.keyHover .keyFill {
+  fill: var(--accent-bright);
+  opacity: 0.9;
+  stroke: var(--accent);
+}
+.keyCell:hover .keyNum,
+.keyHover .keyNum {
+  font-weight: 600;
+}
+.keySelected .keyFill {
+  fill: var(--accent-bright);
+  opacity: 0.95;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.keySelected {
+  color: var(--color-bezdna);
+}
+.keySelected .keyNum {
+  font-weight: 600;
+}
+.keyCell:focus-visible .keyFill {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+/* --- Inner rings 1-2: bigram sectors ------------------------------------- */
+
+.lineCell {
+  color: var(--color-kost-muted);
+  transition: color 260ms ease;
+}
+.lineFill {
+  /* Subtle so the outer key ring stays the focus. */
+  fill: var(--color-frame);
+  stroke: var(--bg);
+  stroke-width: 1;
+  opacity: 0.5;
+  transition: opacity 260ms ease, fill 260ms ease;
+}
+/* The ancestry chain of the focused key lights up gold on every ring. */
+.cellOn {
+  color: var(--color-bezdna);
+}
+.cellOn .lineFill {
+  opacity: 0.95;
+  fill: var(--accent-bright);
+  stroke: var(--accent);
+}
+/* --- Golden frames around the focused sector (focus) --------------------- */
+/* A closed golden outline (sides + inner/outer arcs) traces the focused key's
+   sector on each of the 3 rings, growing outward ring by ring. */
+@keyframes gkFrameIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Overlay fade: on leave the golden structure eases out (as smooth as entry). */
+.overlayIn {
+  opacity: 1;
+}
+.overlayFading {
+  opacity: 0;
+  transition: opacity 340ms ease;
+}
+
+.growthFrame {
+  fill: none;
+  stroke: var(--divider-gold-strong);
+  stroke-linejoin: round;
+  stroke-width: 1;
+  animation: gkFrameIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Thin outlines; slightly stronger on the coarse inner ring. */
+.edgeL1 .growthFrame {
+  stroke-width: 1.2;
+  opacity: 0.75;
+}
+.edgeL2 .growthFrame {
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.edgeL3 .growthFrame {
+  stroke-width: 0.75;
+  opacity: 0.5;
+}
+
+/* --- Hub (Taiji / focused hexagram) -------------------------------------- */
+
+.hubRim {
+  fill: var(--bg-deep);
+  stroke: var(--divider-gold);
+  stroke-width: 1.5;
+}
+.centerHex {
+  pointer-events: none;
+}
+
+/* --- Hub transition: Taiji flattens (rotation comes from the parent, so these
+   only scale/fade → no jump when idle rotation resumes). Hexagram born from it. */
+/* These add a TRANSIENT spin on top of the parent's continuous idle rotation
+   (both start and end at rotate(0), so there's no net jump). */
+@keyframes gkTaijiCollapse {
+  from {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: rotate(300deg) scaleY(0.04) scaleX(0.85);
+  }
+}
+@keyframes gkTaijiReform {
+  from {
+    opacity: 0;
+    transform: rotate(300deg) scaleY(0.04) scaleX(0.85);
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+}
+@keyframes gkHexCollapse {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: rotate(-140deg) scale(0.15);
+  }
+}
+/* transform-origin comes from the inline style (viewBox center), matching the
+   parent's rotate so collapse/spin stays centered. */
+.taijiCollapse {
+  animation: gkTaijiCollapse 340ms cubic-bezier(0.4, 0, 0.7, 0.2) both;
+}
+/* Reform is slower & eased so it unwinds gently back to the idle spin. */
+.taijiReform {
+  animation: gkTaijiReform 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* Already collapsed (switching between keys) — stay hidden, no re-collapse. */
+.taijiGone {
+  opacity: 0;
+}
+/* A single hexagram line growing in from its center (used for changed lines). */
+@keyframes gkLineGrow {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.lineGrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gkLineGrow 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hexCollapse {
+  animation: gkHexCollapse 300ms cubic-bezier(0.5, 0, 0.75, 0) both;
+}
+.centerHexLine {
+  fill: var(--accent-bright);
+}
+/* A split-line group animates as a whole; its rects shouldn't double-run. */
+.centerHexLineG .centerHexLine {
+  animation: none;
+}
+
+/* --- Caption (below the wheel) ------------------------------------------- */
+
+.caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  text-align: center;
+  min-height: 84px;
+  transition: opacity 300ms ease;
+}
+.screenOpen .caption {
+  opacity: 0;
+}
+.captionTitle {
+  font-family: var(--font-t1);
+  font-size: clamp(22px, 2.6vw, 32px);
+  color: var(--text-primary);
+}
+.captionNum {
+  font-family: var(--font-t1);
+  font-size: clamp(30px, 4vw, 46px);
+  line-height: 1.05;
+  color: var(--accent);
+}
+.captionName {
+  font-family: var(--font-t3);
+  font-size: clamp(15px, 1.6vw, 19px);
+  color: var(--text-primary);
+  max-width: 40ch;
+}
+.captionPartner {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  color: var(--accent);
+}
+.captionHint {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  margin-top: var(--space-1);
+}
+
+/* --- Reading pane --------------------------------------------------------- */
+
+.readingPane {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--divider-gold);
+  background: var(--bg-surface);
+  transition: flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.screenOpen .readingPane {
+  flex-basis: min(560px, 46%);
+  width: min(560px, 46%);
+}
+
+/* The whole panel is ONE scroll container — head + article scroll together, so
+   on mobile you can always reach the text. A compact bar stays pinned on top. */
+@keyframes gkReadingIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.reading {
+  height: 100%;
+  min-height: 0;
+  width: min(560px, 46vw);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: gkReadingIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Sticky compact bar — collapses the header to just the essentials while you
+   read; sits above the content and never scrolls away. */
+.readingBar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.readingBarTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.readingBarName {
+  font-family: var(--font-t2);
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.readingNum {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.readingScroll {
+  padding: var(--space-5) var(--space-6) var(--space-16);
+}
+.readingName {
+  font-family: var(--font-t1);
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1.12;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-4);
+}
+.readingClose {
+  flex: 0 0 auto;
+  appearance: none;
+  background: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.readingClose:hover {
+  color: var(--text-primary);
+  border-color: var(--divider-gold-strong);
+}
+
+/* Spectrum triad */
+.spectrum {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+.spectrumCell {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top-width: 3px;
+}
+.cellShadow {
+  border-top-color: var(--color-krov);
+}
+.cellGift {
+  border-top-color: var(--color-zoloto);
+}
+.cellSiddhi {
+  border-top-color: var(--color-kost-yar);
+}
+.spectrumLabel {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.spectrumValue {
+  font-family: var(--font-t3);
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+/* Characteristics */
+.chars {
+  margin: var(--space-5) 0 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.charRow {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.charLabel {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.charValue {
+  font-family: var(--font-t3);
+  font-size: 15px;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.chars + .articleBody {
+  margin-top: var(--space-6);
+}
+.readingError {
+  color: var(--blood-bright);
+  font-family: var(--font-t3);
+}
+
+/* Markdown body — mirrors KB article styling. */
+.articleBody {
+  font-family: var(--font-t3);
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  max-width: 68ch;
+}
+.articleBody h2 {
+  font-family: var(--font-t1);
+  font-size: var(--text-h2);
+  color: var(--accent);
+  margin: var(--space-8) 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.articleBody h3 {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin: var(--space-6) 0 var(--space-2);
+}
+.articleBody h4 {
+  font-family: var(--font-t4);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: var(--space-5) 0 var(--space-2);
+}
+.articleBody p {
+  margin-bottom: var(--space-3);
+}
+.articleBody ul,
+.articleBody ol {
+  padding-left: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+.articleBody blockquote {
+  border-left: 3px solid var(--divider-gold);
+  padding-left: var(--space-4);
+  color: var(--text-muted);
+  margin: var(--space-4) 0;
+}
+.articleBody strong {
+  color: var(--text-primary);
+}
+
+/* --- Mobile: stack wheel over reading ------------------------------------- */
+@media (max-width: 900px) {
+  .screen {
+    flex-direction: column;
+  }
+  /* When a reading is open, collapse the wheel stage to a slim strip so the
+     text gets the room — and the reading pane scrolls its full content. */
+  .screenOpen .stage {
+    flex: 0 0 34%;
+    min-height: 0;
+  }
+  .screenOpen .wheelWrap {
+    transform: scale(0.86);
+  }
+  .screenOpen .caption {
+    display: none;
+  }
+  .readingPane {
+    /* Collapsed: zero height (not width) since we stack vertically. */
+    flex: 0 0 0;
+    width: 100%;
+    height: 0;
+    border-left: none;
+    border-top: 1px solid var(--divider-gold);
+    transition: flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .screenOpen .readingPane {
+    flex: 1 1 auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+  .reading {
+    width: 100%;
+  }
+  .readingScroll {
+    padding: var(--space-4) var(--space-4) var(--space-12);
+  }
+  .charRow {
+    grid-template-columns: 110px 1fr;
+  }
+}

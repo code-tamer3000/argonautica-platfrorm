@@ -1,0 +1,49 @@
+name: Deploy → staging
+
+# Тестовый стенд из develop. Автодеплой на каждый push/мёрж в develop.
+# Тот же сервер, что и прод, но отдельный каталог /opt/platform-staging и отдельный
+# compose-проект platform-staging — прод не затрагивается.
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:   # ручной перезапуск при необходимости
+
+# Не наслаивать деплои: новый push отменяет предыдущий прогон.
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync code to server
+        run: |
+          rsync -az --delete \
+            --exclude='.env' \
+            --exclude='.git/' \
+            --exclude='.claude/' \
+            --exclude='**/__pycache__/' \
+            --exclude='**/*.pyc' \
+            --exclude='frontend/node_modules/' \
+            --exclude='backend/.venv/' \
+            --exclude='docker/nginx/certs/' \
+            --exclude='docker/nginx-staging/certs/' \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/platform-staging/
+
+      - name: Deploy staging
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "cd /opt/platform-staging && bash docker/deploy-staging.sh"

@@ -105,5 +105,7 @@ export const http = {
     api<T>(path, { method: 'POST', body: jsonBody(body) }),
   patch: <T>(path: string, body?: unknown): Promise<T> =>
     api<T>(path, { method: 'PATCH', body: jsonBody(body) }),
+  put: <T>(path: string, body?: unknown): Promise<T> =>
+    api<T>(path, { method: 'PUT', body: jsonBody(body) }),
   del: <T>(path: string): Promise<T> => api<T>(path, { method: 'DELETE' }),
 }

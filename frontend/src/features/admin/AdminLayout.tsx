@@ -12,11 +12,17 @@ export function AdminLayout() {
         <NavLink to="/admin/dynamics" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Динамика
         </NavLink>
-        <NavLink to="/admin/server" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
-          Сервер
+        <NavLink to="/admin/journal" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Дневник
+        </NavLink>
+        <NavLink to="/admin/cabin" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Каюта
         </NavLink>
         <NavLink to="/admin/kb" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           База знаний
+        </NavLink>
+        <NavLink to="/admin/tasks" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Задачи
         </NavLink>
         <NavLink to="/admin/calendar" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           Календарь

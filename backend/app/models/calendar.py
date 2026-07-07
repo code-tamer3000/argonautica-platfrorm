@@ -27,6 +27,9 @@ class CalendarEvent(Base):
     )
     # NULL = общее событие проекта; заполнено = событие комнаты/канала.
     room_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("rooms.id"))
+    # Автоуправляемая привязка к дедлайну задачи (сервис синхронизирует событие с
+    # tasks.deadline_at). NULL = обычное событие, не связанное с задачей.
+    task_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tasks.id"))
     created_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
     )

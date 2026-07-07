@@ -26,6 +26,12 @@ EVENT_SUBSCRIBED = "subscribed"
 EVENT_UNSUBSCRIBED = "unsubscribed"
 EVENT_ERROR = "error"
 EVENT_PONG = "pong"
+# Задачи — доставка через персональный канал user:{id} (publish_user_event).
+EVENT_TASK_CREATED = "task.created"
+EVENT_TASK_UPDATED = "task.updated"
+EVENT_TASK_SUBMISSION_NEW = "submission.new"
+EVENT_TASK_SUBMISSION_STATUS = "submission.status"
+EVENT_TASK_COMMENT_NEW = "task.comment.new"
 
 
 def message_new_event(message: MessageOut) -> dict[str, Any]:
@@ -103,3 +109,53 @@ def error_event(detail: str, room_id: int | None = None) -> dict[str, Any]:
 
 def pong_event() -> dict[str, Any]:
     return {"type": EVENT_PONG}
+
+
+# --- Задачи (payload'ы маленькие: id + минимум полей) ----------------------
+
+
+def task_created_event(task_id: int, task_type: str, title: str) -> dict[str, Any]:
+    return {
+        "type": EVENT_TASK_CREATED,
+        "task_id": task_id,
+        "task_type": task_type,
+        "title": title,
+    }
+
+
+def task_updated_event(task_id: int) -> dict[str, Any]:
+    return {"type": EVENT_TASK_UPDATED, "task_id": task_id}
+
+
+def task_submission_new_event(
+    task_id: int, assignment_id: int, submission_id: int, user_id: int
+) -> dict[str, Any]:
+    return {
+        "type": EVENT_TASK_SUBMISSION_NEW,
+        "task_id": task_id,
+        "assignment_id": assignment_id,
+        "submission_id": submission_id,
+        "user_id": user_id,
+    }
+
+
+def task_submission_status_event(
+    task_id: int, assignment_id: int, status: str
+) -> dict[str, Any]:
+    return {
+        "type": EVENT_TASK_SUBMISSION_STATUS,
+        "task_id": task_id,
+        "assignment_id": assignment_id,
+        "status": status,
+    }
+
+
+def task_comment_new_event(
+    task_id: int, submission_id: int, comment_id: int
+) -> dict[str, Any]:
+    return {
+        "type": EVENT_TASK_COMMENT_NEW,
+        "task_id": task_id,
+        "submission_id": submission_id,
+        "comment_id": comment_id,
+    }

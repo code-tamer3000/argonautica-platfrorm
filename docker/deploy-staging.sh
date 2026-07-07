@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Деплой тестового стенда (staging) из ветки develop. Без blue-green — стенду не нужен
+# zero-downtime: собрать образы → миграции → поднять. Полностью изолирован от прода
+# (отдельный compose-проект platform-staging, свои volume'ы/сеть/порты).
+#
+# --- Одноразовый BOOTSTRAP на сервере (до первого CI-деплоя) ---
+#   1. mkdir -p /opt/platform-staging   (или первый прогон workflow создаст каталог rsync-ом)
+#   2. Создать /opt/platform-staging/.env из .env.staging.example: подставить <IP> стенда,
+#      сгенерить свои POSTGRES_*/MINIO_*/JWT_SECRET (openssl rand -hex 32). TELEGRAM_BOT_TOKEN
+#      оставить ПУСТЫМ (стенд бота не поднимает).
+#   3. Серт:   DOMAIN=<IP> docker/nginx-staging/make-self-signed.sh
+#   4. Открыть 8443/tcp в firewall/security-group хостинга.
+#   5. Первый подъём (дальше — автоматически этим скриптом из CI):
+#        cd /opt/platform-staging && bash docker/deploy-staging.sh
+# Стенд открыт (без Basic Auth) — внутренний превью. Аккаунтов в свежей БД нет;
+# первого админа завести вручную (см. backend/scripts/create_users.py или прямой insert).
+# Ручные команды к стенду — всегда с `-p platform-staging`, напр.:
+#   docker compose -p platform-staging -f docker/docker-compose.staging.yml --env-file .env logs -f
+# Дальше деплой автоматический — этот скрипт из .github/workflows/deploy-staging.yml.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."                        # корень репо
+COMPOSE_FILE="docker/docker-compose.staging.yml"
+ENV_FILE=".env"
+
+if docker compose version >/dev/null 2>&1; then
+  DC="docker compose"
+else
+  DC="docker-compose"
+fi
+# -p platform-staging — изоляция от прод-проекта (свои контейнеры/сеть/volume'ы),
+# не зависит от CWD и версии compose (top-level `name:` не поддерживается v1).
+DC="$DC -p platform-staging -f $COMPOSE_FILE --env-file $ENV_FILE"
+
+echo ">> staging: сборка образов (backend + frontend)"
+$DC build backend frontend
+
+echo ">> staging: миграции (alembic upgrade head)"
+$DC run --rm migrate
+
+echo ">> staging: подъём стенда"
+$DC up -d
+
+# nginx резолвит имена апстримов (backend/frontend) один раз при старте и кэширует их
+# IP. При up -d backend/frontend ПЕРЕСОЗДАЮТСЯ и получают новые IP в docker-сети, а
+# nginx остаётся прежним → держит устаревшие IP и отдаёт 502 на все запросы. Поэтому
+# после подъёма принудительно перезапускаем nginx, чтобы он перечитал адреса апстримов.
+echo ">> staging: перезапуск nginx (обновить IP апстримов)"
+$DC restart nginx
+
+echo ">> staging: готово. Доступ: https://<IP>:8443."

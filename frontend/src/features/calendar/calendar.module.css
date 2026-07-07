@@ -108,6 +108,7 @@
   background: var(--accent);
 }
 .dotRoom { background: var(--blood-bright); }
+.dotTask { background: var(--accent-bright); box-shadow: 0 0 0 1px var(--divider-gold-strong); }
 
 /* ───────────────────── Детали выбранного дня ───────────────────── */
 .detail { margin-top: var(--space-6); }

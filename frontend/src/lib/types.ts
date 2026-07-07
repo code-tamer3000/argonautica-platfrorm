@@ -21,6 +21,7 @@ export interface UserOut {
   role: Role
   must_change_password: boolean
   can_create_groups: boolean
+  can_access_cabin: boolean
   settings: Record<string, unknown>
 }
 
@@ -173,6 +174,8 @@ export interface CalendarEventOut {
   ends_at: string | null
   all_day: boolean
   room_id: number | null
+  // Заполнено = автоуправляемое дедлайн-событие задачи.
+  task_id: number | null
   created_by: number
   created_at: string
 }
@@ -206,6 +209,7 @@ export interface AdminUserOut {
   email: string | null
   role: Role
   can_create_groups: boolean
+  can_access_cabin: boolean
   is_active: boolean
   created_at: string
 }
@@ -253,13 +257,47 @@ export interface AdminDynamicsOut {
   users: UserDynamicsOut[]
 }
 
+// --- Структура дневника (задания) ---
+
+export type JournalInputType = 'text' | 'title'
+
+export interface JournalSection {
+  key: string
+  emoji: string
+  label: string
+  heading: string
+  placeholder: string
+  input_type: JournalInputType
+  position: number
+}
+
+// Активное на сегодня задание — для виджета и композера участника.
+export interface JournalStructure {
+  program_id: number | null
+  starts_on: string | null
+  title: string | null
+  description: string | null
+  sections: JournalSection[]
+}
+
+// Задание в админке (со своей датой старта).
+export interface JournalProgram {
+  id: number
+  starts_on: string
+  title: string | null
+  description: string | null
+  created_by: number | null
+  sections: JournalSection[]
+}
+
 // --- Уведомления (колокольчик + всплывающие тосты) ---
-export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed'
+export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed' | 'cabin_granted'
 
 export interface NotificationOut {
   id: number
   kind: NotificationKind
-  room_id: number
+  // room_id пуст у уведомлений без комнаты (cabin_granted — открыт доступ к Каюте).
+  room_id: number | null
   // Для системных уведомлений (journal_missed) actor/message пусты, зато есть ref_date.
   message_id: number | null
   actor_id: number | null
@@ -303,6 +341,63 @@ export interface FaqItemOut {
   updated_at: string
 }
 
+// --- Каюта: личная психологическая проработка ---
+export type CabinKind = 'diary' | 'decatastrophize' | 'trigger'
+
+// Поля формы каждого подраздела (лежат в data записи). Все текстовые —
+// необязательные (можно заполнить частично), strength ограничен 0..10.
+export interface DiaryData {
+  kind: 'diary'
+  date: string
+  trigger: string
+  thoughts: string
+  emotion: string
+  strength: number
+  body: string
+  reaction: string
+  recovery: string
+}
+export interface TriggerData {
+  kind: 'trigger'
+  age: string
+  trigger: string
+  thoughts: string
+  emotion: string
+  strength: number
+  body: string
+  reaction: string
+  pattern: string
+}
+export interface DecatastrophizeData {
+  kind: 'decatastrophize'
+  topic: string
+  fear: string
+  probability: string
+  worst_best: string
+  resources: string
+  new_idea: string
+}
+export type CabinData = DiaryData | TriggerData | DecatastrophizeData
+
+export interface CabinEntryOut {
+  id: number
+  kind: CabinKind
+  data: CabinData
+  created_at: string
+  updated_at: string
+}
+export interface AdminCabinEntryOut extends CabinEntryOut {
+  user_id: number
+  display_name: string
+  username: string
+}
+export interface AdminCabinUser {
+  user_id: number
+  display_name: string
+  username: string
+  total: number
+}
+
 // --- WebSocket события ---
 export type WsEvent =
   | { type: 'message.new'; message: MessageOut }
@@ -319,3 +414,9 @@ export type WsEvent =
   | { type: 'unsubscribed'; room_id: number }
   | { type: 'error'; detail: string; room_id?: number }
   | { type: 'pong' }
+  // --- Задачи (приходят по тому же per-user каналу, что и notification.new) ---
+  | { type: 'task.created'; task_id: number }
+  | { type: 'task.updated'; task_id: number }
+  | { type: 'submission.new'; task_id: number }
+  | { type: 'submission.status'; task_id: number; assignment_id: number; status: string }
+  | { type: 'task.comment.new'; submission_id: number; task_id: number }

@@ -33,7 +33,7 @@ class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('dm', 'reply', 'news', 'journal_missed')",
+            "kind IN ('dm', 'reply', 'news', 'journal_missed', 'cabin_granted')",
             name="notification_kind_valid",
         ),
         # Лента колокольчика: последние уведомления пользователя.
@@ -51,7 +51,8 @@ class Notification(Base):
         BigInteger, ForeignKey("users.id"), nullable=False
     )
     kind: Mapped[str] = mapped_column(Text, nullable=False)
-    room_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("rooms.id"), nullable=False)
+    # room_id пуст у уведомлений без привязки к комнате (cabin_granted — доступ к Каюте).
+    room_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("rooms.id"))
     # message_id/actor_id пусты для системных уведомлений (journal_missed).
     message_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("messages.id")

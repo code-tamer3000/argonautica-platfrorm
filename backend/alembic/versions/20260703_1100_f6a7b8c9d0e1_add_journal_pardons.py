@@ -13,6 +13,7 @@ Downgrade безопасен — данных ещё нет.
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "f6a7b8c9d0e1"

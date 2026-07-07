@@ -1,328 +1,413 @@
-# Модель данных — Платформа образовательного проекта
+# Data Model
 
-> Статус: проектирование. Версия 0.1.
-> Дополняет PLATFORM_SPEC.md. Описывает структуру БД (PostgreSQL): сущности, поля,
-> связи, а также то, что сознательно НЕ хранится в БД (эфемерное состояние в Redis).
+> Source: docs/archive/DATA_MODEL.md (+ verified against backend/app/models/), restructured 2026-07-06.
+> Single source of truth for the DB schema. Every table's columns live here and nowhere else;
+> feature docs reference tables but never re-list columns. Behavior lives in the feature docs.
 
----
+## Conventions
 
-## Соглашения
-
-- **id** — `BIGSERIAL` (автоинкрементный bigint), первичный ключ.
-  Выбор в пользу последовательных id, а не UUID, осознанный: на нём держится
-  механизм статусов прочтения (см. раздел «Статусы прочтения»), которому нужна
-  монотонность id.
-- **Временные метки** — `TIMESTAMPTZ` (со временной зоной), `created_at` по
-  умолчанию `now()`.
-- **Строки** — `TEXT` (в Postgres нет смысла ограничивать длину без причины).
-- **Enum-поля** — `TEXT` с `CHECK`-ограничением на список значений (или нативный
-  Postgres ENUM — на усмотрение при реализации).
-- **Мягкое удаление** — где применимо, поле `deleted_at` (`NULL` = живое).
-  Физически строки не удаляем.
-- **FK** — все внешние ключи с явными ограничениями ссылочной целостности.
+- **id** — `BIGSERIAL` PK. Sequential (not UUID) on purpose: read receipts rely on monotonic ids.
+- **Timestamps** — `TIMESTAMPTZ`; `created_at` defaults to `now()`.
+- **Strings** — `TEXT` (no length caps without reason).
+- **Enums** — `TEXT` + `CHECK` on the allowed set.
+- **Soft delete** — `deleted_at` (`NULL` = alive) where applicable; rows not physically removed. Exception: `cabin_entries` are hard-deleted.
+- **FKs** — all with explicit referential constraints.
 
 ---
 
-## Сущности
+## users
+Login is **`username`** (the Telegram handle; closed platform, no self-signup — admin provisions). `email` is optional.
 
-### users
-Пользователи. Профиль = поля личного кабинета.
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| username | TEXT | NOT NULL, UNIQUE | login = TG handle (без `@`) |
+| email | TEXT | UNIQUE, NULL | optional |
+| password_hash | TEXT | NOT NULL | argon2, never plaintext |
+| display_name | TEXT | NOT NULL | |
+| avatar_url | TEXT | NULL | legacy/external URL (media_id takes priority) |
+| avatar_media_id | BIGINT | FK media_assets, NULL | avatar as media asset; presigned-GET on read |
+| bio | TEXT | NULL | |
+| role | TEXT | NOT NULL, default `'participant'`, CHECK | `'participant'` \| `'admin'` |
+| must_change_password | BOOLEAN | NOT NULL, default false | one-time password issued → must change on login |
+| can_create_groups | BOOLEAN | NOT NULL, default true | admin can revoke |
+| can_access_cabin | BOOLEAN | NOT NULL, default false | grants Cabin; admin has it implicitly. See [CABIN.md](CABIN.md) |
+| settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| email | TEXT, UNIQUE, NOT NULL | логин |
-| password_hash | TEXT, NOT NULL | argon2 / bcrypt, никогда не plaintext |
-| display_name | TEXT, NOT NULL | отображаемое имя |
-| avatar_url | TEXT, NULL | аватар пользователя |
-| bio | TEXT, NULL | о себе |
-| role | TEXT, NOT NULL, default `'participant'` | `'participant'` \| `'admin'` |
-| settings | JSONB, NOT NULL, default `'{}'` | настройки кабинета (тема, предпочтения) — без миграций под новые ключи |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-| updated_at | TIMESTAMPTZ, NOT NULL | |
+## rooms
+One entity for three space types; differences are behavior in code, not structure. See [ROOMS.md](ROOMS.md).
 
----
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| type | TEXT | NOT NULL | `'dm'` \| `'group'` \| `'channel'` |
+| name | TEXT | NULL | NULL for dm |
+| avatar_url | TEXT | NULL | group/channel avatar; dm uses peer's avatar |
+| dm_key | TEXT | UNIQUE, NULL | dm only: canonical `"minUserId:maxUserId"`, dedup guard |
+| created_by | BIGINT | FK users, NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| is_personal | BOOLEAN | NOT NULL, default false | personal diary room (Dynamics). See [DYNAMICS.md](DYNAMICS.md) |
+| is_news | BOOLEAN | NOT NULL, default false | news channel singleton; top posts admin-only |
 
-### rooms
-Одна сущность на три типа пространств. Различия типов — это поведение в коде, а не
-разная структура.
+## room_members
+Carries **membership** and **read state**. For channels, rows are created lazily (only to store read state) — see [ROOMS.md](ROOMS.md).
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| type | TEXT, NOT NULL | `'dm'` \| `'group'` \| `'channel'` |
-| name | TEXT, NULL | NULL для dm |
-| avatar_url | TEXT, NULL | аватар группы/канала; для dm не хранится (берётся аватар собеседника) |
-| dm_key | TEXT, UNIQUE, NULL | только для dm: канонический ключ пары `"minUserId:maxUserId"`, защищает от дублей личных чатов |
-| created_by | BIGINT FK users, NOT NULL | |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-
----
-
-### room_members
-Несёт две вещи: **членство** (кто в комнате) и **состояние чтения**.
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| room_id | BIGINT FK rooms | |
-| user_id | BIGINT FK users | |
-| role_in_room | TEXT, NOT NULL, default `'member'` | `'owner'` \| `'member'` |
-| joined_at | TIMESTAMPTZ, NOT NULL | |
-| last_read_message_id | BIGINT FK messages, NULL | до какого сообщения дочитал (см. статусы прочтения) |
-| is_muted | BOOLEAN, NOT NULL, default false | |
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| room_id | BIGINT | FK rooms, PK | |
+| user_id | BIGINT | FK users, PK | |
+| role_in_room | TEXT | NOT NULL, default `'member'` | `'owner'` \| `'member'` |
+| joined_at | TIMESTAMPTZ | NOT NULL | |
+| last_read_message_id | BIGINT | FK messages, NULL | read-receipt cursor. See [MESSAGES.md](MESSAGES.md) |
+| is_muted | BOOLEAN | NOT NULL, default false | |
 
 **PK:** (`room_id`, `user_id`).
 
-**Каналы — вариант А (неявный доступ).** Для каналов строки членства НЕ создаются
-на всех. Видимость канала = правило «пользователь является участником платформы →
-видит все каналы», оно в коде, не в таблице. Строка в `room_members` для канала
-появляется **лениво** — когда юзер впервые открыл канал, и только чтобы хранить
-`last_read_message_id`. Это исключает массовые вставки и рассинхрон.
+## messages
+Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 
-Следствие для проверки доступа: «состоит ли юзер в комнате» зависит от типа —
-для `dm`/`group` это «есть ли строка», для `channel` это «он участник платформы».
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | monotonic — required for read receipts |
+| room_id | BIGINT | FK rooms, NOT NULL | |
+| sender_id | BIGINT | FK users, NOT NULL | |
+| content | TEXT | NULL | NULL if sticker/attachment-only |
+| thread_root_id | BIGINT | FK messages, NULL | NULL = top level; set = reply, points at root |
+| sticker_id | BIGINT | FK stickers, NULL | if message is a sticker |
+| forwarded_from_sender_id | BIGINT | FK users, NULL | repost into news: original author. See [MESSAGES.md](MESSAGES.md) |
+| reply_count | INT | NOT NULL, default 0 | denormalized on root |
+| last_reply_at | TIMESTAMPTZ | NULL | denormalized on root |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| edited_at | TIMESTAMPTZ | NULL | |
+| deleted_at | TIMESTAMPTZ | NULL | soft delete |
 
----
+**Index:** (`room_id`, `thread_root_id`, `created_at`).
 
-### messages
-Центральная таблица. Сюда же ложатся треды.
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | монотонный — важно для статусов прочтения |
-| room_id | BIGINT FK rooms, NOT NULL | |
-| sender_id | BIGINT FK users, NOT NULL | |
-| content | TEXT, NULL | текст; NULL, если сообщение это только стикер/вложение |
-| thread_root_id | BIGINT FK messages, NULL | NULL = верхний уровень; заполнено = ответ в треде, указывает на корень |
-| sticker_id | BIGINT FK stickers, NULL | если сообщение — стикер |
-| reply_count | INT, NOT NULL, default 0 | денормализовано на корневом сообщении |
-| last_reply_at | TIMESTAMPTZ, NULL | денормализовано на корневом сообщении |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-| edited_at | TIMESTAMPTZ, NULL | |
-| deleted_at | TIMESTAMPTZ, NULL | мягкое удаление |
-
-**Треды (одноуровневые, стиль Slack):**
-- `thread_root_id IS NULL` -> сообщение верхнего уровня, лежит в ленте комнаты.
-- `thread_root_id = X` -> ответ внутри треда под сообщением X.
-- **Правило плоскости:** ответ никогда не ссылается на другой ответ. При ответе на
-  сообщение, которое само является ответом, берётся не его id, а его
-  `thread_root_id` — привязка всегда к корню. Вложенности нет по построению.
-
-**Запросы:**
-- Лента комнаты: `room_id = X AND thread_root_id IS NULL AND deleted_at IS NULL`.
-- Открытый тред: `thread_root_id = <id корня>` (+ сам корень).
-
-**Денормализация:** `reply_count` и `last_reply_at` хранятся на корневом сообщении,
-обновляются при добавлении ответа — чтобы показывать «N ответов» без пересчёта.
-
-**Рекомендуемый индекс:** (`room_id`, `thread_root_id`, `created_at`).
-
----
-
-### media_assets
-Централизованное хранилище метаданных всех файлов. Сами байты лежат в **MinIO**
-(S3-совместимое объектное хранилище). Сообщения и база знаний ссылаются сюда.
-Смысл абстракции: смена бэкенда хранения (локальный MinIO -> managed S3) трогает
-**одно** место, т.к. API везде S3-совместимый.
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| bucket | TEXT, NOT NULL | бакет MinIO (напр. `chat-media`, `kb-media`) |
-| storage_key | TEXT, NOT NULL | ключ объекта в бакете (напр. `2026/06/<uuid>.mp4`) |
-| thumb_key | TEXT, NULL | ключ превью: картинки — сервер ужимает оригинал; видео — постер-кадр, снятый клиентом при загрузке. NULL — превью нет (файлы, старые/битые записи) |
-| kind | TEXT, NOT NULL | `'image'` \| `'video'` \| `'file'` \| `'audio'` (голосовые сообщения) |
-| mime_type | TEXT, NOT NULL | |
-| size | BIGINT, NOT NULL | байты |
-| width | INT, NULL | для изображений/видео |
-| height | INT, NULL | для изображений/видео |
-| duration | INT, NULL | секунды, для видео |
-| created_by | BIGINT FK users, NOT NULL | |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-
-**Публичный URL не хранится.** Файлы приватные; доступ — через **presigned URL**,
-который бэкенд генерирует на лету при чтении, предварительно проверив, что юзер
-имеет доступ к соответствующему сообщению/комнате/материалу. Ссылка
-короткоживущая. Это согласовано с принципом «авторизация на каждом запросе».
-
-**Потоки работы с файлами:**
-- *Загрузка* (особенно видео): бэкенд валидирует (тип, размер, доступ) и выдаёт
-  **presigned-PUT** — клиент льёт файл напрямую в MinIO, минуя FastAPI (не гоняем
-  видео через приложение). После подтверждения создаётся строка `media_assets`.
-- *Чтение*: бэкенд выдаёт **presigned-GET** на время (24 ч — длинный TTL для кэша).
-  Видео — с поддержкой HTTP range-запросов (перемотка), MinIO это умеет.
-- *Превью*: в ленте отдаётся лёгкий thumbnail (`thumb_key`), оригинал — только по
-  клику/скачиванию. Best-effort: сбой не роняет загрузку (`thumb_key` = NULL → грузится
-  оригинал). Два пути генерации:
-  - *картинки* — при подтверждении загрузки бэкенд один раз тянет оригинал из MinIO,
-    ужимает (Pillow, WebP, ≤1024px) и кладёт рядом;
-  - *видео* — постер-кадр снимает **клиент** при загрузке (canvas → WebP) и льёт
-    отдельным объектом; сервер тянуть видеофайл ради кадра не станет (дорого, против
-    п.7). В `confirm` клиент передаёт `thumb_storage_key`; сервер проверяет намерение
-    загрузки этого ключа (тот же user, kind image) и подхватывает его как `thumb_key`.
-    Постер играет и как `poster` у `<video>` (нет чёрного прямоугольника до плея).
-  - *старые записи без превью* дозаполняются разовым скриптом
-    `backend/scripts/backfill_thumbnails.py` (только картинки; см. OPERATIONS.md).
-- *Доставка в ленте*: presigned-URL вложений (оригинал + превью) встраиваются прямо в
-  payload сообщений (`MessageOut.attachments`), а не запрашиваются по одному на ассет —
-  убирает N лишних round-trip'ов (критично на мобиле). Доступ гейтится комнатой.
-
----
-
-### message_attachments
-Связь «многие-ко-многим»: одно сообщение -> несколько вложений.
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| message_id | BIGINT FK messages | |
-| media_asset_id | BIGINT FK media_assets | |
+## message_attachments
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| message_id | BIGINT | FK messages, PK | |
+| media_asset_id | BIGINT | FK media_assets, PK | |
 
 **PK:** (`message_id`, `media_asset_id`).
 
+## pinned_messages
+Separate table (not a flag) to keep several pins, order, and who pinned. See [MESSAGES.md](MESSAGES.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| room_id | BIGINT | FK rooms, PK | |
+| message_id | BIGINT | FK messages, PK | |
+| pinned_by | BIGINT | FK users | |
+| pinned_at | TIMESTAMPTZ | NOT NULL | |
+
+**PK:** (`room_id`, `message_id`).
+
+## media_assets
+Metadata for all files; bytes live in MinIO. See [FILES.md](FILES.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| bucket | TEXT | NOT NULL | e.g. `chat-media`, `kb-media` |
+| storage_key | TEXT | NOT NULL | object key, e.g. `2026/06/<uuid>.mp4` |
+| thumb_key | TEXT | NULL | preview key; NULL = no preview |
+| kind | TEXT | NOT NULL | `'image'` \| `'video'` \| `'file'` \| `'audio'` (voice) |
+| mime_type | TEXT | NOT NULL | |
+| size | BIGINT | NOT NULL | bytes |
+| width | INT | NULL | image/video |
+| height | INT | NULL | image/video |
+| duration | INT | NULL | seconds, video |
+| created_by | BIGINT | FK users, NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+Public URL is not stored: access is via presigned URL after an auth check (see [FILES.md](FILES.md)).
+
+## stickerpacks / stickers
+Admin adds packs. Sticker message: `content = NULL`, `sticker_id` set.
+
+**stickerpacks**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| name | TEXT | NOT NULL | |
+| created_by | BIGINT | FK users | admin |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**stickers**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| pack_id | BIGINT | FK stickerpacks | |
+| image_url | TEXT | NULL | legacy/external URL (nullable; media_id takes priority) |
+| image_media_id | BIGINT | FK media_assets, NULL | sticker image as media asset |
+| keyword | TEXT | NULL | search/substitution |
+| sort_order | INT | NOT NULL, default 0 | |
+
+## Knowledge base
+See [KB.md](KB.md). **kb_categories** is out-of-MVP (structure only).
+
+**kb_categories**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| title | TEXT | NOT NULL | |
+| sort_order | INT | NOT NULL, default 0 | |
+
+**kb_items**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| category_id | BIGINT | FK kb_categories, NULL | NULL = flat list (MVP) |
+| title | TEXT | NOT NULL | |
+| body | TEXT | NULL | markdown |
+| published | BOOLEAN | NOT NULL, default false | draft / published |
+| created_by | BIGINT | FK users | admin |
+| sort_order | INT | NOT NULL, default 0 | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
+
+**kb_item_media** — PK (`kb_item_id`, `media_asset_id`); FKs to kb_items, media_assets.
+
+**kb_comments**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| kb_item_id | BIGINT | FK kb_items, NOT NULL | |
+| author_id | BIGINT | FK users, NOT NULL | |
+| body | TEXT | NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | index (`kb_item_id`, `created_at`) |
+| deleted_at | TIMESTAMPTZ | NULL | soft delete (author/admin) |
+
+## calendar_events
+See [CALENDAR.md](CALENDAR.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| title | TEXT | NOT NULL | |
+| description | TEXT | NULL | |
+| starts_at | TIMESTAMPTZ | NOT NULL | |
+| ends_at | TIMESTAMPTZ | NULL | |
+| all_day | BOOLEAN | NOT NULL, default false | |
+| room_id | BIGINT | FK rooms, NULL | NULL = project-wide; set = room/channel event |
+| created_by | BIGINT | FK users | usually admin |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+## Dynamics (journal_programs / journal_sections / journal_pardons / journal_credits)
+Homework entries are `messages` in the personal room — no entry table. The diary
+**structure** is versioned by date (задания). See [DYNAMICS.md](DYNAMICS.md).
+
+**journal_programs** — a diary-structure version (задание) effective from `starts_on`.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| starts_on | DATE | NOT NULL, UNIQUE | active on day D = greatest `starts_on <= D` |
+| title | TEXT | NULL | |
+| description | TEXT | NULL | |
+| created_by | BIGINT | FK users, NULL | NULL = system/seed program |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**journal_sections** — one section of a задание (order via `position`).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| program_id | BIGINT | FK journal_programs ON DELETE CASCADE, NOT NULL | |
+| key | TEXT | NOT NULL | slug `[a-z0-9_]+`, used in `<!--journal:{key}-->` marker |
+| position | INT | NOT NULL | display/order |
+| emoji | TEXT | NOT NULL, default '' | |
+| label | TEXT | NOT NULL | chip caption |
+| heading | TEXT | NOT NULL, default '' | markdown heading of the entry (empty for `title`) |
+| placeholder | TEXT | NOT NULL, default '' | composer hint |
+| input_type | TEXT | NOT NULL, default 'text' | `'text'` \| `'title'` |
+
+**UNIQUE:** (`program_id`, `key`), (`program_id`, `position`). **INDEX:** (`program_id`).
+
+
+**journal_pardons** — self-forgiven missed day (limit 3).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL | |
+| date | DATE | NOT NULL | pardoned day |
+| used_at | TIMESTAMPTZ | NOT NULL | |
+
+**UNIQUE:** (`user_id`, `date`).
+
+**journal_credits** — admin manual credit for a day (no limit).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL | credited user |
+| date | DATE | NOT NULL | credited day |
+| granted_by | BIGINT | FK users, NOT NULL | admin |
+| granted_at | TIMESTAMPTZ | NOT NULL | |
+
+**UNIQUE:** (`user_id`, `date`).
+
+## notifications
+Bell feed. Domain data in Postgres (history, reload, future web-push). See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL | recipient |
+| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'journal_missed'` \| `'cabin_granted'` |
+| room_id | BIGINT | FK rooms, NULL | NULL for `cabin_granted` |
+| message_id | BIGINT | FK messages, NULL | NULL for system kinds |
+| actor_id | BIGINT | FK users, NULL | NULL for system kinds |
+| ref_date | DATE | NULL | `journal_missed` dedup key |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| read_at | TIMESTAMPTZ | NULL | NULL = unread |
+
+**Indexes:** (`user_id`, `id`) feed; partial (`user_id`) `WHERE read_at IS NULL` unread count.
+
+## Support (feedback / faq_items)
+See [SUPPORT.md](SUPPORT.md).
+
+**feedback**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL | author (from token) |
+| kind | TEXT | NOT NULL, CHECK | `'improvement'` \| `'bug'` |
+| body | TEXT | NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | index: admin feed, newest first |
+| resolved_at | TIMESTAMPTZ | NULL | NULL until admin marks resolved |
+
+**faq_items**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| question | TEXT | NOT NULL | |
+| answer | TEXT | NOT NULL | |
+| sort_order | INT | NOT NULL, default 0 | manual order (ties by id) |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
+
+## cabin_entries
+Каюта (private psych journaling). Form fields per subkind live in JSONB `data`. Hard delete. See [CABIN.md](CABIN.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL | author (from token) |
+| kind | TEXT | NOT NULL, CHECK | `'diary'` \| `'decatastrophize'` \| `'trigger'` |
+| data | JSONB | NOT NULL | form fields; shape depends on `kind` (validated in `schemas/cabin.py`) |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | `onupdate=now()` |
+
+**Index:** (`user_id`, `kind`, `created_at`).
+
+## Tasks
+Section "Задачи". Six tables. See [TASKS.md](TASKS.md).
+
+**tasks**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| type | TEXT | NOT NULL, CHECK | `'common'` \| `'individual'` |
+| title | TEXT | NOT NULL | |
+| body | TEXT | NULL | markdown |
+| kb_item_id | BIGINT | FK kb_items, NULL | optional link to a KB item |
+| deadline_at | TIMESTAMPTZ | NULL | synced to `calendar_events` (services/tasks.py) |
+| created_by | BIGINT | FK users, NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| deleted_at | TIMESTAMPTZ | NULL | soft delete |
+
+**task_media** — task-prompt media (admin), mirror of task_submission_media. PK (`task_id`, `media_asset_id`).
+
+**task_assignments**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| task_id | BIGINT | FK tasks, NOT NULL | |
+| user_id | BIGINT | FK users, NOT NULL | |
+| status | TEXT | NOT NULL, default `'assigned'`, CHECK | `'assigned'` \| `'submitted'` \| `'returned'` \| `'accepted'` |
+| late | BOOLEAN | NOT NULL, default false | set on first submission after deadline |
+| reviewed_at | TIMESTAMPTZ | NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**UNIQUE:** (`task_id`, `user_id`); index (`user_id`). Individual → rows at task creation; common → lazily on first submission.
+
+**task_submissions**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| assignment_id | BIGINT | FK task_assignments, NOT NULL | |
+| body | TEXT | NULL | markdown |
+| created_at | TIMESTAMPTZ | NOT NULL | index (`assignment_id`, `created_at`); history kept |
+
+**task_submission_media** — PK (`submission_id`, `media_asset_id`); FKs to task_submissions, media_assets.
+
+**task_comments** — review feedback under a submission; soft delete.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| submission_id | BIGINT | FK task_submissions, NOT NULL | |
+| author_id | BIGINT | FK users, NOT NULL | |
+| body | TEXT | NOT NULL | index (`submission_id`, `created_at`) |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| deleted_at | TIMESTAMPTZ | NULL | soft delete |
+
 ---
 
-### pinned_messages
-Закреплённые сообщения. Отдельная таблица (а не флаг на сообщении) — чтобы держать
-несколько закреплённых, знать порядок и кто закрепил.
+## Ephemeral state (Redis, NOT Postgres)
+Short-lived realtime state lives only in Redis. This is the single list of Redis uses.
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| room_id | BIGINT FK rooms | |
-| message_id | BIGINT FK messages | |
-| pinned_by | BIGINT FK users | |
-| pinned_at | TIMESTAMPTZ, NOT NULL | |
-
-**PK:** (`room_id`, `message_id`). Право закреплять — owner комнаты / admin.
-
----
-
-### stickerpacks
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| name | TEXT, NOT NULL | |
-| created_by | BIGINT FK users | admin |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-
-### stickers
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| pack_id | BIGINT FK stickerpacks | |
-| image_url | TEXT, NOT NULL | картинка стикера |
-| keyword | TEXT, NULL | для поиска/подстановки |
-| sort_order | INT, NOT NULL, default 0 | |
-
-Паки добавляет только admin. Сообщение-стикер: `content = NULL`, `sticker_id`
-заполнен.
+| Use | Notes |
+|---|---|
+| Typing ("печатает") | per-room event, short TTL, WS only. See [MESSAGES.md](MESSAGES.md) |
+| Presence | who is online (refcount). See [MESSAGES.md](MESSAGES.md) |
+| Refresh tokens / sessions | refresh `jti` whitelist for revoke/logout; access is stateless. See [AUTH.md](AUTH.md) |
+| Rate-limit counters | login / send / upload. See [API_CONVENTIONS.md](API_CONVENTIONS.md) |
+| Media upload intent | presigned-PUT intent, TTL ~15m. See [FILES.md](FILES.md) |
+| Telegram bot state | `bot:pwd:{tg_id}`, `bot:await_q:{tg_id}`, `bot:qmap:{admin_msg_id}`. See [TELEGRAM_BOT.md](TELEGRAM_BOT.md) |
+| Pub/sub channels | `room:*`, `presence`, `user:{id}` (personal notifications) |
 
 ---
 
-### База знаний
-
-**kb_categories** — *на вырост (вне MVP)*. Группировка разделов.
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| title | TEXT, NOT NULL | |
-| sort_order | INT, NOT NULL, default 0 | |
-
-**kb_items** — материалы автора.
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| category_id | BIGINT FK kb_categories, NULL | NULL = плоский список (MVP) |
-| title | TEXT, NOT NULL | |
-| body | TEXT, NULL | markdown |
-| published | BOOLEAN, NOT NULL, default false | черновик / опубликовано |
-| created_by | BIGINT FK users | admin |
-| sort_order | INT, NOT NULL, default 0 | |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-| updated_at | TIMESTAMPTZ, NOT NULL | |
-
-**kb_item_media** — файлы/видео материала (через общую media_assets).
-
-| Поле | Тип | Описание |
-|------|-----|----------|
-| kb_item_id | BIGINT FK kb_items | |
-| media_asset_id | BIGINT FK media_assets | |
-
-**PK:** (`kb_item_id`, `media_asset_id`).
-
----
-
-### calendar_events
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | BIGSERIAL PK | |
-| title | TEXT, NOT NULL | |
-| description | TEXT, NULL | |
-| starts_at | TIMESTAMPTZ, NOT NULL | |
-| ends_at | TIMESTAMPTZ, NULL | |
-| all_day | BOOLEAN, NOT NULL, default false | |
-| room_id | BIGINT FK rooms, NULL | NULL = общее событие проекта; заполнено = событие комнаты/канала |
-| created_by | BIGINT FK users | обычно admin |
-| created_at | TIMESTAMPTZ, NOT NULL | |
-
----
-
-## Статусы прочтения (без отдельной таблицы)
-
-Кто просмотрел сообщение, а кто нет — выводится из **одного числа**
-`last_read_message_id` в `room_members`, без таблицы на каждую пару юзер×сообщение.
-
-Поскольку `messages.id` монотонно растёт:
-- «непрочитанные для юзера в комнате» = сообщения с `id > last_read_message_id`;
-- «кто прочитал сообщение M» = участники, у кого `last_read_message_id >= M.id`.
-
-Когда юзер читает комнату, его `last_read_message_id` двигается вперёд. Так
-закрываются и счётчик непрочитанных, и галочки «просмотрено» одним механизмом.
-
----
-
-## Эфемерное состояние (Redis, НЕ в Postgres)
-
-Не всё хранится в БД. Короткоживущее реалтайм-состояние живёт в Redis:
-
-- **«Печатает...»** — событие «юзер X печатает в комнате Y», живёт пару секунд.
-  Идёт по WebSocket, в Redis с коротким TTL. В БД не пишется.
-- **Presence** — кто сейчас онлайн.
-- **Refresh-токены / сессии** — для возможности отзыва и логаута устройств
-  (TTL и быстрый отзыв из коробки). Access-токены не хранятся нигде (stateless).
-- **Счётчики rate-limit** — лимиты на вход, отправку сообщений и т.п.
-
----
-
-## Карта связей
+## Relations map
 
 ```
 users --< room_members >-- rooms
 users --< messages (sender) >-- rooms
-messages --+ (thread_root_id -> messages.id, само на себя)
+messages --+ (thread_root_id -> messages.id, self-FK to root)
 messages --< message_attachments >-- media_assets
 messages --> stickers --> stickerpacks
 rooms --< pinned_messages >-- messages
-rooms --< calendar_events            (room_id nullable)
+rooms --< calendar_events              (room_id nullable)
+users --< cabin_entries                (JSONB data by kind)
+users --< journal_pardons / journal_credits
+journal_programs --< journal_sections  (ON DELETE CASCADE; versioned diary structure)
+users --< notifications                (actor/message/room nullable)
+users --< feedback ;  faq_items        (standalone)
 kb_items --< kb_item_media >-- media_assets
-kb_items --> kb_categories           (category_id nullable, на вырост)
-media_assets                         (общая для сообщений и базы знаний)
+kb_items --< kb_comments >-- users
+kb_items --> kb_categories             (nullable, out-of-MVP)
+tasks --< task_media >-- media_assets
+tasks --< task_assignments >-- users
+task_assignments --< task_submissions --< task_submission_media >-- media_assets
+task_submissions --< task_comments >-- users
+tasks --> kb_items                     (kb_item_id nullable)
+media_assets                           (shared: messages, KB, tasks, avatars, stickers)
 ```
 
----
-
-## Зафиксированные решения
-
-- Каналы — **вариант А** (неявный доступ, ленивые строки только под read-state).
-- Статусы прочтения — через `last_read_message_id`, без таблицы прочтений.
-- «Печатает», presence, сессии, rate-limit — в **Redis**, не в Postgres.
-- Закрепление — отдельная таблица `pinned_messages` (несколько закреплённых).
-- Удаление сообщений — **мягкое** (`deleted_at`).
-- Медиа — централизованно в `media_assets`, байты в **MinIO** (S3-совместимо);
-  приватный доступ через presigned URL, генерируемый после проверки прав.
-- Аватары: пользователя (`users.avatar_url`) и комнаты (`rooms.avatar_url`); для
-  dm аватар комнаты не хранится.
-- Дедуп личных чатов — через `rooms.dm_key` (UNIQUE).
-- id — `BIGSERIAL` (нужно для монотонности статусов прочтения).
-- Категории базы знаний — структура заложена, но **на вырост**.
+> Dynamics homework entries are `messages` in the personal room (`rooms.is_personal`); no entry table.

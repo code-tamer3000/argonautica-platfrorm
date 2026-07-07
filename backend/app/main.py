@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.cabin import router as cabin_router
 from app.api.calendar import router as calendar_router
 from app.api.dynamics import router as dynamics_router
 from app.api.faq import router as faq_router
@@ -17,6 +18,7 @@ from app.api.messages import router as messages_router
 from app.api.notifications import router as notifications_router
 from app.api.rooms import router as rooms_router
 from app.api.stickers import router as stickers_router
+from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
 from app.core.redis import close_redis, redis_client
 from app.db.session import SessionLocal
@@ -55,10 +57,12 @@ app.include_router(kb_router)
 app.include_router(users_router)
 app.include_router(stickers_router)
 app.include_router(calendar_router)
+app.include_router(cabin_router)
 app.include_router(dynamics_router)
 app.include_router(faq_router)
 app.include_router(feedback_router)
 app.include_router(notifications_router)
+app.include_router(tasks_router)
 app.include_router(ws_router)
 
 

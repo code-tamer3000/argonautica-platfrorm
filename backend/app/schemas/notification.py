@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-NotificationKind = Literal["dm", "reply", "news", "journal_missed"]
+NotificationKind = Literal["dm", "reply", "news", "journal_missed", "cabin_granted"]
 
 
 class NotificationOut(BaseModel):
@@ -17,7 +17,7 @@ class NotificationOut(BaseModel):
 
     id: int
     kind: NotificationKind
-    room_id: int
+    room_id: int | None
     message_id: int | None
     actor_id: int | None
     actor_name: str | None

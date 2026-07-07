@@ -1,34 +1,50 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { Button } from '../../components/Button'
-import { IconBook, IconCalendar, IconChat, IconNews, IconSettings, IconSupport, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { wsClient } from '../../lib/wsClient'
 import { useAuth } from '../auth/AuthContext'
 import { ChatLayout } from '../chat/ChatLayout'
 import { CalendarView } from '../calendar/CalendarView'
+import { CabinScreen } from '../cabin/CabinScreen'
 import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
+import { TasksList } from '../tasks/TasksList'
+import { TaskDetail } from '../tasks/TaskDetail'
 import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { AdminDynamics } from '../admin/AdminDynamics'
-import { AdminMetrics } from '../admin/AdminMetrics'
+import { AdminJournal } from '../admin/AdminJournal'
 import { AdminKb } from '../admin/AdminKb'
+import { AdminTasks } from '../admin/AdminTasks'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
 import { AdminFeedback } from '../admin/AdminFeedback'
 import { AdminFaq } from '../admin/AdminFaq'
+import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
 import { useNavBadges } from './useNavBadges'
+import { Spinner } from '../../components/Spinner'
 import styles from './appshell.module.css'
+
+// Раздел «Генные ключи» тянет 64 markdown-файла — держим его в отдельном чанке,
+// чтобы не раздувать основной бандл (грузится только при заходе в раздел).
+const GeneKeysScreen = lazy(() =>
+  import('../genkeys/GeneKeysScreen').then((m) => ({ default: m.GeneKeysScreen })),
+)
 
 export function AppShell() {
   const { user, logout } = useAuth()
   const location = useLocation()
   const badges = useNavBadges()
+
+  // Каюта закрыта по умолчанию — видна, только если админ выдал доступ (у самого
+  // админа доступ есть всегда). Прячем и пункт навигации, и маршрут.
+  const canCabin = user?.can_access_cabin || user?.role === 'admin'
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -115,10 +131,25 @@ export function AppShell() {
             <span className={styles.navIcon}><IconBook /></span>
             <span className={styles.navLabel}>База знаний</span>
           </NavLink>
+          <NavLink to="/tasks" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconTasks /></span>
+            <span className={styles.navLabel}>Задачи</span>
+            {badges.tasks > 0 && <span className={styles.navBadge}>{badges.tasks > 99 ? '99+' : badges.tasks}</span>}
+          </NavLink>
           <NavLink to="/calendar" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconCalendar /></span>
             <span className={styles.navLabel}>Календарь</span>
           </NavLink>
+          <NavLink to="/genkeys" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+            <span className={styles.navIcon}><IconGenkeys /></span>
+            <span className={styles.navLabel}>Генные ключи</span>
+          </NavLink>
+          {canCabin && (
+            <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+              <span className={styles.navIcon}><IconDiary /></span>
+              <span className={styles.navLabel}>Каюта</span>
+            </NavLink>
+          )}
           <NavLink to="/profile" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconUser /></span>
             <span className={styles.navLabel}>Профиль</span>
@@ -140,13 +171,26 @@ export function AppShell() {
             <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route path="/kb/:itemId" element={<KbViewer />} />
+            <Route path="/tasks" element={<TasksList />} />
+            <Route path="/tasks/:taskId" element={<TaskDetail />} />
             <Route path="/calendar" element={<CalendarView />} />
+            <Route
+              path="/genkeys"
+              element={
+                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
+                  <GeneKeysScreen />
+                </Suspense>
+              }
+            />
+            <Route path="/cabin" element={canCabin ? <CabinScreen /> : <Navigate to="/" replace />} />
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/support" element={<SupportScreen />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route path="dynamics" element={<AdminDynamics />} />
-              <Route path="server" element={<AdminMetrics />} />
+              <Route path="journal" element={<AdminJournal />} />
+              <Route path="cabin" element={<AdminCabin />} />
               <Route path="kb" element={<AdminKb />} />
+              <Route path="tasks" element={<AdminTasks />} />
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
               <Route path="users" element={<AdminUsers />} />

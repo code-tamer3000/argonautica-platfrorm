@@ -108,7 +108,13 @@ export function CalendarView() {
                   {events.slice(0, 3).map((ev) => (
                     <span
                       key={ev.id}
-                      className={`${styles.dot} ${ev.room_id != null ? styles.dotRoom : ''}`}
+                      className={`${styles.dot} ${
+                        ev.task_id != null
+                          ? styles.dotTask
+                          : ev.room_id != null
+                            ? styles.dotRoom
+                            : ''
+                      }`}
                     />
                   ))}
                 </span>

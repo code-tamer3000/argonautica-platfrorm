@@ -1,0 +1,493 @@
+/* ───── Список задач ───── */
+.page {
+  padding: var(--space-6) var(--space-8);
+  overflow-y: auto;
+  flex: 1;
+}
+
+.pageTitle {
+  font-family: var(--font-t1);
+  font-size: 28px;
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+/* Прогресс «Выполнено X из Y». */
+.progressBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  max-width: 480px;
+}
+.progressLabel {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.progressTrack {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-deep);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width 200ms ease;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: var(--transition-base);
+}
+.card:hover {
+  border-color: var(--divider-gold);
+  box-shadow: var(--glow-gold);
+  transform: translateY(-2px);
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.cardTitle {
+  font-family: var(--font-t1);
+  font-size: 16px;
+  color: var(--text-primary);
+  flex: 1;
+  line-height: 1.3;
+}
+
+.cardChips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.cardMeta {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  color: var(--text-muted);
+  margin-top: auto;
+}
+
+/* ───── Бейджи типа + статуса ───── */
+.badge {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.badgeType {
+  border-color: var(--divider-gold);
+  color: var(--accent);
+}
+
+.chip {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: 0.5px;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.chipAccepted {
+  border-color: var(--divider-gold-strong);
+  color: var(--accent-bright);
+}
+.chipReturned,
+.chipHot {
+  border-color: var(--blood);
+  color: var(--blood-bright);
+}
+.chipLate {
+  border-color: var(--divider);
+  color: var(--text-muted);
+}
+
+/* ───── Деталь задачи ───── */
+.viewer {
+  padding: var(--space-8);
+  overflow-y: auto;
+  flex: 1;
+  max-width: 800px;
+}
+.viewerHead {
+  margin-bottom: var(--space-6);
+}
+.headChips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-2);
+}
+.articleTitle {
+  font-family: var(--font-t1);
+  font-size: 32px;
+  color: var(--text-primary);
+  margin: var(--space-2) 0;
+  line-height: 1.2;
+}
+.articleMeta {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+.kbLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--accent);
+  text-decoration: none;
+}
+.kbLink:hover { color: var(--accent-bright); }
+
+.articleBody {
+  font-family: var(--font-t3);
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text-primary);
+  max-width: 70ch;
+}
+.articleBody h1,
+.articleBody h2,
+.articleBody h3 {
+  font-family: var(--font-t1);
+  color: var(--text-primary);
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-2);
+}
+.articleBody p { margin-bottom: var(--space-3); }
+.articleBody code {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.9em;
+}
+.articleBody pre {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: var(--space-4);
+  overflow-x: auto;
+  margin-bottom: var(--space-4);
+}
+.articleBody pre code { background: none; border: none; padding: 0; }
+.articleBody blockquote {
+  border-left: 3px solid var(--divider-gold);
+  padding-left: var(--space-4);
+  color: var(--text-muted);
+  margin: var(--space-4) 0;
+}
+.articleBody ul,
+.articleBody ol {
+  padding-left: var(--space-5);
+  margin-bottom: var(--space-3);
+}
+
+/* ───── Секции (сдача, треки) ───── */
+.section {
+  margin-top: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--divider);
+  --kb-player-width: 60%;
+  --kb-player-max-width: 100%;
+  --kb-player-max-height: 480px;
+  --kb-audio-max-width: 60%;
+}
+.sectionTitle {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+}
+
+/* Строка «мой статус» над композером. */
+.myStatusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.myStatusLabel {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+}
+
+/* Трек: сдачи одного участника. */
+.track {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+.trackHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.trackName {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+.trackChips {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.submission {
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
+}
+.submission:first-child {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.submissionHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.submissionAuthor {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+.submissionTime {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+.submissionBody {
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.submissionMedia {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.emptyNote {
+  color: var(--text-muted);
+  font-family: var(--font-t4);
+  font-size: var(--text-body-sm);
+  padding: var(--space-2) 0;
+}
+
+/* Действия ревью (админ). */
+.reviewActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+}
+
+/* ───── Комментарии под сдачей ───── */
+.comments {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-frame-deep);
+}
+.commentForm {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.commentInput {
+  flex: 1;
+  resize: none;
+  min-height: 40px;
+  max-height: 160px;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  line-height: 1.5;
+  background: var(--bg-deep);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+}
+.commentInput::placeholder { color: var(--text-ghost); }
+.commentInput:focus {
+  outline: none;
+  border-color: var(--divider-gold);
+  box-shadow: 0 0 0 1px var(--divider-gold);
+}
+.commentSend {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-zoloto);
+  color: var(--color-bezdna);
+  cursor: pointer;
+  transition: var(--transition-base);
+}
+.commentSend:hover:not(:disabled) { background: var(--color-zoloto-yar); }
+.commentSend:disabled { opacity: 0.6; cursor: default; }
+
+.commentList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.commentItem { display: flex; gap: var(--space-3); }
+.commentBody { flex: 1; min-width: 0; }
+.commentHead { display: flex; align-items: baseline; gap: var(--space-2); }
+.commentAuthor { font-family: var(--font-t4); font-size: var(--text-ui); color: var(--text-primary); }
+.commentTime { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); }
+.commentDelete {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-ghost);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 var(--space-1);
+  line-height: 1;
+}
+.commentDelete:hover { color: var(--blood-bright); }
+.commentText {
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 2px;
+}
+
+/* ───── Композер сдачи ───── */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  padding: var(--space-4);
+}
+.composerInput {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 100px;
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  line-height: 1.5;
+  background: var(--bg-deep);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+}
+.composerInput::placeholder { color: var(--text-ghost); }
+.composerInput:focus {
+  outline: none;
+  border-color: var(--divider-gold);
+  box-shadow: 0 0 0 1px var(--divider-gold);
+}
+
+.pendingAtt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.pendingChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+.pendingChipLabel { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pendingChipX {
+  background: transparent;
+  border: none;
+  color: var(--text-ghost);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+}
+.pendingChipX:hover { color: var(--blood-bright); }
+
+.uploadProgress { display: flex; align-items: center; gap: var(--space-2); }
+.uploadBar { flex: 1; height: 4px; background: var(--bg-deep); border-radius: 2px; overflow: hidden; }
+.uploadBarFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 120ms ease; }
+.uploadPct { font-family: var(--font-t4); font-size: 0.75rem; color: var(--text-secondary); min-width: 34px; text-align: right; }
+
+.composerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}
+.attachBtn { margin-right: auto; }
+
+/* ───── Мобила ───── */
+@media (max-width: 768px) {
+  .page { padding: var(--space-4); }
+  .viewer { padding: var(--space-4); }
+  .trackChips { margin-left: 0; width: 100%; }
+}

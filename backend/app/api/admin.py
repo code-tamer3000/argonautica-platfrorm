@@ -3,15 +3,21 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from redis.asyncio import Redis
 from sqlalchemy import delete, exists, func, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
-from app.api.dynamics import credit_day, get_all_dynamics, uncredit_day
-from app.core.redis import get_redis
+from app.api.dynamics import (
+    create_program,
+    credit_day,
+    delete_program,
+    get_all_dynamics,
+    list_programs,
+    uncredit_day,
+    update_program,
+)
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
@@ -27,8 +33,13 @@ from app.schemas.feedback import (
     FeedbackOut,
     FeedbackResolveRequest,
 )
-from app.schemas.journal import AdminCreditRequest, AdminDynamicsOut
-from app.schemas.metrics import ServerMetricsOut
+from app.schemas.journal import (
+    AdminCreditRequest,
+    AdminDynamicsOut,
+    JournalProgramIn,
+    JournalProgramOut,
+    JournalProgramUpdate,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -36,11 +47,11 @@ from app.schemas.user import (
     AdminUserOut,
     UserOut,
 )
-from app.services.system_metrics import collect
+from app.services.notifications import notify_cabin_granted
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
-_PATCHABLE_FIELDS = {"can_create_groups", "role"}
+_PATCHABLE_FIELDS = {"can_create_groups", "can_access_cabin", "role"}
 
 # Весь роутер под require_admin — каждый запрос проверяет роль на сервере (п.1).
 router = APIRouter(
@@ -115,12 +126,16 @@ async def update_user(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
 
     changes = body.model_dump(exclude_unset=True)
+    # Переход «доступ к Каюте закрыт → открыт» — повод уведомить участника (после flush).
+    grant_cabin = changes.get("can_access_cabin") is True and not user.can_access_cabin
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:
             setattr(user, field, value)
     if changes:
         user.updated_at = datetime.now(UTC)
     await session.flush()
+    if grant_cabin:
+        await notify_cabin_granted(session, user.id)
     return user
 
 
@@ -309,6 +324,46 @@ async def admin_credit_day(
     return await get_all_dynamics(session)
 
 
+# ─── Структура дневника (задания) ───────────────────────────────────────────
+
+@router.get("/journal/programs", response_model=list[JournalProgramOut])
+async def admin_list_programs(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[JournalProgramOut]:
+    """Все задания дневника с разделами (по возрастанию даты старта)."""
+    return await list_programs(session)
+
+
+@router.post("/journal/programs", response_model=JournalProgramOut, status_code=201)
+async def admin_create_program(
+    body: JournalProgramIn,
+    admin: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JournalProgramOut:
+    """Создать новое задание (версию структуры), действующее с `starts_on`."""
+    return await create_program(session, body, created_by=admin.id)
+
+
+@router.patch("/journal/programs/{program_id}", response_model=JournalProgramOut)
+async def admin_update_program(
+    program_id: int,
+    body: JournalProgramUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JournalProgramOut:
+    """Изменить задание. Замена набора разделов у прошлого/активного задания
+    пересчитает те дни — фронтенд предупреждает об этом."""
+    return await update_program(session, program_id, body)
+
+
+@router.delete("/journal/programs/{program_id}", status_code=204)
+async def admin_delete_program(
+    program_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Удалить задание (кроме самого раннего)."""
+    await delete_program(session, program_id)
+
+
 @router.get("/feedback", response_model=FeedbackListOut)
 async def list_feedback(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -357,16 +412,3 @@ async def resolve_feedback(
         )
     fb.resolved_at = datetime.now(UTC) if body.resolved else None
     await session.flush()
-
-
-@router.get("/metrics", response_model=ServerMetricsOut)
-async def server_metrics(
-    redis: Annotated[Redis, Depends(get_redis)],
-) -> dict[str, Any]:
-    """Мгновенный снимок нагрузки сервера для реалтайм-мониторинга.
-
-    Клиент опрашивает раз в пару секунд; скорости (CPU %, сеть) — дельта к прошлому
-    снимку, чей сырой counter лежит в Redis. Стоимость запроса — чтение нескольких
-    файлов /proc + один GET/SET в Redis, нагрузку почти не поднимает.
-    """
-    return await collect(redis)

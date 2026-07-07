@@ -34,6 +34,7 @@ class AdminUpdateUserRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     can_create_groups: bool | None = None
+    can_access_cabin: bool | None = None
     role: Role | None = None
 
 
@@ -66,6 +67,7 @@ class UserOut(BaseModel):
     role: str
     must_change_password: bool
     can_create_groups: bool
+    can_access_cabin: bool
     settings: dict[str, Any] = {}
 
 
@@ -95,5 +97,6 @@ class AdminUserOut(BaseModel):
     email: str | None
     role: str
     can_create_groups: bool
+    can_access_cabin: bool
     is_active: bool = True
     created_at: datetime

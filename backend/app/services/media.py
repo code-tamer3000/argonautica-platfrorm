@@ -293,6 +293,65 @@ async def assert_media_access(
     if in_published_kb.first() is not None:
         return
 
+    # Медиа задач (условие задачи ИЛИ сдача): доступно тому, кто видит саму задачу
+    # (common → любой активный участник; individual → адресат/админ). Импорт
+    # локальный — избегаем цикла (services.tasks не должен тянуть services.media на
+    # уровне модуля).
+    from app.models.task import (
+        Task,
+        TaskAssignment,
+        TaskMedia,
+        TaskSubmission,
+        TaskSubmissionMedia,
+    )
+
+    async def _visible_task(task: Task) -> bool:
+        """Видит ли юзер задачу: common → любой; individual → админ/адресат."""
+        if task.type == "common":
+            return True
+        if user.role == "admin":
+            return True
+        assignee = await session.scalar(
+            select(TaskAssignment.id).where(
+                TaskAssignment.task_id == task.id,
+                TaskAssignment.user_id == user.id,
+            )
+        )
+        return assignee is not None
+
+    # Медиа условия задачи (task_media).
+    attached_task_rows = await session.execute(
+        select(Task)
+        .join(TaskMedia, TaskMedia.task_id == Task.id)
+        .where(
+            TaskMedia.media_asset_id == asset.id,
+            Task.deleted_at.is_(None),
+        )
+        .distinct()
+    )
+    for task in attached_task_rows.scalars().all():
+        if await _visible_task(task):
+            return
+
+    # Медиа сдачи задачи (task_submission_media).
+    task_rows = await session.execute(
+        select(Task)
+        .join(TaskAssignment, TaskAssignment.task_id == Task.id)
+        .join(TaskSubmission, TaskSubmission.assignment_id == TaskAssignment.id)
+        .join(
+            TaskSubmissionMedia,
+            TaskSubmissionMedia.submission_id == TaskSubmission.id,
+        )
+        .where(
+            TaskSubmissionMedia.media_asset_id == asset.id,
+            Task.deleted_at.is_(None),
+        )
+        .distinct()
+    )
+    for task in task_rows.scalars().all():
+        if await _visible_task(task):
+            return
+
     room_ids = (
         (
             await session.execute(
@@ -396,4 +455,76 @@ async def resolve_attachments(
     return {
         message_id: [out_by_id[aid] for aid in asset_ids if aid in out_by_id]
         for message_id, asset_ids in per_message.items()
+    }
+
+
+async def resolve_submission_attachments(
+    session: AsyncSession, submission_ids: list[int]
+) -> dict[int, list[AttachmentOut]]:
+    """`{submission_id: [AttachmentOut, ...]}` батчем — зеркало resolve_attachments,
+    но по связи task_submission_media. Доступ гейтится видимостью задачи на уровне
+    вызывающего эндпоинта (кто видит сдачу — видит её вложения).
+    """
+    from app.models.task import TaskSubmissionMedia
+
+    if not submission_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            TaskSubmissionMedia.submission_id, TaskSubmissionMedia.media_asset_id
+        )
+        .where(TaskSubmissionMedia.submission_id.in_(submission_ids))
+        .order_by(TaskSubmissionMedia.media_asset_id)
+    )
+    per_submission: dict[int, list[int]] = {}
+    all_ids: set[int] = set()
+    for submission_id, asset_id in rows.all():
+        per_submission.setdefault(submission_id, []).append(asset_id)
+        all_ids.add(asset_id)
+    if not all_ids:
+        return {}
+    assets = (
+        (await session.execute(select(MediaAsset).where(MediaAsset.id.in_(all_ids))))
+        .scalars()
+        .all()
+    )
+    out_by_id = {asset.id: build_attachment_out(asset) for asset in assets}
+    return {
+        submission_id: [out_by_id[aid] for aid in asset_ids if aid in out_by_id]
+        for submission_id, asset_ids in per_submission.items()
+    }
+
+
+async def resolve_task_attachments(
+    session: AsyncSession, task_ids: list[int]
+) -> dict[int, list[AttachmentOut]]:
+    """`{task_id: [AttachmentOut, ...]}` батчем — зеркало resolve_submission_attachments,
+    но по связи task_media (медиа самого условия задачи). Доступ гейтится видимостью
+    задачи на уровне вызывающего эндпоинта (кто видит задачу — видит её медиа).
+    """
+    from app.models.task import TaskMedia
+
+    if not task_ids:
+        return {}
+    rows = await session.execute(
+        select(TaskMedia.task_id, TaskMedia.media_asset_id)
+        .where(TaskMedia.task_id.in_(task_ids))
+        .order_by(TaskMedia.media_asset_id)
+    )
+    per_task: dict[int, list[int]] = {}
+    all_ids: set[int] = set()
+    for task_id, asset_id in rows.all():
+        per_task.setdefault(task_id, []).append(asset_id)
+        all_ids.add(asset_id)
+    if not all_ids:
+        return {}
+    assets = (
+        (await session.execute(select(MediaAsset).where(MediaAsset.id.in_(all_ids))))
+        .scalars()
+        .all()
+    )
+    out_by_id = {asset.id: build_attachment_out(asset) for asset in assets}
+    return {
+        task_id: [out_by_id[aid] for aid in asset_ids if aid in out_by_id]
+        for task_id, asset_ids in per_task.items()
     }

@@ -15,7 +15,6 @@ from datetime import date, timedelta
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.room import Room, RoomMember
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 _PREVIEW_LEN = 120
 # Служебный маркер категорий дневника в начале content — в превью не нужен.
-_JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z]+-->")
+_JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z0-9_]+-->")
 # Насколько глубоко назад досоздаём «пропущенные дни», если юзер долго не заходил.
 _JOURNAL_MISSED_WINDOW = 14
 
@@ -136,6 +135,36 @@ async def on_new_message(
         logger.exception("Failed to create notifications for message %s", message.id)
 
 
+async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
+    """Уведомить участника, что админ открыл ему раздел «Каюта».
+
+    Системное уведомление без привязки к комнате (room_id пуст) и без автора —
+    клик по нему ведёт в /cabin (обрабатывается на фронте по kind). Идемпотентности
+    не требуется: вызывается только на переходе флага false→true. Ошибку логируем и
+    глотаем, чтобы не ронять сам PATCH пользователя.
+    """
+    try:
+        row = Notification(user_id=user_id, kind="cabin_granted")
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        out = NotificationOut(
+            id=row.id,
+            kind="cabin_granted",
+            room_id=None,
+            message_id=None,
+            actor_id=None,
+            actor_name=None,
+            preview=None,
+            ref_date=None,
+            created_at=row.created_at,
+            read_at=row.read_at,
+        )
+        await publish_user_event(user_id, ws_schemas.notification_new_event(out))
+    except Exception:
+        logger.exception("Failed to create cabin_granted notification for user %s", user_id)
+
+
 async def clear_journal_missed_notification(
     session: AsyncSession, user_id: int, ref_date: date
 ) -> None:
@@ -194,9 +223,12 @@ async def ensure_journal_notifications(session: AsyncSession, user: User) -> Non
             _load_pardons,
             _personal_room_id,
             _platform_today,
+            _timeline_start,
+            load_timeline,
         )
 
-        program_start = settings.journal_program_start
+        timeline = await load_timeline(session)
+        program_start = _timeline_start(timeline)
         today = _platform_today()
         if today - timedelta(days=1) < program_start:
             return  # ещё не наступил ни один завершённый день программы
@@ -210,7 +242,7 @@ async def ensure_journal_notifications(session: AsyncSession, user: User) -> Non
         credits = await _load_credits(session, user.id)
         per_day = _calc_closed_days(messages)
         # Зачтённые админом дни не пропущены — не создаём по ним «journal_missed».
-        stats = _calc_stats(per_day, pardons, program_start, credits)
+        stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
 
         # Пропущенные дни в пределах окна (не досоздаём всю историю разом).
         cutoff = today - timedelta(days=_JOURNAL_MISSED_WINDOW)

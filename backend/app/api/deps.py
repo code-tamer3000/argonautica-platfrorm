@@ -68,3 +68,16 @@ async def require_admin(
             detail="Admin role required",
         )
     return user
+
+
+async def require_cabin_access(
+    user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """Доступ к личному разделу «Каюта». По умолчанию закрыт — админ выдаёт флаг
+    can_access_cabin. Админ имеет доступ всегда (он же его и раздаёт)."""
+    if not user.can_access_cabin and user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cabin access not granted",
+        )
+    return user
