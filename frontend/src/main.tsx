@@ -5,8 +5,12 @@ import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { AuthProvider } from './features/auth/AuthContext'
 import { setupViewport } from './lib/viewport'
+import { applyThemeAtBoot } from './stores/theme'
 import './styles/tokens.css'
 import './styles/global.css'
+
+// Применяем сохранённую тему до первого рендера — иначе светлая тема мигнёт тёмным.
+applyThemeAtBoot()
 
 // Держим высоту приложения равной видимой области (с учётом клавиатуры на мобиле).
 setupViewport()
