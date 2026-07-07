@@ -104,7 +104,7 @@
   padding: var(--space-3) var(--space-4);
   background: transparent;
   border: none;
-  border-bottom: 1px solid rgba(28, 33, 30, 0.6);
+  border-bottom: 1px solid var(--divider);
   cursor: pointer;
   text-align: left;
   transition: var(--transition-color);
