@@ -121,6 +121,51 @@
     scrollbar-width: none;
   }
   .sidenav::-webkit-scrollbar { display: none; }
+
+  /* Краевые fade-градиенты — визуальный намёк «бар можно листать вбок».
+     Показываются, только если с той стороны есть скрытые вкладки (JS ставит
+     data-scroll-start/end в AppShell). Позиция fixed, а не absolute: сам .sidenav
+     — скролл-контейнер, и absolute-псевдоэлемент уехал бы вместе с контентом;
+     fixed прибивает градиент к краю экрана (бар и так fixed по низу). */
+  .sidenav::before,
+  .sidenav::after {
+    content: '';
+    position: fixed;
+    bottom: 0;
+    width: 44px;
+    z-index: 41;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--transition-base);
+    /* Совпадает по высоте с баром: паддинги + safe-area. */
+    height: calc(58px + env(safe-area-inset-bottom));
+  }
+  .sidenav::before {
+    left: 0;
+    background: linear-gradient(to right, var(--bg-surface), transparent);
+  }
+  .sidenav::after {
+    right: 0;
+    background: linear-gradient(to left, var(--bg-surface), transparent);
+  }
+  .sidenav[data-scroll-start='true']::before { opacity: 1; }
+  .sidenav[data-scroll-end='true']::after { opacity: 1; }
+
+  /* Одноразовый намёк на жест: при первом показе бар с overflow слегка
+     «покачивается» вбок, привлекая внимание к правому краю. Класс навешивает
+     AppShell один раз за сессию и снимает после проигрывания. */
+  .sidenav.navHint { animation: navHintNudge 900ms var(--ease-out-soft) 500ms; }
+  @keyframes navHintNudge {
+    0%, 100% { transform: translateX(0); }
+    40%      { transform: translateX(-18px); }
+    70%      { transform: translateX(0); }
+  }
+
+  /* Пользователи с prefers-reduced-motion не должны видеть «дёрганье». Градиенты
+     при этом остаются — они статичны и сами по себе достаточный сигнал. */
+  @media (prefers-reduced-motion: reduce) {
+    .sidenav.navHint { animation: none; }
+  }
   .navLink, .navLinkActive {
     /* basis 20vw → ровно 5 вкладок на ширину экрана; grow заполняет остаток,
        когда вкладок меньше пяти; shrink 0 — при 6+ вкладки не сжимаются, а

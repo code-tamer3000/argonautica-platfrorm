@@ -92,6 +92,49 @@ export function AppShell() {
     return () => ro.disconnect()
   }, [location.pathname, user?.role])
 
+  // Мобильный таб-бар прокручивается горизонтально, когда вкладок больше, чем
+  // влезает на экран — но по умолчанию это никак не видно и люди не догадываются
+  // свайпать. Подсвечиваем «есть ещё» краевыми fade-градиентами: ставим на nav
+  // data-scroll-start/end, когда с той стороны есть скрытый контент. Градиенты
+  // рисует CSS (::before/::after), а лёгкое «покачивание» бара при первом показе
+  // (см. navHint ниже) намекает на жест.
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    const update = () => {
+      const overflow = nav.scrollWidth - nav.clientWidth
+      // 2px допуск на субпиксельные округления.
+      const atStart = nav.scrollLeft <= 2
+      const atEnd = nav.scrollLeft >= overflow - 2
+      nav.dataset.scrollStart = String(overflow > 2 && !atStart)
+      nav.dataset.scrollEnd = String(overflow > 2 && !atEnd)
+    }
+    update()
+
+    // Одноразовый (за сессию) намёк-«покачивание», если бар реально
+    // прокручивается. Только на мобиле — на десктопе сайднав вертикальный и
+    // никогда не переполняется по X. Класс снимаем после проигрывания, чтобы не
+    // блокировать transform клавиатуры (translateY при data-kb='open').
+    if (
+      !isDesktop &&
+      nav.scrollWidth - nav.clientWidth > 2 &&
+      !sessionStorage.getItem('navScrollHintShown')
+    ) {
+      sessionStorage.setItem('navScrollHintShown', '1')
+      nav.classList.add(styles.navHint)
+      const done = () => nav.classList.remove(styles.navHint)
+      nav.addEventListener('animationend', done, { once: true })
+    }
+
+    nav.addEventListener('scroll', update, { passive: true })
+    const ro = new ResizeObserver(update)
+    ro.observe(nav)
+    return () => {
+      nav.removeEventListener('scroll', update)
+      ro.disconnect()
+    }
+  }, [user?.role, canCabin, isDesktop])
+
   return (
     <div className={`col ${styles.shell}`}>
       <header className={styles.topbar}>
