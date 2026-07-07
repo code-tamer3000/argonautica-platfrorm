@@ -1,0 +1,10 @@
+# Pinned dev/test tooling baked into the `test` stage of backend/Dockerfile,
+# so `make test` / `make lint` / `make migration` run with NO network installs.
+# Versions match what the suite is verified green against; bump deliberately.
+#
+# Not installed in the prod/runtime image.
+pytest==9.1.1
+pytest-asyncio==1.4.0
+httpx-ws==0.9.0
+ruff==0.15.20
+mypy==2.1.0
