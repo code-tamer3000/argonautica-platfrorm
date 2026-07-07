@@ -69,11 +69,11 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 
 On mobile (`max-width: 900px`) the 64 wheel sectors are too small to tap
 reliably, so a picker appears **below the wheel** (hidden on desktop via CSS;
-also hidden once a reading is open). On mobile the stage scrolls vertically
-(top-aligned) so the picker is always reachable while the wheel keeps its size,
-and the hover hint under the title is dropped (no hover on touch). Two tabs,
-both resolving to a key number that opens the reading through the same
-`onSelect` as a wheel click:
+also hidden once a reading is open). The stage stacks title → wheel → picker in
+a scrollable, top-aligned column (nothing overlaps); the wheel is trimmed a
+little (not shrunk hard); the hover hint under the title is dropped (no hover on
+touch); and the two-tab body has a fixed min-height so switching «по номеру» ↔
+«по гексаграмме» doesn't jump. Two tabs, both resolving to a key number:
 
 - **По номеру** — a number field (1–64) + «Открыть»; the matched key's name
   previews live below.
@@ -82,6 +82,16 @@ both resolving to a key number that opens the reading through the same
   upper)` in `wheel.ts` concatenates them (`lower+upper` = full hexagram) and
   looks up the number. All 64 lower×upper combinations resolve, so it never
   dead-ends. `TRIGRAMS` (bits + Russian names) also lives in `wheel.ts`.
+
+Unlike a wheel click (which opens instantly — the cursor is already on the
+key), a picker selection has no cursor, so `GeneKeysScreen.handlePick` runs a
+**two-phase** open: it focuses the key with `anchorTop`, which makes `useRings`
+spring the OUTER ring so the chosen lock scrolls to 12 o'clock and its hexagram
+assembles; after `PICK_ASSEMBLE_MS` (~1.1 s) the reading slides open. A real
+hover, a new pick, or closing cancels the pending open and clears `anchorTop`.
+`useRings(focusKey, frozen, anchorTop)`: without `anchorTop` the outer ring
+HOLDS (hover — key stays under the cursor); with it, the outer ring rotates to
+`-leaf.angle`.
 
 ## Files
 

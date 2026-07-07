@@ -38,7 +38,10 @@ function randomStart(): number[] {
   return Array.from({ length: RING_COUNT }, () => Math.random() * 360)
 }
 
-export function useRings(focusKey: number | null, frozen: boolean): RingAngles {
+// When a key is chosen from the picker (no cursor to hold the outer ring under),
+// we rotate the OUTER ring too so the key travels to the top (12 o'clock) —
+// that's the "scroll the wheel to the lock" motion. `anchorTop` switches this on.
+export function useRings(focusKey: number | null, frozen: boolean, anchorTop = false): RingAngles {
   const initial = useRef<number[]>(randomStart())
   const [angles, setAngles] = useState<RingAngles>(() => [...initial.current])
   const ref = useRef<number[]>([...initial.current])
@@ -49,8 +52,10 @@ export function useRings(focusKey: number | null, frozen: boolean): RingAngles {
   const focusRef = useRef<number | null>(focusKey)
   const prevFocusRef = useRef<number | null>(focusKey)
   const frozenRef = useRef(frozen)
+  const anchorTopRef = useRef(anchorTop)
   focusRef.current = focusKey
   frozenRef.current = frozen
+  anchorTopRef.current = anchorTop
 
   // Switching from one key to another: the rings are already aligned, so inject
   // a velocity impulse and let an UNDER-damped spring carry it — the ring winds
@@ -94,24 +99,32 @@ export function useRings(focusKey: number | null, frozen: boolean): RingAngles {
         const leaf = leafOf(focus)
         if (leaf) {
           const outerIdx = RING_COUNT - 1
-          // The outer ring holds; everything aligns to its angle. Rings are
-          // geometrically NESTED (reflected-binary), so matching all rings to
-          // the SAME rotation makes every boundary coincide.
-          const target = cur[outerIdx]
           const spin = spinRef.current
           if (spin && (now - spin.start > spin.dur || reduceMotion)) spinRef.current = null
 
-          // While a nudge is settling use a SOFTER, under-damped spring so the
-          // impulse reads as inertia (spin out, decelerate, drift back with a
-          // little overshoot); otherwise a near-critical spring for crisp align.
           const nudging = spinRef.current != null && !reduceMotion
           const k = nudging ? NUDGE_STIFFNESS : STIFFNESS
           const d = nudging ? NUDGE_DAMPING : DAMPING
-          for (let i = 0; i < RING_COUNT; i++) {
-            if (i === outerIdx) {
-              vel[i] = 0
-              continue
-            }
+
+          // anchorTop (picker selection): spring the OUTER ring so the key lands
+          // at 12 o'clock (ring rotation of -leaf.angle puts leaf.angle up top),
+          // i.e. the wheel visibly scrolls the chosen lock into focus. Otherwise
+          // (hover) the outer ring HOLDS — the key stays under the cursor.
+          if (anchorTopRef.current) {
+            const topTarget = -leaf.angle
+            const disp = shortestDelta(cur[outerIdx], topTarget)
+            const accel = STIFFNESS * disp - DAMPING * vel[outerIdx]
+            vel[outerIdx] += accel * dt
+            cur[outerIdx] += vel[outerIdx] * dt
+          } else {
+            vel[outerIdx] = 0
+          }
+
+          // Inner rings align to the outer ring's (current) rotation — rings are
+          // geometrically NESTED, so matching rotations makes every boundary
+          // coincide and the key's nested wedge assembles into one column.
+          const target = cur[outerIdx]
+          for (let i = 0; i < RING_COUNT - 1; i++) {
             const disp = shortestDelta(cur[i], target)
             const accel = k * disp - d * vel[i]
             vel[i] += accel * dt

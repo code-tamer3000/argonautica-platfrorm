@@ -38,11 +38,13 @@ export function GeneKeyPicker({ onSelect }: Props) {
           По гексаграмме
         </button>
       </div>
-      {mode === 'number' ? (
-        <NumberPicker onSelect={onSelect} />
-      ) : (
-        <HexagramPicker onSelect={onSelect} />
-      )}
+      <div className={styles.pickerBody}>
+        {mode === 'number' ? (
+          <NumberPicker onSelect={onSelect} />
+        ) : (
+          <HexagramPicker onSelect={onSelect} />
+        )}
+      </div>
     </div>
   )
 }

@@ -556,28 +556,30 @@
   .screen {
     flex-direction: column;
   }
-  /* The wheel is big and the picker sits below it — together they overflow a
-     phone screen. So on mobile the stage scrolls vertically (top-aligned, not
-     centered) so the picker is always reachable; the wheel keeps its size. */
+  /* Mobile: title, wheel and picker stack in a scrollable, top-aligned column so
+     nothing overlaps and the picker is always reachable. The wheel is trimmed a
+     little (not shrunk hard) so the whole set fits without fighting for space. */
   .stage {
     justify-content: flex-start;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: var(--space-4) 0 var(--space-8);
+    gap: var(--space-2);
   }
-  /* The hover hint under "Генные замки" is meaningless on touch (no hover) and
-     just steals vertical room from the picker — drop it on mobile, and let the
-     caption shrink to its text now that the hint (which set the 84px min) is gone. */
-  .captionHint {
-    display: none;
-  }
-  .caption {
-    min-height: 0;
-  }
-  /* Keep the wheel at full size inside the now-scrollable stage (don't let flex
-     squash it). */
   .wheelWrap {
     flex: 0 0 auto;
+    width: min(66vw, 340px);
+  }
+  /* Title first, then the wheel — caption comes BEFORE the wheel visually on
+     mobile so the picker sits directly under the wheel with no gap dance. */
+  .caption {
+    order: -1;
+    min-height: 0;
+  }
+  /* The hover hint is meaningless on touch (no hover) and just adds a jumpy line
+     whose text changes with focus — drop it on mobile. */
+  .captionHint {
+    display: none;
   }
   /* When a reading is open, collapse the wheel stage to a slim strip so the
      text gets the room — and the reading pane scrolls its full content. */
@@ -627,10 +629,16 @@
     flex-direction: column;
     gap: var(--space-3);
     width: min(92%, 420px);
+    flex: 0 0 auto;
     margin-top: var(--space-2);
   }
   .screenOpen .picker {
     display: none;
+  }
+  /* Reserve the tall-tab (hexagram) height for BOTH tabs so switching between
+     "по номеру" and "по гексаграмме" doesn't jump the layout. */
+  .pickerBody {
+    min-height: 232px;
   }
 
   .pickerTabs {

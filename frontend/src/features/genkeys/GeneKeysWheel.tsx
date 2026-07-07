@@ -32,6 +32,8 @@ interface Props {
   partnerKey: number | null
   hoverKey: number | null
   frozen: boolean
+  /** Scroll the outer ring so the focused key lands at top (picker selection). */
+  anchorTop?: boolean
   onHover: (n: number | null) => void
   onSelect: (n: number) => void
 }
@@ -41,6 +43,7 @@ export function GeneKeysWheel({
   partnerKey,
   hoverKey,
   frozen,
+  anchorTop = false,
   onHover,
   onSelect,
 }: Props) {
@@ -49,7 +52,7 @@ export function GeneKeysWheel({
   // wheel), so we intentionally don't derive a partner leaf here.
   void partnerKey
 
-  const angles = useRings(focusNum, frozen)
+  const angles = useRings(focusNum, frozen, anchorTop)
 
   // The golden overlays (chain highlight, sector frames, center hexagram) linger
   // briefly after focus clears and fade out — so leaving the wheel feels as
