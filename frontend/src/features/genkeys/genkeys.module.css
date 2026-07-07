@@ -556,11 +556,37 @@
   .screen {
     flex-direction: column;
   }
+  /* The wheel is big and the picker sits below it — together they overflow a
+     phone screen. So on mobile the stage scrolls vertically (top-aligned, not
+     centered) so the picker is always reachable; the wheel keeps its size. */
+  .stage {
+    justify-content: flex-start;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-4) 0 var(--space-8);
+  }
+  /* The hover hint under "Генные замки" is meaningless on touch (no hover) and
+     just steals vertical room from the picker — drop it on mobile, and let the
+     caption shrink to its text now that the hint (which set the 84px min) is gone. */
+  .captionHint {
+    display: none;
+  }
+  .caption {
+    min-height: 0;
+  }
+  /* Keep the wheel at full size inside the now-scrollable stage (don't let flex
+     squash it). */
+  .wheelWrap {
+    flex: 0 0 auto;
+  }
   /* When a reading is open, collapse the wheel stage to a slim strip so the
      text gets the room — and the reading pane scrolls its full content. */
   .screenOpen .stage {
     flex: 0 0 34%;
     min-height: 0;
+    overflow: hidden;
+    justify-content: center;
+    padding: 0;
   }
   .screenOpen .wheelWrap {
     transform: scale(0.86);

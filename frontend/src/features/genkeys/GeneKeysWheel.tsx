@@ -150,7 +150,7 @@ export function GeneKeysWheel({
       className={styles.wheelSvg}
       viewBox={`0 0 ${SIZE} ${SIZE}`}
       role="group"
-      aria-label="Колесо Генных Ключей"
+      aria-label="Колесо Генных замков"
       onMouseMove={handleMove}
       onMouseLeave={() => onHover(null)}
     >
@@ -233,7 +233,7 @@ export function GeneKeysWheel({
               }}
               tabIndex={0}
               role="button"
-              aria-label={`Генный Ключ ${n}`}
+              aria-label={`Генный замок ${n}`}
             >
               <path d={o.path} className={styles.keyFill} />
               <g style={{ pointerEvents: 'none' }}>

@@ -16,13 +16,13 @@ export function GeneKeyReading({ number, onClose }: Props) {
   if (!key) return null
 
   return (
-    <aside className={styles.reading} aria-label={`Генный Ключ ${number}`}>
+    <aside className={styles.reading} aria-label={`Генный замок ${number}`}>
       {/* Sticky compact bar: stays pinned as everything scrolls under it, so
           the essential "which key" is always visible without eating the screen. */}
       <div className={styles.readingBar}>
         <Hexagram key={key.number} pattern={key.hexagram} size={26} color="var(--accent)" animate />
         <div className={styles.readingBarTitle}>
-          <span className={styles.readingNum}>Генный Ключ {key.number}</span>
+          <span className={styles.readingNum}>Генный замок {key.number}</span>
           <span className={styles.readingBarName}>{key.name}</span>
         </div>
         <button className={styles.readingClose} onClick={onClose} aria-label="Закрыть">
@@ -63,7 +63,7 @@ export function GeneKeyReading({ number, onClose }: Props) {
             <Spinner />
           </div>
         )}
-        {error && <p className={styles.readingError}>Не удалось загрузить текст ключа.</p>}
+        {error && <p className={styles.readingError}>Не удалось загрузить текст замка.</p>}
         {html && (
           <div
             className={styles.articleBody}

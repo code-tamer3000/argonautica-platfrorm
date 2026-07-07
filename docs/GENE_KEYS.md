@@ -69,8 +69,11 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 
 On mobile (`max-width: 900px`) the 64 wheel sectors are too small to tap
 reliably, so a picker appears **below the wheel** (hidden on desktop via CSS;
-also hidden once a reading is open). Two tabs, both resolving to a key number
-that opens the reading through the same `onSelect` as a wheel click:
+also hidden once a reading is open). On mobile the stage scrolls vertically
+(top-aligned) so the picker is always reachable while the wheel keeps its size,
+and the hover hint under the title is dropped (no hover on touch). Two tabs,
+both resolving to a key number that opens the reading through the same
+`onSelect` as a wheel click:
 
 - **По номеру** — a number field (1–64) + «Открыть»; the matched key's name
   previews live below.
