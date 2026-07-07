@@ -14,12 +14,14 @@ React 18 + TypeScript + Vite. TanStack Query v5 (server state), Zustand (UI stat
 - `features/` — screens by domain: `auth`, `app` (AppShell, NotificationBell, nav badges), `chat`, `kb`, `calendar`, `profile`, `admin`, `cabin`, `support`, `tasks`.
 - `components/` — shared UI (Avatar, Button, Spinner, Overlay=Modal/Drawer/Lightbox, Toasts, icons, VideoPlayer, MediaComposer).
 - `hooks/` — `useRealtime` (routes WS events into the Query cache), `useIsMobile`.
-- `stores/` — Zustand: `ui` (activeRoomId, typing 4s TTL, online, dmPeers), `toast`.
+- `stores/` — Zustand: `ui` (activeRoomId, typing 4s TTL, online, dmPeers), `toast`, `theme` (dark/light, see below).
 - `styles/` — `tokens.css` + `global.css`.
 
 ## Design system
 
 Strictly the project design system (palette `--color-bezdna`/`--color-more`/`--color-zoloto`; fonts Prata/Lora/Onest; spacing/radii/effects) — take styling from it, not structure. Reference: `frontend/design-system/README.md`.
+
+**Theming (dark/light).** Dark is the default; a light "пергамент" theme is available. The palette tokens (`--color-*`) and a few semantic tokens are redefined under `:root[data-theme='light']` in `tokens.css`; since components resolve everything through those tokens, redefining the base palette flips the whole UI — style through tokens, never hardcode hex. `stores/theme.ts` owns the choice (persisted in `localStorage['arg-theme']`), sets `data-theme` on `<html>`, and is applied before first render via `applyThemeAtBoot()` in `main.tsx` (no flash). The user switches theme in the ЛК (ProfileScreen → «Оформление»).
 
 ## Realtime
 

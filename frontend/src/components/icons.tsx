@@ -15,6 +15,7 @@ import {
   MessageSquare,
   Megaphone,
   Mic,
+  Moon,
   NotebookPen,
   Paperclip,
   Pause,
@@ -26,6 +27,7 @@ import {
   Settings,
   Smile,
   Sticker,
+  Sun,
   TriangleAlert,
   Trash2,
   User,
@@ -75,3 +77,5 @@ export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} /
 export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
 export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
 export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />
+export const IconSun = (p: IconProps) => <Sun {...DEFAULTS} {...p} />
+export const IconMoon = (p: IconProps) => <Moon {...DEFAULTS} {...p} />

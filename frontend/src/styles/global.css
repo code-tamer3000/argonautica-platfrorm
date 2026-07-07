@@ -46,7 +46,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--d
 /* Тонкий тёмный скроллбар */
 * { scrollbar-width: thin; scrollbar-color: var(--color-frame-deep) transparent; }
 *::-webkit-scrollbar { width: 6px; height: 6px; }
-*::-webkit-scrollbar-track { background: #060908; }
+*::-webkit-scrollbar-track { background: var(--bg-deep); }
 *::-webkit-scrollbar-thumb { background: var(--color-frame-deep); border-radius: 4px; }
 *::-webkit-scrollbar-thumb:hover { background: var(--color-latun); }
 
