@@ -129,19 +129,6 @@ export function MessageItem({
           </div>
         ) : (
           <>
-            {msg.content && (
-              <div
-                className={`${styles.msgText} ${styles.markdown}`}
-                dangerouslySetInnerHTML={{ __html: contentHtml }}
-              />
-            )}
-
-            {msg.sticker_id != null && (
-              sticker?.image_url
-                ? <img className={styles.sticker} src={sticker.image_url} alt={sticker.keyword ?? ''} />
-                : <span className={styles.msgPlaceholder}>[стикер]</span>
-            )}
-
             {(msg.attachments?.length ?? msg.attachment_ids.length) > 0 && (
               // Клики по вложениям (play/seek/скорость видео, аудио-плеер, лайтбокс,
               // «Скачать») остаются внутри плеера и не всплывают до onClick пузыря —
@@ -158,6 +145,19 @@ export function MessageItem({
                       <Attachment key={id} assetId={id} />
                     ))}
               </div>
+            )}
+
+            {msg.sticker_id != null && (
+              sticker?.image_url
+                ? <img className={styles.sticker} src={sticker.image_url} alt={sticker.keyword ?? ''} />
+                : <span className={styles.msgPlaceholder}>[стикер]</span>
+            )}
+
+            {msg.content && (
+              <div
+                className={`${styles.msgText} ${styles.markdown}`}
+                dangerouslySetInnerHTML={{ __html: contentHtml }}
+              />
             )}
           </>
         )}
