@@ -17,21 +17,23 @@ export function GeneKeyReading({ number, onClose }: Props) {
 
   return (
     <aside className={styles.reading} aria-label={`Генный Ключ ${number}`}>
-      <div className={styles.readingHead}>
-        <div className={styles.readingHeadTop}>
-          <div className={styles.readingHex}>
-            <Hexagram pattern={key.hexagram} size={40} color="var(--accent)" />
-          </div>
-          <div className={styles.readingTitleWrap}>
-            <span className={styles.readingNum}>Генный Ключ {key.number}</span>
-            <h1 className={styles.readingName}>{key.name}</h1>
-          </div>
-          <button className={styles.readingClose} onClick={onClose} aria-label="Закрыть">
-            ×
-          </button>
+      {/* Sticky compact bar: stays pinned as everything scrolls under it, so
+          the essential "which key" is always visible without eating the screen. */}
+      <div className={styles.readingBar}>
+        <Hexagram key={key.number} pattern={key.hexagram} size={26} color="var(--accent)" animate />
+        <div className={styles.readingBarTitle}>
+          <span className={styles.readingNum}>Генный Ключ {key.number}</span>
+          <span className={styles.readingBarName}>{key.name}</span>
         </div>
+        <button className={styles.readingClose} onClick={onClose} aria-label="Закрыть">
+          ×
+        </button>
+      </div>
 
-        {/* Spectrum triad */}
+      {/* Everything below scrolls together with the article. */}
+      <div className={styles.readingScroll}>
+        <h1 className={styles.readingName}>{key.name}</h1>
+
         <div className={styles.spectrum}>
           <div className={`${styles.spectrumCell} ${styles.cellShadow}`}>
             <span className={styles.spectrumLabel}>Тень</span>
@@ -47,7 +49,6 @@ export function GeneKeyReading({ number, onClose }: Props) {
           </div>
         </div>
 
-        {/* Characteristics chips */}
         <dl className={styles.chars}>
           <Char label="Аминокислота" value={key.aminoAcid} />
           <Char label="Кодоновое кольцо" value={ringLabel(key.codonRing, key.codonRingMembers)} />
@@ -56,9 +57,7 @@ export function GeneKeyReading({ number, onClose }: Props) {
           <Char label="Дилемма" value={key.dilemma} />
           <Char label="Паттерн жертвы" value={key.victim} />
         </dl>
-      </div>
 
-      <div className={styles.readingBody}>
         {loading && (
           <div className="center" style={{ padding: 'var(--space-6)' }}>
             <Spinner />
