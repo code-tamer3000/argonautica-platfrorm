@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   FAMILY_VAR,
   LEAVES,
@@ -9,6 +9,7 @@ import {
   leafOf,
   polar,
   ringSectors,
+  sectorSpan,
 } from './wheel'
 import { useRings } from './useRings'
 import { YinYang } from './YinYang'
@@ -44,16 +45,62 @@ export function GeneKeysWheel({
   onSelect,
 }: Props) {
   const focusNum = hoverKey ?? activeKey
-  const focusLeaf = focusNum != null ? leafOf(focusNum) : undefined
   // Partner is surfaced only as text in the caption (not highlighted on the
   // wheel), so we intentionally don't derive a partner leaf here.
   void partnerKey
 
-  // "locked" = we're settled on the CHOSEN key (clicked, not hovering another)
-  // → assemble the hexagram into one radial column. Hovering another key falls
-  // back to block alignment so browsing stays fast.
-  const locked = activeKey != null && (hoverKey == null || hoverKey === activeKey)
-  const angles = useRings(focusNum, frozen, locked)
+  const angles = useRings(focusNum, frozen)
+
+  // The golden overlays (chain highlight, sector frames, center hexagram) linger
+  // briefly after focus clears and fade out — so leaving the wheel feels as
+  // smooth as entering it, instead of the structure popping away.
+  const [lingerNum, setLingerNum] = useState<number | null>(focusNum)
+  const [fading, setFading] = useState(false)
+  const fadeTimer = useRef<number | null>(null)
+  useEffect(() => {
+    if (fadeTimer.current != null) window.clearTimeout(fadeTimer.current)
+    if (focusNum != null) {
+      setLingerNum(focusNum)
+      setFading(false)
+    } else if (lingerNum != null) {
+      setFading(true)
+      fadeTimer.current = window.setTimeout(() => {
+        setLingerNum(null)
+        setFading(false)
+      }, 360)
+    }
+    return () => {
+      if (fadeTimer.current != null) window.clearTimeout(fadeTimer.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNum])
+
+  const focusLeaf = lingerNum != null ? leafOf(lingerNum) : undefined
+
+  // Decide, ONCE per focus transition, whether this is a fresh birth (came from
+  // no key → play the Taiji spin-collapse + full stagger) or a key→key update
+  // (only the changed lines re-draw), and remember the previously shown bits.
+  // These are STATE, not per-render refs, so the classes stay stable for the
+  // whole animation (a ref recomputed every rAF frame would cancel it instantly).
+  const [reveal, setReveal] = useState<{ born: boolean; prevBits: string | null }>({
+    born: true,
+    prevBits: null,
+  })
+  const shownBitsRef = useRef<string | null>(null)
+  useEffect(() => {
+    const nextBits = lingerNum != null && !fading ? (leafOf(lingerNum)?.bits ?? null) : null
+    if (nextBits == null) {
+      // focus ended (or fading) — next entry will be a fresh birth
+      if (shownBitsRef.current != null) shownBitsRef.current = null
+      return
+    }
+    if (nextBits !== shownBitsRef.current) {
+      setReveal({ born: shownBitsRef.current == null, prevBits: shownBitsRef.current })
+      shownBitsRef.current = nextBits
+    }
+  }, [lingerNum, fading])
+  const bornFromIdle = reveal.born
+  const prevBits = reveal.prevBits
 
   // Inner rings 1 & 2 (bigram sectors). ring index -> radii R[idx]..R[idx+1].
   const innerRings = useMemo(
@@ -86,12 +133,26 @@ export function GeneKeysWheel({
 
   const origin = `${C}px ${C}px`
 
+  // Reset hover the moment the cursor leaves the OUTER CIRCLE (not the whole
+  // screen): compute the pointer's radius from center in viewBox units and drop
+  // focus once it's past the key ring. Also reset on leaving the SVG entirely.
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget
+    const rect = svg.getBoundingClientRect()
+    const px = ((e.clientX - rect.left) / rect.width) * SIZE
+    const py = ((e.clientY - rect.top) / rect.height) * SIZE
+    const dist = Math.hypot(px - C, py - C)
+    if (dist > R[RING_COUNT] && hoverKey != null) onHover(null)
+  }
+
   return (
     <svg
       className={styles.wheelSvg}
       viewBox={`0 0 ${SIZE} ${SIZE}`}
       role="group"
       aria-label="Колесо Генных Ключей"
+      onMouseMove={handleMove}
+      onMouseLeave={() => onHover(null)}
     >
       {/* Static ring boundaries — always visible so the three rings read as
           distinct concentric bands. */}
@@ -193,19 +254,50 @@ export function GeneKeysWheel({
         })}
       </g>
 
-      {/* Golden edges: radial lines along the boundaries of the focused block —
-          the big ¼ sector, its 4 mid-sectors and 16 leaves — growing from
-          center. Rings are aligned on focus so these boundaries coincide. */}
-      {focusLeaf != null && <GrowthEdges angles={angles} />}
+      {/* Golden frame around the focused key's sector on each of the 3 rings —
+          two radial side-edges + inner & outer arcs — a full outline per band.
+          The `fading` class fades the whole overlay out smoothly on leave. */}
+      {focusLeaf != null && (
+        <g className={fading ? styles.overlayFading : styles.overlayIn}>
+          <GrowthFrames bits={focusLeaf.bits} angles={angles} />
+        </g>
+      )}
 
-      {/* Hub: the focused key's hexagram materialises in the center; when
-          nothing is focused, the Taiji spins with the innermost ring. */}
+      {/* Hub: the Taiji ALWAYS rotates with the inner ring (continuous, so it
+          never jumps). When a key is focused it flushes gold, flattens into the
+          center (scale/opacity only — rotation is untouched), and the key's
+          hexagram is "born" from it; on leave the reverse plays. */}
       <circle cx={C} cy={C} r={R_HUB + 2} className={styles.hubRim} />
-      {focusLeaf ? (
-        <CenterHexagram bits={focusLeaf.bits} />
-      ) : (
-        <g style={{ transform: `rotate(${angles[0]}deg)`, transformOrigin: origin }}>
+      <g style={{ transform: `rotate(${angles[0]}deg)`, transformOrigin: origin }}>
+        <g
+          // key forces the collapse/reform animation to replay on each new
+          // birth (idle→key) or leave, instead of being skipped when the class
+          // string happens to repeat.
+          key={focusLeaf ? (fading ? 'reform' : bornFromIdle ? `born-${lingerNum}` : 'gone') : 'idle'}
+          className={
+            focusLeaf
+              ? fading
+                ? styles.taijiReform
+                : bornFromIdle
+                  ? styles.taijiCollapse
+                  : styles.taijiGone
+              : undefined
+          }
+          style={{ transformOrigin: origin }}
+        >
           <YinYang cx={C} cy={C} r={R_HUB - 8} />
+        </g>
+      </g>
+      {focusLeaf && (
+        <g className={fading ? styles.hexCollapse : undefined} style={{ transformOrigin: origin }}>
+          {/* Birth-from-idle → prevBits null so all lines stagger in (and a birth
+              key forces a full remount). Key switch → only changed lines re-draw.
+              Fade → prevBits === bits (no re-animation), wrapper collapses. */}
+          <CenterHexagram
+            key={bornFromIdle && !fading ? `born-${lingerNum}` : 'update'}
+            bits={focusLeaf.bits}
+            prevBits={fading ? focusLeaf.bits : bornFromIdle ? null : prevBits}
+          />
         </g>
       )}
     </svg>
@@ -214,7 +306,10 @@ export function GeneKeysWheel({
 
 // The focused key's full hexagram, drawn as INLINE svg shapes centered in the
 // hub (a nested <svg> can't be positioned inside <g>, so we draw rects here).
-function CenterHexagram({ bits }: { bits: string }) {
+// `prevBits`: on an update, the LOWEST line that changed and everything ABOVE it
+// re-draws — so a difference in line 2 re-grows lines 2-6, a difference in line 5
+// re-grows lines 5-6 (a cascade upward from the first change).
+function CenterHexagram({ bits, prevBits }: { bits: string; prevBits?: string | null }) {
   const lines = bits.split('') // index 0 = line 1 (bottom)
   const w = R_HUB * 0.95
   const lineH = w * 0.11
@@ -224,16 +319,36 @@ function CenterHexagram({ bits }: { bits: string }) {
   const half = (w - gapMid) / 2
   const x0 = C - w / 2
   const y0 = C - totalH / 2
+
+  // Lowest (bottom-most) line index that differs from prevBits; that line and
+  // all ABOVE it re-animate. Infinity means nothing changed; 0 = full birth.
+  let firstChanged = Infinity
+  if (prevBits == null) firstChanged = 0
+  else
+    for (let i = 0; i < lines.length; i++)
+      if (prevBits[i] !== lines[i]) {
+        firstChanged = i
+        break
+      }
+
   return (
     <g className={styles.centerHex}>
       {lines.map((bit, i) => {
         const rowFromTop = lines.length - 1 - i
         const y = y0 + rowFromTop * (lineH + gap)
+        // Cascade: this line animates if it's at or above the first change.
+        const changed = i >= firstChanged
+        // Bit-tagged key on changed lines forces a remount → replays grow-in.
+        const key = changed ? `${i}:${bit}:${firstChanged}` : `${i}`
+        // Stagger from the first changed line upward.
+        const style = changed ? { animationDelay: `${(i - firstChanged) * 85}ms` } : undefined
+        const cls = changed ? `${styles.centerHexLine} ${styles.lineGrow}` : styles.centerHexLine
+        const gcls = changed ? styles.lineGrow : undefined
         if (bit === '1') {
-          return <rect key={i} x={x0} y={y} width={w} height={lineH} rx={lineH / 2} className={styles.centerHexLine} />
+          return <rect key={key} x={x0} y={y} width={w} height={lineH} rx={lineH / 2} className={cls} style={style} />
         }
         return (
-          <g key={i}>
+          <g key={key} className={gcls} style={style}>
             <rect x={x0} y={y} width={half} height={lineH} rx={lineH / 2} className={styles.centerHexLine} />
             <rect x={x0 + w - half} y={y} width={half} height={lineH} rx={lineH / 2} className={styles.centerHexLine} />
           </g>
@@ -282,24 +397,59 @@ function IChingLine({ solid, y, len }: { solid: boolean; y: number; len: number 
 // Each ring's boundaries live in that ring's radial band and rotate WITH that
 // ring, so on hover (all rings aligned) they line up into continuous radial cuts,
 // and grow outward from the center. Finer rings fade in slightly later.
-function GrowthEdges({ angles }: { angles: number[] }) {
-  const levels = [
-    { count: 4, r0: R_HUB, r1: R[1], angle: angles[0], cls: styles.edgeL1 },
-    { count: 16, r0: R[1], r1: R[2], angle: angles[1], cls: styles.edgeL2 },
-    { count: 64, r0: R[2], r1: R[3], angle: angles[2], cls: styles.edgeL3 },
+// A closed golden outline around one sector: two radial sides + inner & outer
+// arcs. `[lo,hi]` are span fractions (0..1) of the ring; `angle` is the ring's
+// current rotation; `[r0,r1]` the ring's radial band.
+function sectorFramePath(lo: number, hi: number, angle: number, r0: number, r1: number): string {
+  const a0 = lo * 360 + angle
+  const a1 = hi * 360 + angle
+  const [x0o, y0o] = polar(C, C, r1, a0)
+  const [x1o, y1o] = polar(C, C, r1, a1)
+  const [x1i, y1i] = polar(C, C, r0, a1)
+  const [x0i, y0i] = polar(C, C, r0, a0)
+  const large = a1 - a0 > 180 ? 1 : 0
+  return [
+    `M ${x0o.toFixed(2)} ${y0o.toFixed(2)}`,
+    `A ${r1} ${r1} 0 ${large} 1 ${x1o.toFixed(2)} ${y1o.toFixed(2)}`, // outer arc
+    `L ${x1i.toFixed(2)} ${y1i.toFixed(2)}`, // side
+    `A ${r0} ${r0} 0 ${large} 0 ${x0i.toFixed(2)} ${y0i.toFixed(2)}`, // inner arc
+    'Z', // side back to start
+  ].join(' ')
+}
+
+// Golden outlines around EVERY sector on all three rings EXCEPT the focused
+// chain sector (that one is filled, so it reads on its own). The outlines flow
+// outward — ring 1 first, then 2, then 3, and within a ring the sectors nearest
+// the focused one light up first — for a "the structure builds itself" effect.
+function GrowthFrames({ bits, angles }: { bits: string; angles: number[] }) {
+  const bands = [
+    { prefix: RINGS[0].prefix, r0: R[0], r1: R[1], angle: angles[0], cls: styles.edgeL1, base: 0 },
+    { prefix: RINGS[1].prefix, r0: R[1], r1: R[2], angle: angles[1], cls: styles.edgeL2, base: 140 },
+    { prefix: RINGS[2].prefix, r0: R[2], r1: R[3], angle: angles[2], cls: styles.edgeL3, base: 280 },
   ]
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {levels.map((lv, li) => {
-        const step = 360 / lv.count
+      {bands.map((b, bi) => {
+        const focusPrefix = bits.slice(0, b.prefix)
+        const total = 1 << b.prefix
         return (
-          <g key={li} className={lv.cls}>
-            {Array.from({ length: lv.count }, (_, i) => {
-              // Sector centers sit at (i+0.5)*step; boundaries (cuts) at i*step.
-              const edge = i * step + lv.angle
-              const [x0, y0] = polar(C, C, lv.r0, edge)
-              const [x1, y1] = polar(C, C, lv.r1, edge)
-              return <line key={i} x1={x0} y1={y0} x2={x1} y2={y1} className={styles.growthLine} />
+          <g key={bi} className={b.cls}>
+            {Array.from({ length: total }, (_, i) => {
+              const sb = i.toString(2).padStart(b.prefix, '0')
+              if (sb === focusPrefix) return null // filled, no outline
+              const [lo, hi] = sectorSpan(sb)
+              // stagger by angular distance from the focused sector (nearest first)
+              const [flo, fhi] = sectorSpan(focusPrefix)
+              const dist = Math.abs((lo + hi) / 2 - (flo + fhi) / 2)
+              const delay = b.base + dist * 360 * 3 // deg → ms-ish spread
+              return (
+                <path
+                  key={sb}
+                  d={sectorFramePath(lo, hi, b.angle, b.r0, b.r1)}
+                  className={styles.growthFrame}
+                  style={{ animationDelay: `${delay.toFixed(0)}ms` }}
+                />
+              )
             })}
           </g>
         )

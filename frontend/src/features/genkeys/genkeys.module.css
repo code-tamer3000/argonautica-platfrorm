@@ -147,41 +147,45 @@
   fill: var(--accent-bright);
   stroke: var(--accent);
 }
-/* --- Golden growth spokes (focus) ---------------------------------------- */
-/* When a key is focused, a golden line grows from the center out along the
-   assembled ray, with nodes at each ring boundary. */
-@keyframes gkGrow {
+/* --- Golden frames around the focused sector (focus) --------------------- */
+/* A closed golden outline (sides + inner/outer arcs) traces the focused key's
+   sector on each of the 3 rings, growing outward ring by ring. */
+@keyframes gkFrameIn {
   from {
-    stroke-dashoffset: var(--len, 340);
     opacity: 0;
   }
   to {
-    stroke-dashoffset: 0;
     opacity: 1;
   }
 }
-.growthLine {
-  stroke: var(--accent-bright);
-  stroke-linecap: round;
-  stroke-dasharray: 420;
-  filter: drop-shadow(0 0 3px rgba(217, 180, 90, 0.45));
-  animation: gkGrow 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+/* Overlay fade: on leave the golden structure eases out (as smooth as entry). */
+.overlayIn {
+  opacity: 1;
 }
-/* Density tiers: the coarse ÷4 cuts are boldest and appear first; finer rings
-   are thinner and fade in slightly later, so the grid "grows" outward. */
-.edgeL1 .growthLine {
-  stroke-width: 2;
-  opacity: 0.9;
+.overlayFading {
+  opacity: 0;
+  transition: opacity 340ms ease;
 }
-.edgeL2 .growthLine {
-  stroke-width: 1.3;
+
+.growthFrame {
+  fill: none;
+  stroke: var(--divider-gold-strong);
+  stroke-linejoin: round;
+  stroke-width: 1;
+  animation: gkFrameIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* Thin outlines; slightly stronger on the coarse inner ring. */
+.edgeL1 .growthFrame {
+  stroke-width: 1.2;
+  opacity: 0.75;
+}
+.edgeL2 .growthFrame {
+  stroke-width: 1;
   opacity: 0.6;
-  animation-delay: 90ms;
 }
-.edgeL3 .growthLine {
-  stroke-width: 0.9;
-  opacity: 0.4;
-  animation-delay: 180ms;
+.edgeL3 .growthFrame {
+  stroke-width: 0.75;
+  opacity: 0.5;
 }
 
 /* --- Hub (Taiji / focused hexagram) -------------------------------------- */
@@ -191,20 +195,85 @@
   stroke: var(--divider-gold);
   stroke-width: 1.5;
 }
-@keyframes gkFadeIn {
+.centerHex {
+  pointer-events: none;
+}
+
+/* --- Hub transition: Taiji flattens (rotation comes from the parent, so these
+   only scale/fade → no jump when idle rotation resumes). Hexagram born from it. */
+/* These add a TRANSIENT spin on top of the parent's continuous idle rotation
+   (both start and end at rotate(0), so there's no net jump). */
+@keyframes gkTaijiCollapse {
+  from {
+    opacity: 1;
+    transform: rotate(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: rotate(300deg) scaleY(0.04) scaleX(0.85);
+  }
+}
+@keyframes gkTaijiReform {
   from {
     opacity: 0;
+    transform: rotate(300deg) scaleY(0.04) scaleX(0.85);
+  }
+  60% {
+    opacity: 1;
   }
   to {
     opacity: 1;
+    transform: rotate(0) scale(1);
   }
 }
-.centerHex {
-  animation: gkFadeIn 260ms ease both;
-  pointer-events: none;
+@keyframes gkHexCollapse {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: rotate(-140deg) scale(0.15);
+  }
+}
+/* transform-origin comes from the inline style (viewBox center), matching the
+   parent's rotate so collapse/spin stays centered. */
+.taijiCollapse {
+  animation: gkTaijiCollapse 340ms cubic-bezier(0.4, 0, 0.7, 0.2) both;
+}
+/* Reform is slower & eased so it unwinds gently back to the idle spin. */
+.taijiReform {
+  animation: gkTaijiReform 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+/* Already collapsed (switching between keys) — stay hidden, no re-collapse. */
+.taijiGone {
+  opacity: 0;
+}
+/* A single hexagram line growing in from its center (used for changed lines). */
+@keyframes gkLineGrow {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.lineGrow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gkLineGrow 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.hexCollapse {
+  animation: gkHexCollapse 300ms cubic-bezier(0.5, 0, 0.75, 0) both;
 }
 .centerHexLine {
   fill: var(--accent-bright);
+}
+/* A split-line group animates as a whole; its rects shouldn't double-run. */
+.centerHexLineG .centerHexLine {
+  animation: none;
 }
 
 /* --- Caption (below the wheel) ------------------------------------------- */
@@ -269,45 +338,73 @@
   width: min(560px, 46%);
 }
 
+/* The whole panel is ONE scroll container — head + article scroll together, so
+   on mobile you can always reach the text. A compact bar stays pinned on top. */
+@keyframes gkReadingIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
 .reading {
   height: 100%;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
   width: min(560px, 46vw);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  animation: gkReadingIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.readingHead {
-  padding: var(--space-6) var(--space-6) var(--space-4);
-  border-bottom: 1px solid var(--divider);
-}
-.readingHeadTop {
+/* Sticky compact bar — collapses the header to just the essentials while you
+   read; sits above the content and never scrolls away. */
+.readingBar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--divider-gold);
 }
-.readingHex {
-  flex: 0 0 auto;
-  padding-top: var(--space-1);
-}
-.readingTitleWrap {
+.readingBarTitle {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.readingBarName {
+  font-family: var(--font-t2);
+  font-size: 15px;
+  line-height: 1.2;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .readingNum {
-  display: block;
   font-family: var(--font-t4);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--accent);
 }
+.readingScroll {
+  padding: var(--space-5) var(--space-6) var(--space-16);
+}
 .readingName {
   font-family: var(--font-t1);
-  font-size: clamp(22px, 2.4vw, 30px);
-  line-height: 1.15;
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1.12;
   color: var(--text-primary);
-  margin: var(--space-1) 0 0;
+  margin: 0 0 var(--space-4);
 }
 .readingClose {
   flex: 0 0 auto;
@@ -333,7 +430,6 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
-  margin-top: var(--space-5);
 }
 .spectrumCell {
   border: 1px solid var(--divider);
@@ -392,12 +488,8 @@
   margin: 0;
 }
 
-/* Reading body (scrolls) */
-.readingBody {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--space-5) var(--space-6) var(--space-12);
+.chars + .articleBody {
+  margin-top: var(--space-6);
 }
 .readingError {
   color: var(--blood-bright);
@@ -457,21 +549,41 @@
   .screen {
     flex-direction: column;
   }
+  /* When a reading is open, collapse the wheel stage to a slim strip so the
+     text gets the room — and the reading pane scrolls its full content. */
+  .screenOpen .stage {
+    flex: 0 0 34%;
+    min-height: 0;
+  }
   .screenOpen .wheelWrap {
-    transform: translateY(-2%) scale(0.9);
+    transform: scale(0.86);
+  }
+  .screenOpen .caption {
+    display: none;
   }
   .readingPane {
+    /* Collapsed: zero height (not width) since we stack vertically. */
+    flex: 0 0 0;
+    width: 100%;
+    height: 0;
     border-left: none;
     border-top: 1px solid var(--divider-gold);
+    transition: flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1),
+      height 480ms cubic-bezier(0.22, 1, 0.36, 1);
   }
   .screenOpen .readingPane {
-    flex-basis: 60%;
+    flex: 1 1 auto;
     width: 100%;
+    height: auto;
+    min-height: 0;
   }
   .reading {
     width: 100%;
   }
+  .readingScroll {
+    padding: var(--space-4) var(--space-4) var(--space-12);
+  }
   .charRow {
-    grid-template-columns: 120px 1fr;
+    grid-template-columns: 110px 1fr;
   }
 }

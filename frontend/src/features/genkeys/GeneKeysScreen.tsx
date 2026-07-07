@@ -1,14 +1,41 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { GeneKeysWheel } from './GeneKeysWheel'
 import { GeneKeyReading } from './GeneKeyReading'
 import { getKey, partnerOf } from './wheel'
 import styles from './genkeys.module.css'
 
+// Cursor must rest on a key this long before it "locks in" — sliding across
+// neighbours no longer flickers key after key; the wheel waits for you to settle.
+const DWELL_MS = 260
+
 export function GeneKeysScreen() {
   const [hoverKey, setHoverKey] = useState<number | null>(null)
   const [activeKey, setActiveKey] = useState<number | null>(null)
+  const dwellRef = useRef<number | null>(null)
 
-  const handleHover = useCallback((n: number | null) => setHoverKey(n), [])
+  // Debounced hover: schedule the commit after DWELL_MS; a new hover (or leave)
+  // cancels the pending one. Clearing to null is immediate (fast reset).
+  const handleHover = useCallback((n: number | null) => {
+    if (dwellRef.current != null) {
+      window.clearTimeout(dwellRef.current)
+      dwellRef.current = null
+    }
+    if (n == null) {
+      setHoverKey(null)
+      return
+    }
+    dwellRef.current = window.setTimeout(() => {
+      setHoverKey(n)
+      dwellRef.current = null
+    }, DWELL_MS)
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (dwellRef.current != null) window.clearTimeout(dwellRef.current)
+    },
+    [],
+  )
 
   const handleSelect = useCallback((n: number) => setActiveKey(n), [])
 
@@ -33,7 +60,7 @@ export function GeneKeysScreen() {
 
   return (
     <div className={`${styles.screen} ${open ? styles.screenOpen : ''}`}>
-      <section className={styles.stage} onMouseLeave={() => setHoverKey(null)}>
+      <section className={styles.stage}>
         <div className={styles.wheelWrap}>
           <GeneKeysWheel
             activeKey={activeKey}
