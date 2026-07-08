@@ -378,16 +378,18 @@ async def list_tasks(
     now = datetime.now(UTC)
     days = settings.task_deadline_soon_days
 
-    # Видимые задачи: common ∪ (individual, где у юзера есть назначение).
-    my_individual = select(TaskAssignment.task_id).where(
-        TaskAssignment.user_id == current_user.id
-    )
+    # Видимые задачи: админ видит ВСЕ неудалённые (он модератор и автор — иначе
+    # созданная им individual-задача, где он не адресат, выпала бы из его списка).
+    # Участник: common ∪ (individual, где у него есть назначение).
+    where = [Task.deleted_at.is_(None)]
+    if current_user.role != "admin":
+        my_individual = select(TaskAssignment.task_id).where(
+            TaskAssignment.user_id == current_user.id
+        )
+        where.append((Task.type == "common") | (Task.id.in_(my_individual)))
     stmt = (
         select(Task)
-        .where(
-            Task.deleted_at.is_(None),
-            (Task.type == "common") | (Task.id.in_(my_individual)),
-        )
+        .where(*where)
         .order_by(
             Task.deadline_at.is_(None),  # False (есть дедлайн) — раньше
             Task.deadline_at.asc(),
