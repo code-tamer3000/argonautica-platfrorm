@@ -48,4 +48,6 @@ jobs:
             Output: ONE PR review comment. Verdict first (APPROVE / REQUEST CHANGES),
             then findings ranked by severity, each with file:line. No style nitpicks
             that a linter would catch. Be brief.
-          claude_args: "--max-turns 15"
+          claude_args: >-
+            --max-turns 15
+            --allowedTools "Bash(git log:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh issue view:*),Read,Glob,Grep"
