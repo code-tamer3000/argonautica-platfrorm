@@ -123,10 +123,13 @@
   border-color: var(--divider-gold-strong);
   color: var(--accent-bright);
 }
-.chipReturned,
-.chipHot {
+.chipReturned {
   border-color: var(--blood);
   color: var(--blood-bright);
+}
+.chipSoon {
+  border-color: var(--color-more);
+  color: var(--color-more-yar);
 }
 .chipLate {
   border-color: var(--divider);

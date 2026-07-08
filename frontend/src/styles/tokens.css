@@ -11,6 +11,7 @@
   --color-tishina:       #000000;
   --color-more:          #134E45;
   --color-more-glub:     #0E342E;
+  --color-more-yar:      #2E8C79;   /* Море·ярь — bright teal for legible badge text on dark */
   --color-frame:         #1C211E;
   --color-frame-deep:    #2C322E;
 
@@ -79,6 +80,7 @@
   --color-tishina:       #FBFAF5;  /* самый светлый (поля ввода, «глубина») */
   --color-more:          #1C6156;  /* морская зелень — чуть ярче для контраста на светлом */
   --color-more-glub:     #E4E9E0;  /* фон базовых аватарок: светлый холодный, а не тёмное море */
+  --color-more-yar:      #134238;  /* Море·ярь — глубокий насыщенный тил, сильный контраст на светлом */
   --color-frame:         #E8E2D3;  /* разделители/рамки — мягкие, чтобы линии не «резали» */
   --color-frame-deep:    #DAD3C1;
 
