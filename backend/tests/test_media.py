@@ -445,6 +445,81 @@ async def test_video_client_poster_becomes_thumb(
         assert thumb.status_code == 200
 
 
+async def test_backfill_image_dims_fills_legacy_rows(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Легаси-картинка (width/height = NULL, как до того, как клиент начал их слать)
+    получает размеры после прогона backfill_image_dims — и они доезжают до ленты через
+    resolve_attachments (AttachmentOut.width/height).
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    from app.services.media import resolve_attachments
+    from scripts.backfill_image_dims import main as run_backfill
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+
+    buf = BytesIO()
+    Image.new("RGB", (300, 150), (10, 20, 30)).save(buf, format="PNG")
+    data = buf.getvalue()
+
+    ticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            json={"content_type": "image/png", "size": len(data), "kind": "image"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            ticket["upload_url"], content=data, headers={"Content-Type": "image/png"}
+        )
+        assert put.status_code == 200, put.text
+
+    # Подтверждаем БЕЗ width/height — имитирует легаси-строку, залитую до того, как
+    # клиент начал слать размеры.
+    asset = (
+        await client.post(
+            "/api/media/assets",
+            headers=headers,
+            json={"storage_key": ticket["storage_key"]},
+        )
+    ).json()
+    assert asset["width"] is None and asset["height"] is None
+
+    posted = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "фото", "attachment_ids": [asset["id"]]},
+    )
+    assert posted.status_code == 201, posted.text
+    message_id = posted.json()["id"]
+
+    await run_backfill()
+
+    refreshed = await session.get(MediaAsset, asset["id"])
+    assert refreshed is not None
+    assert refreshed.width == 300 and refreshed.height == 150
+
+    # Повторный прогон идемпотентен — не трогает уже заполненную строку.
+    await run_backfill()
+    await session.refresh(refreshed)
+    assert refreshed.width == 300 and refreshed.height == 150
+
+    attachments = await resolve_attachments(session, [message_id])
+    out = attachments[message_id][0]
+    assert out.width == 300 and out.height == 150
+
+
 async def test_video_poster_key_from_other_user_ignored(
     client: AsyncClient,
     make_user: MakeUser,

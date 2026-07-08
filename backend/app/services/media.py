@@ -186,6 +186,27 @@ def generate_image_thumbnail(bucket: str, key: str, mime_type: str) -> str | Non
         return None
 
 
+def read_image_dimensions(bucket: str, key: str) -> tuple[int, int] | None:
+    """Best-effort размеры картинки: тянем оригинал из MinIO, читаем через Pillow.
+
+    Для бэкфилла легаси-строк (`backfill_image_dims.py`), у которых `width/height`
+    не пришли от клиента. Возвращает `(width, height)` или `None` при любой ошибке
+    (битый файл, объекта нет в хранилище) — как `generate_image_thumbnail`, не должно
+    ронять прогон. Вызывать через run_in_threadpool (сеть + декодирование).
+    """
+    from PIL import Image  # локальный импорт: Pillow нужен только тут
+
+    try:
+        client = _server_client()
+        obj = client.get_object(Bucket=bucket, Key=key)
+        with Image.open(BytesIO(obj["Body"].read())) as img:
+            width, height = img.size
+        return width, height
+    except Exception:
+        logger.warning("dims read failed for %s/%s", bucket, key, exc_info=True)
+        return None
+
+
 def generate_video_poster(bucket: str, key: str) -> tuple[str | None, int | None]:
     """Постер-кадр + длительность для видео, залитого без клиентского постера (ffmpeg).
 
