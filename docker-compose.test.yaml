@@ -46,6 +46,11 @@ services:
   # the Makefile drives it one-off via `run --rm api <cmd>` (alembic, pytest).
   # Code is bind-mounted so no rebuild is needed between runs.
   api:
+    # Explicit, version-stable image name so a pre-built image (e.g. CI's buildx
+    # GHA-cached build) is reused by `run --rm api` instead of rebuilt. Without it
+    # the name is the compose-derived `<project>-<service>`, which differs across
+    # compose v1/v2 and would silently fall back to a full local build.
+    image: argonautica-test-api
     build:
       context: ./backend
       dockerfile: Dockerfile

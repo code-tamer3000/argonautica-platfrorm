@@ -1,0 +1,51 @@
+name: Agent — Review PR
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true       # new push before review finished → review the newer state
+
+jobs:
+  review:
+    # Skip drafts; review everything else, including agent-authored PRs (that's the point).
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are a READ-ONLY reviewer for PR #${{ github.event.pull_request.number }}.
+            You must not modify any file. Read the diff (gh pr diff), the linked issue,
+            and ONLY the docs/ files relevant to the touched domains.
+
+            Review checklist, in priority order:
+            1. Spec conformance — does the change match the issue and the docs/ domain file?
+            2. Migrations — expand/contract ONLY (see CLAUDE.md "Migrations"): reject dropping
+               or renaming a column in the same release that stops writing it, and any
+               drop/recreate that is not expand/contract-safe on the shared Postgres.
+               In particular REJECT any drop/recreate of the 3 phantom indexes listed in
+               docs/DATA_MODEL.md "Migrations gotchas".
+            3. Security — authz on new endpoints (channel admin-only writes, lazy membership),
+               no secrets, no raw SQL injection paths, presigned-URL scope.
+            4. Tests — new endpoint => integration test; bug fix => regression test.
+            5. Docs — behavior changes must update the matching docs/ file in this PR.
+            6. Scope — flag drive-by refactoring outside the issue.
+
+            Output: ONE PR review comment. Verdict first (APPROVE / REQUEST CHANGES),
+            then findings ranked by severity, each with file:line. No style nitpicks
+            that a linter would catch. Be brief.
+          claude_args: "--max-turns 15"
