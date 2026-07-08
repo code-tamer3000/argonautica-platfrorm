@@ -76,7 +76,7 @@ export function TaskDetail() {
           {task.my_status === 'returned' && (
             <span className={`${styles.chip} ${styles.chipReturned}`}>Возвращена на доработку</span>
           )}
-          {task.deadline_soon && <span className={`${styles.chip} ${styles.chipHot}`}>Горит</span>}
+          {task.deadline_soon && <span className={`${styles.chip} ${styles.chipSoon}`}>Подходит срок</span>}
         </div>
         <h1 className={styles.articleTitle}>{task.title}</h1>
         {task.deadline_at && (

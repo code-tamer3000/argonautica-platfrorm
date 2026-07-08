@@ -62,7 +62,7 @@ export function TasksList() {
                   {STATUS_LABEL[task.my_status]}
                 </span>
               )}
-              {task.deadline_soon && <span className={`${styles.chip} ${styles.chipHot}`}>Горит</span>}
+              {task.deadline_soon && <span className={`${styles.chip} ${styles.chipSoon}`}>Подходит срок</span>}
               {task.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
             </div>
             {task.deadline_at && (
