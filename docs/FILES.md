@@ -27,7 +27,7 @@ Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_ass
 ## Fast delivery in feeds
 
 - Presigned URLs are embedded **in the message payload** (`MessageOut.attachments`: url + thumb_url + metadata, batch-signed via `resolve_attachments`), not fetched per asset — kills N round-trips on mobile. Access is gated by the room (whoever reads the message reads its attachments). `attachment_ids` kept for backward compatibility.
-- Feeds load the thumbnail; the original loads on click (lightbox).
+- Feeds load the thumbnail; the original loads on click (lightbox). Images render as a native `<img loading="lazy">` (no blob-progress fetch, no spinner); the box reserves `aspect-ratio` from `width`/`height` up front so there's no layout shift — only the box background shows until the image decodes. Legacy rows without dimensions get no reserved box (see backfill below).
 - Caching: presigned-GET TTL 24h + nginx `Cache-Control: private, max-age=86400, immutable` on media; objects are immutable (key = uuid). Text responses gzipped; media not (already compressed).
 
 ## Backfill (one-off)
