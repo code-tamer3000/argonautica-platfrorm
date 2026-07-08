@@ -27,6 +27,11 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Bot-authored PRs are this reviewer's PRIMARY workload: the implement agent
+          # (actor "claude", type Bot) opens them. Without this the action rejects them
+          # ("Workflow initiated by non-human actor"). Scoped to our own bot ONLY — never
+          # "*", and never added to agent-implement/agent-interactive (those stay human-only).
+          allowed_bots: "claude"
           prompt: |
             You are a READ-ONLY reviewer for PR #${{ github.event.pull_request.number }}.
             You must not modify any file. Read the diff (gh pr diff), the linked issue,
