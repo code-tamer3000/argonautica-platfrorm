@@ -3,15 +3,25 @@ name: Agent — Implement issue
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:            # dispatcher-driven launches (see agent-dispatcher.yml)
+    inputs:
+      issue_number:
+        description: "Issue number to implement"
+        required: true
+        type: string
 
-# One run per issue; a second `ready` label on the same issue waits, not duplicates.
+# One run per issue, regardless of trigger: a second launch for the same issue
+# waits, not duplicates. workflow_dispatch has no event.issue, so fall back to the
+# input. (concurrency is evaluated before job env, so ISSUE_NUM is not usable here.)
 concurrency:
-  group: agent-implement-${{ github.event.issue.number }}
+  group: agent-implement-${{ github.event.issue.number || inputs.issue_number }}
   cancel-in-progress: false
 
 jobs:
   implement:
-    if: github.event.label.name == 'ready'
+    # Labeled path: only the `ready` label triggers (manual human override lane).
+    # workflow_dispatch path (the dispatcher): never blocked by the label guard.
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'ready'
     runs-on: ubuntu-latest
     timeout-minutes: 90            # hard wall-clock cap; docker builds included
     permissions:
@@ -19,30 +29,59 @@ jobs:
       issues: write
       pull-requests: write
       id-token: write
+    env:
+      # Resolve the issue number ONCE. Every step below uses $ISSUE_NUM.
+      ISSUE_NUM: ${{ github.event.issue.number || inputs.issue_number }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: develop
           fetch-depth: 0
 
+      # workflow_dispatch has no event.issue payload, so the title isn't available
+      # from the event. Fetch it via gh for both paths so the prompt is uniform.
+      - name: Resolve issue title
+        id: issue
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          title=$(gh issue view "$ISSUE_NUM" --json title --jq '.title')
+          {
+            echo "title<<EOF"
+            echo "$title"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Label in-progress
         env: { GH_TOKEN: '${{ github.token }}' }
-        run: gh issue edit ${{ github.event.issue.number }} --remove-label ready --add-label in-progress
+        run: |
+          # Either `ready` (human override) or `queued` (dispatcher) may be present;
+          # remove whichever is there and never fail on an absent label.
+          gh issue edit "$ISSUE_NUM" --remove-label ready || true
+          gh issue edit "$ISSUE_NUM" --remove-label queued || true
+          gh issue edit "$ISSUE_NUM" --add-label in-progress
 
       - uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Dispatcher-triggered runs (workflow_dispatch from the cron dispatcher)
+          # have actor "github-actions[bot]" (type Bot); claude-code-action rejects
+          # non-human actors ("Workflow initiated by non-human actor") unless the
+          # bot is allow-listed. The action lowercases entries and strips a trailing
+          # "[bot]" before matching, so "github-actions" matches "github-actions[bot]".
+          # Scoped to the GitHub Actions bot ONLY — never "*", so no external App can
+          # invoke this implement agent.
+          allowed_bots: "github-actions"
           prompt: |
-            Implement GitHub issue #${{ github.event.issue.number }}: "${{ github.event.issue.title }}".
-            The issue body is the COMPLETE spec — read it first (gh issue view ${{ github.event.issue.number }}).
+            Implement GitHub issue #${{ env.ISSUE_NUM }}: "${{ steps.issue.outputs.title }}".
+            The issue body is the COMPLETE spec — read it first (gh issue view ${{ env.ISSUE_NUM }}).
             Follow CLAUDE.md strictly; read only the docs/ files the task needs (see the index).
 
             Workflow:
-            1. Branch feature/${{ github.event.issue.number }}-<slug> from develop.
+            1. Branch feature/${{ env.ISSUE_NUM }}-<slug> from develop.
             2. Implement. Update the relevant docs/ file in the same branch if behavior changes.
             3. `make lint` and `make test` MUST pass before opening the PR.
             4. Open a PR into develop: title from the issue, body per the
-               What / Why / How tested / Assumptions template, include "Closes #${{ github.event.issue.number }}".
+               What / Why / How tested / Assumptions template, include "Closes #${{ env.ISSUE_NUM }}".
             5. If the spec is ambiguous: smallest reasonable assumption, listed under Assumptions.
                If the spec is contradictory or impossible: do NOT guess — comment on the issue
                explaining the blocker and stop.
@@ -58,7 +97,7 @@ jobs:
         if: success()
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          n=${{ github.event.issue.number }}
+          n="$ISSUE_NUM"
           # Match either the "Closes #N" body convention or the feature/N-* head branch.
           pr=$(gh pr list --state open --search "Closes #$n in:body" --json number --jq '.[0].number')
           if [ -z "$pr" ]; then
@@ -75,12 +114,12 @@ jobs:
       - name: Label in-review
         if: success() && steps.verify.outputs.pr != ''
         env: { GH_TOKEN: '${{ github.token }}' }
-        run: gh issue edit ${{ github.event.issue.number }} --remove-label in-progress --add-label in-review
+        run: gh issue edit "$ISSUE_NUM" --remove-label in-progress --add-label in-review
 
       - name: Label failed
         if: failure()
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          gh issue edit ${{ github.event.issue.number }} --remove-label in-progress --add-label failed
-          gh issue comment ${{ github.event.issue.number }} \
+          gh issue edit "$ISSUE_NUM" --remove-label in-progress --add-label failed
+          gh issue comment "$ISSUE_NUM" \
             --body "Agent run failed (no PR opened or run errored): ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

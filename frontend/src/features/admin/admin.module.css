@@ -4,6 +4,13 @@
 .list { display: flex; flex-direction: column; gap: var(--space-3); }
 .listItem { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
 .listItemMain { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
+/* Строка задачи в списке: основной ряд + (для individual) строка адресатов под ним. */
+.taskItem { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
+.taskItemRow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.assigneeLine { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: 0.75rem; color: var(--text-secondary); }
+.assigneeLineLabel { color: var(--text-secondary); }
+.assigneeChip { padding: 2px var(--space-2); background: var(--divider); color: var(--text-primary); border-radius: 9999px; }
+.assigneeEmpty { color: var(--danger, #d9534f); }
 .listTitle { font-family: var(--font-t4); color: var(--text-primary); font-size: var(--text-ui); }
 .listMeta { font-size: 0.75rem; color: var(--text-secondary); }
 .listActions { display: flex; gap: var(--space-2); flex-shrink: 0; }

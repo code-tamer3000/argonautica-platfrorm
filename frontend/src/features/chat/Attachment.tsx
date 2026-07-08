@@ -2,13 +2,11 @@ import { useState } from 'react'
 import { useMediaUrl } from '../../api/media'
 import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
-import { ProgressRing } from '../../components/ProgressRing'
 import { Spinner } from '../../components/Spinner'
 import { VideoPlayer } from '../../components/VideoPlayer'
 import { VoicePlayer } from '../../components/VoicePlayer'
 import { downloadFile, fileNameFromUrl, guessMediaKind } from '../../lib/mediaUpload'
 import type { AttachmentOut, MediaKind } from '../../lib/types'
-import { useMediaProgress } from '../../lib/useMediaProgress'
 import styles from './chat.module.css'
 
 /** Уже разрешённое вложение: адреса и метаданные готовы, лишний запрос не нужен. */
@@ -90,11 +88,11 @@ export function Attachment({
 }
 
 /**
- * Картинка с индикатором загрузки байтов. В ленте грузим лёгкое превью (thumbUrl);
- * оригинал (url) открывается только в лайтбоксе по клику — так лента не тянет
- * мегабайтные оригиналы. Тянем файл через fetch с прогрессом (см. useMediaProgress)
- * и показываем круговой % поверх зарезервированной по aspect-ratio коробки. Если fetch
- * недоступен (CORS) — откат на прямой <img src> с крутилкой без процента.
+ * Картинка в ленте: нативный <img loading="lazy">, без blob-прогресса и крутилки.
+ * В ленте грузим лёгкое превью (thumbUrl); оригинал (url) открывается только
+ * в лайтбоксе по клику — так лента не тянет мегабайтные оригиналы. Коробка
+ * резервируется по aspect-ratio из width/height (см. backfill_image_dims для
+ * легаси-картинок); до декодирования виден только фон коробки, без индикатора.
  */
 function ImageAttachment({
   url,
@@ -108,29 +106,18 @@ function ImageAttachment({
   height?: number | null
 }) {
   const [open, setOpen] = useState(false)
-  const [directLoaded, setDirectLoaded] = useState(false)
   const feedUrl = thumbUrl ?? url // нет превью (видео старые/битые) — грузим оригинал
-  const { objectUrl, progress, failed } = useMediaProgress(feedUrl)
-  const src = objectUrl ?? (failed ? feedUrl : undefined)
-  const loaded = objectUrl != null || (failed && directLoaded)
   const ratio = width && height ? width / height : undefined
 
   return (
-    <div
-      className={`${styles.attImageWrap} ${loaded ? '' : styles.attImageLoading}`}
-      style={ratio ? { aspectRatio: String(ratio) } : undefined}
-    >
-      {src && (
-        <img
-          className={styles.attImage}
-          src={src}
-          alt=""
-          loading="lazy"
-          onClick={() => loaded && setOpen(true)}
-          onLoad={() => failed && setDirectLoaded(true)}
-        />
-      )}
-      {!loaded && <ProgressRing progress={failed ? null : progress} />}
+    <div className={styles.attImageWrap} style={ratio ? { aspectRatio: String(ratio) } : undefined}>
+      <img
+        className={styles.attImage}
+        src={feedUrl}
+        alt=""
+        loading="lazy"
+        onClick={() => setOpen(true)}
+      />
       {open && <Lightbox url={url} kind="image" onClose={() => setOpen(false)} />}
     </div>
   )
