@@ -1,0 +1,42 @@
+name: Agent — Dispatcher
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"      # NOTE: scheduled workflows run ONLY from the repo's default branch
+  workflow_dispatch:            # manual runs, incl. safe dry runs
+    inputs:
+      dry_run:
+        description: "Log decisions without acting"
+        type: boolean
+        default: false
+
+# Never two dispatchers at once — double-launching the same issue is worse than a late tick.
+concurrency:
+  group: agent-dispatcher
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+      actions: write            # needed to POST workflow_dispatch
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - run: pip install --quiet requests
+
+      - name: Run dispatcher
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAX_CONCURRENT: "2"
+          MAX_RETRIES: "3"
+          IMPLEMENT_WORKFLOW: "agent-implement.yml"
+          DISPATCH_REF: "develop"
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: python .github/scripts/dispatcher.py
