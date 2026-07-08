@@ -411,3 +411,20 @@ media_assets                           (shared: messages, KB, tasks, avatars, st
 ```
 
 > Dynamics homework entries are `messages` in the personal room (`rooms.is_personal`); no entry table.
+
+## Migrations gotchas
+
+`alembic revision --autogenerate` (i.e. `make migration`) re-reports **three phantom
+index diffs** even on a clean, up-to-date schema. They are NOT real drift — alembic
+cannot round-trip these indexes against the models (a partial/conditional index; the
+FK indexes are declared in the migrations, not on the model columns):
+
+| Phantom op autogenerate emits | Index | Real definition |
+|---|---|---|
+| `drop_index('uq_rooms_single_news')` on `rooms` | partial unique | `WHERE is_news` — enforces the single news channel |
+| `drop_index('ix_journal_pardons_user_id')` on `journal_pardons` | btree on `user_id` | created by the journal_pardons migration |
+| `drop_index('ix_journal_credits_user_id')` on `journal_credits` | btree on `user_id` | created by the journal_credits migration |
+
+Rule: **NEVER** include drops/recreates of these three indexes in a migration.
+After `make migration`, delete those lines from the generated file before committing;
+keep only the real changes. (Migrations are expand/contract only — see CLAUDE.md.)

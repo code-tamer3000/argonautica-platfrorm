@@ -1,0 +1,64 @@
+# Test environment — mirrors production topology, optimized for speed.
+# Driven by the Makefile targets (make up-test / migrate-test / test).
+#
+# Image versions are pinned to EXACTLY match docker/docker-compose.prod.yml.
+# State lives in tmpfs (RAM) — fast and wiped on `down`.
+#
+# Project name is set via `-p argonautica-test` in the Makefile (docker-compose
+# v1 has no reliable top-level `name:` key). depends_on uses the short list form
+# for the same reason; readiness is enforced by a wait loop in `make up-test`.
+
+services:
+  postgres:
+    image: postgres:16 # == prod
+    environment:
+      POSTGRES_USER: argo_test
+      POSTGRES_PASSWORD: argo_test
+      POSTGRES_DB: argo_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argo_test -d argo_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7 # == prod
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z # == prod
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: argo_test
+      MINIO_ROOT_PASSWORD: argo_test_secret
+    tmpfs:
+      - /data
+
+  # Backend image (same Dockerfile as prod). Not a long-running server here:
+  # the Makefile drives it one-off via `run --rm api <cmd>` (alembic, pytest).
+  # Code is bind-mounted so no rebuild is needed between runs.
+  api:
+    # Explicit, version-stable image name so a pre-built image (e.g. CI's buildx
+    # GHA-cached build) is reused by `run --rm api` instead of rebuilt. Without it
+    # the name is the compose-derived `<project>-<service>`, which differs across
+    # compose v1/v2 and would silently fall back to a full local build.
+    image: argonautica-test-api
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: test # prod runtime + pinned dev tooling (pytest/ruff/mypy)
+    env_file: .env.test
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    volumes:
+      - ./backend:/app

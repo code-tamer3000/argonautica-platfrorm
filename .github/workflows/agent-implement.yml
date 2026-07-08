@@ -1,0 +1,86 @@
+name: Agent — Implement issue
+
+on:
+  issues:
+    types: [labeled]
+
+# One run per issue; a second `ready` label on the same issue waits, not duplicates.
+concurrency:
+  group: agent-implement-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  implement:
+    if: github.event.label.name == 'ready'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90            # hard wall-clock cap; docker builds included
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Label in-progress
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh issue edit ${{ github.event.issue.number }} --remove-label ready --add-label in-progress
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Implement GitHub issue #${{ github.event.issue.number }}: "${{ github.event.issue.title }}".
+            The issue body is the COMPLETE spec — read it first (gh issue view ${{ github.event.issue.number }}).
+            Follow CLAUDE.md strictly; read only the docs/ files the task needs (see the index).
+
+            Workflow:
+            1. Branch feature/${{ github.event.issue.number }}-<slug> from develop.
+            2. Implement. Update the relevant docs/ file in the same branch if behavior changes.
+            3. `make lint` and `make test` MUST pass before opening the PR.
+            4. Open a PR into develop: title from the issue, body per the
+               What / Why / How tested / Assumptions template, include "Closes #${{ github.event.issue.number }}".
+            5. If the spec is ambiguous: smallest reasonable assumption, listed under Assumptions.
+               If the spec is contradictory or impossible: do NOT guess — comment on the issue
+               explaining the blocker and stop.
+          claude_args: >-
+            --max-turns 50
+            --allowedTools "Bash(git:*),Bash(gh:*),Bash(make:*),Bash(docker:*),Bash(docker-compose:*),Read,Write,Edit,Glob,Grep"
+
+      # The action step "succeeding" only means the agent exited cleanly — it does NOT
+      # mean a PR was opened. Verify a PR referencing this issue actually exists before
+      # labeling in-review; otherwise the issue is a failure regardless of exit code.
+      - name: Verify PR exists
+        id: verify
+        if: success()
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          n=${{ github.event.issue.number }}
+          # Match either the "Closes #N" body convention or the feature/N-* head branch.
+          pr=$(gh pr list --state open --search "Closes #$n in:body" --json number --jq '.[0].number')
+          if [ -z "$pr" ]; then
+            # Fall back to the feature/N-<slug> head-branch convention (prefix match).
+            pr=$(gh pr list --state open --json number,headRefName \
+                   --jq "[.[] | select(.headRefName | startswith(\"feature/$n-\"))][0].number")
+          fi
+          if [ -z "$pr" ]; then
+            echo "No PR references issue #$n" >&2
+            exit 1
+          fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+
+      - name: Label in-review
+        if: success() && steps.verify.outputs.pr != ''
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: gh issue edit ${{ github.event.issue.number }} --remove-label in-progress --add-label in-review
+
+      - name: Label failed
+        if: failure()
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          gh issue edit ${{ github.event.issue.number }} --remove-label in-progress --add-label failed
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "Agent run failed (no PR opened or run errored): ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
