@@ -389,10 +389,9 @@
    (например, шапка сообщения). Между медиа и текстом ниже отступ даёт .msgText. */
 .attachments:not(:first-child) { margin-top: var(--space-2); }
 .attachments + .msgText, .sticker + .msgText { margin-top: var(--space-2); }
-.attImageWrap { position: relative; display: inline-block; max-width: 280px; overflow: hidden; border-radius: var(--radius-media); }
-/* Пока байты картинки грузятся — резервируем видимую коробку под крутилку/процент. */
-.attImageLoading { min-width: 140px; background: var(--bg-deep); }
-.attImageLoading:not([style*="aspect-ratio"]) { min-height: 140px; }
+/* Фон коробки — единственный плейсхолдер до декодирования картинки (без крутилки).
+   Размер коробки резервирует aspect-ratio из width/height (инлайновый style). */
+.attImageWrap { position: relative; display: inline-block; max-width: 280px; overflow: hidden; border-radius: var(--radius-media); background: var(--bg-deep); }
 /* height: auto держит натуральные пропорции при width:100% (иначе max-height обрезал бы
    высоту и искажал фото). object-fit: contain — страховка, когда коробке задан aspect-ratio. */
 .attImage { max-width: 280px; max-height: 360px; height: auto; border-radius: var(--radius-media); cursor: pointer; display: block; width: 100%; object-fit: contain; }
