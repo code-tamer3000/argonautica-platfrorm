@@ -129,7 +129,7 @@
 }
 .chipSoon {
   border-color: var(--color-more);
-  color: var(--color-more);
+  color: var(--color-more-yar);
 }
 .chipLate {
   border-color: var(--divider);
