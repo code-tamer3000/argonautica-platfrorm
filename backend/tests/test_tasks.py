@@ -141,6 +141,9 @@ async def test_individual_visibility_and_idor(
     # Список постороннего не содержит чужую индивидуальную задачу.
     listed = await client.get("/api/tasks", headers=outsider_h)
     assert tid not in {t["id"] for t in listed.json()["items"]}
+    # Адресат ВИДИТ выданную ему индивидуальную задачу в своём списке.
+    assignee_listed = await client.get("/api/tasks", headers=assignee_h)
+    assert tid in {t["id"] for t in assignee_listed.json()["items"]}
     # Сдачи чужой задачи посторонний тоже не видит.
     assert (
         await client.get(f"/api/tasks/{tid}/submissions", headers=outsider_h)

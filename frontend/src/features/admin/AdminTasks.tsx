@@ -10,7 +10,7 @@ import {
   type TaskWithStatusOut,
 } from '../../api/tasks'
 import { useKbItems } from '../../api/kb'
-import { useUsers } from '../../api/users'
+import { useUsers, useUsersMap } from '../../api/users'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
@@ -215,6 +215,73 @@ function ProgressPanel({ taskId }: { taskId: number }) {
   )
 }
 
+// Строка задачи в админском списке. Для individual показывает адресатов прямо в
+// строке, чтобы админ сразу видел, кому выдана задача (иначе «выдал, а нигде нет»).
+function TaskRow({
+  task,
+  onOpenProgress,
+  onEdit,
+  onDelete,
+}: {
+  task: TaskWithStatusOut
+  onOpenProgress: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  return (
+    <div className={styles.taskItem}>
+      <div className={styles.taskItemRow}>
+        <div className={styles.listItemMain}>
+          <span className={styles.listTitle}>{task.title}</span>
+          <span className={styles.badgeDraft}>{TYPE_LABEL[task.type]}</span>
+          <span className={styles.listMeta}>
+            сдано {task.submitted_count} · принято {task.accepted_count}
+            {task.assignee_count != null ? ` из ${task.assignee_count}` : ''}
+          </span>
+        </div>
+        <div className={styles.listActions}>
+          <Link to={`/tasks/${task.id}`}>
+            <Button variant="outline">Открыть</Button>
+          </Link>
+          <Button variant="outline" onClick={onOpenProgress}>
+            Прогресс
+          </Button>
+          <Button variant="outline" onClick={onEdit}>Редактировать</Button>
+          <Button variant="outline" onClick={onDelete}>Удалить</Button>
+        </div>
+      </div>
+      {task.type === 'individual' && <AssigneeLine taskId={task.id} />}
+    </div>
+  )
+}
+
+// Список адресатов индивидуальной задачи (кому назначена). Тянет назначения задачи
+// и резолвит имена; пустой набор подсвечиваем как явную ошибку выдачи.
+function AssigneeLine({ taskId }: { taskId: number }) {
+  const { data: assignments = [], isLoading } = useAdminAssignments(taskId)
+  const users = useUsersMap()
+
+  if (isLoading) return null
+  if (assignments.length === 0) {
+    return (
+      <div className={styles.assigneeLine}>
+        <span className={styles.assigneeLineLabel}>Назначено:</span>
+        <span className={styles.assigneeEmpty}>никому</span>
+      </div>
+    )
+  }
+  return (
+    <div className={styles.assigneeLine}>
+      <span className={styles.assigneeLineLabel}>Назначено:</span>
+      {assignments.map((a) => (
+        <span key={a.assignment_id} className={styles.assigneeChip}>
+          {users.get(a.user_id)?.display_name ?? `Участник #${a.user_id}`}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 export function AdminTasks() {
   const { data } = useTasks()
   const items = data?.items ?? []
@@ -285,29 +352,13 @@ export function AdminTasks() {
 
       <div className={styles.list}>
         {items.map((task) => (
-          <div className={styles.listItem} key={task.id}>
-            <div className={styles.listItemMain}>
-              <span className={styles.listTitle}>{task.title}</span>
-              <span className={styles.badgeDraft}>{TYPE_LABEL[task.type]}</span>
-              <span className={styles.listMeta}>
-                сдано {task.submitted_count} · принято {task.accepted_count}
-                {task.assignee_count != null ? ` из ${task.assignee_count}` : ''}
-              </span>
-            </div>
-            <div className={styles.listActions}>
-              <Link to={`/tasks/${task.id}`}>
-                <Button variant="outline">Открыть</Button>
-              </Link>
-              <Button
-                variant="outline"
-                onClick={() => setProgressFor(progressFor?.id === task.id ? null : task)}
-              >
-                Прогресс
-              </Button>
-              <Button variant="outline" onClick={() => setEditTask(task)}>Редактировать</Button>
-              <Button variant="outline" onClick={() => handleDelete(task.id)}>Удалить</Button>
-            </div>
-          </div>
+          <TaskRow
+            key={task.id}
+            task={task}
+            onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
+            onEdit={() => setEditTask(task)}
+            onDelete={() => handleDelete(task.id)}
+          />
         ))}
         {items.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
       </div>
