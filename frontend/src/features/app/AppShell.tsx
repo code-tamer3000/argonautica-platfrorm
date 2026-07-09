@@ -25,6 +25,7 @@ import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
 import { AdminFeedback } from '../admin/AdminFeedback'
 import { AdminFaq } from '../admin/AdminFaq'
+import { AdminBroadcast } from '../admin/AdminBroadcast'
 import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
 import { useNavBadges } from './useNavBadges'
@@ -250,6 +251,7 @@ export function AppShell() {
               <Route path="users" element={<AdminUsers />} />
               <Route path="feedback" element={<AdminFeedback />} />
               <Route path="faq" element={<AdminFaq />} />
+              <Route path="broadcast" element={<AdminBroadcast />} />
               <Route index element={<Navigate to="dynamics" replace />} />
             </Route>
           </Routes>

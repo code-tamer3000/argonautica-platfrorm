@@ -18,5 +18,7 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite/client", "vite-plugin-pwa/client", "node"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "vite.config.ts"],
+  "comment": "sw.ts — воркер, типизируется отдельно (WebWorker lib) через tsconfig.sw.json",
+  "exclude": ["src/sw.ts"]
 }

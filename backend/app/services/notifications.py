@@ -20,6 +20,8 @@ from app.models.notification import Notification
 from app.models.room import Room, RoomMember
 from app.models.user import User
 from app.schemas.notification import NotificationOut
+from app.services import push as push_service
+from app.services.notify_prefs import push_allowed
 from app.ws import schemas as ws_schemas
 from app.ws.pubsub import publish_user_event
 
@@ -102,6 +104,15 @@ async def on_new_message(
             return
 
         preview = _preview(message.content)
+        # Настройки получателей — для фильтра нативного push (in-app лента идёт всем).
+        rows_settings = (
+            await session.execute(
+                select(User.id, User.settings).where(User.id.in_(recipient_ids))
+            )
+        ).all()
+        settings_by_uid: dict[int, dict[str, object]] = {
+            uid: s for uid, s in rows_settings
+        }
         rows = [
             Notification(
                 user_id=uid,
@@ -131,8 +142,64 @@ async def on_new_message(
             await publish_user_event(
                 row.user_id, ws_schemas.notification_new_event(out)
             )
+            if push_allowed(settings_by_uid.get(row.user_id), kind):
+                # Клик по push ведёт в приложение: новости — на /news (канал
+                # авто-открывается), остальные комнаты открываются через ленту на /.
+                url = "/news" if kind == "news" else "/"
+                push_service.enqueue_push(
+                    row.user_id,
+                    push_service.build_payload(
+                        title=sender.display_name,
+                        body=preview,
+                        url=url,
+                        tag=f"room-{message.room_id}",
+                    ),
+                )
     except Exception:
         logger.exception("Failed to create notifications for message %s", message.id)
+
+
+async def broadcast_admin(
+    session: AsyncSession, title: str, body: str
+) -> int:
+    """Разослать админ-уведомление всем пользователям платформы.
+
+    Создаёт по строке в ленте каждому + WS-событие + нативный push тем, у кого
+    включён тумблер `admin`. В отличие от message-driven путей, тут ошибку НЕ
+    глотаем — это явное действие админа, ему важно знать результат. Возвращает
+    число адресатов.
+    """
+    users = (
+        await session.execute(select(User.id, User.settings))
+    ).all()
+    preview = _preview(body)
+    for uid, user_settings in users:
+        row = Notification(user_id=uid, kind="admin", title=title, body=body)
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        out = NotificationOut(
+            id=row.id,
+            kind="admin",
+            room_id=None,
+            message_id=None,
+            actor_id=None,
+            actor_name=None,
+            preview=preview,
+            ref_date=None,
+            title=title,
+            created_at=row.created_at,
+            read_at=row.read_at,
+        )
+        await publish_user_event(uid, ws_schemas.notification_new_event(out))
+        if push_allowed(user_settings, "admin"):
+            push_service.enqueue_push(
+                uid,
+                push_service.build_payload(
+                    title=title, body=preview, url="/", tag=f"admin-{row.id}"
+                ),
+            )
+    return len(users)
 
 
 async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
@@ -161,6 +228,19 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
             read_at=row.read_at,
         )
         await publish_user_event(user_id, ws_schemas.notification_new_event(out))
+        user_settings = await session.scalar(
+            select(User.settings).where(User.id == user_id)
+        )
+        if push_allowed(user_settings, "cabin_granted"):
+            push_service.enqueue_push(
+                user_id,
+                push_service.build_payload(
+                    title="Открыт доступ к разделу «Каюта»",
+                    body="Нажмите, чтобы перейти",
+                    url="/cabin",
+                    tag="cabin-granted",
+                ),
+            )
     except Exception:
         logger.exception("Failed to create cabin_granted notification for user %s", user_id)
 

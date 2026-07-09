@@ -39,6 +39,9 @@ export function AdminLayout() {
         <NavLink to="/admin/faq" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
           FAQ
         </NavLink>
+        <NavLink to="/admin/broadcast" className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}>
+          Рассылка
+        </NavLink>
       </nav>
       <Outlet />
     </div>

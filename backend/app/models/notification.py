@@ -28,12 +28,13 @@ class Notification(Base):
     От сообщения (dm/reply/news) — заданы actor_id/message_id. Системное
     (journal_missed — вчерашний день дневника не закрыт) — actor_id/message_id
     пусты, зато задан ref_date (какой день); room_id указывает на личный дневник.
+    Админ-рассылка (admin) — заголовок в preview, room/message/actor пусты.
     """
 
     __tablename__ = "notifications"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('dm', 'reply', 'news', 'journal_missed', 'cabin_granted')",
+            "kind IN ('dm', 'reply', 'news', 'journal_missed', 'cabin_granted', 'admin')",
             name="notification_kind_valid",
         ),
         # Лента колокольчика: последние уведомления пользователя.
@@ -62,6 +63,11 @@ class Notification(Base):
     )
     # Для journal_missed — день дневника, к которому относится уведомление (дедуп).
     ref_date: Mapped[date | None] = mapped_column(Date)
+    # Заголовок админ-рассылки (kind='admin'); у остальных видов пуст. Тело —
+    # в общий поток превью через отдельную строку не выносим: текст рассылки лежит
+    # прямо здесь (title) + preview (первые строки тела).
+    title: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

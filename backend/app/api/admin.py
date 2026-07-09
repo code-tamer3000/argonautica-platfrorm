@@ -40,6 +40,7 @@ from app.schemas.journal import (
     JournalProgramOut,
     JournalProgramUpdate,
 )
+from app.schemas.push import AdminBroadcastRequest
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -47,7 +48,7 @@ from app.schemas.user import (
     AdminUserOut,
     UserOut,
 )
-from app.services.notifications import notify_cabin_granted
+from app.services.notifications import broadcast_admin, notify_cabin_granted
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
@@ -412,3 +413,19 @@ async def resolve_feedback(
         )
     fb.resolved_at = datetime.now(UTC) if body.resolved else None
     await session.flush()
+
+
+@router.post(
+    "/notifications/broadcast", status_code=status.HTTP_202_ACCEPTED
+)
+async def broadcast_notification(
+    body: AdminBroadcastRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, int]:
+    """Разослать уведомление всем пользователям (in-app лента + native push).
+
+    Push уходит только тем, у кого включён тумблер `admin`; in-app-строку в ленте
+    получают все. Возвращает число адресатов.
+    """
+    recipients = await broadcast_admin(session, body.title.strip(), body.body.strip())
+    return {"recipients": recipients}

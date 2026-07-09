@@ -6,6 +6,7 @@ export interface PatchMeBody {
   display_name?: string
   bio?: string | null
   avatar_media_id?: number | null
+  settings?: Record<string, unknown>
 }
 
 export function usePatchMe() {

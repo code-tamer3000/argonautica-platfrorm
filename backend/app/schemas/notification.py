@@ -4,7 +4,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-NotificationKind = Literal["dm", "reply", "news", "journal_missed", "cabin_granted"]
+NotificationKind = Literal[
+    "dm", "reply", "news", "journal_missed", "cabin_granted", "admin"
+]
 
 
 class NotificationOut(BaseModel):
@@ -13,6 +15,7 @@ class NotificationOut(BaseModel):
     Аватар автора фронт берёт из своего users-map по actor_id (там он уже с
     presigned-URL), поэтому здесь его не дублируем. Для системных уведомлений
     (journal_missed) actor_id/actor_name/message_id пусты, зато задан ref_date.
+    Для админ-рассылки (admin) задан title (+ preview из тела).
     """
 
     id: int
@@ -23,6 +26,7 @@ class NotificationOut(BaseModel):
     actor_name: str | None
     preview: str | None
     ref_date: date | None
+    title: str | None = None
     created_at: datetime
     read_at: datetime | None
 
