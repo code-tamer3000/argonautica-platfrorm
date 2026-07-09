@@ -89,11 +89,15 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
   loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1.
 - The slow golden **sector-outline pulse** (`SectorPulse` → the full nested
   sector grid: radial spokes on all 3 rings + ring arcs, CSS
-  `.pulseSpoke`/`.pulseArc`) only renders once a key is **locked** (`activeKey`
-  set) — then the rings are aligned and still, so the wave (which rolls from the
-  hub OUTWARD by per-element `animationDelay ∝ radius`, `PULSE_TRAVEL_MS`) reads
-  cleanly instead of fighting the idle drift / hover realignment. It disappears
-  the moment the reading closes. Gated behind `prefers-reduced-motion`.
+  `.pulseSpoke`/`.pulseArc`) renders only once a key is **locked** AND the rings
+  have **settled into alignment** (`showPulse` = `activeKey` set + the three ring
+  angles converged to <0.4°). Drawn while the rings are still springing into the
+  assembled column, its spokes would trail the moving boundaries. Each band's
+  spokes rotate by **that ring's** angle and sit at the real (uniform) sector
+  boundaries — so ring-1's 4 spokes cap ring-2's 16 cap ring-3's 64, matching the
+  fills exactly. The wave rolls hub→OUTWARD (`animationDelay ∝ radius`,
+  `PULSE_TRAVEL_MS`); it disappears the moment the reading closes / a new pick
+  de-aligns the rings. Gated behind `prefers-reduced-motion`.
 - Both hexagrams carry a looping **vertical gold sheen** ("перелив золота",
   bottom→up): the hub's center hexagram via `#gkVertGold` (`.vertGold`, panning
   `gradientTransform` in Y); the reading header's via `Hexagram` `shimmer` (a

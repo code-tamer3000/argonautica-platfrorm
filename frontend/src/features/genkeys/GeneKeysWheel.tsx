@@ -58,6 +58,21 @@ export function GeneKeysWheel({
 
   const angles = useRings(focusNum, frozen, anchorTop)
 
+  // The sector-outline pulse only runs once a key is LOCKED *and* the rings have
+  // finished springing into alignment — until then they're still rotating into
+  // the assembled column, and a pulse drawn on the (moving) boundaries would lag
+  // them. "Settled" = the three ring rotations have converged (max pairwise
+  // difference below a small epsilon), which is exactly the assembled state.
+  const ringsAligned = useMemo(() => {
+    const norm = (d: number) => ((((d % 360) + 540) % 360) - 180)
+    let maxDelta = 0
+    for (let i = 1; i < angles.length; i++) {
+      maxDelta = Math.max(maxDelta, Math.abs(norm(angles[i] - angles[0])))
+    }
+    return maxDelta < 0.4
+  }, [angles])
+  const showPulse = activeKey != null && ringsAligned
+
   // The golden overlays (chain highlight, sector frames, center hexagram) linger
   // briefly after focus clears and fade out — so leaving the wheel feels as
   // smooth as entering it, instead of the structure popping away.
@@ -192,13 +207,14 @@ export function GeneKeysWheel({
       {/* Living skeleton: the full sector outline — every sector's radial edges
           on all three rings + the ring arcs — pulses gold in a slow wave that
           travels from the hub outward and fades, so sparks appear to run along
-          the whole grid and leave a trail. Only shown once a key is LOCKED
-          (activeKey set): then the rings are aligned and still, so the pulse
-          reads cleanly instead of fighting the idle drift / hover realignment.
+          the whole grid and leave a trail. Only shown once a key is LOCKED *and*
+          the rings have finished springing into alignment (`showPulse`): drawn
+          earlier it would trail the still-rotating sector boundaries. Its spokes
+          rotate with each ring's angle so they sit exactly on the sector edges.
           Purely decorative → aria-hidden; CSS gates it behind prefers-reduced-motion. */}
-      {activeKey != null && (
+      {showPulse && (
         <>
-          <SectorPulse />
+          <SectorPulse angles={angles} />
           <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.rimGlow} aria-hidden="true" />
         </>
       )}
@@ -355,40 +371,50 @@ export function GeneKeysWheel({
 // Ambient "living skeleton" pulse: the full nested sector grid — every sector's
 // radial edges on all three rings + the ring arcs — rendered as faint gold
 // strokes that brighten in a wave sweeping outward from the hub and fading, so
-// sparks seem to run along the whole outline and leave a trail. Static geometry
-// (doesn't rotate with the rings — it's the fixed lattice the wheel turns
-// within), so it's computed once. Decorative; CSS gates it for reduced-motion.
-function SectorPulse() {
-  const { spokes, arcs } = useMemo(() => {
-    // Radial spokes: at every sector boundary on each ring, a segment spanning
-    // that ring's radial band. Delay grows with the band's mid-radius → the
-    // wave moves outward. (Inner ring's spokes fire first, outer last.)
-    const bands = [
+// sparks seem to run along the whole outline and leave a trail.
+//
+// The spokes must land EXACTLY on the sector boundaries, so each band's spokes:
+//   (1) sit at that ring's real boundary angles — uniform 360/count steps (the
+//       reflected-binary split only permutes which key sits in each slot; the
+//       BOUNDARIES stay evenly spaced), and
+//   (2) rotate WITH that ring (`angles[idx]`), because the rings turn. When a key
+//       is locked the three angles converge, so ring-1's 4 spokes cap ring-2's
+//       16 which cap ring-3's 64 — the whole nested grid lines up.
+// Decorative; CSS gates it for reduced-motion.
+function SectorPulse({ angles }: { angles: number[] }) {
+  const origin = `${C}px ${C}px`
+  const bands = useMemo(() => {
+    const defs = [
       { count: RINGS[0].sectors, r0: R[0], r1: R[1] },
       { count: RINGS[1].sectors, r0: R[1], r1: R[2] },
       { count: RINGS[2].sectors, r0: R[2], r1: R[3] },
     ]
-    const spokes: { x1: number; y1: number; x2: number; y2: number; delay: number }[] = []
-    for (const b of bands) {
-      for (let i = 0; i < b.count; i++) {
-        const a = (i / b.count) * 360
+    return defs.map((b) => {
+      // delay grows with the band's mid-radius → the wave rolls outward.
+      const mid = (b.r0 + b.r1) / 2
+      const delay = ((mid - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS
+      const spokes = Array.from({ length: b.count }, (_, i) => {
+        const a = (i / b.count) * 360 // boundary between adjacent sectors
         const [x1, y1] = polar(C, C, b.r0, a)
         const [x2, y2] = polar(C, C, b.r1, a)
-        // delay from radial position of the band (0 at hub → 1 at rim)
-        const mid = (b.r0 + b.r1) / 2
-        const delay = ((mid - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS
-        spokes.push({ x1, y1, x2, y2, delay })
-      }
-    }
-    const arcs = R.map((r) => ({
-      r,
-      delay: ((r - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS,
-    }))
-    return { spokes, arcs }
+        return { x1, y1, x2, y2 }
+      })
+      return { ...b, delay, spokes }
+    })
   }, [])
+
+  const arcs = useMemo(
+    () =>
+      R.map((r) => ({
+        r,
+        delay: ((r - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS,
+      })),
+    [],
+  )
 
   return (
     <g className={styles.sectorPulse} aria-hidden="true">
+      {/* Ring arcs (rotation-invariant): the pulse along the circle edges. */}
       {arcs.map((a, i) => (
         <circle
           key={`arc-${i}`}
@@ -399,16 +425,25 @@ function SectorPulse() {
           style={{ animationDelay: `${a.delay.toFixed(0)}ms` }}
         />
       ))}
-      {spokes.map((s, i) => (
-        <line
-          key={`spoke-${i}`}
-          x1={s.x1}
-          y1={s.y1}
-          x2={s.x2}
-          y2={s.y2}
-          className={styles.pulseSpoke}
-          style={{ animationDelay: `${s.delay.toFixed(0)}ms` }}
-        />
+      {/* Radial spokes, each band rotated by ITS ring's current angle so the
+          spokes track the moving sector boundaries exactly. */}
+      {bands.map((b, bi) => (
+        <g
+          key={`band-${bi}`}
+          style={{ transform: `rotate(${angles[bi]}deg)`, transformOrigin: origin }}
+        >
+          {b.spokes.map((s, i) => (
+            <line
+              key={i}
+              x1={s.x1}
+              y1={s.y1}
+              x2={s.x2}
+              y2={s.y2}
+              className={styles.pulseSpoke}
+              style={{ animationDelay: `${b.delay.toFixed(0)}ms` }}
+            />
+          ))}
+        </g>
       ))}
     </g>
   )
