@@ -46,23 +46,21 @@ export function Hexagram({
         <style>{`@keyframes hexGrow{from{opacity:0;transform:scaleX(0)}to{opacity:1;transform:none}}`}</style>
       )}
       {shimmer && (
-        // A narrow bright band slides left↔right across the whole hexagram — the
-        // "перелив золота" (flowing gold) sheen. Uses gradientTransform so the
-        // stops themselves stay put and only the coordinate system pans.
+        // A bright gold band travels VERTICALLY, bottom→up through the whole
+        // stacked hexagram — the "перелив золота" (flowing gold) sheen. One
+        // userSpaceOnUse gradient over the full height (so it's a single sheen
+        // across all six lines, not a per-line one), panned in Y via translate.
         <>
-          <style>{`@keyframes gkGoldSheen{0%{transform:translateX(-0.55px)}50%{transform:translateX(0.55px)}100%{transform:translateX(-0.55px)}}`}</style>
+          <style>{`@keyframes gkGoldSheenV{0%{transform:translateY(${(h * 0.5).toFixed(1)}px)}50%{transform:translateY(${(-h * 0.5).toFixed(1)}px)}100%{transform:translateY(${(h * 0.5).toFixed(1)}px)}}`}</style>
           <defs>
             <linearGradient
               id={gradId}
-              x1="0"
-              y1="0"
-              x2="1"
-              y2="0"
-              gradientUnits="objectBoundingBox"
-              style={{
-                animation: 'gkGoldSheen 3.6s ease-in-out infinite',
-                transformOrigin: 'center',
-              }}
+              gradientUnits="userSpaceOnUse"
+              x1={0}
+              y1={0}
+              x2={0}
+              y2={h}
+              style={{ animation: 'gkGoldSheenV 3.6s ease-in-out infinite' }}
             >
               <stop offset="0%" stopColor="var(--gk-gold-deep, #b8860b)" />
               <stop offset="42%" stopColor="var(--accent, #d4af37)" />

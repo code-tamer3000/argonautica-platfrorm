@@ -770,21 +770,55 @@
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
 }
-/* Each cell is a button that scrolls the reading to that band's section. */
+/* Each cell is a button that scrolls the reading to that band's section. The
+   coloured top strip (::before) carries a slow horizontal shimmer — a bright
+   band sweeping across the band colour. */
 .spectrumCell {
   appearance: none;
   font: inherit;
   text-align: left;
+  position: relative;
+  overflow: hidden; /* clip the shimmer strip to the rounded top corners */
   background: var(--bg-surface);
   border: 1px solid var(--divider);
   border-radius: var(--radius-btn);
-  padding: var(--space-2) var(--space-3);
+  padding: calc(var(--space-2) + 3px) var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-top-width: 3px;
   cursor: pointer;
   transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
+}
+/* The coloured top strip. A gradient of the band colour with a lighter highlight
+   sliding across (background-position animation) — the horizontal shimmer. */
+.spectrumCell::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-image: linear-gradient(
+    90deg,
+    var(--band) 0%,
+    var(--band) 30%,
+    var(--band-hi) 50%,
+    var(--band) 70%,
+    var(--band) 100%
+  );
+  background-size: 220% 100%;
+  animation: gkStripShimmer 3.4s ease-in-out infinite;
+}
+@keyframes gkStripShimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  50% {
+    background-position: -20% 0;
+  }
+  100% {
+    background-position: 120% 0;
+  }
 }
 .spectrumCell:hover {
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
@@ -797,14 +831,23 @@
   outline: none;
   border-color: var(--accent);
 }
+/* Per-band strip colour + its highlight (a lighter mix of the same colour). */
 .cellShadow {
-  border-top-color: var(--color-krov);
+  --band: var(--color-krov);
+  --band-hi: color-mix(in srgb, var(--color-krov) 55%, white);
 }
 .cellGift {
-  border-top-color: var(--color-zoloto);
+  --band: var(--color-zoloto);
+  --band-hi: color-mix(in srgb, var(--color-zoloto) 55%, white);
 }
 .cellSiddhi {
-  border-top-color: var(--color-kost-yar);
+  --band: var(--color-kost-yar);
+  --band-hi: color-mix(in srgb, var(--color-kost-yar) 60%, white);
+}
+@media (prefers-reduced-motion: reduce) {
+  .spectrumCell::before {
+    animation: none;
+  }
 }
 .spectrumLabel {
   font-family: var(--font-t4);
@@ -881,6 +924,24 @@
   margin: var(--space-8) 0 var(--space-3);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--divider-gold);
+}
+/* The three spectrum-band headings (## Тень / ## Дар / ## Сиддхи), tagged in
+   useGeneKeyBody. `scroll-margin-top` keeps them clear of the sticky bar when
+   a plaque scrolls to them (heading stays visible). Their colour matches the
+   corresponding plaque strip, not the default gold — so the plaque you clicked
+   and the section it lands on read as the same band. */
+.articleBody :global(.gk-band-head) {
+  scroll-margin-top: 64px;
+  border-bottom-color: currentColor;
+}
+.articleBody :global(.gkBandShadow) {
+  color: var(--color-krov);
+}
+.articleBody :global(.gkBandGift) {
+  color: var(--color-zoloto);
+}
+.articleBody :global(.gkBandSiddhi) {
+  color: var(--color-kost-yar);
 }
 .articleBody h3 {
   font-family: var(--font-t2);
