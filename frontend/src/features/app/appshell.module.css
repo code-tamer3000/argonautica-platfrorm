@@ -227,3 +227,31 @@
   :global(html[data-kb='open']) .sidenav { transform: translateY(100%); }
   :global(html[data-kb='open']) .content { padding-bottom: 0; }
 }
+
+/* Полоса статуса связи (см. ConnectionBanner) — снимает догадку «лагает у меня
+   или у них». Тонкая, под топбаром, во всю ширину. */
+.connBanner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--color-bezdna);
+  z-index: 5;
+}
+.connReconnecting { background: var(--accent); }
+.connOffline { background: var(--blood); color: var(--color-kost-yar); }
+.connDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: connPulse 1.2s ease-in-out infinite;
+}
+@keyframes connPulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}

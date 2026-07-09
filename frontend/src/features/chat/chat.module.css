@@ -289,6 +289,28 @@
 .msgContinuation .msgText { padding-left: 0; }
 .msgMeta { font-size: var(--text-label); color: var(--text-ghost); font-family: var(--font-t4); }
 .msgPlaceholder { color: var(--text-muted); font-style: italic; }
+
+/* Оптимистичное сообщение из outbox: приглушено, пока сервер не подтвердит. */
+.msgPending { opacity: 0.6; }
+.msgFailed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: var(--text-label);
+  color: var(--blood-bright);
+  font-family: var(--font-t4);
+}
+.msgFailedBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-bright);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 /* Атрибуция репоста в новостном канале: «переслано от <автор>». */
 .msgForwarded {
   font-family: var(--font-t4); font-size: var(--text-label-md);

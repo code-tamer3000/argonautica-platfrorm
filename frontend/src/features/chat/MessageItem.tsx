@@ -4,6 +4,7 @@ import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
 import { timeHM } from '../../lib/format'
 import { renderMarkdown } from '../../lib/markdown'
+import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { Attachment } from './Attachment'
 import styles from './chat.module.css'
@@ -70,12 +71,17 @@ export function MessageItem({
   )
 
   const isEditing = editingId === msg.id
+  // Оптимистичное (ещё не отправленное) сообщение из outbox: приглушаем и не даём
+  // открыть меню действий — редактировать/удалять нечего, id временный.
+  const outbox = msg._outbox
+  const isFailed = outbox?.status === 'failed'
 
   const msgClass = [
     styles.msg,
     continuation ? styles.msgContinuation : '',
     isSelected ? styles.msgSelected : '',
     isHighlighted ? styles.msgHighlighted : '',
+    outbox ? styles.msgPending : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -84,7 +90,7 @@ export function MessageItem({
       data-selected={isSelected || undefined}
       onClick={(e) => {
         e.stopPropagation()
-        if (!isEditing) onOpenMenu?.(msg, e.currentTarget.getBoundingClientRect())
+        if (!isEditing && !outbox) onOpenMenu?.(msg, e.currentTarget.getBoundingClientRect())
       }}
     >
       <div className={styles.msgAvatar}>
@@ -164,6 +170,22 @@ export function MessageItem({
 
         {msg.edited_at && (
           <div className={styles.msgMeta}>изменено</div>
+        )}
+
+        {outbox && (
+          isFailed ? (
+            <div className={styles.msgFailed} onClick={(e) => e.stopPropagation()}>
+              <span>Не отправлено</span>
+              <button className={styles.msgFailedBtn} onClick={() => outboxRetry(outbox.clientId)}>
+                Повторить
+              </button>
+              <button className={styles.msgFailedBtn} onClick={() => outboxDiscard(outbox.clientId)}>
+                Удалить
+              </button>
+            </div>
+          ) : (
+            <div className={styles.msgMeta}>отправляется…</div>
+          )
         )}
 
         {msg.reply_count > 0 && !isInThread && (

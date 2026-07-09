@@ -15,6 +15,9 @@ import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
+import { enqueue as outboxEnqueue } from '../../lib/outbox'
+import { clearDraft, saveDraft, loadDraft } from '../../lib/drafts'
+import { useAuth } from '../auth/AuthContext'
 import { StickerPicker } from './StickerPicker'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
@@ -40,6 +43,7 @@ export function Composer({ roomId, isNews }: Props) {
   const send = useSendMessage(roomId)
   const qc = useQueryClient()
   const users = useUsersMap()
+  const { user } = useAuth()
   const pendingRepost = useUiStore((s) => s.pendingRepost)
   const setPendingRepost = useUiStore((s) => s.setPendingRepost)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
@@ -67,6 +71,24 @@ export function Composer({ roomId, isNews }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
+
+  // Восстановление сохранённого черновика при открытии комнаты: если пользователь
+  // печатал и ушёл (сменил вкладку/комнату, перезагрузил), текст возвращается.
+  // Не перетираем «заряженный» извне pendingDraft (у него приоритет). Гонки нет:
+  // roomId в замыкании фиксирован, ложим только если поле ещё пустое.
+  useEffect(() => {
+    if (pendingDraft?.roomId === roomId) return
+    let cancelled = false
+    void loadDraft(roomId).then((saved) => {
+      if (!cancelled && saved) {
+        setText((cur) => (cur ? cur : saved))
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId])
 
   // Черновик, «заряженный» извне (напр. шапка ответа админа на обращение из
   // техподдержки): один раз подставляем в текст этой комнаты, ставим фокус и
@@ -113,7 +135,7 @@ export function Composer({ roomId, isNews }: Props) {
       setText('')
       return
     }
-    send.mutate({ sticker_id: stickerId })
+    enqueueSend({ sticker_id: stickerId })
   }
 
   function sendBody() {
@@ -124,6 +146,15 @@ export function Composer({ roomId, isNews }: Props) {
     setText('')
     setPendingFiles([])
     return body
+  }
+
+  // Обычная отправка через outbox: сообщение сразу видно в ленте как «отправляется»
+  // и переживает падение сети/перезагрузку (см. lib/outbox.ts). Черновик комнаты
+  // очищаем — текст ушёл в очередь.
+  function enqueueSend(body: SendBody) {
+    if (user) outboxEnqueue(roomId, body, user.id)
+    else send.mutate(body) // без пользователя (не должно случаться) — прямой путь
+    void clearDraft(roomId)
   }
 
   async function submit() {
@@ -162,14 +193,14 @@ export function Composer({ roomId, isNews }: Props) {
       setPendingRepost(null)
       setReposting(false)
       const body = sendBody()
-      if (body.content || body.attachment_ids?.length) send.mutate(body)
+      if (body.content || body.attachment_ids?.length) enqueueSend(body)
       toast('Отправлено в новости')
       return
     }
 
     const content = text.trim()
     if (!content && pendingFiles.length === 0) return
-    send.mutate(sendBody())
+    enqueueSend(sendBody())
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -189,6 +220,9 @@ export function Composer({ roomId, isNews }: Props) {
 
   function onChange(value: string) {
     setText(value)
+    // Черновик комнаты (дебаунс внутри). Записи дневника/репост не кэшируем как
+    // черновик — у них свой «заряд» и очистка; сохраняем только обычный текст.
+    if (!journalMeta && !repost) saveDraft(roomId, value)
     const now = Date.now()
     if (now - lastTyping.current > 2500) {
       lastTyping.current = now
@@ -332,7 +366,7 @@ export function Composer({ roomId, isNews }: Props) {
                     { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [assetId] },
                     { onSuccess: afterJournalSent },
                   )
-                : send.mutate({ attachment_ids: [assetId] })
+                : enqueueSend({ attachment_ids: [assetId] })
             }
             onActiveChange={setVoiceActive}
           />

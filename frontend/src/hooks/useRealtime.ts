@@ -85,6 +85,17 @@ export function useRealtime(): void {
     }
   }, [rooms, setDmPeer])
 
+  // Вкладку вернули из фона: пока она спала, мобильный браузер мог тихо оборвать
+  // WS, а события — потеряться. Форсируем реконнект (переподписка + рефетч ленты
+  // идут по onConnect ниже), чтобы догнать пропущенное и не «терять» сообщения.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') wsClient.reconnectNow()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
   // При каждом реконнекте: сбрасываем локальный трекер и рефетчим комнаты.
   // wsClient сам переподпишет уже известные комнаты в ws.onopen;
   // рефетч нужен чтобы подписаться на комнаты созданные пока WS был оффлайн.
@@ -92,6 +103,10 @@ export function useRealtime(): void {
     return wsClient.onConnect(() => {
       subscribed.current.clear()
       void qc.invalidateQueries({ queryKey: roomsKey })
+      // Догнать сообщения, пришедшие пока сокет был оборван: рефетчим ленту
+      // открытой комнаты (остальные освежатся при открытии — они и так stale).
+      const active = useUiStore.getState().activeRoomId
+      if (active != null) void qc.invalidateQueries({ queryKey: ['messages', active] })
     })
   }, [qc])
 
