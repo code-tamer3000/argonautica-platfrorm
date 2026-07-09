@@ -219,11 +219,13 @@ function ProgressPanel({ taskId }: { taskId: number }) {
 // строке, чтобы админ сразу видел, кому выдана задача (иначе «выдал, а нигде нет»).
 function TaskRow({
   task,
+  overdue,
   onOpenProgress,
   onEdit,
   onDelete,
 }: {
   task: TaskWithStatusOut
+  overdue: boolean
   onOpenProgress: () => void
   onEdit: () => void
   onDelete: () => void
@@ -234,6 +236,7 @@ function TaskRow({
         <div className={styles.listItemMain}>
           <span className={styles.listTitle}>{task.title}</span>
           <span className={styles.badgeDraft}>{TYPE_LABEL[task.type]}</span>
+          {overdue && <span className={styles.badgeOverdue}>истёк срок</span>}
           <span className={styles.listMeta}>
             сдано {task.submitted_count} · принято {task.accepted_count}
             {task.assignee_count != null ? ` из ${task.assignee_count}` : ''}
@@ -282,9 +285,16 @@ function AssigneeLine({ taskId }: { taskId: number }) {
   )
 }
 
+// Истёкшая = есть дедлайн в прошлом. Без дедлайна или дедлайн в будущем — активна.
+function isOverdue(task: TaskWithStatusOut): boolean {
+  return task.deadline_at != null && new Date(task.deadline_at).getTime() < Date.now()
+}
+
 export function AdminTasks() {
   const { data } = useTasks()
   const items = data?.items ?? []
+  const active = items.filter((t) => !isOverdue(t))
+  const overdue = items.filter(isOverdue)
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
@@ -350,18 +360,43 @@ export function AdminTasks() {
         <Button onClick={() => setCreateOpen(true)}>Создать</Button>
       </div>
 
-      <div className={styles.list}>
-        {items.map((task) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
-            onEdit={() => setEditTask(task)}
-            onDelete={() => handleDelete(task.id)}
-          />
-        ))}
-        {items.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
-      </div>
+      {items.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
+
+      {active.length > 0 && (
+        <>
+          <h2 className={styles.sectionTitle}>Активные</h2>
+          <div className={styles.list}>
+            {active.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                overdue={false}
+                onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
+                onEdit={() => setEditTask(task)}
+                onDelete={() => handleDelete(task.id)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {overdue.length > 0 && (
+        <>
+          <h2 className={styles.sectionTitle}>Истёк срок</h2>
+          <div className={styles.list}>
+            {overdue.map((task) => (
+              <TaskRow
+                key={task.id}
+                task={task}
+                overdue
+                onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
+                onEdit={() => setEditTask(task)}
+                onDelete={() => handleDelete(task.id)}
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       {progressFor && (
         <Modal title={`Прогресс: ${progressFor.title}`} onClose={() => setProgressFor(null)}>
