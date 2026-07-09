@@ -12,7 +12,9 @@
 An interactive I-Ching mandala for browsing the 64 Gene Keys. Each key has a
 Shadow / Gift / Siddhi spectrum plus characteristics (amino acid, codon ring,
 physiology, program partner, dilemma, victim pattern) and long-form prose for the
-three frequency bands. Hovering a key assembles its hexagram from the wheel;
+three frequency bands. Each spectrum band also carries a **totem animal**
+(`fear`/`life`/`vision` on `GeneKeyMeta` = Тень/Дар/Сиддхи animal), rendered under
+the band value in the reading's spectrum triad. Hovering a key assembles its hexagram from the wheel;
 clicking opens the full reading beside the wheel.
 
 ## Content pipeline (build-time, bundled)

@@ -38,14 +38,17 @@ export function GeneKeyReading({ number, onClose }: Props) {
           <div className={`${styles.spectrumCell} ${styles.cellShadow}`}>
             <span className={styles.spectrumLabel}>Тень</span>
             <span className={styles.spectrumValue}>{key.shadow}</span>
+            {key.fear && <span className={styles.spectrumTotem}>{key.fear}</span>}
           </div>
           <div className={`${styles.spectrumCell} ${styles.cellGift}`}>
             <span className={styles.spectrumLabel}>Дар</span>
             <span className={styles.spectrumValue}>{key.gift}</span>
+            {key.life && <span className={styles.spectrumTotem}>{key.life}</span>}
           </div>
           <div className={`${styles.spectrumCell} ${styles.cellSiddhi}`}>
             <span className={styles.spectrumLabel}>Сиддхи</span>
             <span className={styles.spectrumValue}>{key.siddhi}</span>
+            {key.vision && <span className={styles.spectrumTotem}>{key.vision}</span>}
           </div>
         </div>
 

@@ -703,6 +703,19 @@
   font-size: 15px;
   color: var(--text-primary);
 }
+.spectrumTotem {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--divider);
+  font-family: var(--font-t4);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.spectrumTotem::before {
+  content: '🐾 ';
+  font-style: normal;
+}
 
 /* Characteristics */
 .chars {
