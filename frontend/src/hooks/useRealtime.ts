@@ -61,6 +61,9 @@ export function useRealtime(): void {
   const openNotification = useOpenNotification()
   const meRef = useRef(user?.id ?? -1)
   meRef.current = user?.id ?? -1
+  // Админ не выполняет задачи — ему не шлём тост-уведомления по задачам.
+  const isAdminRef = useRef(user?.role === 'admin')
+  isAdminRef.current = user?.role === 'admin'
   // Читаем актуальные значения из листенера, не пересоздавая подписку на каждый рендер.
   const usersRef = useRef(usersMap)
   usersRef.current = usersMap
@@ -177,7 +180,7 @@ export function useRealtime(): void {
         }
         case 'task.created':
           qc.invalidateQueries({ queryKey: tasksKey })
-          notify({ title: 'Задачи', text: 'Новая задача' })
+          if (!isAdminRef.current) notify({ title: 'Задачи', text: 'Новая задача' })
           break
         case 'task.updated':
           qc.invalidateQueries({ queryKey: tasksKey })
@@ -194,8 +197,10 @@ export function useRealtime(): void {
           qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
           qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
           qc.invalidateQueries({ queryKey: tasksKey })
-          if (e.status === 'accepted') notify({ title: 'Задачи', text: 'Задача принята' })
-          else if (e.status === 'returned') notify({ title: 'Задачи', text: 'Задача возвращена на доработку' })
+          if (!isAdminRef.current) {
+            if (e.status === 'accepted') notify({ title: 'Задачи', text: 'Задача принята' })
+            else if (e.status === 'returned') notify({ title: 'Задачи', text: 'Задача возвращена на доработку' })
+          }
           break
         }
         case 'task.comment.new':

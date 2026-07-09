@@ -219,13 +219,11 @@ function ProgressPanel({ taskId }: { taskId: number }) {
 // строке, чтобы админ сразу видел, кому выдана задача (иначе «выдал, а нигде нет»).
 function TaskRow({
   task,
-  overdue,
   onOpenProgress,
   onEdit,
   onDelete,
 }: {
   task: TaskWithStatusOut
-  overdue: boolean
   onOpenProgress: () => void
   onEdit: () => void
   onDelete: () => void
@@ -236,7 +234,6 @@ function TaskRow({
         <div className={styles.listItemMain}>
           <span className={styles.listTitle}>{task.title}</span>
           <span className={styles.badgeDraft}>{TYPE_LABEL[task.type]}</span>
-          {overdue && <span className={styles.badgeOverdue}>истёк срок</span>}
           <span className={styles.listMeta}>
             сдано {task.submitted_count} · принято {task.accepted_count}
             {task.assignee_count != null ? ` из ${task.assignee_count}` : ''}
@@ -370,7 +367,6 @@ export function AdminTasks() {
               <TaskRow
                 key={task.id}
                 task={task}
-                overdue={false}
                 onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
                 onEdit={() => setEditTask(task)}
                 onDelete={() => handleDelete(task.id)}
@@ -388,7 +384,6 @@ export function AdminTasks() {
               <TaskRow
                 key={task.id}
                 task={task}
-                overdue
                 onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
                 onEdit={() => setEditTask(task)}
                 onDelete={() => handleDelete(task.id)}
