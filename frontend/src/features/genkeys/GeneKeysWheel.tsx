@@ -215,7 +215,16 @@ export function GeneKeysWheel({
       {showPulse && (
         <>
           <SectorPulse angles={angles} />
-          <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.rimGlow} aria-hidden="true" />
+          {/* Rim breathes in step with the outermost wave (delay = full travel,
+              matching the outer arc so they light/darken together). */}
+          <circle
+            cx={C}
+            cy={C}
+            r={R[RING_COUNT]}
+            className={styles.rimGlow}
+            style={{ animationDelay: `${PULSE_TRAVEL_MS}ms` }}
+            aria-hidden="true"
+          />
         </>
       )}
 

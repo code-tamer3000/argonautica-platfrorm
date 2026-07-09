@@ -18,10 +18,10 @@ the band value in the reading's spectrum triad. Each cell's coloured top strip
 carries a slow **horizontal shimmer** (per-band colour + highlight). The three
 spectrum cells are **buttons**: clicking Тень/Дар/Сиддхи smooth-scrolls the
 reading to that band's `## Тень`/`## Дар`/`## Сиддхи` section. Those headings are
-tagged (`useGeneKeyBody`: `id="gk-band-<band>"` + a band class) so they get a
-`scroll-margin-top` (stay clear of the sticky bar) and are **coloured to match
-their plaque** instead of the default gold. Hovering a key assembles its hexagram
-from the wheel; clicking opens the full reading beside the wheel.
+tagged (`useGeneKeyBody`: `id="gk-band-<band>"` + `gk-band-head`) so they get a
+`scroll-margin-top` (stay clear of the sticky bar); their colour is the plain
+body-text colour (uniform, not the default gold). Hovering a key assembles its
+hexagram from the wheel; clicking opens the full reading beside the wheel.
 
 ## Content pipeline (build-time, bundled)
 
@@ -95,9 +95,12 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
   assembled column, its spokes would trail the moving boundaries. Each band's
   spokes rotate by **that ring's** angle and sit at the real (uniform) sector
   boundaries — so ring-1's 4 spokes cap ring-2's 16 cap ring-3's 64, matching the
-  fills exactly. The wave rolls hub→OUTWARD (`animationDelay ∝ radius`,
-  `PULSE_TRAVEL_MS`); it disappears the moment the reading closes / a new pick
-  de-aligns the rings. Gated behind `prefers-reduced-motion`.
+  fills exactly. It pulses in **two alternating waves**: one lights the whole
+  grid (rolling hub→OUTWARD via `animationDelay ∝ radius`, `PULSE_TRAVEL_MS`), the
+  next fully extinguishes it, and so on (the keyframe holds each state so it reads
+  as whole waves, not a travelling spark); the rim glow breathes in step. It
+  disappears the moment the reading closes / a new pick de-aligns the rings.
+  Gated behind `prefers-reduced-motion` (steady faint outline instead).
 - Both hexagrams carry a looping **vertical gold sheen** ("перелив золота",
   bottom→up): the hub's center hexagram via `#gkVertGold` (`.vertGold`, panning
   `gradientTransform` in Y); the reading header's via `Hexagram` `shimmer` (a
