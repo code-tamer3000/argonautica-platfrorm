@@ -44,6 +44,10 @@ _ALLOWED_FILE_MIME = {
     "application/pdf",
     "application/zip",
     "text/plain",
+    # Markdown — используется читалкой глав в базе знаний (см. KB.md).
+    # Разные ОС/браузеры отдают разный тип для .md, поэтому оба варианта.
+    "text/markdown",
+    "text/x-markdown",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.ms-excel",
