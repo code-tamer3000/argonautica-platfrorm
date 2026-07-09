@@ -13,9 +13,9 @@ class NotificationOut(BaseModel):
     """Одно уведомление. actor_name/preview кладём сразу — тост рисуется без догрузки.
 
     Аватар автора фронт берёт из своего users-map по actor_id (там он уже с
-    presigned-URL), поэтому здесь его не дублируем. Для системных уведомлений
-    (journal_missed) actor_id/actor_name/message_id пусты, зато задан ref_date.
-    Для админ-рассылки (admin) задан title (+ preview из тела).
+    presigned-URL), поэтому здесь его не дублируем. У системных уведомлений
+    (cabin_granted) actor/message пусты. Для админ-рассылки (admin) задан title
+    (+ preview из тела). `journal_missed`/`ref_date` — легаси, больше не создаются.
     """
 
     id: int

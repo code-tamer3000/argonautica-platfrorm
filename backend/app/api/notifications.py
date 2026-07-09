@@ -20,11 +20,7 @@ from app.schemas.notification import (
     NotificationListOut,
     NotificationOut,
 )
-from app.services.notifications import (
-    _preview,
-    ensure_journal_notifications,
-    journal_missed_preview,
-)
+from app.services.notifications import _preview
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -46,14 +42,8 @@ async def list_notifications(
     before: Annotated[int | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
 ) -> NotificationListOut:
-    """Последние уведомления юзера (курсор по id) + счётчик непрочитанных.
-
-    По ходу лениво досоздаём системные уведомления о незакрытых днях дневника
-    (планировщика нет — генерируем при обращении к ленте).
-    """
-    await ensure_journal_notifications(session, current_user)
-
-    # outer join: у системных уведомлений (journal_missed) actor_id/message_id пусты.
+    """Последние уведомления юзера (курсор по id) + счётчик непрочитанных."""
+    # outer join: у системных уведомлений (cabin_granted/admin) actor_id/message_id пусты.
     stmt = (
         select(Notification, User.display_name, Message.content)
         .outerjoin(User, User.id == Notification.actor_id)
@@ -74,13 +64,7 @@ async def list_notifications(
             message_id=n.message_id,
             actor_id=n.actor_id,
             actor_name=actor_name,
-            preview=(
-                journal_missed_preview(n.ref_date)
-                if n.kind == "journal_missed"
-                else _preview(n.body)
-                if n.kind == "admin"
-                else _preview(content)
-            ),
+            preview=(_preview(n.body) if n.kind == "admin" else _preview(content)),
             ref_date=n.ref_date,
             title=n.title,
             created_at=n.created_at,

@@ -17,6 +17,12 @@
 .listActions { display: flex; gap: var(--space-2); flex-shrink: 0; }
 .badgePublished { font-size: 0.75rem; padding: 2px var(--space-2); background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); border-radius: 9999px; }
 .badgeDraft { font-size: 0.75rem; padding: 2px var(--space-2); background: var(--divider); color: var(--text-secondary); border-radius: 9999px; }
+/* Обзор уведомлений: чипы «вкл/выкл» на каждую категорию. */
+.prefChips { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.prefChipOn { font-size: 0.7rem; padding: 2px var(--space-2); border-radius: 9999px; background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.prefChipOff { font-size: 0.7rem; padding: 2px var(--space-2); border-radius: 9999px; background: var(--divider); color: var(--text-muted); text-decoration: line-through; }
+.prefMuted { color: var(--text-muted); font-size: 0.8rem; }
+.prefDevices { font-size: 0.7rem; color: var(--text-secondary); }
 .form { display: flex; flex-direction: column; gap: var(--space-4); width: 100%; max-width: 480px; }
 .formRow { display: flex; flex-direction: column; gap: var(--space-2); }
 .formRow label { font-size: 0.75rem; color: var(--text-secondary); font-family: var(--font-t4); }

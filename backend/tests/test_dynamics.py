@@ -7,8 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.journal import JournalPardon
-from app.models.notification import Notification
-from app.models.room import Room
 
 from .conftest import MakeUser, auth_headers, login
 
@@ -114,55 +112,6 @@ async def test_credit_pardoned_day_refunds_whale(
         )
     ).all()
     assert remaining_pardons == []
-
-
-async def test_credit_clears_journal_missed_notification(
-    client: AsyncClient, make_user: MakeUser, session: AsyncSession
-) -> None:
-    admin = await make_user(role="admin", password="adminpass123")
-    participant = await make_user(role="participant")
-    admin_tokens = await login(client, admin.username, "adminpass123")
-
-    day = date.today() - timedelta(days=1)
-    assert settings.journal_program_start <= day
-
-    # Личный дневник участника (journal_missed ссылается на него через room_id).
-    personal = Room(
-        type="channel", name="journal", is_personal=True, created_by=participant.id
-    )
-    session.add(personal)
-    await session.commit()
-    await session.refresh(personal)
-
-    # Уведомление «день не закрыт» уже висит у участника.
-    notif = Notification(
-        user_id=participant.id,
-        kind="journal_missed",
-        room_id=personal.id,
-        ref_date=day,
-    )
-    session.add(notif)
-    await session.commit()
-
-    # Админ зачитывает этот день.
-    resp = await client.post(
-        "/api/admin/dynamics/credit",
-        headers=auth_headers(admin_tokens["access_token"]),
-        json={"user_id": participant.id, "date": day.isoformat(), "credited": True},
-    )
-    assert resp.status_code == 200, resp.text
-
-    # Уведомление о несдаче должно быть удалено.
-    remaining = (
-        await session.execute(
-            select(Notification.id).where(
-                Notification.user_id == participant.id,
-                Notification.kind == "journal_missed",
-                Notification.ref_date == day,
-            )
-        )
-    ).all()
-    assert remaining == []
 
 
 async def test_credit_future_day_rejected(
