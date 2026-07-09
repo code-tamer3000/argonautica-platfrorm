@@ -26,6 +26,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   news: 'Новый пост в новостях',
   journal_missed: 'День дневника не закрыт',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
+  admin: 'Уведомление от администрации',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
@@ -153,7 +154,7 @@ export function useRealtime(): void {
           // (иначе он и так видит сообщение — дублировать не нужно).
           if (n.room_id !== useUiStore.getState().activeRoomId) {
             notify({
-              title: n.actor_name ?? 'Уведомление',
+              title: n.actor_name ?? n.title ?? 'Уведомление',
               text: n.preview ?? NOTIF_FALLBACK[n.kind],
               avatarName: n.actor_name ?? undefined,
               avatarUrl: n.actor_id != null ? usersRef.current.get(n.actor_id)?.avatar_url ?? null : null,

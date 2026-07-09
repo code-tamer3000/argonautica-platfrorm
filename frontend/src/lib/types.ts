@@ -291,7 +291,13 @@ export interface JournalProgram {
 }
 
 // --- Уведомления (колокольчик + всплывающие тосты) ---
-export type NotificationKind = 'dm' | 'reply' | 'news' | 'journal_missed' | 'cabin_granted'
+export type NotificationKind =
+  | 'dm'
+  | 'reply'
+  | 'news'
+  | 'journal_missed'
+  | 'cabin_granted'
+  | 'admin'
 
 export interface NotificationOut {
   id: number
@@ -304,6 +310,8 @@ export interface NotificationOut {
   actor_name: string | null
   preview: string | null
   ref_date: string | null
+  // Заголовок админ-рассылки (kind='admin'); у остальных видов null.
+  title: string | null
   created_at: string
   read_at: string | null
 }

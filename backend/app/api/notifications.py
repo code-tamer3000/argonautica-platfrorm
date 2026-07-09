@@ -77,9 +77,12 @@ async def list_notifications(
             preview=(
                 journal_missed_preview(n.ref_date)
                 if n.kind == "journal_missed"
+                else _preview(n.body)
+                if n.kind == "admin"
                 else _preview(content)
             ),
             ref_date=n.ref_date,
+            title=n.title,
             created_at=n.created_at,
             read_at=n.read_at,
         )

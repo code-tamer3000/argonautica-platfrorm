@@ -8,10 +8,19 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // injectManifest: свой src/sw.ts (нужен обработчик `push`/`notificationclick`
+      // для нативных уведомлений), в который Workbox инжектит precache-манифест.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       // 'prompt' + ручная регистрация (useRegisterSW) — чтобы показать ненавязчивый
       // баннер «есть обновление», а не тихо/принудительно перезагружать вкладку.
       registerType: 'prompt',
       injectRegister: false,
+      injectManifest: {
+        // Оболочку прекэшируем, API/WS — никогда (в самом sw.ts).
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+      },
       manifest: {
         name: 'Аргонавтика',
         short_name: 'Аргонавтика',
@@ -25,12 +34,6 @@ export default defineConfig({
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
-      },
-      workbox: {
-        // Оболочку прекэшируем, API/WS — никогда.
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/],
-        // Не копить старые версии закэшированных ассетов между деплоями.
-        cleanupOutdatedCaches: true,
       },
     }),
   ],

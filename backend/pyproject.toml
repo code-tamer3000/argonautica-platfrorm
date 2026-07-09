@@ -17,6 +17,7 @@ dependencies = [
     "boto3",            # S3-клиент для MinIO (и будущего managed-S3)
     "pillow",           # серверные превью изображений (thumbnail при подтверждении загрузки)
     "httpx[socks]",     # HTTP-клиент: Telegram Bot API (scripts/telegram_bot.py); socks — для прокси
+    "pywebpush",        # Web Push (VAPID): нативные push-уведомления в браузер/PWA
 ]
 
 [build-system]
