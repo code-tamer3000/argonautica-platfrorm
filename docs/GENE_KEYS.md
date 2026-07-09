@@ -35,17 +35,20 @@ clicking opens the full reading beside the wheel.
 
 ## Book link — «64 пути»
 
-The contemplation book **Ричард Радд «64 пути»** lives in the Knowledge Base as a
-`kind = 'book'` material (chapters = its markdown `##` headings; see the KB book
-reader in [KB.md](KB.md)). Chapter N contemplates gene key N, so a key's reading
-carries a deep-link into that chapter.
+The contemplation book **Ричард Радд «64 пути»** lives in the Knowledge Base as an
+ordinary article with a **`.md` file attached**; the KB markdown reader splits it
+into chapters on the `##` headings (see "Markdown reader" in [KB.md](KB.md)).
+Chapter N contemplates gene key N, so a key's reading deep-links into that chapter.
 
-- `GeneKeyReading.tsx` calls `useKbBookByTitle('64 пути')` to find the published
-  book material at runtime; if present it renders a «📖 Читать главу…» link (near
-  the **top** of the reading, `styles.bookLink`) to `/kb/book/{item.id}?ch={number}`.
-  The reader resolves `?ch=N` to the matching chapter and scrolls to it.
-- No genkeys-local book bundle — the book is authored/edited through the KB admin
-  like any other material.
+- `useGenkeysBook.ts` (`useGenkeysBookLink('64 пути')`) resolves the link **by
+  naming convention**: it finds a published article whose title contains «64 пути»
+  and that has a markdown attachment, returning `{ itemId, assetId }`. It resolves
+  the candidate's attachment URLs (bounded fan-out via `useQueries`) to pick the
+  `.md`. No dedicated "book" entity — the link simply disappears if no such article
+  is published.
+- If found, `GeneKeyReading.tsx` renders a «📖 Читать главу…» link near the **top**
+  of the reading (`styles.bookLink`) to `/kb/read/{itemId}/{assetId}?ch={number}`;
+  the reader resolves `?ch=N` to the matching chapter and scrolls to it.
 
 ## Wheel geometry (`wheel.ts`)
 

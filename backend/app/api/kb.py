@@ -30,7 +30,7 @@ from app.services.kb import assert_kb_item_visible, attached_media_ids, load_kb_
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
 # Поля, которые admin вправе править через PATCH.
-_PATCHABLE_FIELDS = {"title", "body", "kind", "published", "sort_order"}
+_PATCHABLE_FIELDS = {"title", "body", "published", "sort_order"}
 
 
 def _to_out(item: KbItem, media_ids: list[int]) -> KbItemOut:
@@ -65,7 +65,6 @@ async def create_item(
     item = KbItem(
         title=body.title,
         body=body.body,
-        kind=body.kind,
         published=body.published,
         created_by=current_admin.id,
     )

@@ -1,6 +1,6 @@
-import { Navigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useKbItem } from '../../api/kb'
-import { Attachment } from '../chat/Attachment'
+import { MdAttachment } from './MdAttachment'
 import { KbComments } from './KbComments'
 import { Spinner } from '../../components/Spinner'
 import { useAuth } from '../auth/AuthContext'
@@ -17,8 +17,6 @@ export function KbViewer() {
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
   if (!item) return <div className="center grow muted">Материал не найден</div>
-  // Books render in the dedicated reader (chapters + TOC), not the flat viewer.
-  if (item.kind === 'book') return <Navigate to={`/kb/book/${item.id}`} replace />
 
   const bodyHtml = item.body
     ? DOMPurify.sanitize(marked.parse(item.body) as string)
@@ -44,7 +42,7 @@ export function KbViewer() {
       {item.media_asset_ids.length > 0 && (
         <div className={styles.kbMedia}>
           {item.media_asset_ids.map((assetId) => (
-            <Attachment key={assetId} assetId={assetId} />
+            <MdAttachment key={assetId} itemId={id} assetId={assetId} />
           ))}
         </div>
       )}

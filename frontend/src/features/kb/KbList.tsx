@@ -34,14 +34,9 @@ export function KbList() {
       )}
       <div className={styles.grid}>
         {items.map((item) => (
-          <Link
-            key={item.id}
-            to={item.kind === 'book' ? `/kb/book/${item.id}` : `/kb/${item.id}`}
-            className={styles.card}
-          >
+          <Link key={item.id} to={`/kb/${item.id}`} className={styles.card}>
             <div className={styles.cardHead}>
               <span className={styles.cardTitle}>{item.title}</span>
-              {item.kind === 'book' && <span className={styles.badgeBook}>Книга</span>}
               {user?.role === 'admin' && !item.published && (
                 <span className={styles.badgeDraft}>Черновик</span>
               )}

@@ -217,7 +217,7 @@ export function AppShell() {
             <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route
-              path="/kb/book/:itemId"
+              path="/kb/read/:itemId/:assetId"
               element={
                 <Suspense fallback={<div className="center grow"><Spinner /></div>}>
                   <KbBookReader />
