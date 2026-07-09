@@ -6,6 +6,7 @@ import { Button } from '../../components/Button'
 import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
+import { NotificationsSection } from './NotificationsSection'
 import { toast } from '../../stores/toast'
 import { useThemeStore, type Theme } from '../../stores/theme'
 import { useAuth } from '../auth/AuthContext'
@@ -270,6 +271,9 @@ export function ProfileScreen() {
 
       {/* Оформление — доступно всем */}
       <ThemeSection />
+
+      {/* Уведомления — доступно всем */}
+      <NotificationsSection />
 
       {/* Динамика — только для участников */}
       {user.role !== 'admin' && <DynamicsSection />}

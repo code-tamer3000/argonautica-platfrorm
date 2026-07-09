@@ -25,6 +25,7 @@ from app.models.feedback import Feedback
 from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
@@ -40,6 +41,11 @@ from app.schemas.journal import (
     JournalProgramOut,
     JournalProgramUpdate,
 )
+from app.schemas.push import (
+    AdminBroadcastRequest,
+    NotifPrefsOverviewOut,
+    UserNotifPrefsOut,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -47,7 +53,8 @@ from app.schemas.user import (
     AdminUserOut,
     UserOut,
 )
-from app.services.notifications import notify_cabin_granted
+from app.services.notifications import broadcast_admin, notify_cabin_granted
+from app.services.notify_prefs import resolved_prefs
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
@@ -412,3 +419,60 @@ async def resolve_feedback(
         )
     fb.resolved_at = datetime.now(UTC) if body.resolved else None
     await session.flush()
+
+
+@router.post(
+    "/notifications/broadcast", status_code=status.HTTP_202_ACCEPTED
+)
+async def broadcast_notification(
+    body: AdminBroadcastRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, int]:
+    """Разослать уведомление всем пользователям (in-app лента + native push).
+
+    Push уходит только тем, у кого включён тумблер `admin`; in-app-строку в ленте
+    получают все. Возвращает число адресатов.
+    """
+    recipients = await broadcast_admin(session, body.title.strip(), body.body.strip())
+    return {"recipients": recipients}
+
+
+@router.get("/notifications/prefs", response_model=NotifPrefsOverviewOut)
+async def notification_prefs_overview(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> NotifPrefsOverviewOut:
+    """Обзор «у кого включены уведомления»: настройки + число устройств на юзера."""
+    users = (
+        await session.execute(
+            select(User.id, User.display_name, User.settings).order_by(
+                User.display_name
+            )
+        )
+    ).all()
+
+    # Число активных push-подписок на пользователя (одним запросом).
+    device_rows = (
+        await session.execute(
+            select(PushSubscription.user_id, func.count())
+            .select_from(PushSubscription)
+            .group_by(PushSubscription.user_id)
+        )
+    ).all()
+    devices_by_uid = {uid: cnt for uid, cnt in device_rows}
+
+    items = []
+    for uid, display_name, user_settings in users:
+        prefs = resolved_prefs(user_settings)
+        items.append(
+            UserNotifPrefsOut(
+                user_id=uid,
+                display_name=display_name,
+                push_enabled=prefs["push_enabled"],
+                dm=prefs["dm"],
+                reply=prefs["reply"],
+                news=prefs["news"],
+                admin=prefs["admin"],
+                devices=devices_by_uid.get(uid, 0),
+            )
+        )
+    return NotifPrefsOverviewOut(items=items)

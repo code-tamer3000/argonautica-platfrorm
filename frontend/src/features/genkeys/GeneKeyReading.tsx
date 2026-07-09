@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Hexagram } from './Hexagram'
 import { useGeneKeyBody } from './useGeneKeyBody'
@@ -12,12 +13,26 @@ interface Props {
   onClose: () => void
 }
 
+// The body markdown heads each spectrum band with an H2 of exactly this text;
+// clicking a spectrum cell scrolls the article to the matching section.
+type Band = 'Тень' | 'Дар' | 'Сиддхи'
+
 export function GeneKeyReading({ number, onClose }: Props) {
   const key = getKey(number)
   const { html, loading, error } = useGeneKeyBody(number)
   // If the «64 пути» book (a KB article with an attached .md) is published, link
   // into it: chapter N contemplates key N, so we jump there via ?ch=N.
   const bookLink = useGenkeysBookLink('64 пути')
+
+  // The whole panel is one scroll container; clicking a spectrum band scrolls
+  // it to that band's H2 in the rendered markdown body. The heading is tagged
+  // `id="gk-band-<band>"` in useGeneKeyBody and carries a scroll-margin so it
+  // clears the sticky bar (heading stays visible, not hidden under it).
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const scrollToBand = useCallback((band: Band) => {
+    const head = bodyRef.current?.querySelector(`#gk-band-${band}`)
+    head?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   if (!key) return null
 
@@ -26,7 +41,7 @@ export function GeneKeyReading({ number, onClose }: Props) {
       {/* Sticky compact bar: stays pinned as everything scrolls under it, so
           the essential "which key" is always visible without eating the screen. */}
       <div className={styles.readingBar}>
-        <Hexagram key={key.number} pattern={key.hexagram} size={26} color="var(--accent)" animate />
+        <Hexagram key={key.number} pattern={key.hexagram} size={26} color="var(--accent)" animate shimmer />
         <div className={styles.readingBarTitle}>
           <span className={styles.readingNum}>Генный замок {key.number}</span>
           <span className={styles.readingBarName}>{key.name}</span>
@@ -51,22 +66,35 @@ export function GeneKeyReading({ number, onClose }: Props) {
           </Link>
         )}
 
+        {/* Each band is a button that scrolls the article to its section. */}
         <div className={styles.spectrum}>
-          <div className={`${styles.spectrumCell} ${styles.cellShadow}`}>
+          <button
+            type="button"
+            className={`${styles.spectrumCell} ${styles.cellShadow}`}
+            onClick={() => scrollToBand('Тень')}
+          >
             <span className={styles.spectrumLabel}>Тень</span>
             <span className={styles.spectrumValue}>{key.shadow}</span>
             {key.fear && <span className={styles.spectrumTotem}>{key.fear}</span>}
-          </div>
-          <div className={`${styles.spectrumCell} ${styles.cellGift}`}>
+          </button>
+          <button
+            type="button"
+            className={`${styles.spectrumCell} ${styles.cellGift}`}
+            onClick={() => scrollToBand('Дар')}
+          >
             <span className={styles.spectrumLabel}>Дар</span>
             <span className={styles.spectrumValue}>{key.gift}</span>
             {key.life && <span className={styles.spectrumTotem}>{key.life}</span>}
-          </div>
-          <div className={`${styles.spectrumCell} ${styles.cellSiddhi}`}>
+          </button>
+          <button
+            type="button"
+            className={`${styles.spectrumCell} ${styles.cellSiddhi}`}
+            onClick={() => scrollToBand('Сиддхи')}
+          >
             <span className={styles.spectrumLabel}>Сиддхи</span>
             <span className={styles.spectrumValue}>{key.siddhi}</span>
             {key.vision && <span className={styles.spectrumTotem}>{key.vision}</span>}
-          </div>
+          </button>
         </div>
 
         <dl className={styles.chars}>
@@ -86,6 +114,7 @@ export function GeneKeyReading({ number, onClose }: Props) {
         {error && <p className={styles.readingError}>Не удалось загрузить текст замка.</p>}
         {html && (
           <div
+            ref={bodyRef}
             className={styles.articleBody}
             // Content is bundled markdown, sanitized in the hook.
             dangerouslySetInnerHTML={{ __html: html }}

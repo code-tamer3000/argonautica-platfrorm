@@ -8,6 +8,11 @@
   --gk-gold: var(--color-latun);
   --gk-stone: var(--color-frame-deep);
 
+  /* Gold sheen stops for the flowing-gold ("перелив золота") hexagram fill and
+     the wheel's rim pulse — deep → base → highlight, all from the palette. */
+  --gk-gold-deep: var(--color-latun);
+  --gk-gold-hi: var(--color-zoloto-yar);
+
   display: flex;
   height: 100%;
   min-height: 0;
@@ -63,6 +68,94 @@
   stroke: var(--divider-gold);
   stroke-width: 1;
   opacity: 0.5;
+}
+
+/* --- Living skeleton: pulse along every sector outline, in waves ---------- */
+/* The whole nested sector grid (radial spokes on 3 rings + ring arcs) pulses in
+   two alternating waves: one wave lights the grid fully, the next fully
+   extinguishes it, and so on. Each element's animation-delay grows with radius
+   (set inline in JS), so the "light up" rolls OUTWARD and, a beat later, the
+   "go dark" rolls outward too — the on/off waves chase each other from the hub.
+   The keyframe holds each state (bright, then fully off) so it reads as whole
+   waves, not a thin travelling spark. Decorative only; killed for reduced-motion. */
+@keyframes gkSparkRun {
+  /* wave 1 — light up and hold bright */
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  42% {
+    opacity: 0.9;
+  }
+  /* wave 2 — fully extinguish and hold dark */
+  54% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.sectorPulse {
+  pointer-events: none;
+}
+.pulseSpoke,
+.pulseArc {
+  fill: none;
+  stroke: var(--gk-gold-hi);
+  /* Soft halo so each lit segment smears into a comet-like wake. */
+  filter: drop-shadow(0 0 3px var(--accent));
+  /* The wave period; the per-element delay (inline) offsets each by radius.
+     Long + ease-in-out → a slow, gliding sweep rather than a strobe. */
+  animation: gkSparkRun 6.5s ease-in-out infinite;
+  opacity: 0.12;
+}
+.pulseSpoke {
+  stroke-width: 1;
+}
+.pulseArc {
+  stroke-width: 1.25;
+}
+.rimGlow {
+  pointer-events: none;
+  fill: none;
+  stroke: var(--accent);
+  animation: gkRimGlow 6.5s ease-in-out infinite;
+}
+/* The outer rim breathes in step with the waves: up on the light wave, fully
+   down on the dark wave (its delay ≈ the rim radius, so it's the last to light
+   and the last to go dark). */
+@keyframes gkRimGlow {
+  0% {
+    opacity: 0;
+    stroke-width: 1.5;
+  }
+  12% {
+    opacity: 0.55;
+    stroke-width: 2.5;
+  }
+  42% {
+    opacity: 0.55;
+    stroke-width: 2.5;
+  }
+  54% {
+    opacity: 0;
+    stroke-width: 1.5;
+  }
+  100% {
+    opacity: 0;
+    stroke-width: 1.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No pulsing waves — just a steady faint gold outline of the grid. */
+  .pulseSpoke,
+  .pulseArc,
+  .rimGlow {
+    animation: none;
+    opacity: 0.18;
+  }
 }
 
 /* --- Outer ring: 64 Gene Keys -------------------------------------------- */
@@ -198,6 +291,24 @@
 .centerHex {
   pointer-events: none;
 }
+/* The center hexagram's vertical sheen: pan the gradient upward and back so a
+   bright band sweeps bottom→up through the six lines. Amplitude is in user
+   units (the gradient spans 2*R_HUB ≈ 156px), kept small so the highlight
+   glides rather than races. */
+@keyframes gkVertGold {
+  0% {
+    transform: translateY(70px);
+  }
+  50% {
+    transform: translateY(-70px);
+  }
+  100% {
+    transform: translateY(70px);
+  }
+}
+.vertGold {
+  animation: gkVertGold 4.2s ease-in-out infinite;
+}
 
 /* --- Hub transition: Taiji flattens (rotation comes from the parent, so these
    only scale/fade → no jump when idle rotation resumes). Hexagram born from it. */
@@ -269,7 +380,9 @@
   animation: gkHexCollapse 300ms cubic-bezier(0.5, 0, 0.75, 0) both;
 }
 .centerHexLine {
-  fill: var(--accent-bright);
+  /* Vertical gold sheen travels bottom→up through the center hexagram (the
+     gradient + its animation are defined in the SVG <defs>). */
+  fill: url(#gkVertGold);
 }
 /* A split-line group animates as a whole; its rects shouldn't double-run. */
 .centerHexLineG .centerHexLine {
@@ -673,23 +786,84 @@
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
 }
+/* Each cell is a button that scrolls the reading to that band's section. The
+   coloured top strip (::before) carries a slow horizontal shimmer — a bright
+   band sweeping across the band colour. */
 .spectrumCell {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  position: relative;
+  overflow: hidden; /* clip the shimmer strip to the rounded top corners */
+  background: var(--bg-surface);
   border: 1px solid var(--divider);
   border-radius: var(--radius-btn);
-  padding: var(--space-2) var(--space-3);
+  padding: calc(var(--space-2) + 3px) var(--space-3) var(--space-2);
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border-top-width: 3px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
 }
+/* The coloured top strip. A gradient of the band colour with a lighter highlight
+   sliding across (background-position animation) — the horizontal shimmer. */
+.spectrumCell::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-image: linear-gradient(
+    90deg,
+    var(--band) 0%,
+    var(--band) 30%,
+    var(--band-hi) 50%,
+    var(--band) 70%,
+    var(--band) 100%
+  );
+  background-size: 220% 100%;
+  animation: gkStripShimmer 6.5s ease-in-out infinite;
+}
+@keyframes gkStripShimmer {
+  0% {
+    background-position: 120% 0;
+  }
+  50% {
+    background-position: -20% 0;
+  }
+  100% {
+    background-position: 120% 0;
+  }
+}
+.spectrumCell:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+  border-color: var(--divider-gold-strong);
+}
+.spectrumCell:active {
+  transform: translateY(1px);
+}
+.spectrumCell:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Per-band strip colour + its highlight (a lighter mix of the same colour). */
 .cellShadow {
-  border-top-color: var(--color-krov);
+  --band: var(--color-krov);
+  --band-hi: color-mix(in srgb, var(--color-krov) 55%, white);
 }
 .cellGift {
-  border-top-color: var(--color-zoloto);
+  --band: var(--color-zoloto);
+  --band-hi: color-mix(in srgb, var(--color-zoloto) 55%, white);
 }
 .cellSiddhi {
-  border-top-color: var(--color-kost-yar);
+  --band: var(--color-kost-yar);
+  --band-hi: color-mix(in srgb, var(--color-kost-yar) 60%, white);
+}
+@media (prefers-reduced-motion: reduce) {
+  .spectrumCell::before {
+    animation: none;
+  }
 }
 .spectrumLabel {
   font-family: var(--font-t4);
@@ -766,6 +940,16 @@
   margin: var(--space-8) 0 var(--space-3);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--divider-gold);
+}
+/* The three spectrum-band headings (## Тень / ## Дар / ## Сиддхи), tagged in
+   useGeneKeyBody. `scroll-margin-top` keeps them clear of the sticky bar when
+   a plaque scrolls to them (heading stays visible). Colour is the plain body
+   text colour (uniform across all three), not the default gold or a per-band
+   tint. */
+.articleBody :global(.gk-band-head) {
+  scroll-margin-top: 64px;
+  color: var(--text-primary);
+  border-bottom-color: var(--divider);
 }
 .articleBody h3 {
   font-family: var(--font-t2);

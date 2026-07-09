@@ -12,21 +12,20 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   dm: 'написал(а) вам',
   reply: 'ответил(а) на ваше сообщение',
   news: 'новый пост в новостях',
-  journal_missed: '',
   cabin_granted: '',
+  admin: '',
 }
 
 const KIND_FALLBACK: Record<NotificationKind, string> = {
   dm: 'Новое сообщение',
   reply: 'Новый ответ',
   news: 'Смотреть в новостях',
-  journal_missed: 'День дневника не закрыт',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
+  admin: 'Уведомление от администрации',
 }
 
-// Заголовок системного уведомления (без автора).
+// Заголовок системного уведомления (без автора). admin — берём из n.title.
 const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
-  journal_missed: 'Дневник',
   cabin_granted: 'Каюта',
 }
 
@@ -84,7 +83,11 @@ export function NotificationBell() {
             {items.length === 0 && <div className={styles.empty}>Пока пусто</div>}
             {items.map((n) => {
               const system = n.actor_id == null
-              const title = system ? (SYSTEM_TITLE[n.kind] ?? 'Система') : n.actor_name
+              const title = system
+                ? n.kind === 'admin'
+                  ? (n.title ?? 'Администрация')
+                  : (SYSTEM_TITLE[n.kind] ?? 'Система')
+                : n.actor_name
               return (
                 <button
                   key={n.id}

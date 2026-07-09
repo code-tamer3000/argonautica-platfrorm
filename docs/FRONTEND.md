@@ -29,7 +29,9 @@ WS starts at the AppShell root; `useRealtime()` routes events (`message.*`, `pin
 
 ## PWA
 
-Installable (Add to Home Screen; no stores). Web App Manifest (name, icons, `display: standalone`), Service Worker (shell cache, required for install), HTTPS. Built with `vite-plugin-pwa`. Assets: apple-touch-icon, favicon, 192/512 icons. **Push notifications are out of MVP** (Web Push; iOS restrictions) — the open WS only delivers while the app is active. See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+Installable (Add to Home Screen; no stores). Web App Manifest (name, icons, `display: standalone`), Service Worker, HTTPS. Built with `vite-plugin-pwa` in **injectManifest** mode: the custom `src/sw.ts` gets the Workbox precache injected AND adds the `push`/`notificationclick` handlers for native notifications. Update UX unchanged (`registerType: 'prompt'`, `useRegisterSW`, `SKIP_WAITING` message from the update banner). Assets: apple-touch-icon, favicon, 192/512 icons.
+
+**Native push (Web Push / VAPID)** is live. `src/lib/push.ts` handles permission + `pushManager.subscribe` + posting the subscription to the backend; the profile "Уведомления" section is the master toggle + per-kind toggles (persisted to `users.settings["notifications"]`). `sw.ts` shows the notification and, on click, focuses/navigates the app. iOS requires the PWA be installed (Add to Home Screen) — the profile UI warns when it isn't. `sw.ts` is typechecked separately (`tsconfig.sw.json`, WebWorker lib). See [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 ## Open question
 

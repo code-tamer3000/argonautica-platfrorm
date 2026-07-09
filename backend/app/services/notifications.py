@@ -10,9 +10,8 @@
 """
 import logging
 import re
-from datetime import date, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
@@ -20,6 +19,8 @@ from app.models.notification import Notification
 from app.models.room import Room, RoomMember
 from app.models.user import User
 from app.schemas.notification import NotificationOut
+from app.services import push as push_service
+from app.services.notify_prefs import push_allowed
 from app.ws import schemas as ws_schemas
 from app.ws.pubsub import publish_user_event
 
@@ -28,8 +29,6 @@ logger = logging.getLogger(__name__)
 _PREVIEW_LEN = 120
 # Служебный маркер категорий дневника в начале content — в превью не нужен.
 _JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z0-9_]+-->")
-# Насколько глубоко назад досоздаём «пропущенные дни», если юзер долго не заходил.
-_JOURNAL_MISSED_WINDOW = 14
 
 
 def _preview(content: str | None) -> str | None:
@@ -39,13 +38,6 @@ def _preview(content: str | None) -> str | None:
     if not text:
         return None
     return text[:_PREVIEW_LEN]
-
-
-def journal_missed_preview(ref_date: date | None) -> str:
-    """Текст уведомления о незакрытом дне дневника."""
-    if ref_date is None:
-        return "День дневника не закрыт"
-    return f"День {ref_date:%d.%m} закрыт не был — задачи дневника не выполнены"
 
 
 async def _reply_recipient(session: AsyncSession, message: Message) -> int | None:
@@ -102,6 +94,15 @@ async def on_new_message(
             return
 
         preview = _preview(message.content)
+        # Настройки получателей — для фильтра нативного push (in-app лента идёт всем).
+        rows_settings = (
+            await session.execute(
+                select(User.id, User.settings).where(User.id.in_(recipient_ids))
+            )
+        ).all()
+        settings_by_uid: dict[int, dict[str, object]] = {
+            uid: s for uid, s in rows_settings
+        }
         rows = [
             Notification(
                 user_id=uid,
@@ -131,8 +132,64 @@ async def on_new_message(
             await publish_user_event(
                 row.user_id, ws_schemas.notification_new_event(out)
             )
+            if push_allowed(settings_by_uid.get(row.user_id), kind):
+                # Клик по push ведёт в приложение: новости — на /news (канал
+                # авто-открывается), остальные комнаты открываются через ленту на /.
+                url = "/news" if kind == "news" else "/"
+                push_service.enqueue_push(
+                    row.user_id,
+                    push_service.build_payload(
+                        title=sender.display_name,
+                        body=preview,
+                        url=url,
+                        tag=f"room-{message.room_id}",
+                    ),
+                )
     except Exception:
         logger.exception("Failed to create notifications for message %s", message.id)
+
+
+async def broadcast_admin(
+    session: AsyncSession, title: str, body: str
+) -> int:
+    """Разослать админ-уведомление всем пользователям платформы.
+
+    Создаёт по строке в ленте каждому + WS-событие + нативный push тем, у кого
+    включён тумблер `admin`. В отличие от message-driven путей, тут ошибку НЕ
+    глотаем — это явное действие админа, ему важно знать результат. Возвращает
+    число адресатов.
+    """
+    users = (
+        await session.execute(select(User.id, User.settings))
+    ).all()
+    preview = _preview(body)
+    for uid, user_settings in users:
+        row = Notification(user_id=uid, kind="admin", title=title, body=body)
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        out = NotificationOut(
+            id=row.id,
+            kind="admin",
+            room_id=None,
+            message_id=None,
+            actor_id=None,
+            actor_name=None,
+            preview=preview,
+            ref_date=None,
+            title=title,
+            created_at=row.created_at,
+            read_at=row.read_at,
+        )
+        await publish_user_event(uid, ws_schemas.notification_new_event(out))
+        if push_allowed(user_settings, "admin"):
+            push_service.enqueue_push(
+                uid,
+                push_service.build_payload(
+                    title=title, body=preview, url="/", tag=f"admin-{row.id}"
+                ),
+            )
+    return len(users)
 
 
 async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
@@ -161,115 +218,18 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
             read_at=row.read_at,
         )
         await publish_user_event(user_id, ws_schemas.notification_new_event(out))
+        user_settings = await session.scalar(
+            select(User.settings).where(User.id == user_id)
+        )
+        if push_allowed(user_settings, "cabin_granted"):
+            push_service.enqueue_push(
+                user_id,
+                push_service.build_payload(
+                    title="Открыт доступ к разделу «Каюта»",
+                    body="Нажмите, чтобы перейти",
+                    url="/cabin",
+                    tag="cabin-granted",
+                ),
+            )
     except Exception:
         logger.exception("Failed to create cabin_granted notification for user %s", user_id)
-
-
-async def clear_journal_missed_notification(
-    session: AsyncSession, user_id: int, ref_date: date
-) -> None:
-    """Снять уведомление «день дневника не закрыт» за конкретный день (если было).
-
-    Вызывается, когда день перестал считаться пропущенным — например, админ зачёл
-    его вручную. Удаляем строки и шлём каждому клиенту `notification.removed`, чтобы
-    колокольчик/бейдж погасли в реальном времени. Идемпотентно; ошибку глотаем.
-    """
-    try:
-        rows = (
-            await session.execute(
-                select(Notification.id, Notification.read_at).where(
-                    Notification.user_id == user_id,
-                    Notification.kind == "journal_missed",
-                    Notification.ref_date == ref_date,
-                )
-            )
-        ).all()
-        if not rows:
-            return
-        ids = [nid for nid, _ in rows]
-        await session.execute(delete(Notification).where(Notification.id.in_(ids)))
-        await session.flush()
-        for nid, read_at in rows:
-            await publish_user_event(
-                user_id,
-                ws_schemas.notification_removed_event(nid, was_unread=read_at is None),
-            )
-    except Exception:
-        logger.exception(
-            "Failed to clear journal_missed notification for user %s date %s",
-            user_id,
-            ref_date,
-        )
-
-
-async def ensure_journal_notifications(session: AsyncSession, user: User) -> None:
-    """Досоздать уведомления о незакрытых днях дневника (по одному на день).
-
-    Вызывается лениво при загрузке ленты уведомлений (планировщика нет). «Пропущенный
-    день» = прошедший день с начала программы, где закрыты не все категории дневника
-    и который не помилован (та же логика, что в разделе «Динамика»). Идемпотентно:
-    дедуп по (user, kind='journal_missed', ref_date). Ошибку логируем и глотаем, чтобы
-    не ронять выдачу ленты.
-
-    Импорт хелперов «Динамики» — локальный, чтобы избежать цикла на уровне модуля
-    (api.dynamics тянет схемы/модели, но не сервис уведомлений).
-    """
-    try:
-        from app.api.dynamics import (
-            _calc_closed_days,
-            _calc_stats,
-            _load_credits,
-            _load_journal_messages,
-            _load_pardons,
-            _personal_room_id,
-            _platform_today,
-            _timeline_start,
-            load_timeline,
-        )
-
-        timeline = await load_timeline(session)
-        program_start = _timeline_start(timeline)
-        today = _platform_today()
-        if today - timedelta(days=1) < program_start:
-            return  # ещё не наступил ни один завершённый день программы
-
-        room_id = await _personal_room_id(session, user.id)
-        if room_id is None:
-            return  # нет личного дневника — нечего проверять
-
-        messages = await _load_journal_messages(session, room_id, program_start)
-        pardons = await _load_pardons(session, user.id)
-        credits = await _load_credits(session, user.id)
-        per_day = _calc_closed_days(messages)
-        # Зачтённые админом дни не пропущены — не создаём по ним «journal_missed».
-        stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
-
-        # Пропущенные дни в пределах окна (не досоздаём всю историю разом).
-        cutoff = today - timedelta(days=_JOURNAL_MISSED_WINDOW)
-        missed = [d for d in stats["overdue_dates"] if d >= cutoff]
-        if not missed:
-            return
-
-        existing_rows = await session.execute(
-            select(Notification.ref_date).where(
-                Notification.user_id == user.id,
-                Notification.kind == "journal_missed",
-            )
-        )
-        already = {d for (d,) in existing_rows.all() if d is not None}
-        new_dates = [d for d in missed if d not in already]
-        if not new_dates:
-            return
-
-        for d in new_dates:
-            session.add(
-                Notification(
-                    user_id=user.id,
-                    kind="journal_missed",
-                    room_id=room_id,
-                    ref_date=d,
-                )
-            )
-        await session.flush()
-    except Exception:
-        logger.exception("Failed to ensure journal notifications for user %s", user.id)

@@ -27,6 +27,10 @@ const TICK_LEN = 26
 const TICK_H = 3.2
 const TICK_GAP = 7 // between the two lines of a bigram
 
+// How long the ambient pulse takes to travel hub→rim: the outward stagger of
+// the sector-skeleton wave is spread across this window (per pulse period).
+const PULSE_TRAVEL_MS = 2200
+
 interface Props {
   activeKey: number | null
   partnerKey: number | null
@@ -53,6 +57,21 @@ export function GeneKeysWheel({
   void partnerKey
 
   const angles = useRings(focusNum, frozen, anchorTop)
+
+  // The sector-outline pulse only runs once a key is LOCKED *and* the rings have
+  // finished springing into alignment — until then they're still rotating into
+  // the assembled column, and a pulse drawn on the (moving) boundaries would lag
+  // them. "Settled" = the three ring rotations have converged (max pairwise
+  // difference below a small epsilon), which is exactly the assembled state.
+  const ringsAligned = useMemo(() => {
+    const norm = (d: number) => ((((d % 360) + 540) % 360) - 180)
+    let maxDelta = 0
+    for (let i = 1; i < angles.length; i++) {
+      maxDelta = Math.max(maxDelta, Math.abs(norm(angles[i] - angles[0])))
+    }
+    return maxDelta < 0.4
+  }, [angles])
+  const showPulse = activeKey != null && ringsAligned
 
   // The golden overlays (chain highlight, sector frames, center hexagram) linger
   // briefly after focus clears and fade out — so leaving the wheel feels as
@@ -157,11 +176,57 @@ export function GeneKeysWheel({
       onMouseMove={handleMove}
       onMouseLeave={() => onHover(null)}
     >
+      {/* Vertical gold sheen for the center hexagram — a bright band travelling
+          bottom→up through the hub. userSpaceOnUse over the hub's vertical span
+          so the whole stacked hexagram shares one moving highlight (not a
+          per-line one). Animated via gradientTransform translateY. */}
+      <defs>
+        <linearGradient
+          id="gkVertGold"
+          gradientUnits="userSpaceOnUse"
+          x1={C}
+          y1={C - R_HUB}
+          x2={C}
+          y2={C + R_HUB}
+          className={styles.vertGold}
+        >
+          <stop offset="0%" stopColor="var(--gk-gold-deep)" />
+          <stop offset="38%" stopColor="var(--accent-bright)" />
+          <stop offset="50%" stopColor="var(--gk-gold-hi)" />
+          <stop offset="62%" stopColor="var(--accent-bright)" />
+          <stop offset="100%" stopColor="var(--gk-gold-deep)" />
+        </linearGradient>
+      </defs>
+
       {/* Static ring boundaries — always visible so the three rings read as
           distinct concentric bands. */}
       {R.map((r, i) => (
         <circle key={`bound-${i}`} cx={C} cy={C} r={r} className={styles.ringBound} />
       ))}
+
+      {/* Living skeleton: the full sector outline — every sector's radial edges
+          on all three rings + the ring arcs — pulses gold in a slow wave that
+          travels from the hub outward and fades, so sparks appear to run along
+          the whole grid and leave a trail. Only shown once a key is LOCKED *and*
+          the rings have finished springing into alignment (`showPulse`): drawn
+          earlier it would trail the still-rotating sector boundaries. Its spokes
+          rotate with each ring's angle so they sit exactly on the sector edges.
+          Purely decorative → aria-hidden; CSS gates it behind prefers-reduced-motion. */}
+      {showPulse && (
+        <>
+          <SectorPulse angles={angles} />
+          {/* Rim breathes in step with the outermost wave (delay = full travel,
+              matching the outer arc so they light/darken together). */}
+          <circle
+            cx={C}
+            cy={C}
+            r={R[RING_COUNT]}
+            className={styles.rimGlow}
+            style={{ animationDelay: `${PULSE_TRAVEL_MS}ms` }}
+            aria-hidden="true"
+          />
+        </>
+      )}
 
       {/* Inner rings */}
       {innerRings.map((ring) => {
@@ -180,14 +245,15 @@ export function GeneKeysWheel({
                 .filter(Boolean)
                 .join(' ')
               const [gx, gy] = polar(C, C, ring.rMid, s.angle)
-              // Bigram faces the center (radial), upright via the bottom-half flip.
-              const screen = angle + s.angle
-              const norm = ((screen % 360) + 360) % 360
-              const flip = norm > 90 && norm < 270 ? 180 : 0
+              // The bigram is drawn strictly RADIAL (lower line toward center,
+              // upper line outward) with NO 180° flip on the bottom half: a flip
+              // would swap which line points inward, reversing the hexagram's
+              // line order. The hexagram is always read from the center outward,
+              // so radial orientation must be preserved on every sector.
               return (
                 <g key={s.bits} className={cls}>
                   <path d={s.path} className={styles.lineFill} />
-                  <g transform={`translate(${gx} ${gy}) rotate(${s.angle + flip})`}>
+                  <g transform={`translate(${gx} ${gy}) rotate(${s.angle})`}>
                     <RadialBigram bigram={s.addedBigram} />
                   </g>
                 </g>
@@ -214,12 +280,16 @@ export function GeneKeysWheel({
             .filter(Boolean)
             .join(' ')
           // Number sits toward the outer edge, the added bigram toward the inner
-          // edge of the band — both radial & upright (bottom-half flip).
+          // edge of the band. The BIGRAM is drawn strictly radial (no flip) so
+          // its two lines keep their center→outward order — flipping it on the
+          // bottom half would reverse the hexagram's lines 5-6. The NUMBER is a
+          // standalone glyph, not part of the radial line-order, so it keeps the
+          // bottom-half flip that keeps it right-side up and readable.
           const [nx, ny] = polar(C, C, R[RING_COUNT] - 18, o.leaf.angle)
           const [bx, by] = polar(C, C, R[RING_COUNT - 1] + 18, o.leaf.angle)
           const screen = angles[RING_COUNT - 1] + o.leaf.angle
           const norm = ((screen % 360) + 360) % 360
-          const flip = norm > 90 && norm < 270 ? 180 : 0
+          const numFlip = norm > 90 && norm < 270 ? 180 : 0
           return (
             <g
               key={n}
@@ -240,10 +310,10 @@ export function GeneKeysWheel({
             >
               <path d={o.path} className={styles.keyFill} />
               <g style={{ pointerEvents: 'none' }}>
-                <g transform={`translate(${bx} ${by}) rotate(${o.leaf.angle + flip})`}>
+                <g transform={`translate(${bx} ${by}) rotate(${o.leaf.angle})`}>
                   <RadialBigram bigram={o.leaf.addedBigram} small />
                 </g>
-                <g transform={`translate(${nx} ${ny}) rotate(${o.leaf.angle + flip})`}>
+                <g transform={`translate(${nx} ${ny}) rotate(${o.leaf.angle + numFlip})`}>
                   <text className={styles.keyNum} textAnchor="middle" dominantBaseline="central">
                     {n}
                   </text>
@@ -304,6 +374,87 @@ export function GeneKeysWheel({
         </g>
       )}
     </svg>
+  )
+}
+
+// Ambient "living skeleton" pulse: the full nested sector grid — every sector's
+// radial edges on all three rings + the ring arcs — rendered as faint gold
+// strokes that brighten in a wave sweeping outward from the hub and fading, so
+// sparks seem to run along the whole outline and leave a trail.
+//
+// The spokes must land EXACTLY on the sector boundaries, so each band's spokes:
+//   (1) sit at that ring's real boundary angles — uniform 360/count steps (the
+//       reflected-binary split only permutes which key sits in each slot; the
+//       BOUNDARIES stay evenly spaced), and
+//   (2) rotate WITH that ring (`angles[idx]`), because the rings turn. When a key
+//       is locked the three angles converge, so ring-1's 4 spokes cap ring-2's
+//       16 which cap ring-3's 64 — the whole nested grid lines up.
+// Decorative; CSS gates it for reduced-motion.
+function SectorPulse({ angles }: { angles: number[] }) {
+  const origin = `${C}px ${C}px`
+  const bands = useMemo(() => {
+    const defs = [
+      { count: RINGS[0].sectors, r0: R[0], r1: R[1] },
+      { count: RINGS[1].sectors, r0: R[1], r1: R[2] },
+      { count: RINGS[2].sectors, r0: R[2], r1: R[3] },
+    ]
+    return defs.map((b) => {
+      // delay grows with the band's mid-radius → the wave rolls outward.
+      const mid = (b.r0 + b.r1) / 2
+      const delay = ((mid - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS
+      const spokes = Array.from({ length: b.count }, (_, i) => {
+        const a = (i / b.count) * 360 // boundary between adjacent sectors
+        const [x1, y1] = polar(C, C, b.r0, a)
+        const [x2, y2] = polar(C, C, b.r1, a)
+        return { x1, y1, x2, y2 }
+      })
+      return { ...b, delay, spokes }
+    })
+  }, [])
+
+  const arcs = useMemo(
+    () =>
+      R.map((r) => ({
+        r,
+        delay: ((r - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS,
+      })),
+    [],
+  )
+
+  return (
+    <g className={styles.sectorPulse} aria-hidden="true">
+      {/* Ring arcs (rotation-invariant): the pulse along the circle edges. */}
+      {arcs.map((a, i) => (
+        <circle
+          key={`arc-${i}`}
+          cx={C}
+          cy={C}
+          r={a.r}
+          className={styles.pulseArc}
+          style={{ animationDelay: `${a.delay.toFixed(0)}ms` }}
+        />
+      ))}
+      {/* Radial spokes, each band rotated by ITS ring's current angle so the
+          spokes track the moving sector boundaries exactly. */}
+      {bands.map((b, bi) => (
+        <g
+          key={`band-${bi}`}
+          style={{ transform: `rotate(${angles[bi]}deg)`, transformOrigin: origin }}
+        >
+          {b.spokes.map((s, i) => (
+            <line
+              key={i}
+              x1={s.x1}
+              y1={s.y1}
+              x2={s.x2}
+              y2={s.y2}
+              className={styles.pulseSpoke}
+              style={{ animationDelay: `${b.delay.toFixed(0)}ms` }}
+            />
+          ))}
+        </g>
+      ))}
+    </g>
   )
 }
 

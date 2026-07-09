@@ -14,8 +14,14 @@ Shadow / Gift / Siddhi spectrum plus characteristics (amino acid, codon ring,
 physiology, program partner, dilemma, victim pattern) and long-form prose for the
 three frequency bands. Each spectrum band also carries a **totem animal**
 (`fear`/`life`/`vision` on `GeneKeyMeta` = Тень/Дар/Сиддхи animal), rendered under
-the band value in the reading's spectrum triad. Hovering a key assembles its hexagram from the wheel;
-clicking opens the full reading beside the wheel.
+the band value in the reading's spectrum triad. Each cell's coloured top strip
+carries a slow **horizontal shimmer** (per-band colour + highlight). The three
+spectrum cells are **buttons**: clicking Тень/Дар/Сиддхи smooth-scrolls the
+reading to that band's `## Тень`/`## Дар`/`## Сиддхи` section. Those headings are
+tagged (`useGeneKeyBody`: `id="gk-band-<band>"` + `gk-band-head`) so they get a
+`scroll-margin-top` (stay clear of the sticky bar); their colour is the plain
+body-text colour (uniform, not the default gold). Hovering a key assembles its
+hexagram from the wheel; clicking opens the full reading beside the wheel.
 
 ## Content pipeline (build-time, bundled)
 
@@ -58,6 +64,12 @@ A binary I-Ching tree, three concentric rings around a Taiji (yin-yang) hub:
 - ring 2 (middle): 16 sectors = lines 1-4
 - ring 3 (outer): 64 sectors = full hexagram = the Gene Keys (numbers + added bigram)
 
+Bigrams are drawn strictly **radial** (lower line toward center, upper line
+outward) with **no 180° flip** on the wheel's bottom half — the hexagram is
+always read center→outward, so a flip (which would swap the two lines' radial
+positions and reverse the line order) is never applied to a bigram. Only the
+standalone key **number** keeps a bottom-half flip so it stays right-side up.
+
 Sector angles use a **reflected-binary split** (`sectorSpan`): the yang half keeps
 natural order, the yin half mirrors it. Consequences (all verified in
 `scripts/*.py`):
@@ -75,6 +87,24 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 
 - **Idle**: the three rings drift slowly at different speeds/directions (one rAF
   loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1.
+- The slow golden **sector-outline pulse** (`SectorPulse` → the full nested
+  sector grid: radial spokes on all 3 rings + ring arcs, CSS
+  `.pulseSpoke`/`.pulseArc`) renders only once a key is **locked** AND the rings
+  have **settled into alignment** (`showPulse` = `activeKey` set + the three ring
+  angles converged to <0.4°). Drawn while the rings are still springing into the
+  assembled column, its spokes would trail the moving boundaries. Each band's
+  spokes rotate by **that ring's** angle and sit at the real (uniform) sector
+  boundaries — so ring-1's 4 spokes cap ring-2's 16 cap ring-3's 64, matching the
+  fills exactly. It pulses in **two alternating waves**: one lights the whole
+  grid (rolling hub→OUTWARD via `animationDelay ∝ radius`, `PULSE_TRAVEL_MS`), the
+  next fully extinguishes it, and so on (the keyframe holds each state so it reads
+  as whole waves, not a travelling spark); the rim glow breathes in step. It
+  disappears the moment the reading closes / a new pick de-aligns the rings.
+  Gated behind `prefers-reduced-motion` (steady faint outline instead).
+- Both hexagrams carry a looping **vertical gold sheen** ("перелив золота",
+  bottom→up): the hub's center hexagram via `#gkVertGold` (`.vertGold`, panning
+  `gradientTransform` in Y); the reading header's via `Hexagram` `shimmer` (a
+  userSpaceOnUse `<linearGradient>` over the full height, panned in Y).
 - **Hover a key**: idle stops; inner rings ease so the whole nested block aligns
   (boundaries coincide); the key's chain lights up gold on all three rings; the
   focused key's hexagram materialises in the hub; four golden ÷4/÷16/÷64 grid

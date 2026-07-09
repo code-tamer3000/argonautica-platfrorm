@@ -257,21 +257,38 @@ Homework entries are `messages` in the personal room — no entry table. The dia
 **UNIQUE:** (`user_id`, `date`).
 
 ## notifications
-Bell feed. Domain data in Postgres (history, reload, future web-push). See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+Bell feed + native push source. Domain data in Postgres (history, reload, web-push). See [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
 | user_id | BIGINT | FK users, NOT NULL | recipient |
-| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'journal_missed'` \| `'cabin_granted'` |
-| room_id | BIGINT | FK rooms, NULL | NULL for `cabin_granted` |
+| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'cabin_granted'` \| `'admin'` (+ legacy `'journal_missed'`, no longer generated) |
+| room_id | BIGINT | FK rooms, NULL | NULL for `cabin_granted`/`admin` |
 | message_id | BIGINT | FK messages, NULL | NULL for system kinds |
 | actor_id | BIGINT | FK users, NULL | NULL for system kinds |
-| ref_date | DATE | NULL | `journal_missed` dedup key |
+| ref_date | DATE | NULL | legacy (`journal_missed` dedup key); unused now |
+| title | TEXT | NULL | `admin` broadcast heading |
+| body | TEXT | NULL | `admin` broadcast text (preview derived from it) |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | read_at | TIMESTAMPTZ | NULL | NULL = unread |
 
 **Indexes:** (`user_id`, `id`) feed; partial (`user_id`) `WHERE read_at IS NULL` unread count.
+
+## push_subscriptions
+Web Push (VAPID) browser/device subscriptions. One row per registered push endpoint. See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users ON DELETE CASCADE, NOT NULL, index | owner |
+| endpoint | TEXT | NOT NULL, UNIQUE | push-service URL (natural key) |
+| p256dh | TEXT | NOT NULL | subscription public key |
+| auth | TEXT | NOT NULL | subscription auth secret |
+| user_agent | TEXT | NULL | diagnostics |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+Dead endpoints (404/410 on send) are pruned automatically. Per-kind push prefs are **not** here — they live in `users.settings["notifications"]` (JSONB).
 
 ## Support (feedback / faq_items)
 See [SUPPORT.md](SUPPORT.md).
@@ -398,6 +415,7 @@ users --< cabin_entries                (JSONB data by kind)
 users --< journal_pardons / journal_credits
 journal_programs --< journal_sections  (ON DELETE CASCADE; versioned diary structure)
 users --< notifications                (actor/message/room nullable)
+users --< push_subscriptions           (ON DELETE CASCADE; one per device, unique endpoint)
 users --< feedback ;  faq_items        (standalone)
 kb_items --< kb_item_media >-- media_assets
 kb_items --< kb_comments >-- users

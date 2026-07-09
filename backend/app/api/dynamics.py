@@ -559,13 +559,6 @@ async def credit_day(
         await session.delete(pardon)
         await session.flush()
 
-    # День больше не пропущен — гасим уведомление «день не закрыт» (и бейдж/тост
-    # у пользователя в реальном времени). Локальный импорт: сервис уведомлений
-    # лениво тянет хелперы этого модуля, module-level импорт создал бы цикл.
-    from app.services.notifications import clear_journal_missed_notification
-
-    await clear_journal_missed_notification(session, user_id, day)
-
 
 async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
     """Снять ранее выданный админом зачёт дня (идемпотентно)."""

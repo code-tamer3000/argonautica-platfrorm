@@ -68,6 +68,21 @@ class Settings(BaseSettings):
     rate_limit_send_per_minute: int = 60  # на юзера — отправка сообщений
     rate_limit_upload_per_minute: int = 30  # на юзера — запросы presigned-загрузки
 
+    # --- Web Push (VAPID) ---
+    # Нативные push-уведомления (браузер/установленная PWA) через стандарт Web Push.
+    # Пара ключей VAPID — из окружения (сгенерировать один раз, см. docs/NOTIFICATIONS.md).
+    # Публичный ключ отдаём фронту (GET /api/push/vapid-key); приватный — секрет в .env.
+    # Пусто → push-слой выключен (endpoint'ы отвечают 503, генерация push молча пропускается),
+    # чтобы dev/тесты работали без ключей.
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    # `sub` в JWT для push-сервисов: mailto:/https:-контакт админа платформы.
+    vapid_subject: str = "mailto:admin@argonautica.app"
+
+    @property
+    def push_enabled(self) -> bool:
+        return bool(self.vapid_public_key and self.vapid_private_key)
+
     @model_validator(mode="after")
     def _default_public_endpoint(self) -> "Settings":
         # Браузеру нужен публичный адрес MinIO (напр. localhost:9000), а не

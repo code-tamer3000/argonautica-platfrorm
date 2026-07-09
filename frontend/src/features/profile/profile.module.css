@@ -195,6 +195,90 @@
   box-shadow: inset 0 0 0 1px var(--divider-gold-strong);
 }
 
+/* ── Уведомления: строки с тумблерами ── */
+.notifRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.notifRowText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.notifRowLabel {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+
+.notifRowHint {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.notifNote {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.notifSubGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--divider);
+}
+
+/* Тумблер (switch) на чистом CSS поверх скрытого checkbox. */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 42px;
+  height: 24px;
+  cursor: pointer;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switchTrack {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-deep);
+  border: 1px solid var(--divider);
+  border-radius: 999px;
+  transition: background 160ms, border-color 160ms;
+}
+.switchThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform 160ms, background 160ms;
+}
+.switch input:checked + .switchTrack {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch input:checked + .switchTrack .switchThumb {
+  transform: translateX(18px);
+  background: var(--bg-deep);
+}
+.switch input:disabled + .switchTrack {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ── Карточка Динамики ── */
 .dynCard {
   background: var(--bg-surface);
