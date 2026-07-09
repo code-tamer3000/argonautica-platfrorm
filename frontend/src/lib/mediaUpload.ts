@@ -10,6 +10,18 @@ function kindFor(type: string): MediaKind {
 }
 
 /**
+ * The MIME type to upload with. Browsers report `.md` inconsistently (empty or
+ * `application/octet-stream` on many OSes), which the backend allow-list rejects,
+ * so fall back to `text/markdown` by extension. The KB chapter reader relies on
+ * `.md` files being uploadable.
+ */
+function contentTypeFor(file: File): string {
+  const isMdType = /^text\/(x-)?markdown$/i.test(file.type)
+  if (!isMdType && /\.(md|markdown)$/i.test(file.name)) return 'text/markdown'
+  return file.type
+}
+
+/**
  * Снять размеры изображения/видео до загрузки. Размеры уедут в media_assets и
  * позволят плееру зарезервировать коробку с верным aspect-ratio ещё до подписи GET
  * (без чёрного прямоугольника и скачка рамок при рендере видео).
@@ -160,14 +172,16 @@ export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
 ): Promise<MediaAssetOut> {
-  const kind = kindFor(file.type)
+  const contentType = contentTypeFor(file)
+  const kind = kindFor(contentType)
   const ticket = await http.post<UploadTicket>('/api/media/uploads', {
-    content_type: file.type,
+    content_type: contentType,
     size: file.size,
     kind,
   })
-  // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом.
-  await putWithProgress(ticket.upload_url, file, file.type, onProgress)
+  // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом. ContentType PUT'а
+  // должен совпадать с подписанным (иначе MinIO вернёт SignatureDoesNotMatch).
+  await putWithProgress(ticket.upload_url, file, contentType, onProgress)
   const dims = await mediaDims(file)
   // Видео: снимаем и заливаем постер-кадр (превью для ленты). Не блокирует загрузку —
   // если не собрался, thumb_storage_key останется пустым и видео будет без постера.
