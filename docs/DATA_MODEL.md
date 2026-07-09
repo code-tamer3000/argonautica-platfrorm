@@ -167,6 +167,7 @@ See [KB.md](KB.md). **kb_categories** is out-of-MVP (structure only).
 | category_id | BIGINT | FK kb_categories, NULL | NULL = flat list (MVP) |
 | title | TEXT | NOT NULL | |
 | body | TEXT | NULL | markdown |
+| kind | TEXT | NOT NULL, default 'article' | 'article' or 'book' (chapters = `##` in body) |
 | published | BOOLEAN | NOT NULL, default false | draft / published |
 | created_by | BIGINT | FK users | admin |
 | sort_order | INT | NOT NULL, default 0 | |

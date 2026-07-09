@@ -36,8 +36,8 @@ import styles from './appshell.module.css'
 const GeneKeysScreen = lazy(() =>
   import('../genkeys/GeneKeysScreen').then((m) => ({ default: m.GeneKeysScreen })),
 )
-const GeneKeysBook = lazy(() =>
-  import('../genkeys/book/GeneKeysBook').then((m) => ({ default: m.GeneKeysBook })),
+const KbBookReader = lazy(() =>
+  import('../kb/book/KbBookReader').then((m) => ({ default: m.KbBookReader })),
 )
 
 export function AppShell() {
@@ -216,6 +216,14 @@ export function AppShell() {
             <Route path="/" element={<ChatLayout key="rubka" />} />
             <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
+            <Route
+              path="/kb/book/:itemId"
+              element={
+                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
+                  <KbBookReader />
+                </Suspense>
+              }
+            />
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/tasks" element={<TasksList />} />
             <Route path="/tasks/:taskId" element={<TaskDetail />} />
@@ -225,14 +233,6 @@ export function AppShell() {
               element={
                 <Suspense fallback={<div className="center grow"><Spinner /></div>}>
                   <GeneKeysScreen />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/genkeys/book/:chapter"
-              element={
-                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
-                  <GeneKeysBook />
                 </Suspense>
               }
             />

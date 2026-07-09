@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { Hexagram } from './Hexagram'
 import { useGeneKeyBody } from './useGeneKeyBody'
 import { getKey } from './wheel'
+import { useKbBookByTitle } from '../../api/kb'
 import { Spinner } from '../../components/Spinner'
 import styles from './genkeys.module.css'
 
@@ -13,6 +14,9 @@ interface Props {
 export function GeneKeyReading({ number, onClose }: Props) {
   const key = getKey(number)
   const { html, loading, error } = useGeneKeyBody(number)
+  // Deep-link into the «64 пути» book material (if it exists in the KB): chapter
+  // N contemplates key N, so we jump to that chapter via ?ch=N.
+  const { book } = useKbBookByTitle('64 пути')
 
   if (!key) return null
 
@@ -34,6 +38,14 @@ export function GeneKeyReading({ number, onClose }: Props) {
       {/* Everything below scrolls together with the article. */}
       <div className={styles.readingScroll}>
         <h1 className={styles.readingName}>{key.name}</h1>
+
+        {/* Deep-link into the «64 пути» book — up top so it's the first offer,
+            not buried under the whole reading. Chapter N contemplates key N. */}
+        {book && (
+          <Link to={`/kb/book/${book.id}?ch=${number}`} className={styles.bookLink}>
+            📖 Читать главу в книге «64 пути» →
+          </Link>
+        )}
 
         <div className={styles.spectrum}>
           <div className={`${styles.spectrumCell} ${styles.cellShadow}`}>
@@ -75,11 +87,6 @@ export function GeneKeyReading({ number, onClose }: Props) {
             dangerouslySetInnerHTML={{ __html: html }}
           />
         )}
-
-        {/* Deep-link into the bundled book: chapter N contemplates key N. */}
-        <Link to={`/genkeys/book/${number}`} className={styles.bookLink}>
-          Читать в книге «64 пути» →
-        </Link>
       </div>
     </aside>
   )

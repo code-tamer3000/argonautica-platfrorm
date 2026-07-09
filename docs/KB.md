@@ -20,6 +20,23 @@ The second half of the product: the author's materials (markdown + files/video),
 
 - `assert_media_access` grants any participant a presigned-GET to an asset attached to a **published** item (through the normal `GET /api/media/{id}`). Unlinking or unpublishing closes access. See [FILES.md](FILES.md).
 
+## Book materials (`kind = 'book'`)
+
+- `kb_items.kind` is `'article'` (default) or `'book'`. It's set at create and
+  editable via PATCH (whitelisted like other fields); the backend stays otherwise
+  identical — a book is a normal item whose markdown `body` holds the whole book.
+- The book's **chapters are the `##` headings** in `body`. Nothing chapter-related
+  is stored server-side: the frontend `parseBook()` splits `body` on `##` at render
+  time (leading `# …` = book title, text before the first `##` = a preface chapter).
+- Reader: `GET /kb/items/{id}` unchanged; the frontend routes `kind === 'book'`
+  items to **`/kb/book/{id}`** (`KbBookReader`) — a full-screen TOC-rail + reading
+  column with IntersectionObserver chapter tracking, `?ch=N` / `#slug` deep-links.
+  `/kb/{id}` redirects to the reader for books; the flat `KbViewer` is articles only.
+- Authoring: the admin KB form has a **type** selector (Статья / Книга). To import
+  an existing HTML book, `frontend/scripts/book_html_to_md.py` converts a
+  FictionBook-style export to one markdown file (one `##` per chapter) to paste in.
+- Visibility, comments, media, publish/draft rules are exactly as for articles.
+
 ## Comments
 
 - Flat comments under an item: `GET/POST /items/{id}/comments`, `DELETE /comments/{id}`.
