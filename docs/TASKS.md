@@ -21,6 +21,10 @@ Author assigns work; participants submit; admin reviews. A task is either **comm
 
 - Admin review changes assignment status; a return writes a `task_comments` row (feedback) on the latest submission. Comments are soft-deleted.
 
+## Attention badge
+
+- `attention_count` (in `list_tasks`, feeds the «Задачи» nav badge) = user's assignments not yet `accepted` (`assigned`/`submitted`/`returned`, common & individual) **plus** untouched common tasks (no assignment row yet). Accepting a task decrements it; when everything is accepted it is 0. A freshly assigned individual task increments it immediately. See `attention_count` in `services/tasks.py`.
+
 ## Deadlines
 
 - `tasks.deadline_at` is synced into `calendar_events` (`services/tasks.py`) so deadlines show on the calendar. See [CALENDAR.md](CALENDAR.md).

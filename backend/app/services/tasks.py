@@ -223,15 +223,17 @@ async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]
 
 
 async def attention_count(session: AsyncSession, user: User) -> int:
-    """Сколько задач требуют внимания юзера (в духе бейджа уведомлений).
+    """Сколько задач требуют внимания юзера (бейдж раздела «Задачи»).
 
-    Считаем: (1) возвращённые сдачи — назначения юзера со статусом 'returned';
-    (2) новые общие задачи, с которыми юзер ещё не взаимодействовал (нет строки
-    назначения). Индивидуальные «свежие» назначения при создании имеют статус
-    'assigned' и учитываются как «есть что делать», но чтобы не задваивать со
-    списком, здесь их не считаем — только явные возвраты и непочатые общие задачи.
+    Считаем задачи, которые ещё ждут действия юзача и НЕ приняты:
+      (1) назначения юзера (common и individual) в статусах, отличных от
+          'accepted' — т.е. 'assigned' / 'submitted' / 'returned'. Приём задачи
+          ('accepted') уменьшает счётчик; когда всё принято — 0. Выданное
+          индивидуальное задание ('assigned') сразу учитывается;
+      (2) непочатые общие задачи, у которых строки назначения ещё нет (ленивое
+          создание при первой сдаче) — участнику всё равно есть что сдать.
     """
-    returned = (
+    active_assignments = (
         await session.scalar(
             select(func.count())
             .select_from(TaskAssignment)
@@ -239,7 +241,7 @@ async def attention_count(session: AsyncSession, user: User) -> int:
             .where(
                 Task.deleted_at.is_(None),
                 TaskAssignment.user_id == user.id,
-                TaskAssignment.status == "returned",
+                TaskAssignment.status != "accepted",
             )
         )
     ) or 0
@@ -259,4 +261,4 @@ async def attention_count(session: AsyncSession, user: User) -> int:
         )
     ) or 0
 
-    return returned + new_common
+    return active_assignments + new_common

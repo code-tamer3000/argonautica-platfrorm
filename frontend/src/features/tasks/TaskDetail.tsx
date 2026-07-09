@@ -115,7 +115,7 @@ export function TaskDetail() {
               {myTrack.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
             </div>
           )}
-          <TaskComposer taskId={id} />
+          <TaskComposer taskId={id} status={myTrack?.status} />
         </section>
       )}
 
@@ -196,7 +196,11 @@ function TrackCard({
         <SubmissionBlock key={sub.id} sub={sub} name={name} />
       ))}
 
-      {isAdmin && (
+      {isAdmin && track.status === 'accepted' && (
+        <div className={styles.emptyNote}>Задача принята.</div>
+      )}
+
+      {isAdmin && track.status !== 'accepted' && (
         <>
           <textarea
             className={styles.composerInput}

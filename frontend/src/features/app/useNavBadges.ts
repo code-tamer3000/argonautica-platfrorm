@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useRooms } from '../../api/rooms'
 import { useTasks } from '../../api/tasks'
+import { useAuth } from '../auth/AuthContext'
 
 export interface NavBadges {
   chats: number // Σ непрочитанных по личкам и группам
@@ -16,6 +17,8 @@ export interface NavBadges {
 export function useNavBadges(): NavBadges {
   const { data: rooms } = useRooms()
   const { data: tasks } = useTasks()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   return useMemo(() => {
     let chats = 0
     let channels = 0
@@ -25,6 +28,8 @@ export function useNavBadges(): NavBadges {
       else if (r.type === 'dm' || r.type === 'group') chats += r.unread_count
       else if (r.type === 'channel') channels += r.unread_count
     }
-    return { chats, channels, news, rubka: chats + channels, tasks: tasks?.attention_count ?? 0 }
-  }, [rooms, tasks])
+    // Админ задачи не выполняет — бейдж «Задачи» для него всегда пуст.
+    const taskBadge = isAdmin ? 0 : (tasks?.attention_count ?? 0)
+    return { chats, channels, news, rubka: chats + channels, tasks: taskBadge }
+  }, [rooms, tasks, isAdmin])
 }

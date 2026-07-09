@@ -362,6 +362,51 @@ async def test_progress_and_attention(
     assert listed3["attention_count"] >= 1
 
 
+async def test_attention_count_tracks_assignments(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Бейдж = число незакрытых назначений юзера; приём уменьшает, выдача — растит."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    # БД тестов общая (common-задачи копятся) — меряем прирост от базового.
+    base = (await client.get("/api/tasks", headers=user_h)).json()["attention_count"]
+
+    # Выдача индивидуальной задачи ('assigned') сразу учитывается.
+    indiv = await _create_task(
+        client, admin_h, type="individual", title="A", assignee_ids=[user.id]
+    )
+    after_assign = (await client.get("/api/tasks", headers=user_h)).json()[
+        "attention_count"
+    ]
+    assert after_assign == base + 1
+
+    # Сдача ('submitted') не спадает — задача всё ещё «в работе» до приёма.
+    await client.post(
+        f"/api/tasks/{indiv['id']}/submissions", headers=user_h, json={"body": "x"}
+    )
+    after_submit = (await client.get("/api/tasks", headers=user_h)).json()[
+        "attention_count"
+    ]
+    assert after_submit == base + 1
+
+    # Приём ('accepted') → счётчик уменьшается обратно к базовому.
+    tracks = (
+        await client.get(f"/api/tasks/{indiv['id']}/submissions", headers=admin_h)
+    ).json()
+    await client.post(
+        f"/api/tasks/assignments/{tracks[0]['assignment_id']}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    after_accept = (await client.get("/api/tasks", headers=user_h)).json()[
+        "attention_count"
+    ]
+    assert after_accept == base
+
+
 # --- календарь: авто-событие дедлайна с адресной видимостью ------------------
 
 

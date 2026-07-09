@@ -1,6 +1,7 @@
 .page { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8); overflow-y: auto; }
 .pageHeader { display: flex; align-items: center; justify-content: space-between; }
 .pageHeader h1 { font-family: var(--font-t1); color: var(--text-primary); }
+.sectionTitle { font-family: var(--font-t2); font-size: var(--text-h3); color: var(--text-primary); margin: var(--space-4) 0 var(--space-2); }
 .list { display: flex; flex-direction: column; gap: var(--space-3); }
 .listItem { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
 .listItemMain { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
