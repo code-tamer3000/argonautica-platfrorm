@@ -8,6 +8,11 @@
   --gk-gold: var(--color-latun);
   --gk-stone: var(--color-frame-deep);
 
+  /* Gold sheen stops for the flowing-gold ("перелив золота") hexagram fill and
+     the wheel's rim pulse — deep → base → highlight, all from the palette. */
+  --gk-gold-deep: var(--color-latun);
+  --gk-gold-hi: var(--color-zoloto-yar);
+
   display: flex;
   height: 100%;
   min-height: 0;
@@ -63,6 +68,66 @@
   stroke: var(--divider-gold);
   stroke-width: 1;
   opacity: 0.5;
+}
+
+/* --- Living rim: golden pulses sweeping center → outward ----------------- */
+/* Thin bright rings born near the hub, expanding to the outer rim and fading —
+   sparks that run outward and leave a trail. Three staggered waves loop so the
+   motion never fully stops. Decorative only; killed for reduced-motion. */
+@keyframes gkRimPulse {
+  0% {
+    transform: scale(0.2);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes gkRimGlow {
+  0%,
+  100% {
+    opacity: 0.25;
+    stroke-width: 1.5;
+  }
+  50% {
+    opacity: 0.6;
+    stroke-width: 2.5;
+  }
+}
+.rimPulse {
+  pointer-events: none;
+}
+.pulseWave {
+  fill: none;
+  stroke: var(--gk-gold-hi);
+  stroke-width: 1.5;
+  transform-box: view-box;
+  transform-origin: center;
+  /* A soft trailing halo so each spark-ring smears into a comet-like wake. */
+  filter: drop-shadow(0 0 4px var(--accent));
+  animation: gkRimPulse 5.7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.rimGlow {
+  pointer-events: none;
+  fill: none;
+  stroke: var(--accent);
+  animation: gkRimGlow 5.7s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulseWave,
+  .rimGlow {
+    animation: none;
+  }
+  .pulseWave {
+    opacity: 0;
+  }
 }
 
 /* --- Outer ring: 64 Gene Keys -------------------------------------------- */
@@ -673,7 +738,12 @@
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-2);
 }
+/* Each cell is a button that scrolls the reading to that band's section. */
 .spectrumCell {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  background: var(--bg-surface);
   border: 1px solid var(--divider);
   border-radius: var(--radius-btn);
   padding: var(--space-2) var(--space-3);
@@ -681,6 +751,19 @@
   flex-direction: column;
   gap: 2px;
   border-top-width: 3px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 120ms ease;
+}
+.spectrumCell:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+  border-color: var(--divider-gold-strong);
+}
+.spectrumCell:active {
+  transform: translateY(1px);
+}
+.spectrumCell:focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 .cellShadow {
   border-top-color: var(--color-krov);
