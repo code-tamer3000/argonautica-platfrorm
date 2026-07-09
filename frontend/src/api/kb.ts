@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { KbCommentOut, KbItemOut } from '../lib/types'
+import type { KbCommentOut, KbItemOut, KbKind } from '../lib/types'
 
 export const kbItemsKey = ['kb', 'items'] as const
 export const kbItemKey = (id: number) => ['kb', 'items', id] as const
@@ -21,10 +21,22 @@ export function useKbItem(id: number) {
   })
 }
 
+/** Find a published book material whose title contains `titleMatch` (case-insensitive).
+ *  Used to deep-link from a Gene Key reading into the bundled «64 пути» book. */
+export function useKbBookByTitle(titleMatch: string) {
+  const { data, isLoading } = useKbItems()
+  const needle = titleMatch.toLowerCase()
+  const book = (data ?? []).find(
+    (i) => i.kind === 'book' && i.title.toLowerCase().includes(needle),
+  )
+  return { book, isLoading }
+}
+
 // Admin mutations (used in Phase 5 admin panel)
 export interface KbItemCreateBody {
   title: string
   body?: string | null
+  kind?: KbKind
   published?: boolean
   media_asset_ids?: number[]
 }
@@ -32,6 +44,7 @@ export interface KbItemCreateBody {
 export interface KbItemUpdateBody {
   title?: string
   body?: string | null
+  kind?: KbKind
   published?: boolean
   sort_order?: number
 }

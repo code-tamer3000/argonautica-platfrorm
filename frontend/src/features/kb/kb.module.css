@@ -114,6 +114,19 @@
   white-space: nowrap;
 }
 
+.badgeBook {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider-gold-strong);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-bright);
+  white-space: nowrap;
+}
+
 /* Viewer */
 
 .viewer {

@@ -5,8 +5,12 @@
 материалу по `media_asset_id`.
 """
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# Тип материала: обычная статья или книга-читалка (главы из markdown).
+KbKind = Literal["article", "book"]
 
 
 class KbItemCreate(BaseModel):
@@ -14,6 +18,7 @@ class KbItemCreate(BaseModel):
 
     title: str
     body: str | None = None  # markdown
+    kind: KbKind = "article"
     published: bool = False
     media_asset_ids: list[int] = []
 
@@ -25,6 +30,7 @@ class KbItemUpdate(BaseModel):
 
     title: str | None = None
     body: str | None = None
+    kind: KbKind | None = None
     published: bool | None = None
     sort_order: int | None = None
 
@@ -36,6 +42,7 @@ class KbItemOut(BaseModel):
     category_id: int | None
     title: str
     body: str | None
+    kind: KbKind
     published: bool
     created_by: int
     sort_order: int

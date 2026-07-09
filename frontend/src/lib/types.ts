@@ -145,11 +145,14 @@ export interface ServerMetricsOut {
   db_pool: { size: number | null; checked_out: number | null }
 }
 
+export type KbKind = 'article' | 'book'
+
 export interface KbItemOut {
   id: number
   category_id: number | null
   title: string
   body: string | null
+  kind: KbKind
   published: boolean
   created_by: number
   sort_order: number

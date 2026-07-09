@@ -38,6 +38,9 @@ class KbItem(Base):
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str | None] = mapped_column(Text)  # markdown
+    # Тип материала: 'article' — обычный текст, 'book' — читалка (главы парсятся
+    # из markdown-заголовков body на клиенте). Расширяемо без новой таблицы.
+    kind: Mapped[str] = mapped_column(Text, nullable=False, server_default="article")
     published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )

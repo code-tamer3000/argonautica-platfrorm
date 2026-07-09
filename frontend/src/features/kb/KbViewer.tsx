@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
 import { useKbItem } from '../../api/kb'
 import { Attachment } from '../chat/Attachment'
 import { KbComments } from './KbComments'
@@ -17,6 +17,8 @@ export function KbViewer() {
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
   if (!item) return <div className="center grow muted">Материал не найден</div>
+  // Books render in the dedicated reader (chapters + TOC), not the flat viewer.
+  if (item.kind === 'book') return <Navigate to={`/kb/book/${item.id}`} replace />
 
   const bodyHtml = item.body
     ? DOMPurify.sanitize(marked.parse(item.body) as string)

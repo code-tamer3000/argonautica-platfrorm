@@ -889,12 +889,12 @@
   border-color: var(--divider-gold-strong);
 }
 
-/* End-of-reading link into the book (appended in GeneKeyReading). */
+/* Link into the «64 пути» book — sits near the top of a key reading. */
 .bookLink {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-8);
+  margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--divider-gold);
   border-radius: var(--radius-btn);
