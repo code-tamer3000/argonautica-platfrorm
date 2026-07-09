@@ -163,6 +163,30 @@ export function GeneKeysWheel({
         <circle key={`bound-${i}`} cx={C} cy={C} r={r} className={styles.ringBound} />
       ))}
 
+      {/* Living rim: slow golden pulses expand from the hub outward, each a thin
+          bright ring that grows and fades — "sparks running out, leaving a
+          trail". Three staggered waves keep it continuous. The outer rim itself
+          also breathes a soft glow. Purely decorative → aria-hidden, and CSS
+          gates it behind prefers-reduced-motion. */}
+      <g className={styles.rimPulse} aria-hidden="true" style={{ transformOrigin: origin }}>
+        <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.pulseWave} />
+        <circle
+          cx={C}
+          cy={C}
+          r={R[RING_COUNT]}
+          className={styles.pulseWave}
+          style={{ animationDelay: '1.9s' }}
+        />
+        <circle
+          cx={C}
+          cy={C}
+          r={R[RING_COUNT]}
+          className={styles.pulseWave}
+          style={{ animationDelay: '3.8s' }}
+        />
+      </g>
+      <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.rimGlow} aria-hidden="true" />
+
       {/* Inner rings */}
       {innerRings.map((ring) => {
         const idx = ring.level - 1
@@ -180,14 +204,15 @@ export function GeneKeysWheel({
                 .filter(Boolean)
                 .join(' ')
               const [gx, gy] = polar(C, C, ring.rMid, s.angle)
-              // Bigram faces the center (radial), upright via the bottom-half flip.
-              const screen = angle + s.angle
-              const norm = ((screen % 360) + 360) % 360
-              const flip = norm > 90 && norm < 270 ? 180 : 0
+              // The bigram is drawn strictly RADIAL (lower line toward center,
+              // upper line outward) with NO 180° flip on the bottom half: a flip
+              // would swap which line points inward, reversing the hexagram's
+              // line order. The hexagram is always read from the center outward,
+              // so radial orientation must be preserved on every sector.
               return (
                 <g key={s.bits} className={cls}>
                   <path d={s.path} className={styles.lineFill} />
-                  <g transform={`translate(${gx} ${gy}) rotate(${s.angle + flip})`}>
+                  <g transform={`translate(${gx} ${gy}) rotate(${s.angle})`}>
                     <RadialBigram bigram={s.addedBigram} />
                   </g>
                 </g>
@@ -214,12 +239,16 @@ export function GeneKeysWheel({
             .filter(Boolean)
             .join(' ')
           // Number sits toward the outer edge, the added bigram toward the inner
-          // edge of the band — both radial & upright (bottom-half flip).
+          // edge of the band. The BIGRAM is drawn strictly radial (no flip) so
+          // its two lines keep their center→outward order — flipping it on the
+          // bottom half would reverse the hexagram's lines 5-6. The NUMBER is a
+          // standalone glyph, not part of the radial line-order, so it keeps the
+          // bottom-half flip that keeps it right-side up and readable.
           const [nx, ny] = polar(C, C, R[RING_COUNT] - 18, o.leaf.angle)
           const [bx, by] = polar(C, C, R[RING_COUNT - 1] + 18, o.leaf.angle)
           const screen = angles[RING_COUNT - 1] + o.leaf.angle
           const norm = ((screen % 360) + 360) % 360
-          const flip = norm > 90 && norm < 270 ? 180 : 0
+          const numFlip = norm > 90 && norm < 270 ? 180 : 0
           return (
             <g
               key={n}
@@ -240,10 +269,10 @@ export function GeneKeysWheel({
             >
               <path d={o.path} className={styles.keyFill} />
               <g style={{ pointerEvents: 'none' }}>
-                <g transform={`translate(${bx} ${by}) rotate(${o.leaf.angle + flip})`}>
+                <g transform={`translate(${bx} ${by}) rotate(${o.leaf.angle})`}>
                   <RadialBigram bigram={o.leaf.addedBigram} small />
                 </g>
-                <g transform={`translate(${nx} ${ny}) rotate(${o.leaf.angle + flip})`}>
+                <g transform={`translate(${nx} ${ny}) rotate(${o.leaf.angle + numFlip})`}>
                   <text className={styles.keyNum} textAnchor="middle" dominantBaseline="central">
                     {n}
                   </text>

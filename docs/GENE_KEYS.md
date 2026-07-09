@@ -14,7 +14,10 @@ Shadow / Gift / Siddhi spectrum plus characteristics (amino acid, codon ring,
 physiology, program partner, dilemma, victim pattern) and long-form prose for the
 three frequency bands. Each spectrum band also carries a **totem animal**
 (`fear`/`life`/`vision` on `GeneKeyMeta` = Тень/Дар/Сиддхи animal), rendered under
-the band value in the reading's spectrum triad. Hovering a key assembles its hexagram from the wheel;
+the band value in the reading's spectrum triad. The three spectrum cells are
+**buttons**: clicking Тень/Дар/Сиддхи smooth-scrolls the reading to that band's
+`## Тень`/`## Дар`/`## Сиддхи` section (matched by heading text in the rendered
+body). Hovering a key assembles its hexagram from the wheel;
 clicking opens the full reading beside the wheel.
 
 ## Content pipeline (build-time, bundled)
@@ -58,6 +61,12 @@ A binary I-Ching tree, three concentric rings around a Taiji (yin-yang) hub:
 - ring 2 (middle): 16 sectors = lines 1-4
 - ring 3 (outer): 64 sectors = full hexagram = the Gene Keys (numbers + added bigram)
 
+Bigrams are drawn strictly **radial** (lower line toward center, upper line
+outward) with **no 180° flip** on the wheel's bottom half — the hexagram is
+always read center→outward, so a flip (which would swap the two lines' radial
+positions and reverse the line order) is never applied to a bigram. Only the
+standalone key **number** keeps a bottom-half flip so it stays right-side up.
+
 Sector angles use a **reflected-binary split** (`sectorSpan`): the yang half keeps
 natural order, the yin half mirrors it. Consequences (all verified in
 `scripts/*.py`):
@@ -74,7 +83,12 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 ## Interaction (`useRings.ts`, `GeneKeysScreen.tsx`)
 
 - **Idle**: the three rings drift slowly at different speeds/directions (one rAF
-  loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1.
+  loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1. A
+  slow golden **rim pulse** (CSS: `.pulseWave`/`.rimGlow`, three staggered waves)
+  expands from the hub outward and fades — sparks running out, leaving a trail;
+  gated behind `prefers-reduced-motion`.
+- The reading panel's header hexagram carries a looping **gold sheen** (`Hexagram`
+  `shimmer` prop → animated `<linearGradient>`, the "перелив золота" effect).
 - **Hover a key**: idle stops; inner rings ease so the whole nested block aligns
   (boundaries coincide); the key's chain lights up gold on all three rings; the
   focused key's hexagram materialises in the hub; four golden ÷4/÷16/÷64 grid
