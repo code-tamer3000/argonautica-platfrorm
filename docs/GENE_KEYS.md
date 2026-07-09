@@ -84,11 +84,15 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 
 - **Idle**: the three rings drift slowly at different speeds/directions (one rAF
   loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1. A
-  slow golden **rim pulse** (CSS: `.pulseWave`/`.rimGlow`, three staggered waves)
-  expands from the hub outward and fades — sparks running out, leaving a trail;
-  gated behind `prefers-reduced-motion`.
-- The reading panel's header hexagram carries a looping **gold sheen** (`Hexagram`
-  `shimmer` prop → animated `<linearGradient>`, the "перелив золота" effect).
+  slow golden **sector-outline pulse** (`SectorPulse` → the full nested sector
+  grid: radial spokes on all 3 rings + ring arcs, CSS `.pulseSpoke`/`.pulseArc`)
+  brightens in a wave that rolls from the hub OUTWARD and fades — sparks running
+  along the whole outline, leaving a trail. Per-element `animationDelay` is set
+  by radius (`PULSE_TRAVEL_MS`). Gated behind `prefers-reduced-motion`.
+- Both hexagrams carry a looping **gold sheen** ("перелив золота"): the reading
+  header's is horizontal (`Hexagram` `shimmer` prop → animated `<linearGradient>`);
+  the hub's center hexagram is **vertical, bottom→up** (`#gkVertGold` gradient in
+  the wheel SVG, `.vertGold` animation panning `gradientTransform` in Y).
 - **Hover a key**: idle stops; inner rings ease so the whole nested block aligns
   (boundaries coincide); the key's chain lights up gold on all three rings; the
   focused key's hexagram materialises in the hub; four golden ÷4/÷16/÷64 grid

@@ -70,25 +70,54 @@
   opacity: 0.5;
 }
 
-/* --- Living rim: golden pulses sweeping center → outward ----------------- */
-/* Thin bright rings born near the hub, expanding to the outer rim and fading —
-   sparks that run outward and leave a trail. Three staggered waves loop so the
-   motion never fully stops. Decorative only; killed for reduced-motion. */
-@keyframes gkRimPulse {
+/* --- Living skeleton: pulse along every sector outline, center → outward -- */
+/* The whole nested sector grid (radial spokes on 3 rings + ring arcs) sits at a
+   faint gold baseline; each element brightens briefly then eases back, and its
+   animation-delay grows with radius (set inline in JS) so the bright moment
+   rolls OUTWARD like a spark running along the outline, leaving a fading trail.
+   One long, gently-eased period keeps it smooth and unhurried. Decorative only;
+   killed for reduced-motion. */
+@keyframes gkSparkRun {
   0% {
-    transform: scale(0.2);
-    opacity: 0;
+    opacity: 0.12;
   }
-  12% {
-    opacity: 0.9;
+  /* the spark passes: a soft brighten-and-release, not a hard blink */
+  8% {
+    opacity: 0.85;
   }
-  70% {
-    opacity: 0.35;
+  26% {
+    opacity: 0.3;
   }
+  /* long quiet tail before the next wave arrives */
   100% {
-    transform: scale(1);
-    opacity: 0;
+    opacity: 0.12;
   }
+}
+.sectorPulse {
+  pointer-events: none;
+}
+.pulseSpoke,
+.pulseArc {
+  fill: none;
+  stroke: var(--gk-gold-hi);
+  /* Soft halo so each lit segment smears into a comet-like wake. */
+  filter: drop-shadow(0 0 3px var(--accent));
+  /* The wave period; the per-element delay (inline) offsets each by radius.
+     Long + ease-in-out → a slow, gliding sweep rather than a strobe. */
+  animation: gkSparkRun 6.5s ease-in-out infinite;
+  opacity: 0.12;
+}
+.pulseSpoke {
+  stroke-width: 1;
+}
+.pulseArc {
+  stroke-width: 1.25;
+}
+.rimGlow {
+  pointer-events: none;
+  fill: none;
+  stroke: var(--accent);
+  animation: gkRimGlow 6.5s ease-in-out infinite;
 }
 @keyframes gkRimGlow {
   0%,
@@ -97,36 +126,19 @@
     stroke-width: 1.5;
   }
   50% {
-    opacity: 0.6;
+    opacity: 0.55;
     stroke-width: 2.5;
   }
 }
-.rimPulse {
-  pointer-events: none;
-}
-.pulseWave {
-  fill: none;
-  stroke: var(--gk-gold-hi);
-  stroke-width: 1.5;
-  transform-box: view-box;
-  transform-origin: center;
-  /* A soft trailing halo so each spark-ring smears into a comet-like wake. */
-  filter: drop-shadow(0 0 4px var(--accent));
-  animation: gkRimPulse 5.7s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-.rimGlow {
-  pointer-events: none;
-  fill: none;
-  stroke: var(--accent);
-  animation: gkRimGlow 5.7s ease-in-out infinite;
-}
 @media (prefers-reduced-motion: reduce) {
-  .pulseWave,
+  .pulseSpoke,
+  .pulseArc,
   .rimGlow {
     animation: none;
   }
-  .pulseWave {
-    opacity: 0;
+  .pulseSpoke,
+  .pulseArc {
+    opacity: 0.12;
   }
 }
 
@@ -263,6 +275,24 @@
 .centerHex {
   pointer-events: none;
 }
+/* The center hexagram's vertical sheen: pan the gradient upward and back so a
+   bright band sweeps bottom→up through the six lines. Amplitude is in user
+   units (the gradient spans 2*R_HUB ≈ 156px), kept small so the highlight
+   glides rather than races. */
+@keyframes gkVertGold {
+  0% {
+    transform: translateY(70px);
+  }
+  50% {
+    transform: translateY(-70px);
+  }
+  100% {
+    transform: translateY(70px);
+  }
+}
+.vertGold {
+  animation: gkVertGold 4.2s ease-in-out infinite;
+}
 
 /* --- Hub transition: Taiji flattens (rotation comes from the parent, so these
    only scale/fade → no jump when idle rotation resumes). Hexagram born from it. */
@@ -334,7 +364,9 @@
   animation: gkHexCollapse 300ms cubic-bezier(0.5, 0, 0.75, 0) both;
 }
 .centerHexLine {
-  fill: var(--accent-bright);
+  /* Vertical gold sheen travels bottom→up through the center hexagram (the
+     gradient + its animation are defined in the SVG <defs>). */
+  fill: url(#gkVertGold);
 }
 /* A split-line group animates as a whole; its rects shouldn't double-run. */
 .centerHexLineG .centerHexLine {
