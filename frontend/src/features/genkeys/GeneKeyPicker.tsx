@@ -15,35 +15,52 @@ interface Props {
 
 export function GeneKeyPicker({ onSelect }: Props) {
   const [mode, setMode] = useState<Mode>('number')
+  // Collapsed by default on DESKTOP — the picker is a compact pill until the user
+  // opens it (keeps the wheel unobstructed). On mobile the toggle is hidden and
+  // the content is always shown (CSS), so this state is desktop-only in effect.
+  const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className={styles.picker}>
-      <div className={styles.pickerTabs} role="tablist" aria-label="Способ выбора замка">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'number'}
-          className={mode === 'number' ? styles.pickerTabActive : styles.pickerTab}
-          onClick={() => setMode('number')}
-        >
-          По номеру
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={mode === 'hexagram'}
-          className={mode === 'hexagram' ? styles.pickerTabActive : styles.pickerTab}
-          onClick={() => setMode('hexagram')}
-        >
-          По гексаграмме
-        </button>
-      </div>
-      <div className={styles.pickerBody}>
-        {mode === 'number' ? (
-          <NumberPicker onSelect={onSelect} />
-        ) : (
-          <HexagramPicker onSelect={onSelect} />
-        )}
+    <div className={styles.picker} data-expanded={expanded}>
+      <button
+        type="button"
+        className={styles.pickerToggle}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span>Выбрать замок</span>
+        <span className={styles.pickerToggleIcon} aria-hidden>
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+      <div className={styles.pickerContent}>
+        <div className={styles.pickerTabs} role="tablist" aria-label="Способ выбора замка">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'number'}
+            className={mode === 'number' ? styles.pickerTabActive : styles.pickerTab}
+            onClick={() => setMode('number')}
+          >
+            По номеру
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === 'hexagram'}
+            className={mode === 'hexagram' ? styles.pickerTabActive : styles.pickerTab}
+            onClick={() => setMode('hexagram')}
+          >
+            По гексаграмме
+          </button>
+        </div>
+        <div className={styles.pickerBody}>
+          {mode === 'number' ? (
+            <NumberPicker onSelect={onSelect} />
+          ) : (
+            <HexagramPicker onSelect={onSelect} />
+          )}
+        </div>
       </div>
     </div>
   )

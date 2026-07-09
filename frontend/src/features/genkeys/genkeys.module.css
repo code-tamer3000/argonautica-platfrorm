@@ -352,6 +352,41 @@
   display: none;
 }
 
+/* Desktop collapse: a pill header that toggles the body open. Collapsed, the
+   card is just this button; expanded, the tabs + body appear below it. On mobile
+   the toggle is hidden and the content always shows (media query below). */
+.pickerToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: 14px;
+  cursor: pointer;
+}
+.pickerToggleIcon {
+  color: var(--accent);
+  font-size: 12px;
+}
+.pickerContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+/* Collapsed (default on desktop): hide the tabs/body, and drop the gap so the
+   card is just the pill height. */
+.picker:not([data-expanded='true']) .pickerContent {
+  display: none;
+}
+.picker:not([data-expanded='true']) {
+  gap: 0;
+}
+
 .pickerTabs {
   display: flex;
   gap: var(--space-1);
@@ -378,10 +413,12 @@
   color: var(--color-bezdna);
 }
 
-/* Reserve the tall-tab (hexagram) height for BOTH tabs so switching between
-   "по номеру" and "по гексаграмме" doesn't jump the layout. */
+/* Desktop: the body sizes to its content — "по номеру" stays compact, and
+   "по гексаграмме" simply grows the card downward (no reserved empty space).
+   On mobile a min-height is restored (media query) to avoid a tap-jump. */
 .pickerBody {
-  min-height: 232px;
+  display: flex;
+  flex-direction: column;
 }
 
 .pickerForm {
@@ -415,6 +452,15 @@
   color: var(--text-primary);
   font-family: var(--font-t2);
   font-size: 18px;
+  /* No spinner arrows on the number field — the 1–64 range is entered directly. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.pickerInput::-webkit-outer-spin-button,
+.pickerInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
 .pickerInput:focus-visible {
   outline: none;
@@ -814,7 +860,8 @@
   /* Mobile: the picker moves in-flow, directly under the wheel (drop the desktop
      corner-card float, blur and shadow). The shared visual styling above still
      applies; only placement changes. */
-  .picker {
+  .picker,
+  .picker:not([data-expanded='true']) {
     position: static;
     z-index: auto;
     width: min(92%, 420px);
@@ -826,5 +873,19 @@
     background: transparent;
     backdrop-filter: none;
     box-shadow: none;
+    gap: var(--space-3);
+  }
+  /* No collapse on touch: hide the toggle and always show the content. */
+  .pickerToggle {
+    display: none;
+  }
+  .picker .pickerContent,
+  .picker:not([data-expanded='true']) .pickerContent {
+    display: flex;
+  }
+  /* Reserve the tall-tab (hexagram) height for BOTH tabs so switching between
+     "по номеру" and "по гексаграмме" doesn't jump the layout on touch. */
+  .pickerBody {
+    min-height: 232px;
   }
 }
