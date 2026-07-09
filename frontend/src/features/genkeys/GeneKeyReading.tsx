@@ -25,14 +25,12 @@ export function GeneKeyReading({ number, onClose }: Props) {
   const bookLink = useGenkeysBookLink('64 пути')
 
   // The whole panel is one scroll container; clicking a spectrum band scrolls
-  // it to that band's H2 in the rendered markdown body (matched by heading text).
+  // it to that band's H2 in the rendered markdown body. The heading is tagged
+  // `id="gk-band-<band>"` in useGeneKeyBody and carries a scroll-margin so it
+  // clears the sticky bar (heading stays visible, not hidden under it).
   const bodyRef = useRef<HTMLDivElement>(null)
   const scrollToBand = useCallback((band: Band) => {
-    const body = bodyRef.current
-    if (!body) return
-    const head = Array.from(body.querySelectorAll('h2')).find(
-      (h) => h.textContent?.trim() === band,
-    )
+    const head = bodyRef.current?.querySelector(`#gk-band-${band}`)
     head?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 

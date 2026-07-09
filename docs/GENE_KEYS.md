@@ -14,11 +14,14 @@ Shadow / Gift / Siddhi spectrum plus characteristics (amino acid, codon ring,
 physiology, program partner, dilemma, victim pattern) and long-form prose for the
 three frequency bands. Each spectrum band also carries a **totem animal**
 (`fear`/`life`/`vision` on `GeneKeyMeta` = Тень/Дар/Сиддхи animal), rendered under
-the band value in the reading's spectrum triad. The three spectrum cells are
-**buttons**: clicking Тень/Дар/Сиддхи smooth-scrolls the reading to that band's
-`## Тень`/`## Дар`/`## Сиддхи` section (matched by heading text in the rendered
-body). Hovering a key assembles its hexagram from the wheel;
-clicking opens the full reading beside the wheel.
+the band value in the reading's spectrum triad. Each cell's coloured top strip
+carries a slow **horizontal shimmer** (per-band colour + highlight). The three
+spectrum cells are **buttons**: clicking Тень/Дар/Сиддхи smooth-scrolls the
+reading to that band's `## Тень`/`## Дар`/`## Сиддхи` section. Those headings are
+tagged (`useGeneKeyBody`: `id="gk-band-<band>"` + a band class) so they get a
+`scroll-margin-top` (stay clear of the sticky bar) and are **coloured to match
+their plaque** instead of the default gold. Hovering a key assembles its hexagram
+from the wheel; clicking opens the full reading beside the wheel.
 
 ## Content pipeline (build-time, bundled)
 
@@ -83,16 +86,18 @@ Spectrum/amino families map to the design-system palette (fire/water/gold/stone)
 ## Interaction (`useRings.ts`, `GeneKeysScreen.tsx`)
 
 - **Idle**: the three rings drift slowly at different speeds/directions (one rAF
-  loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1. A
-  slow golden **sector-outline pulse** (`SectorPulse` → the full nested sector
-  grid: radial spokes on all 3 rings + ring arcs, CSS `.pulseSpoke`/`.pulseArc`)
-  brightens in a wave that rolls from the hub OUTWARD and fades — sparks running
-  along the whole outline, leaving a trail. Per-element `animationDelay` is set
-  by radius (`PULSE_TRAVEL_MS`). Gated behind `prefers-reduced-motion`.
-- Both hexagrams carry a looping **gold sheen** ("перелив золота"): the reading
-  header's is horizontal (`Hexagram` `shimmer` prop → animated `<linearGradient>`);
-  the hub's center hexagram is **vertical, bottom→up** (`#gkVertGold` gradient in
-  the wheel SVG, `.vertGold` animation panning `gradientTransform` in Y).
+  loop; respects `prefers-reduced-motion`). The hub Taiji spins with ring 1.
+- The slow golden **sector-outline pulse** (`SectorPulse` → the full nested
+  sector grid: radial spokes on all 3 rings + ring arcs, CSS
+  `.pulseSpoke`/`.pulseArc`) only renders once a key is **locked** (`activeKey`
+  set) — then the rings are aligned and still, so the wave (which rolls from the
+  hub OUTWARD by per-element `animationDelay ∝ radius`, `PULSE_TRAVEL_MS`) reads
+  cleanly instead of fighting the idle drift / hover realignment. It disappears
+  the moment the reading closes. Gated behind `prefers-reduced-motion`.
+- Both hexagrams carry a looping **vertical gold sheen** ("перелив золота",
+  bottom→up): the hub's center hexagram via `#gkVertGold` (`.vertGold`, panning
+  `gradientTransform` in Y); the reading header's via `Hexagram` `shimmer` (a
+  userSpaceOnUse `<linearGradient>` over the full height, panned in Y).
 - **Hover a key**: idle stops; inner rings ease so the whole nested block aligns
   (boundaries coincide); the key's chain lights up gold on all three rings; the
   focused key's hexagram materialises in the hub; four golden ÷4/÷16/÷64 grid

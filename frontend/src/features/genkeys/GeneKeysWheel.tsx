@@ -192,10 +192,16 @@ export function GeneKeysWheel({
       {/* Living skeleton: the full sector outline — every sector's radial edges
           on all three rings + the ring arcs — pulses gold in a slow wave that
           travels from the hub outward and fades, so sparks appear to run along
-          the whole grid and leave a trail. Purely decorative → aria-hidden; CSS
-          gates it behind prefers-reduced-motion. */}
-      <SectorPulse />
-      <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.rimGlow} aria-hidden="true" />
+          the whole grid and leave a trail. Only shown once a key is LOCKED
+          (activeKey set): then the rings are aligned and still, so the pulse
+          reads cleanly instead of fighting the idle drift / hover realignment.
+          Purely decorative → aria-hidden; CSS gates it behind prefers-reduced-motion. */}
+      {activeKey != null && (
+        <>
+          <SectorPulse />
+          <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.rimGlow} aria-hidden="true" />
+        </>
+      )}
 
       {/* Inner rings */}
       {innerRings.map((ring) => {
