@@ -799,6 +799,118 @@
   color: var(--text-primary);
 }
 
+/* --- Book reader (Ричард Радд · 64 пути) ---------------------------------- */
+.book {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background:
+    radial-gradient(120% 90% at 30% 30%, rgba(19, 78, 69, 0.18), transparent 60%),
+    var(--bg);
+}
+.bookBar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.bookBack {
+  font-family: var(--font-t4);
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bookBack:hover {
+  text-decoration: underline;
+}
+.bookBarTitle {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.bookScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bookChapter {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-16);
+  animation: gkReadingIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bookHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.bookTitle {
+  font-family: var(--font-t1);
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1.12;
+  color: var(--text-primary);
+  margin: 2px 0 0;
+  text-transform: none;
+}
+.bookNav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-10);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--divider);
+}
+.bookNavBtn {
+  appearance: none;
+  background: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: 13px;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.bookNavBtn:hover {
+  color: var(--accent);
+  border-color: var(--divider-gold-strong);
+}
+
+/* End-of-reading link into the book (appended in GeneKeyReading). */
+.bookLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-8);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-btn);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-family: var(--font-t4);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  text-decoration: none;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.bookLink:hover {
+  border-color: var(--divider-gold-strong);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 /* --- Mobile: stack wheel over reading ------------------------------------- */
 @media (max-width: 900px) {
   .screen {
