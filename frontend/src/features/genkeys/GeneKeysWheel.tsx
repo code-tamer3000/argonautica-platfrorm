@@ -27,6 +27,10 @@ const TICK_LEN = 26
 const TICK_H = 3.2
 const TICK_GAP = 7 // between the two lines of a bigram
 
+// How long the ambient pulse takes to travel hub→rim: the outward stagger of
+// the sector-skeleton wave is spread across this window (per pulse period).
+const PULSE_TRAVEL_MS = 2200
+
 interface Props {
   activeKey: number | null
   partnerKey: number | null
@@ -157,34 +161,40 @@ export function GeneKeysWheel({
       onMouseMove={handleMove}
       onMouseLeave={() => onHover(null)}
     >
+      {/* Vertical gold sheen for the center hexagram — a bright band travelling
+          bottom→up through the hub. userSpaceOnUse over the hub's vertical span
+          so the whole stacked hexagram shares one moving highlight (not a
+          per-line one). Animated via gradientTransform translateY. */}
+      <defs>
+        <linearGradient
+          id="gkVertGold"
+          gradientUnits="userSpaceOnUse"
+          x1={C}
+          y1={C - R_HUB}
+          x2={C}
+          y2={C + R_HUB}
+          className={styles.vertGold}
+        >
+          <stop offset="0%" stopColor="var(--gk-gold-deep)" />
+          <stop offset="38%" stopColor="var(--accent-bright)" />
+          <stop offset="50%" stopColor="var(--gk-gold-hi)" />
+          <stop offset="62%" stopColor="var(--accent-bright)" />
+          <stop offset="100%" stopColor="var(--gk-gold-deep)" />
+        </linearGradient>
+      </defs>
+
       {/* Static ring boundaries — always visible so the three rings read as
           distinct concentric bands. */}
       {R.map((r, i) => (
         <circle key={`bound-${i}`} cx={C} cy={C} r={r} className={styles.ringBound} />
       ))}
 
-      {/* Living rim: slow golden pulses expand from the hub outward, each a thin
-          bright ring that grows and fades — "sparks running out, leaving a
-          trail". Three staggered waves keep it continuous. The outer rim itself
-          also breathes a soft glow. Purely decorative → aria-hidden, and CSS
+      {/* Living skeleton: the full sector outline — every sector's radial edges
+          on all three rings + the ring arcs — pulses gold in a slow wave that
+          travels from the hub outward and fades, so sparks appear to run along
+          the whole grid and leave a trail. Purely decorative → aria-hidden; CSS
           gates it behind prefers-reduced-motion. */}
-      <g className={styles.rimPulse} aria-hidden="true" style={{ transformOrigin: origin }}>
-        <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.pulseWave} />
-        <circle
-          cx={C}
-          cy={C}
-          r={R[RING_COUNT]}
-          className={styles.pulseWave}
-          style={{ animationDelay: '1.9s' }}
-        />
-        <circle
-          cx={C}
-          cy={C}
-          r={R[RING_COUNT]}
-          className={styles.pulseWave}
-          style={{ animationDelay: '3.8s' }}
-        />
-      </g>
+      <SectorPulse />
       <circle cx={C} cy={C} r={R[RING_COUNT]} className={styles.rimGlow} aria-hidden="true" />
 
       {/* Inner rings */}
@@ -333,6 +343,68 @@ export function GeneKeysWheel({
         </g>
       )}
     </svg>
+  )
+}
+
+// Ambient "living skeleton" pulse: the full nested sector grid — every sector's
+// radial edges on all three rings + the ring arcs — rendered as faint gold
+// strokes that brighten in a wave sweeping outward from the hub and fading, so
+// sparks seem to run along the whole outline and leave a trail. Static geometry
+// (doesn't rotate with the rings — it's the fixed lattice the wheel turns
+// within), so it's computed once. Decorative; CSS gates it for reduced-motion.
+function SectorPulse() {
+  const { spokes, arcs } = useMemo(() => {
+    // Radial spokes: at every sector boundary on each ring, a segment spanning
+    // that ring's radial band. Delay grows with the band's mid-radius → the
+    // wave moves outward. (Inner ring's spokes fire first, outer last.)
+    const bands = [
+      { count: RINGS[0].sectors, r0: R[0], r1: R[1] },
+      { count: RINGS[1].sectors, r0: R[1], r1: R[2] },
+      { count: RINGS[2].sectors, r0: R[2], r1: R[3] },
+    ]
+    const spokes: { x1: number; y1: number; x2: number; y2: number; delay: number }[] = []
+    for (const b of bands) {
+      for (let i = 0; i < b.count; i++) {
+        const a = (i / b.count) * 360
+        const [x1, y1] = polar(C, C, b.r0, a)
+        const [x2, y2] = polar(C, C, b.r1, a)
+        // delay from radial position of the band (0 at hub → 1 at rim)
+        const mid = (b.r0 + b.r1) / 2
+        const delay = ((mid - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS
+        spokes.push({ x1, y1, x2, y2, delay })
+      }
+    }
+    const arcs = R.map((r) => ({
+      r,
+      delay: ((r - R[0]) / (R[RING_COUNT] - R[0])) * PULSE_TRAVEL_MS,
+    }))
+    return { spokes, arcs }
+  }, [])
+
+  return (
+    <g className={styles.sectorPulse} aria-hidden="true">
+      {arcs.map((a, i) => (
+        <circle
+          key={`arc-${i}`}
+          cx={C}
+          cy={C}
+          r={a.r}
+          className={styles.pulseArc}
+          style={{ animationDelay: `${a.delay.toFixed(0)}ms` }}
+        />
+      ))}
+      {spokes.map((s, i) => (
+        <line
+          key={`spoke-${i}`}
+          x1={s.x1}
+          y1={s.y1}
+          x2={s.x2}
+          y2={s.y2}
+          className={styles.pulseSpoke}
+          style={{ animationDelay: `${s.delay.toFixed(0)}ms` }}
+        />
+      ))}
+    </g>
   )
 }
 
