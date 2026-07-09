@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Hexagram } from './Hexagram'
 import { useGeneKeyBody } from './useGeneKeyBody'
 import { getKey } from './wheel'
@@ -74,6 +75,11 @@ export function GeneKeyReading({ number, onClose }: Props) {
             dangerouslySetInnerHTML={{ __html: html }}
           />
         )}
+
+        {/* Deep-link into the bundled book: chapter N contemplates key N. */}
+        <Link to={`/genkeys/book/${number}`} className={styles.bookLink}>
+          Читать в книге «64 пути» →
+        </Link>
       </div>
     </aside>
   )

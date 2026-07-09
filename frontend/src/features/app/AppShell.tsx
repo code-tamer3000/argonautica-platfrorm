@@ -36,6 +36,9 @@ import styles from './appshell.module.css'
 const GeneKeysScreen = lazy(() =>
   import('../genkeys/GeneKeysScreen').then((m) => ({ default: m.GeneKeysScreen })),
 )
+const GeneKeysBook = lazy(() =>
+  import('../genkeys/book/GeneKeysBook').then((m) => ({ default: m.GeneKeysBook })),
+)
 
 export function AppShell() {
   const { user, logout } = useAuth()
@@ -222,6 +225,14 @@ export function AppShell() {
               element={
                 <Suspense fallback={<div className="center grow"><Spinner /></div>}>
                   <GeneKeysScreen />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/genkeys/book/:chapter"
+              element={
+                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
+                  <GeneKeysBook />
                 </Suspense>
               }
             />

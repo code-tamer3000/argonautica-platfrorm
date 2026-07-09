@@ -33,6 +33,31 @@ clicking opens the full reading beside the wheel.
   own chunk and the initial wheel render stays light. `GeneKeysScreen` itself is
   `React.lazy`-split out of the app shell.
 
+## Book reader — «64 пути» (`book/`)
+
+The bundled book **Ричард Радд «64 пути»** (a contemplative journey through the
+gene keys) ships as a reader beside the wheel. Chapter N is the contemplation of
+gene key N, so the mapping is 1:1 and a key's reading deep-links straight to its
+chapter.
+
+- Source of truth: `64_ways.html` at the **repo root** — a FictionBook export
+  (converted to UTF-8). `frontend/scripts/build_genkeys_book.py` splits it on its
+  `<h1>` boundaries into per-chapter HTML **fragments** under
+  `frontend/src/features/genkeys/book/`: `intro.html`, `01.html … 64.html`,
+  `dilemmas.html`, plus `manifest.json` (chapter titles). The build **drops** each
+  chapter's hexagram `<img>` (those image files are absent anyway) — the reader
+  redraws the sigil with our golden `<Hexagram>` from the chapter number.
+  Regenerate after replacing the source: `python3 frontend/scripts/build_genkeys_book.py`.
+- `book/useBookChapter.ts` lazy-loads + sanitizes (DOMPurify) one chapter fragment
+  via `import.meta.glob('./*.html', { query: '?raw' })` — same chunk-per-chapter
+  discipline as the keys, so the reader never pulls the whole ~900 KB at once.
+- `book/GeneKeysBook.tsx` is the reader screen at route
+  **`/genkeys/book/:chapter`** (lazy-split in `AppShell`): golden hexagram +
+  chapter title, the prose body, prev/next chapter nav, and a «← К колесу» back
+  link. An out-of-range chapter shows a not-found line linking to chapter 1.
+- Each key's reading (`GeneKeyReading.tsx`) ends with a «Читать в книге “64 пути” →»
+  link (`styles.bookLink`) to `/genkeys/book/{number}`.
+
 ## Wheel geometry (`wheel.ts`)
 
 A binary I-Ching tree, three concentric rings around a Taiji (yin-yang) hub:
@@ -101,8 +126,11 @@ HOLDS (hover — key stays under the cursor); with it, the outer ring rotates to
 - `useRings.ts` — rotation state (idle drift + focus easing, hover vs locked).
 - `GeneKeysWheel.tsx` — the SVG (rings, keys, ticks, golden edges, hub).
 - `YinYang.tsx` — Taiji hub mark. `Hexagram.tsx` — hexagram for the reading panel.
-- `GeneKeyReading.tsx` — spectrum triad + characteristics + lazy markdown body.
+- `GeneKeyReading.tsx` — spectrum triad + characteristics + lazy markdown body + book link.
 - `GeneKeyPicker.tsx` — mobile-only by-number / by-hexagram key selection.
 - `GeneKeysScreen.tsx` — composition + hover/select/partner state.
-- `genkeys.module.css` — all styling.
+- `genkeys.module.css` — all styling (wheel, reading, and book reader).
 - `content/*.md` — the 64 source files. `genkeys.data.ts` — generated metadata.
+- `book/GeneKeysBook.tsx` — book reader screen. `book/useBookChapter.ts` — lazy
+  chapter loader. `book/{intro,NN,dilemmas}.html` + `book/manifest.json` —
+  generated fragments (from repo-root `64_ways.html` via `build_genkeys_book.py`).
