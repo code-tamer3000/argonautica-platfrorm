@@ -88,7 +88,7 @@ export function AdminBroadcast() {
   }
 
   return (
-    <div>
+    <div className={styles.page}>
       <h2 className={styles.sectionTitle}>Отправить уведомление всем</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
         <label className={styles.label}>
