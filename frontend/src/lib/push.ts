@@ -44,9 +44,28 @@ function urlBase64ToBytes(base64: string): Uint8Array<ArrayBuffer> {
   return out
 }
 
+// navigator.serviceWorker.ready резолвится, только когда SW зарегистрирован и
+// активирован. На недоверенном origin (самоподписанный серт) браузер молча НЕ
+// регистрирует SW — и промис висит вечно, из-за чего тумблер залипал. Ставим
+// таймаут + понятную ошибку. Дополнительно проверяем getRegistration(): если
+// регистрации нет вовсе — сразу говорим об этом, не дожидаясь таймаута.
+const SW_READY_TIMEOUT_MS = 8000
+
 async function getRegistration(): Promise<ServiceWorkerRegistration> {
-  const reg = await navigator.serviceWorker.ready
-  return reg
+  const existing = await navigator.serviceWorker.getRegistration()
+  if (!existing) {
+    throw new Error(
+      'Service worker не зарегистрирован — вероятно, сайт открыт по недоверенному ' +
+        'сертификату. Push-уведомления требуют валидного HTTPS.',
+    )
+  }
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error('Service worker не активировался — обновите страницу')),
+      SW_READY_TIMEOUT_MS,
+    ),
+  )
+  return Promise.race([navigator.serviceWorker.ready, timeout])
 }
 
 // Запросить разрешение и оформить подписку, отправив её на сервер. Возвращает true,
@@ -95,12 +114,14 @@ export async function unsubscribeFromPush(): Promise<void> {
   }
 }
 
-// Активна ли push-подписка в этом браузере прямо сейчас.
+// Активна ли push-подписка в этом браузере прямо сейчас. Не ждём .ready (может
+// висеть на недоверенном origin) — смотрим уже существующую регистрацию.
 export async function hasActiveSubscription(): Promise<boolean> {
   const { supported } = pushSupport()
   if (!supported || Notification.permission !== 'granted') return false
   try {
-    const reg = await navigator.serviceWorker.ready
+    const reg = await navigator.serviceWorker.getRegistration()
+    if (!reg) return false
     return (await reg.pushManager.getSubscription()) != null
   } catch {
     return false
