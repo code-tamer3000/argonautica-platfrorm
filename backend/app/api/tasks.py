@@ -13,8 +13,8 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin
@@ -381,7 +381,7 @@ async def list_tasks(
     # Видимые задачи: админ видит ВСЕ неудалённые (он модератор и автор — иначе
     # созданная им individual-задача, где он не адресат, выпала бы из его списка).
     # Участник: common ∪ (individual, где у него есть назначение).
-    where = [Task.deleted_at.is_(None)]
+    where: list[ColumnElement[bool]] = [Task.deleted_at.is_(None)]
     if current_user.role != "admin":
         my_individual = select(TaskAssignment.task_id).where(
             TaskAssignment.user_id == current_user.id
