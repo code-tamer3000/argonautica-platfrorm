@@ -263,11 +263,11 @@ Bell feed + native push source. Domain data in Postgres (history, reload, web-pu
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
 | user_id | BIGINT | FK users, NOT NULL | recipient |
-| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'journal_missed'` \| `'cabin_granted'` \| `'admin'` |
+| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'cabin_granted'` \| `'admin'` (+ legacy `'journal_missed'`, no longer generated) |
 | room_id | BIGINT | FK rooms, NULL | NULL for `cabin_granted`/`admin` |
 | message_id | BIGINT | FK messages, NULL | NULL for system kinds |
 | actor_id | BIGINT | FK users, NULL | NULL for system kinds |
-| ref_date | DATE | NULL | `journal_missed` dedup key |
+| ref_date | DATE | NULL | legacy (`journal_missed` dedup key); unused now |
 | title | TEXT | NULL | `admin` broadcast heading |
 | body | TEXT | NULL | `admin` broadcast text (preview derived from it) |
 | created_at | TIMESTAMPTZ | NOT NULL | |

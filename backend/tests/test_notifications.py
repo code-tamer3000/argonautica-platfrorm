@@ -1,15 +1,9 @@
 """Уведомления: личка → пиру, ответ в тред → автору корня, пост в новостях → всем;
-себе не шлём; отметка прочитанными гасит счётчик; незакрытый день дневника → системное."""
-from datetime import UTC, datetime, timedelta
-
-import pytest
+себе не шлём; отметка прочитанными гасит счётчик."""
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.models.journal import JournalPardon
-from app.models.message import Message
 from app.models.notification import Notification
 from app.models.room import Room
 from app.models.user import User
@@ -20,27 +14,6 @@ from .conftest import AddMembership, MakeRoom, MakeUser, auth_headers, login
 async def _headers(client: AsyncClient, user: User) -> dict[str, str]:
     tokens = await login(client, user.username, "initpass123")
     return auth_headers(tokens["access_token"])
-
-
-def _patch_timeline_start(monkeypatch: pytest.MonkeyPatch, start_date: object) -> None:
-    """Заставить шкалу заданий стартовать в start_date с разделами focus/notes/film.
-
-    program_start теперь берётся из БД-шкалы (сид-задание с 2026-07-03), а не из
-    settings, поэтому тесты, которым нужен один завершённый день, подменяют шкалу.
-    """
-    from app.api import dynamics as dyn
-
-    keys = ("focus", "notes", "film")
-    version = dyn.ProgramVersion(
-        starts_on=start_date,  # type: ignore[arg-type]
-        keys=frozenset(keys),
-        order={k: i for i, k in enumerate(keys)},
-    )
-
-    async def _fake(_session: object) -> list["dyn.ProgramVersion"]:
-        return [version]
-
-    monkeypatch.setattr(dyn, "load_timeline", _fake)
 
 
 async def _send(
@@ -198,120 +171,3 @@ async def test_mark_read_clears_unread(
     assert resp.status_code == 200, resp.text
     assert resp.json()["unread_count"] == 0
     assert (await _notifications(client, hb))["unread_count"] == 0
-
-
-# --- незакрытый день дневника (journal_missed) -----------------------------
-
-
-async def _make_personal(session: AsyncSession, user: User) -> Room:
-    room = Room(type="channel", is_personal=True, created_by=user.id, name="Дневник")
-    session.add(room)
-    await session.commit()
-    await session.refresh(room)
-    return room
-
-
-def _journal_msg(room_id: int, sender_id: int, cat: str, day) -> Message:
-    return Message(
-        room_id=room_id,
-        sender_id=sender_id,
-        content=f"<!--journal:{cat}-->запись",
-        created_at=datetime(day.year, day.month, day.day, 12, tzinfo=UTC),
-    )
-
-
-async def test_journal_missed_notification_for_yesterday(
-    client: AsyncClient,
-    make_user: MakeUser,
-    session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    today = datetime.now(UTC).date()
-    yesterday = today - timedelta(days=1)
-    monkeypatch.setattr(settings, "journal_program_start", today - timedelta(days=3))
-
-    user = await make_user()
-    await _make_personal(session, user)
-
-    data = await _notifications(client, await _headers(client, user))
-    missed = [i for i in data["items"] if i["kind"] == "journal_missed"]
-    # Есть уведомление именно про вчерашний день, у него нет автора.
-    y = next((i for i in missed if i["ref_date"] == yesterday.isoformat()), None)
-    assert y is not None, data
-    assert y["actor_id"] is None
-    assert y["message_id"] is None
-    assert y["preview"]
-
-
-async def test_journal_missed_is_idempotent(
-    client: AsyncClient,
-    make_user: MakeUser,
-    session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    today = datetime.now(UTC).date()
-    monkeypatch.setattr(settings, "journal_program_start", today - timedelta(days=3))
-    user = await make_user()
-    await _make_personal(session, user)
-
-    h = await _headers(client, user)
-    await _notifications(client, h)
-    first = (
-        await session.execute(
-            select(func.count())
-            .select_from(Notification)
-            .where(Notification.user_id == user.id, Notification.kind == "journal_missed")
-        )
-    ).scalar_one()
-    # Повторный запрос не плодит дубли.
-    await _notifications(client, h)
-    second = (
-        await session.execute(
-            select(func.count())
-            .select_from(Notification)
-            .where(Notification.user_id == user.id, Notification.kind == "journal_missed")
-        )
-    ).scalar_one()
-    assert first > 0
-    assert first == second
-
-
-async def test_journal_missed_skips_closed_day(
-    client: AsyncClient,
-    make_user: MakeUser,
-    session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    today = datetime.now(UTC).date()
-    yesterday = today - timedelta(days=1)
-    # Программа стартовала вчера — единственный завершённый день = вчера.
-    _patch_timeline_start(monkeypatch, yesterday)
-
-    user = await make_user()
-    room = await _make_personal(session, user)
-    # Закрываем вчерашний день всеми тремя категориями.
-    for cat in ("focus", "notes", "film"):
-        session.add(_journal_msg(room.id, user.id, cat, yesterday))
-    await session.commit()
-
-    data = await _notifications(client, await _headers(client, user))
-    assert [i for i in data["items"] if i["kind"] == "journal_missed"] == []
-
-
-async def test_journal_missed_skips_pardoned_day(
-    client: AsyncClient,
-    make_user: MakeUser,
-    session: AsyncSession,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    today = datetime.now(UTC).date()
-    yesterday = today - timedelta(days=1)
-    _patch_timeline_start(monkeypatch, yesterday)
-
-    user = await make_user()
-    await _make_personal(session, user)
-    session.add(JournalPardon(user_id=user.id, date=yesterday))
-    await session.commit()
-
-    data = await _notifications(client, await _headers(client, user))
-    assert [i for i in data["items"] if i["kind"] == "journal_missed"] == []

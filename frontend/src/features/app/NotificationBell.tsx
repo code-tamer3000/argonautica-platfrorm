@@ -12,7 +12,6 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   dm: 'написал(а) вам',
   reply: 'ответил(а) на ваше сообщение',
   news: 'новый пост в новостях',
-  journal_missed: '',
   cabin_granted: '',
   admin: '',
 }
@@ -21,14 +20,12 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   dm: 'Новое сообщение',
   reply: 'Новый ответ',
   news: 'Смотреть в новостях',
-  journal_missed: 'День дневника не закрыт',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
 const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
-  journal_missed: 'Дневник',
   cabin_granted: 'Каюта',
 }
 

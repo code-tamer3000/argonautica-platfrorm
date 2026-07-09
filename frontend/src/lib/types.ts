@@ -291,20 +291,14 @@ export interface JournalProgram {
 }
 
 // --- Уведомления (колокольчик + всплывающие тосты) ---
-export type NotificationKind =
-  | 'dm'
-  | 'reply'
-  | 'news'
-  | 'journal_missed'
-  | 'cabin_granted'
-  | 'admin'
+export type NotificationKind = 'dm' | 'reply' | 'news' | 'cabin_granted' | 'admin'
 
 export interface NotificationOut {
   id: number
   kind: NotificationKind
   // room_id пуст у уведомлений без комнаты (cabin_granted — открыт доступ к Каюте).
   room_id: number | null
-  // Для системных уведомлений (journal_missed) actor/message пусты, зато есть ref_date.
+  // Для системных уведомлений (cabin_granted/admin) actor/message пусты.
   message_id: number | null
   actor_id: number | null
   actor_name: string | null

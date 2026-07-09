@@ -203,6 +203,44 @@ async def test_admin_broadcast_shows_in_feed_with_title(
 
 
 @pytest.mark.asyncio
+async def test_admin_notif_prefs_overview(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    admin = await make_user(role="admin")
+    # Один юзер выключил news, второй — весь push.
+    u1 = await make_user()
+    u1.settings = {"notifications": {"push_enabled": True, "news": False}}
+    u2 = await make_user()
+    u2.settings = {"notifications": {"push_enabled": False}}
+    await session.commit()
+
+    headers = await _headers(client, admin)
+    resp = await client.get("/api/admin/notifications/prefs", headers=headers)
+    assert resp.status_code == 200, resp.text
+    by_id = {i["user_id"]: i for i in resp.json()["items"]}
+
+    # u1: push включён, news выключен, остальное дефолтом включено.
+    assert by_id[u1.id]["push_enabled"] is True
+    assert by_id[u1.id]["news"] is False
+    assert by_id[u1.id]["dm"] is True
+    # u2: мастер-флаг выключен.
+    assert by_id[u2.id]["push_enabled"] is False
+    # Новый юзер без настроек — всё включено по умолчанию.
+    assert by_id[admin.id]["push_enabled"] is True
+    assert by_id[admin.id]["dm"] is True
+
+
+@pytest.mark.asyncio
+async def test_admin_notif_prefs_forbidden_for_participant(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    user = await make_user()
+    headers = await _headers(client, user)
+    resp = await client.get("/api/admin/notifications/prefs", headers=headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_admin_broadcast_forbidden_for_participant(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

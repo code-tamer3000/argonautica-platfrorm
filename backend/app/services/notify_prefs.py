@@ -41,3 +41,13 @@ def push_allowed(settings: dict[str, Any] | None, kind: str) -> bool:
     if not prefs.get("push_enabled", _DEFAULTS["push_enabled"]):
         return False
     return bool(prefs.get(kind, _DEFAULTS.get(kind, True)))
+
+
+def resolved_prefs(settings: dict[str, Any] | None) -> dict[str, bool]:
+    """Все настройки уведомлений пользователя с применёнными дефолтами.
+
+    Возвращает {push_enabled, dm, reply, news, admin}. Для админ-обзора «у кого что
+    включено» — считает те же дефолты, что и push_allowed (opt-out модель).
+    """
+    prefs = _prefs(settings)
+    return {key: bool(prefs.get(key, default)) for key, default in _DEFAULTS.items()}

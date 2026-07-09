@@ -1,8 +1,62 @@
 import { useState } from 'react'
 import { useAdminBroadcast } from '../../api/adminBroadcast'
+import { useNotifPrefsOverview, type UserNotifPrefs } from '../../api/adminNotifPrefs'
 import { Button } from '../../components/Button'
+import { Spinner } from '../../components/Spinner'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
+
+const KIND_CHIPS: { key: keyof UserNotifPrefs; label: string }[] = [
+  { key: 'dm', label: 'ЛС' },
+  { key: 'reply', label: 'Ответы' },
+  { key: 'news', label: 'Новости' },
+  { key: 'admin', label: 'Объявления' },
+]
+
+function PrefsOverview() {
+  const { data, isLoading } = useNotifPrefsOverview()
+
+  if (isLoading) {
+    return (
+      <div className="center" style={{ padding: 'var(--space-6)' }}>
+        <Spinner size={20} />
+      </div>
+    )
+  }
+  const items = data?.items ?? []
+
+  return (
+    <div className={styles.list}>
+      {items.map((u) => (
+        <div key={u.user_id} className={styles.listItem}>
+          <div className={styles.listItemMain}>
+            <div>
+              <div className={styles.listTitle}>{u.display_name}</div>
+              <div className={styles.prefDevices}>
+                {u.devices > 0 ? `устройств: ${u.devices}` : 'нет push-подписок'}
+              </div>
+            </div>
+          </div>
+          {u.push_enabled ? (
+            <div className={styles.prefChips}>
+              {KIND_CHIPS.map(({ key, label }) => (
+                <span
+                  key={key}
+                  className={u[key] ? styles.prefChipOn : styles.prefChipOff}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className={styles.prefMuted}>push выключен</span>
+          )}
+        </div>
+      ))}
+      {items.length === 0 && <div className={styles.prefMuted}>Нет пользователей</div>}
+    </div>
+  )
+}
 
 // Рассылка уведомления всем пользователям: попадает в колокольчик каждому + native
 // push тем, у кого включён тумблер «Объявления от администрации».
@@ -66,6 +120,9 @@ export function AdminBroadcast() {
           </Button>
         </div>
       </form>
+
+      <h2 className={styles.sectionTitle}>У кого включены уведомления</h2>
+      <PrefsOverview />
     </div>
   )
 }
