@@ -40,18 +40,12 @@ function forReading(md: string): string {
 type State = { html: string | null; loading: boolean; error: boolean }
 
 // Tag the three spectrum-band headings (## Тень / ## Дар / ## Сиддхи) with a
-// stable id (scroll target for the clickable plaques) and a band class (so they
-// pick up the plaque's accent colour). Run AFTER sanitize — the added id/class
-// are our own static, trusted strings. `gk-band-head` also carries the
-// scroll-margin so the heading clears the sticky bar when scrolled to.
-const BANDS: Record<string, string> = {
-  Тень: 'gkBandShadow',
-  Дар: 'gkBandGift',
-  Сиддхи: 'gkBandSiddhi',
-}
+// stable id (scroll target for the clickable plaques) + a marker class carrying
+// the scroll-margin so the heading clears the sticky bar when scrolled to. Run
+// AFTER sanitize — the added id/class are our own static, trusted strings.
 function tagBandHeadings(html: string): string {
   return html.replace(/<h2>(Тень|Дар|Сиддхи)<\/h2>/g, (_m, band: string) => {
-    return `<h2 id="gk-band-${band}" class="gk-band-head ${BANDS[band]}">${band}</h2>`
+    return `<h2 id="gk-band-${band}" class="gk-band-head">${band}</h2>`
   })
 }
 

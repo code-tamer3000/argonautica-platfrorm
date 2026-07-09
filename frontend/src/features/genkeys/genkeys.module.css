@@ -70,27 +70,31 @@
   opacity: 0.5;
 }
 
-/* --- Living skeleton: pulse along every sector outline, center → outward -- */
-/* The whole nested sector grid (radial spokes on 3 rings + ring arcs) sits at a
-   faint gold baseline; each element brightens briefly then eases back, and its
-   animation-delay grows with radius (set inline in JS) so the bright moment
-   rolls OUTWARD like a spark running along the outline, leaving a fading trail.
-   One long, gently-eased period keeps it smooth and unhurried. Decorative only;
-   killed for reduced-motion. */
+/* --- Living skeleton: pulse along every sector outline, in waves ---------- */
+/* The whole nested sector grid (radial spokes on 3 rings + ring arcs) pulses in
+   two alternating waves: one wave lights the grid fully, the next fully
+   extinguishes it, and so on. Each element's animation-delay grows with radius
+   (set inline in JS), so the "light up" rolls OUTWARD and, a beat later, the
+   "go dark" rolls outward too — the on/off waves chase each other from the hub.
+   The keyframe holds each state (bright, then fully off) so it reads as whole
+   waves, not a thin travelling spark. Decorative only; killed for reduced-motion. */
 @keyframes gkSparkRun {
+  /* wave 1 — light up and hold bright */
   0% {
-    opacity: 0.12;
+    opacity: 0;
   }
-  /* the spark passes: a soft brighten-and-release, not a hard blink */
-  8% {
-    opacity: 0.85;
+  12% {
+    opacity: 0.9;
   }
-  26% {
-    opacity: 0.3;
+  42% {
+    opacity: 0.9;
   }
-  /* long quiet tail before the next wave arrives */
+  /* wave 2 — fully extinguish and hold dark */
+  54% {
+    opacity: 0;
+  }
   100% {
-    opacity: 0.12;
+    opacity: 0;
   }
 }
 .sectorPulse {
@@ -119,26 +123,38 @@
   stroke: var(--accent);
   animation: gkRimGlow 6.5s ease-in-out infinite;
 }
+/* The outer rim breathes in step with the waves: up on the light wave, fully
+   down on the dark wave (its delay ≈ the rim radius, so it's the last to light
+   and the last to go dark). */
 @keyframes gkRimGlow {
-  0%,
-  100% {
-    opacity: 0.25;
+  0% {
+    opacity: 0;
     stroke-width: 1.5;
   }
-  50% {
+  12% {
     opacity: 0.55;
     stroke-width: 2.5;
   }
+  42% {
+    opacity: 0.55;
+    stroke-width: 2.5;
+  }
+  54% {
+    opacity: 0;
+    stroke-width: 1.5;
+  }
+  100% {
+    opacity: 0;
+    stroke-width: 1.5;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
+  /* No pulsing waves — just a steady faint gold outline of the grid. */
   .pulseSpoke,
   .pulseArc,
   .rimGlow {
     animation: none;
-  }
-  .pulseSpoke,
-  .pulseArc {
-    opacity: 0.12;
+    opacity: 0.18;
   }
 }
 
@@ -807,7 +823,7 @@
     var(--band) 100%
   );
   background-size: 220% 100%;
-  animation: gkStripShimmer 3.4s ease-in-out infinite;
+  animation: gkStripShimmer 6.5s ease-in-out infinite;
 }
 @keyframes gkStripShimmer {
   0% {
@@ -927,21 +943,13 @@
 }
 /* The three spectrum-band headings (## Тень / ## Дар / ## Сиддхи), tagged in
    useGeneKeyBody. `scroll-margin-top` keeps them clear of the sticky bar when
-   a plaque scrolls to them (heading stays visible). Their colour matches the
-   corresponding plaque strip, not the default gold — so the plaque you clicked
-   and the section it lands on read as the same band. */
+   a plaque scrolls to them (heading stays visible). Colour is the plain body
+   text colour (uniform across all three), not the default gold or a per-band
+   tint. */
 .articleBody :global(.gk-band-head) {
   scroll-margin-top: 64px;
-  border-bottom-color: currentColor;
-}
-.articleBody :global(.gkBandShadow) {
-  color: var(--color-krov);
-}
-.articleBody :global(.gkBandGift) {
-  color: var(--color-zoloto);
-}
-.articleBody :global(.gkBandSiddhi) {
-  color: var(--color-kost-yar);
+  color: var(--text-primary);
+  border-bottom-color: var(--divider);
 }
 .articleBody h3 {
   font-family: var(--font-t2);
