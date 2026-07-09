@@ -89,39 +89,6 @@ async def test_publish_makes_visible(
     assert item["id"] in {i["id"] for i in listed.json()}
 
 
-async def test_kind_defaults_to_article_and_book_roundtrips(
-    client: AsyncClient,
-    make_user: MakeUser,
-) -> None:
-    admin = await make_user(role="admin")
-    admin_headers = await _headers(client, admin)
-
-    # Без kind — по умолчанию 'article'.
-    article = await _create_item(client, admin_headers, title="Plain")
-    assert article["kind"] == "article"
-
-    # Явно создать книгу.
-    book = await _create_item(
-        client, admin_headers, title="64 пути", kind="book", body="# 64\n\n## Гл 1\n\ntext"
-    )
-    assert book["kind"] == "book"
-    fetched = await client.get(f"/api/kb/items/{book['id']}", headers=admin_headers)
-    assert fetched.json()["kind"] == "book"
-
-    # Перевести статью в книгу через PATCH.
-    patched = await client.patch(
-        f"/api/kb/items/{article['id']}", headers=admin_headers, json={"kind": "book"}
-    )
-    assert patched.status_code == 200
-    assert patched.json()["kind"] == "book"
-
-    # Недопустимый kind отвергается схемой (422).
-    bad = await client.post(
-        "/api/kb/items", headers=admin_headers, json={"title": "x", "kind": "video"}
-    )
-    assert bad.status_code == 422
-
-
 async def test_non_admin_cannot_author(
     client: AsyncClient,
     make_user: MakeUser,

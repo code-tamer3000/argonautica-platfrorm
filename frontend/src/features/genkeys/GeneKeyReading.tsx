@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { Hexagram } from './Hexagram'
 import { useGeneKeyBody } from './useGeneKeyBody'
 import { getKey } from './wheel'
-import { useKbBookByTitle } from '../../api/kb'
+import { useGenkeysBookLink } from './useGenkeysBook'
 import { Spinner } from '../../components/Spinner'
 import styles from './genkeys.module.css'
 
@@ -14,9 +14,9 @@ interface Props {
 export function GeneKeyReading({ number, onClose }: Props) {
   const key = getKey(number)
   const { html, loading, error } = useGeneKeyBody(number)
-  // Deep-link into the «64 пути» book material (if it exists in the KB): chapter
-  // N contemplates key N, so we jump to that chapter via ?ch=N.
-  const { book } = useKbBookByTitle('64 пути')
+  // If the «64 пути» book (a KB article with an attached .md) is published, link
+  // into it: chapter N contemplates key N, so we jump there via ?ch=N.
+  const bookLink = useGenkeysBookLink('64 пути')
 
   if (!key) return null
 
@@ -41,8 +41,11 @@ export function GeneKeyReading({ number, onClose }: Props) {
 
         {/* Deep-link into the «64 пути» book — up top so it's the first offer,
             not buried under the whole reading. Chapter N contemplates key N. */}
-        {book && (
-          <Link to={`/kb/book/${book.id}?ch=${number}`} className={styles.bookLink}>
+        {bookLink && (
+          <Link
+            to={`/kb/read/${bookLink.itemId}/${bookLink.assetId}?ch=${number}`}
+            className={styles.bookLink}
+          >
             📖 Читать главу в книге «64 пути» →
           </Link>
         )}

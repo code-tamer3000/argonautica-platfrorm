@@ -8,7 +8,7 @@ import {
   useAttachKbMedia,
   useDetachKbMedia,
 } from '../../api/kb'
-import type { KbItemOut, KbKind } from '../../lib/types'
+import type { KbItemOut } from '../../lib/types'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
@@ -19,7 +19,6 @@ import styles from './admin.module.css'
 interface KbFormValues {
   title: string
   body: string
-  kind: KbKind
   published: boolean
   media_asset_ids: number[]
 }
@@ -35,7 +34,6 @@ interface KbFormProps {
 function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
-  const [kind, setKind] = useState<KbKind>(initial?.kind ?? 'article')
   const [published, setPublished] = useState(initial?.published ?? false)
   // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
@@ -53,7 +51,7 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ title, body, kind, published, media_asset_ids: stagedMedia })
+    onSubmit({ title, body, published, media_asset_ids: stagedMedia })
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -114,21 +112,10 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
         />
       </label>
       <label className={styles.label}>
-        Тип материала
-        <select
-          className={styles.input}
-          value={kind}
-          onChange={(e) => setKind(e.target.value as KbKind)}
-        >
-          <option value="article">Статья</option>
-          <option value="book">Книга (читалка)</option>
-        </select>
-      </label>
-      <label className={styles.label}>
-        Содержание{kind === 'book' ? ' (markdown; «## Заголовок» = новая глава)' : ''}
+        Содержание
         <textarea
           className={styles.textarea}
-          rows={kind === 'book' ? 14 : 8}
+          rows={8}
           value={body}
           onChange={(e) => setBody(e.target.value)}
         />
@@ -206,7 +193,6 @@ export function AdminKb() {
       {
         title: values.title,
         body: values.body || null,
-        kind: values.kind,
         published: values.published,
         media_asset_ids: values.media_asset_ids,
       },
@@ -228,7 +214,6 @@ export function AdminKb() {
         id: editItem.id,
         title: values.title,
         body: values.body || null,
-        kind: values.kind,
         published: values.published,
       },
       {

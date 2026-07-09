@@ -1,32 +1,55 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useKbItem } from '../../../api/kb'
+import { useMediaUrl } from '../../../api/media'
 import { Spinner } from '../../../components/Spinner'
 import { parseBook } from './parseBook'
 import styles from './book.module.css'
 
-// Full-screen reader for a KB "book" material (kb_items.kind = 'book'). Chapters
-// are parsed from the item's markdown `body` on the `##` headings; a table of
-// contents rail tracks the chapter in view via IntersectionObserver. Layout is
-// adapted from the Manifesto reader (TOC + reading column), themed with our
-// design tokens instead of inline colors.
+/**
+ * Full-screen markdown reader for a `.md` file attached to a KB article. Given
+ * the article id and the attachment id, it fetches the markdown from the file's
+ * presigned URL and splits it into chapters on the `##` headings, with a TOC
+ * rail that tracks the chapter in view. `?ch=N` / `#slug` deep-link a chapter
+ * (used from a Gene Key reading). Layout adapted from the Manifesto reader,
+ * themed with our design tokens.
+ */
 export function KbBookReader() {
-  const { itemId } = useParams<{ itemId: string }>()
+  const { itemId, assetId } = useParams<{ itemId: string; assetId: string }>()
   const id = Number(itemId ?? '0')
-  const { data: item, isLoading } = useKbItem(id)
+  const asset = Number(assetId ?? '0')
   const [searchParams] = useSearchParams()
 
-  const book = useMemo(() => (item?.body ? parseBook(item.body) : null), [item?.body])
+  const { data: item } = useKbItem(id)
+  const { data: media, isLoading: mediaLoading } = useMediaUrl(asset || null)
+
+  const [md, setMd] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState(false)
+
+  // Fetch the markdown bytes from the presigned URL once we have it.
+  useEffect(() => {
+    if (!media?.url) return
+    let cancelled = false
+    setMd(null)
+    setLoadError(false)
+    fetch(media.url)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((text) => { if (!cancelled) setMd(text) })
+      .catch(() => { if (!cancelled) setLoadError(true) })
+    return () => { cancelled = true }
+  }, [media?.url])
+
+  const book = useMemo(() => (md ? parseBook(md) : null), [md])
 
   const [active, setActive] = useState(0)
-  const jumpedRef = useRef(false)
   const [tocOpen, setTocOpen] = useState(false)
+  const jumpedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const chapterRefs = useRef<(HTMLElement | null)[]>([])
   const scrollingRef = useRef(false)
   const scrollTimer = useRef<number | undefined>(undefined)
 
-  // Highlight the chapter currently in view (unless we're mid programmatic jump).
+  // Highlight the chapter currently in view (unless mid programmatic jump).
   useEffect(() => {
     const root = scrollRef.current
     if (!root || !book) return
@@ -56,7 +79,6 @@ export function KbBookReader() {
     if (target < 0 && hash) target = book.chapters.findIndex((c) => c.slug === hash)
     if (target >= 0) {
       jumpedRef.current = true
-      // Defer to next frame so refs are attached and layout is settled.
       requestAnimationFrame(() => goToChapter(target))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,27 +94,29 @@ export function KbBookReader() {
     if (el && root) {
       const top = root.scrollTop + (el.getBoundingClientRect().top - root.getBoundingClientRect().top) - 8
       root.scrollTo({ top, behavior: 'smooth' })
-      scrollTimer.current = window.setTimeout(() => {
-        scrollingRef.current = false
-      }, 700)
+      scrollTimer.current = window.setTimeout(() => { scrollingRef.current = false }, 700)
     } else {
       scrollingRef.current = false
     }
   }
 
-  if (isLoading) return <div className="center grow"><Spinner /></div>
-  if (!item) return <div className="center grow muted">Материал не найден</div>
+  if (mediaLoading || (media && !md && !loadError)) {
+    return <div className="center grow"><Spinner /></div>
+  }
+  if (loadError) return <div className="center grow muted">Не удалось загрузить файл</div>
   if (!book || book.chapters.length === 0) {
-    return <div className="center grow muted">В этой книге пока нет глав</div>
+    return <div className="center grow muted">В этом документе пока нет глав</div>
   }
 
+  const backTo = id > 0 ? `/kb/${id}` : '/kb'
   const activeChapter = book.chapters[active]
+  const heading = book.title || item?.title || 'Чтение'
 
   return (
     <div className={styles.reader}>
       <div className={styles.topbar}>
-        <Link to={`/kb`} className={styles.back}>← База знаний</Link>
-        <span className={styles.bookName}>{book.title || item.title}</span>
+        <Link to={backTo} className={styles.back}>← Назад</Link>
+        <span className={styles.bookName}>{heading}</span>
         <button
           className={styles.tocToggle}
           onClick={() => setTocOpen((o) => !o)}
