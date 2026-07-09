@@ -1,13 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { TRIGRAMS, getKey, keyByTrigrams } from './wheel'
 import styles from './genkeys.module.css'
 
-// Mobile-only picker: on small screens the 64 wheel sectors are too tiny to tap
-// a specific key, so we offer two direct ways in — by number, or by assembling
-// the hexagram from its lower + upper trigram. Selecting resolves to a key
-// number and opens its reading via `onSelect`.
+// Direct key picker: the 64 wheel sectors are hard to hit (tiny on touch, fiddly
+// with a cursor), so we offer two ways in — by number, or by assembling the
+// hexagram from its lower + upper trigram. Selecting resolves to a key number
+// and opens its reading via `onSelect`. On desktop it's a collapsible corner
+// card; on mobile it sits in-flow under the wheel (styling in the CSS module).
 
 type Mode = 'number' | 'hexagram'
+
+// Mobile only: nudge an element into view so growing the card (hexagram) or the
+// on-screen keyboard (number) doesn't leave the field hidden behind the fold.
+// Desktop has room and a cursor, so we skip it there (no jarring auto-scroll).
+const isTouchLayout = () =>
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
+
+function scrollIntoViewSoft(el: HTMLElement | null) {
+  if (el && isTouchLayout()) {
+    // rAF so layout has settled (card grown / keyboard cue) before we scroll.
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }
+}
 
 interface Props {
   onSelect: (n: number) => void
@@ -19,6 +33,14 @@ export function GeneKeyPicker({ onSelect }: Props) {
   // opens it (keeps the wheel unobstructed). On mobile the toggle is hidden and
   // the content is always shown (CSS), so this state is desktop-only in effect.
   const [expanded, setExpanded] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  const pick = (m: Mode) => {
+    setMode(m)
+    // Switching to the taller hexagram picker grows the card downward — on mobile
+    // ease it into view instead of leaving it below the fold.
+    if (m === 'hexagram') scrollIntoViewSoft(bodyRef.current)
+  }
 
   return (
     <div className={styles.picker} data-expanded={expanded}>
@@ -40,7 +62,7 @@ export function GeneKeyPicker({ onSelect }: Props) {
             role="tab"
             aria-selected={mode === 'number'}
             className={mode === 'number' ? styles.pickerTabActive : styles.pickerTab}
-            onClick={() => setMode('number')}
+            onClick={() => pick('number')}
           >
             По номеру
           </button>
@@ -49,12 +71,12 @@ export function GeneKeyPicker({ onSelect }: Props) {
             role="tab"
             aria-selected={mode === 'hexagram'}
             className={mode === 'hexagram' ? styles.pickerTabActive : styles.pickerTab}
-            onClick={() => setMode('hexagram')}
+            onClick={() => pick('hexagram')}
           >
             По гексаграмме
           </button>
         </div>
-        <div className={styles.pickerBody}>
+        <div className={styles.pickerBody} ref={bodyRef}>
           {mode === 'number' ? (
             <NumberPicker onSelect={onSelect} />
           ) : (
@@ -97,6 +119,9 @@ function NumberPicker({ onSelect }: { onSelect: (n: number) => void }) {
           placeholder="1–64"
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          // On mobile the keyboard slides up over the lower half — ease the field
+          // into the center so it stays visible instead of hiding behind it.
+          onFocus={(e) => scrollIntoViewSoft(e.currentTarget)}
           aria-label="Номер генного замка от 1 до 64"
         />
       </label>

@@ -795,8 +795,13 @@
      nothing overlaps and the picker is always reachable. The wheel is trimmed a
      little (not shrunk hard) so the whole set fits without fighting for space. */
   .stage {
-    justify-content: flex-start;
+    /* Center the title→wheel→picker block; `safe` keeps it top-aligned (nothing
+       clipped/unreachable) when it's taller than the viewport, e.g. once the
+       hexagram picker is expanded. Number mode is short, so the wheel drops to
+       the visual center of the screen. */
+    justify-content: safe center;
     overflow-y: auto;
+    scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
     padding: var(--space-4) 0 var(--space-8);
     gap: var(--space-2);
@@ -883,9 +888,10 @@
   .picker:not([data-expanded='true']) .pickerContent {
     display: flex;
   }
-  /* Reserve the tall-tab (hexagram) height for BOTH tabs so switching between
-     "по номеру" and "по гексаграмме" doesn't jump the layout on touch. */
+  /* No reserved height on mobile: "по номеру" stays compact so the wheel can
+     drop toward the screen center; switching to "по гексаграмме" grows the card
+     downward, and the stage smooth-scrolls it into view (see GeneKeyPicker). */
   .pickerBody {
-    min-height: 232px;
+    min-height: 0;
   }
 }
