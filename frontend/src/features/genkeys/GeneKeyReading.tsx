@@ -1,6 +1,8 @@
+import { Link } from 'react-router-dom'
 import { Hexagram } from './Hexagram'
 import { useGeneKeyBody } from './useGeneKeyBody'
 import { getKey } from './wheel'
+import { useGenkeysBookLink } from './useGenkeysBook'
 import { Spinner } from '../../components/Spinner'
 import styles from './genkeys.module.css'
 
@@ -12,6 +14,9 @@ interface Props {
 export function GeneKeyReading({ number, onClose }: Props) {
   const key = getKey(number)
   const { html, loading, error } = useGeneKeyBody(number)
+  // If the «64 пути» book (a KB article with an attached .md) is published, link
+  // into it: chapter N contemplates key N, so we jump there via ?ch=N.
+  const bookLink = useGenkeysBookLink('64 пути')
 
   if (!key) return null
 
@@ -34,18 +39,32 @@ export function GeneKeyReading({ number, onClose }: Props) {
       <div className={styles.readingScroll}>
         <h1 className={styles.readingName}>{key.name}</h1>
 
+        {/* Deep-link into the «64 пути» book — up top so it's the first offer,
+            not buried under the whole reading. Chapter N contemplates key N. */}
+        {bookLink && (
+          <Link
+            to={`/kb/read/${bookLink.itemId}/${bookLink.assetId}?ch=${number}`}
+            className={styles.bookLink}
+          >
+            📖 Читать главу в книге «64 пути» →
+          </Link>
+        )}
+
         <div className={styles.spectrum}>
           <div className={`${styles.spectrumCell} ${styles.cellShadow}`}>
             <span className={styles.spectrumLabel}>Тень</span>
             <span className={styles.spectrumValue}>{key.shadow}</span>
+            {key.fear && <span className={styles.spectrumTotem}>{key.fear}</span>}
           </div>
           <div className={`${styles.spectrumCell} ${styles.cellGift}`}>
             <span className={styles.spectrumLabel}>Дар</span>
             <span className={styles.spectrumValue}>{key.gift}</span>
+            {key.life && <span className={styles.spectrumTotem}>{key.life}</span>}
           </div>
           <div className={`${styles.spectrumCell} ${styles.cellSiddhi}`}>
             <span className={styles.spectrumLabel}>Сиддхи</span>
             <span className={styles.spectrumValue}>{key.siddhi}</span>
+            {key.vision && <span className={styles.spectrumTotem}>{key.vision}</span>}
           </div>
         </div>
 

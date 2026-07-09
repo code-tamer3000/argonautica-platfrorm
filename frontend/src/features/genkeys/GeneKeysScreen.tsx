@@ -21,6 +21,7 @@ export function GeneKeysScreen() {
   const [anchorTop, setAnchorTop] = useState(false)
   const dwellRef = useRef<number | null>(null)
   const pickRef = useRef<number | null>(null)
+  const stageRef = useRef<HTMLElement>(null)
 
   // Debounced hover: schedule the commit after DWELL_MS; a new hover (or leave)
   // cancels the pending one. Clearing to null is immediate (fast reset).
@@ -92,6 +93,14 @@ export function GeneKeysScreen() {
   }, [activeKey, handleClose])
 
   const open = activeKey != null
+
+  // When a reading opens, the stage collapses to a centered strip. If the user
+  // had scrolled the mobile stage down (to reach the picker), reset its scroll to
+  // top so the wheel lands centered as it shrinks — no half-scrolled strip.
+  useEffect(() => {
+    if (open) stageRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [open])
+
   // Partner (opposite) highlights when a key is opened OR hovered.
   const focusNum = activeKey ?? hoverKey
   const partnerKey = focusNum != null ? (partnerOf(focusNum) ?? null) : null
@@ -100,7 +109,7 @@ export function GeneKeysScreen() {
 
   return (
     <div className={`${styles.screen} ${open ? styles.screenOpen : ''}`}>
-      <section className={styles.stage}>
+      <section className={styles.stage} ref={stageRef}>
         <div className={styles.wheelWrap}>
           <GeneKeysWheel
             activeKey={activeKey}

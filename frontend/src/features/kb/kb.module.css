@@ -263,6 +263,33 @@
   line-height: 1.5; white-space: pre-wrap; word-break: break-word; margin-top: 2px;
 }
 
+/* ───── Приложенный .md — кнопка «Читать» рядом со скачиванием ───── */
+.mdAttachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.readButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--divider-gold-strong);
+  border-radius: var(--radius-btn);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-family: var(--font-t4);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--accent-bright);
+  white-space: nowrap;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.readButton:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 /* ───── Мобила: убираем широкие поля страницы ───── */
 @media (max-width: 768px) {
   .page { padding: var(--space-4) var(--space-4); }

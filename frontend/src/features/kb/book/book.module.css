@@ -1,0 +1,236 @@
+/* KB book reader — TOC rail + reading column, adapted from the Manifesto reader
+   and themed with the Argonautica design tokens. */
+
+.reader {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background:
+    radial-gradient(120% 90% at 30% 20%, rgba(19, 78, 69, 0.14), transparent 60%),
+    var(--bg);
+}
+
+/* --- Top bar -------------------------------------------------------------- */
+.topbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--divider-gold);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+.back {
+  font-family: var(--font-t4);
+  font-size: 13px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.back:hover { text-decoration: underline; }
+.bookName {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tocToggle {
+  flex: 0 0 auto;
+  display: none; /* mobile only */
+  appearance: none;
+  background: none;
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-btn);
+  color: var(--accent);
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+/* --- Mobile "now reading" strip (hidden on desktop) ----------------------- */
+.nowReading {
+  display: none;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  border-bottom: 1px solid var(--divider);
+}
+.nowNum {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.nowTitle {
+  font-family: var(--font-t2);
+  font-size: 13px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Body: TOC + reading pane -------------------------------------------- */
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 264px 1fr;
+}
+
+.toc {
+  border-right: 1px solid var(--divider-gold);
+  padding: var(--space-5) var(--space-4) var(--space-8);
+  overflow-y: auto;
+  min-height: 0;
+}
+.tocHead {
+  font-family: var(--font-t4);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+  margin-bottom: var(--space-4);
+}
+.tocScroll { display: flex; flex-direction: column; }
+.tocItem {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--divider);
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  transition: border-color 200ms ease;
+}
+.tocItem:hover { border-bottom-color: var(--divider-gold-strong); }
+.tocItemActive { border-bottom-color: var(--divider-gold-strong); }
+.tocNum {
+  flex: 0 0 auto;
+  width: 28px;
+  font-family: var(--font-t4);
+  font-size: 11px;
+  color: var(--color-kost-stone);
+}
+.tocItemActive .tocNum { color: var(--accent-bright); }
+.tocTitle {
+  font-family: var(--font-t2);
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  transition: color 200ms ease;
+}
+.tocItem:hover .tocTitle { color: var(--text-secondary); }
+.tocItemActive .tocTitle { color: var(--text-primary); }
+
+/* --- Reading pane -------------------------------------------------------- */
+.pane {
+  overflow-y: auto;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 clamp(var(--space-5), 5vw, var(--space-16));
+}
+.chapter {
+  max-width: 68ch;
+  margin: 0 auto;
+  padding: var(--space-16) 0 var(--space-12);
+  border-bottom: 1px solid var(--divider);
+  animation: bookChapterIn 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.chapter:last-of-type { border-bottom: none; }
+.chapterKicker {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--space-3);
+}
+.chapterTitle {
+  font-family: var(--font-t1);
+  font-weight: 400;
+  font-size: clamp(24px, 3vw, 36px);
+  line-height: 1.15;
+  color: var(--text-primary);
+  margin: 0 0 var(--space-4);
+}
+.hairline {
+  height: 1px;
+  background: linear-gradient(90deg, var(--divider-gold-strong), transparent);
+  margin-bottom: var(--space-6);
+}
+
+/* Prose — Lora-like reading rhythm; our t3 body font, generous leading. */
+.prose {
+  font-family: var(--font-t3);
+  font-size: 17px;
+  line-height: 1.85;
+  color: var(--text-secondary);
+}
+.prose p { margin: 0 0 var(--space-5); }
+.prose em { font-style: italic; color: var(--text-primary); }
+.prose strong {
+  font-weight: 600;
+  color: var(--accent-bright);
+}
+/* A lone bold line on its own paragraph reads as a sub-heading (band titles). */
+.prose p > strong:only-child {
+  display: block;
+  font-family: var(--font-t2);
+  font-weight: 400;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-top: var(--space-6);
+}
+.prose blockquote {
+  border-left: 2px solid var(--divider-gold-strong);
+  padding-left: var(--space-4);
+  margin: var(--space-5) 0;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.prose h3 {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin: var(--space-8) 0 var(--space-3);
+}
+.tail { height: var(--space-16); }
+
+@keyframes bookChapterIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --- Mobile: TOC becomes an overlay panel -------------------------------- */
+@media (max-width: 860px) {
+  .tocToggle { display: inline-block; }
+  .nowReading { display: flex; }
+  .body { grid-template-columns: 1fr; }
+  .toc {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: var(--bg-surface);
+    transform: translateX(-100%);
+    transition: transform 240ms ease;
+    border-right: none;
+  }
+  .tocOpen { transform: none; }
+  .reader { position: relative; }
+}

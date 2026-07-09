@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useKbItem } from '../../api/kb'
-import { Attachment } from '../chat/Attachment'
+import { MdAttachment } from './MdAttachment'
 import { KbComments } from './KbComments'
 import { Spinner } from '../../components/Spinner'
 import { useAuth } from '../auth/AuthContext'
@@ -42,7 +42,7 @@ export function KbViewer() {
       {item.media_asset_ids.length > 0 && (
         <div className={styles.kbMedia}>
           {item.media_asset_ids.map((assetId) => (
-            <Attachment key={assetId} assetId={assetId} />
+            <MdAttachment key={assetId} itemId={id} assetId={assetId} />
           ))}
         </div>
       )}

@@ -36,6 +36,9 @@ import styles from './appshell.module.css'
 const GeneKeysScreen = lazy(() =>
   import('../genkeys/GeneKeysScreen').then((m) => ({ default: m.GeneKeysScreen })),
 )
+const KbBookReader = lazy(() =>
+  import('../kb/book/KbBookReader').then((m) => ({ default: m.KbBookReader })),
+)
 
 export function AppShell() {
   const { user, logout } = useAuth()
@@ -213,6 +216,14 @@ export function AppShell() {
             <Route path="/" element={<ChatLayout key="rubka" />} />
             <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
+            <Route
+              path="/kb/read/:itemId/:assetId"
+              element={
+                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
+                  <KbBookReader />
+                </Suspense>
+              }
+            />
             <Route path="/kb/:itemId" element={<KbViewer />} />
             <Route path="/tasks" element={<TasksList />} />
             <Route path="/tasks/:taskId" element={<TaskDetail />} />

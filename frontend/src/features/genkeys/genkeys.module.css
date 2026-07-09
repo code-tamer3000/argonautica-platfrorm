@@ -321,11 +321,246 @@
   margin-top: var(--space-1);
 }
 
-/* --- Mobile picker (by number / by hexagram) ----------------------------- */
-/* Hidden on desktop — the wheel is the interface there. Shown only in the
-   mobile media query below, where the 64 sectors are too small to tap. */
+/* --- Picker (by number / by hexagram) ------------------------------------ */
+/* A direct way into a key without hunting on the wheel. On desktop it's a
+   compact card parked in the stage's bottom-left corner (out of the vertical
+   flow so it never shrinks the wheel); on mobile (media query below) it moves
+   in-flow under the wheel, where the 64 sectors are too small to tap. The
+   visual styling of tabs / form / trigrams is shared; only placement differs. */
+/* Desktop: a floating card parked in the stage's bottom-left corner. The wheel
+   is centered with margin on either side on wide screens; the card lives in that
+   margin. It sits above the wheel (z-index) with a blurred, semi-opaque backing
+   so it reads as a panel — an alternative way in, not a replacement for the wheel. */
 .picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  position: absolute;
+  left: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 2;
+  width: min(300px, 30vw);
+  padding: var(--space-4);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-surface) 88%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.28);
+}
+.screenOpen .picker {
+  /* Reading is open — the wheel is the focus; hide the corner card. */
   display: none;
+}
+
+/* Desktop collapse: a pill header that toggles the body open. Collapsed, the
+   card is just this button; expanded, the tabs + body appear below it. On mobile
+   the toggle is hidden and the content always shows (media query below). */
+.pickerToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: 14px;
+  cursor: pointer;
+}
+.pickerToggleIcon {
+  color: var(--accent);
+  font-size: 12px;
+}
+.pickerContent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+/* Collapsed (default on desktop): hide the tabs/body, and drop the gap so the
+   card is just the pill height. */
+.picker:not([data-expanded='true']) .pickerContent {
+  display: none;
+}
+.picker:not([data-expanded='true']) {
+  gap: 0;
+}
+
+.pickerTabs {
+  display: flex;
+  gap: var(--space-1);
+  padding: 3px;
+  border: 1px solid var(--divider-gold);
+  border-radius: 999px;
+  background: var(--bg-surface);
+}
+.pickerTab,
+.pickerTabActive {
+  flex: 1 1 0;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-t4);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 200ms ease, color 200ms ease;
+}
+.pickerTabActive {
+  background: var(--accent);
+  color: var(--color-bezdna);
+}
+
+/* Desktop: the body sizes to its content — "по номеру" stays compact, and
+   "по гексаграмме" simply grows the card downward (no reserved empty space).
+   On mobile a min-height is restored (media query) to avoid a tap-jump. */
+.pickerBody {
+  display: flex;
+  flex-direction: column;
+}
+
+.pickerForm {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'field go'
+    'hint  hint';
+  gap: var(--space-2) var(--space-3);
+  align-items: end;
+}
+.pickerField {
+  grid-area: field;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pickerLabel {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+.pickerInput {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-btn);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-t2);
+  font-size: 18px;
+  /* No spinner arrows on the number field — the 1–64 range is entered directly. */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.pickerInput::-webkit-outer-spin-button,
+.pickerInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+.pickerInput:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+.pickerGo {
+  grid-area: go;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-btn);
+  background: var(--accent);
+  color: var(--color-bezdna);
+  font-family: var(--font-t4);
+  font-size: 14px;
+  cursor: pointer;
+  transition: opacity 200ms ease;
+}
+.pickerGo:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pickerHint {
+  grid-area: hint;
+  min-height: 16px;
+  font-family: var(--font-t3);
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* By-hexagram: two columns of eight trigram buttons + a resolve row. */
+.hexPicker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+.trigramCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+}
+.trigramGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  width: 100%;
+}
+.trigramBtn,
+.trigramBtnActive {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: var(--space-2) 4px;
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-btn);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 200ms ease, background 200ms ease, color 200ms ease;
+}
+.trigramBtnActive {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-surface));
+  color: var(--text-primary);
+}
+.trigramLines {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 30px;
+}
+.trigramLineYang,
+.trigramLineYin {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  height: 4px;
+}
+.trigramSeg {
+  flex: 1 1 auto;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+}
+.trigramName {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  line-height: 1;
+}
+.hexResult {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  min-height: 40px;
+  align-items: center;
+}
+.hexResult .pickerGo {
+  grid-area: auto;
 }
 
 /* --- Reading pane --------------------------------------------------------- */
@@ -468,6 +703,19 @@
   font-size: 15px;
   color: var(--text-primary);
 }
+.spectrumTotem {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--divider);
+  font-family: var(--font-t4);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.spectrumTotem::before {
+  content: '🐾 ';
+  font-style: normal;
+}
 
 /* Characteristics */
 .chars {
@@ -551,6 +799,118 @@
   color: var(--text-primary);
 }
 
+/* --- Book reader (Ричард Радд · 64 пути) ---------------------------------- */
+.book {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background:
+    radial-gradient(120% 90% at 30% 30%, rgba(19, 78, 69, 0.18), transparent 60%),
+    var(--bg);
+}
+.bookBar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.bookBack {
+  font-family: var(--font-t4);
+  font-size: 13px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.bookBack:hover {
+  text-decoration: underline;
+}
+.bookBarTitle {
+  font-family: var(--font-t4);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.bookScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bookChapter {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-16);
+  animation: gkReadingIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.bookHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--divider-gold);
+}
+.bookTitle {
+  font-family: var(--font-t1);
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1.12;
+  color: var(--text-primary);
+  margin: 2px 0 0;
+  text-transform: none;
+}
+.bookNav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-10);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--divider);
+}
+.bookNavBtn {
+  appearance: none;
+  background: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+  font-family: var(--font-t4);
+  font-size: 13px;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.bookNavBtn:hover {
+  color: var(--accent);
+  border-color: var(--divider-gold-strong);
+}
+
+/* Link into the «64 пути» book — sits near the top of a key reading. */
+.bookLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-btn);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-family: var(--font-t4);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  text-decoration: none;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.bookLink:hover {
+  border-color: var(--divider-gold-strong);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
 /* --- Mobile: stack wheel over reading ------------------------------------- */
 @media (max-width: 900px) {
   .screen {
@@ -560,8 +920,13 @@
      nothing overlaps and the picker is always reachable. The wheel is trimmed a
      little (not shrunk hard) so the whole set fits without fighting for space. */
   .stage {
-    justify-content: flex-start;
+    /* Center the title→wheel→picker block; `safe` keeps it top-aligned (nothing
+       clipped/unreachable) when it's taller than the viewport, e.g. once the
+       hexagram picker is expanded. Number mode is short, so the wheel drops to
+       the visual center of the screen. */
+    justify-content: safe center;
     overflow-y: auto;
+    scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
     padding: var(--space-4) 0 var(--space-8);
     gap: var(--space-2);
@@ -622,181 +987,36 @@
     grid-template-columns: 110px 1fr;
   }
 
-  /* Direct key selection — shown only on mobile. Hidden once a reading opens
-     (the screen conditionally unmounts it, but keep it out of the strip too). */
-  .picker {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
+  /* Mobile: the picker moves in-flow, directly under the wheel (drop the desktop
+     corner-card float, blur and shadow). The shared visual styling above still
+     applies; only placement changes. */
+  .picker,
+  .picker:not([data-expanded='true']) {
+    position: static;
+    z-index: auto;
     width: min(92%, 420px);
     flex: 0 0 auto;
     margin-top: var(--space-2);
-  }
-  .screenOpen .picker {
-    display: none;
-  }
-  /* Reserve the tall-tab (hexagram) height for BOTH tabs so switching between
-     "по номеру" and "по гексаграмме" doesn't jump the layout. */
-  .pickerBody {
-    min-height: 232px;
-  }
-
-  .pickerTabs {
-    display: flex;
-    gap: var(--space-1);
-    padding: 3px;
-    border: 1px solid var(--divider-gold);
-    border-radius: 999px;
-    background: var(--bg-surface);
-  }
-  .pickerTab,
-  .pickerTabActive {
-    flex: 1 1 0;
-    padding: var(--space-2) var(--space-3);
+    padding: 0;
     border: none;
-    border-radius: 999px;
+    border-radius: 0;
     background: transparent;
-    color: var(--text-muted);
-    font-family: var(--font-t4);
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 200ms ease, color 200ms ease;
-  }
-  .pickerTabActive {
-    background: var(--accent);
-    color: var(--color-bezdna);
-  }
-
-  .pickerForm {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-areas:
-      'field go'
-      'hint  hint';
-    gap: var(--space-2) var(--space-3);
-    align-items: end;
-  }
-  .pickerField {
-    grid-area: field;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .pickerLabel {
-    font-family: var(--font-t4);
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--text-ghost);
-  }
-  .pickerInput {
-    width: 100%;
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--divider-gold);
-    border-radius: var(--radius-btn);
-    background: var(--bg-deep);
-    color: var(--text-primary);
-    font-family: var(--font-t2);
-    font-size: 18px;
-  }
-  .pickerInput:focus-visible {
-    outline: none;
-    border-color: var(--accent);
-  }
-  .pickerGo {
-    grid-area: go;
-    padding: var(--space-2) var(--space-5);
-    border: 1px solid var(--accent);
-    border-radius: var(--radius-btn);
-    background: var(--accent);
-    color: var(--color-bezdna);
-    font-family: var(--font-t4);
-    font-size: 14px;
-    cursor: pointer;
-    transition: opacity 200ms ease;
-  }
-  .pickerGo:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-  .pickerHint {
-    grid-area: hint;
-    min-height: 16px;
-    font-family: var(--font-t3);
-    font-size: 13px;
-    color: var(--text-muted);
-    text-align: center;
-  }
-
-  /* By-hexagram: two columns of eight trigram buttons + a resolve row. */
-  .hexPicker {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    backdrop-filter: none;
+    box-shadow: none;
     gap: var(--space-3);
   }
-  .trigramCol {
+  /* No collapse on touch: hide the toggle and always show the content. */
+  .pickerToggle {
+    display: none;
+  }
+  .picker .pickerContent,
+  .picker:not([data-expanded='true']) .pickerContent {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    align-items: center;
   }
-  .trigramGrid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-1);
-    width: 100%;
-  }
-  .trigramBtn,
-  .trigramBtnActive {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: var(--space-2) 4px;
-    border: 1px solid var(--divider-gold);
-    border-radius: var(--radius-btn);
-    background: var(--bg-surface);
-    color: var(--text-muted);
-    cursor: pointer;
-    transition: border-color 200ms ease, background 200ms ease, color 200ms ease;
-  }
-  .trigramBtnActive {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 16%, var(--bg-surface));
-    color: var(--text-primary);
-  }
-  .trigramLines {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    width: 30px;
-  }
-  .trigramLineYang,
-  .trigramLineYin {
-    display: flex;
-    justify-content: space-between;
-    gap: 5px;
-    height: 4px;
-  }
-  .trigramSeg {
-    flex: 1 1 auto;
-    height: 100%;
-    border-radius: 2px;
-    background: currentColor;
-  }
-  .trigramName {
-    font-family: var(--font-t4);
-    font-size: 11px;
-    line-height: 1;
-  }
-  .hexResult {
-    grid-column: 1 / -1;
-    display: flex;
-    justify-content: center;
-    min-height: 40px;
-    align-items: center;
-  }
-  .hexResult .pickerGo {
-    grid-area: auto;
+  /* No reserved height on mobile: "по номеру" stays compact so the wheel can
+     drop toward the screen center; switching to "по гексаграмме" grows the card
+     downward, and the stage smooth-scrolls it into view (see GeneKeyPicker). */
+  .pickerBody {
+    min-height: 0;
   }
 }

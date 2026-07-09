@@ -20,6 +20,29 @@ The second half of the product: the author's materials (markdown + files/video),
 
 - `assert_media_access` grants any participant a presigned-GET to an asset attached to a **published** item (through the normal `GET /api/media/{id}`). Unlinking or unpublishing closes access. See [FILES.md](FILES.md).
 
+## Markdown reader (attached `.md` files)
+
+There is **no separate "book" material type** — every item is a normal article.
+The reader is a property of an **attachment**: whenever an article has a `.md`
+file attached (linked as a normal `media_asset`), that file gets a «Читать» button
+that opens a full-screen chapter reader. Nothing changes server-side.
+
+- Detection is frontend-only: `MdAttachment` resolves each attachment's presigned
+  URL and treats it as markdown if the filename ends `.md`/`.markdown`
+  (`isMarkdownUrl`). A markdown attachment renders the usual download link **plus**
+  a «📖 Читать» button; other files render as before.
+- Reader route: **`/kb/read/:itemId/:assetId`** (`KbBookReader`, lazy-split in
+  `AppShell`). It fetches the markdown bytes from the file's presigned URL and
+  `parseBook()` splits them into **chapters on the `##` headings** (leading `# …` =
+  title, text before the first `##` = a preface chapter). Layout: a TOC rail +
+  reading column with IntersectionObserver chapter tracking and `?ch=N` / `#slug`
+  deep-links (used from a Gene Key reading — see [GENE_KEYS.md](GENE_KEYS.md)).
+- Authoring: attach the `.md` via the normal media flow — no special UI. To convert
+  an existing HTML book to a chapterized `.md`, `frontend/scripts/book_html_to_md.py`
+  turns a FictionBook-style export into one markdown file (one `##` per chapter).
+- Visibility/access for the `.md` follow the standard media-via-publication rules
+  above; the reader just renders what the presigned URL returns.
+
 ## Comments
 
 - Flat comments under an item: `GET/POST /items/{id}/comments`, `DELETE /comments/{id}`.
