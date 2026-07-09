@@ -146,11 +146,10 @@
 .chapter {
   max-width: 68ch;
   margin: 0 auto;
-  padding: var(--space-16) 0 var(--space-12);
-  border-bottom: 1px solid var(--divider);
-  animation: bookChapterIn 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  padding: var(--space-12) 0 var(--space-12);
+  /* Re-fires on each chapter switch → a soft fade instead of a scroll jump. */
+  animation: bookChapterIn 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
-.chapter:last-of-type { border-bottom: none; }
 .chapterKicker {
   font-family: var(--font-t4);
   font-size: 11px;
@@ -211,6 +210,35 @@
   margin: var(--space-8) 0 var(--space-3);
 }
 .tail { height: var(--space-16); }
+
+/* Prev / next chapter at the foot of the pane. */
+.chapterNav {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-12);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--divider);
+}
+.navBtn {
+  max-width: 46%;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  color: var(--text-secondary);
+  font-family: var(--font-t4);
+  font-size: 12.5px;
+  line-height: 1.3;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.navBtn:last-child { text-align: right; }
+.navBtn:hover {
+  color: var(--accent-bright);
+  border-color: var(--divider-gold-strong);
+}
 
 @keyframes bookChapterIn {
   from { opacity: 0; transform: translateY(10px); }

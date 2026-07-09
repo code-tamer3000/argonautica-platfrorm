@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useMediaUrl } from '../../api/media'
 import { fileNameFromUrl } from '../../lib/mediaUpload'
+import { IconBook } from '../../components/icons'
 import { Attachment } from '../chat/Attachment'
 import styles from './kb.module.css'
 
@@ -11,10 +12,11 @@ export function isMarkdownUrl(url: string | undefined): boolean {
 }
 
 /**
- * An attached file inside a KB article. Plain files render as the usual
- * download `Attachment`; a `.md` file additionally gets a «Читать» button that
- * opens the chapter reader (`/kb/read/:itemId/:assetId`). We resolve the asset
- * URL to sniff the extension — `.md` files carry no distinct media kind.
+ * An attached file inside a KB article. A `.md` file is a book — it renders as a
+ * single «Читать» button opening the chapter reader (`/kb/read/:itemId/:assetId`),
+ * with no download link. Any other file (PDF, etc.) renders as the usual download
+ * `Attachment`. We resolve the asset URL to sniff the extension — `.md` files
+ * carry no distinct media kind.
  */
 export function MdAttachment({ itemId, assetId }: { itemId: number; assetId: number }) {
   const { data: media } = useMediaUrl(assetId)
@@ -23,11 +25,8 @@ export function MdAttachment({ itemId, assetId }: { itemId: number; assetId: num
   if (!isMd) return <Attachment assetId={assetId} />
 
   return (
-    <div className={styles.mdAttachment}>
-      <Attachment assetId={assetId} />
-      <Link to={`/kb/read/${itemId}/${assetId}`} className={styles.readButton}>
-        📖 Читать
-      </Link>
-    </div>
+    <Link to={`/kb/read/${itemId}/${assetId}`} className={styles.readButton}>
+      <IconBook size={16} /> Читать
+    </Link>
   )
 }

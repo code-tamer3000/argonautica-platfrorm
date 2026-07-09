@@ -9,10 +9,13 @@ import styles from './book.module.css'
 /**
  * Full-screen markdown reader for a `.md` file attached to a KB article. Given
  * the article id and the attachment id, it fetches the markdown from the file's
- * presigned URL and splits it into chapters on the `##` headings, with a TOC
- * rail that tracks the chapter in view. `?ch=N` / `#slug` deep-link a chapter
- * (used from a Gene Key reading). Layout adapted from the Manifesto reader,
- * themed with our design tokens.
+ * presigned URL and splits it into chapters on the `##` headings.
+ *
+ * We show **one chapter at a time** (selected from the TOC), not one long scroll:
+ * switching is instant with no scroll animation, so a deep-link (`?ch=N` from a
+ * Gene Key) opens straight on the right chapter without the page visibly racing
+ * past the others. Layout adapted from the Manifesto reader, themed with our
+ * design tokens.
  */
 export function KbBookReader() {
   const { itemId, assetId } = useParams<{ itemId: string; assetId: string }>()
@@ -44,60 +47,27 @@ export function KbBookReader() {
   const [active, setActive] = useState(0)
   const [tocOpen, setTocOpen] = useState(false)
   const jumpedRef = useRef(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const chapterRefs = useRef<(HTMLElement | null)[]>([])
-  const scrollingRef = useRef(false)
-  const scrollTimer = useRef<number | undefined>(undefined)
+  const paneRef = useRef<HTMLDivElement>(null)
 
-  // Highlight the chapter currently in view (unless mid programmatic jump).
-  useEffect(() => {
-    const root = scrollRef.current
-    if (!root || !book) return
-    const observers = book.chapters.map((_, i) => {
-      const el = chapterRefs.current[i]
-      if (!el) return null
-      const obs = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting && !scrollingRef.current) setActive(i)
-        },
-        { root, threshold: 0, rootMargin: '0px 0px -70% 0px' },
-      )
-      obs.observe(el)
-      return obs
-    })
-    return () => observers.forEach((o) => o?.disconnect())
-  }, [book])
-
-  // Deep-link: `?ch=N` (chapter number, e.g. from a Gene Key) or `#slug` jumps
-  // to that chapter once, after the chapters have mounted.
+  // Deep-link: `?ch=N` (chapter number, e.g. from a Gene Key) or `#slug` selects
+  // that chapter once the book is parsed — no scrolling, just show it.
   useEffect(() => {
     if (!book || jumpedRef.current) return
+    jumpedRef.current = true
     const chParam = searchParams.get('ch')
     const hash = decodeURIComponent(window.location.hash.replace(/^#/, ''))
     let target = -1
     if (chParam) target = book.chapters.findIndex((c) => c.num === chParam.trim())
     if (target < 0 && hash) target = book.chapters.findIndex((c) => c.slug === hash)
-    if (target >= 0) {
-      jumpedRef.current = true
-      requestAnimationFrame(() => goToChapter(target))
-    }
+    if (target >= 0) setActive(target)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [book])
 
-  function goToChapter(i: number) {
+  function selectChapter(i: number) {
     setActive(i)
     setTocOpen(false)
-    scrollingRef.current = true
-    window.clearTimeout(scrollTimer.current)
-    const el = chapterRefs.current[i]
-    const root = scrollRef.current
-    if (el && root) {
-      const top = root.scrollTop + (el.getBoundingClientRect().top - root.getBoundingClientRect().top) - 8
-      root.scrollTo({ top, behavior: 'smooth' })
-      scrollTimer.current = window.setTimeout(() => { scrollingRef.current = false }, 700)
-    } else {
-      scrollingRef.current = false
-    }
+    // Start the new chapter from the top (it replaces the previous one in place).
+    paneRef.current?.scrollTo({ top: 0 })
   }
 
   if (mediaLoading || (media && !md && !loadError)) {
@@ -109,8 +79,11 @@ export function KbBookReader() {
   }
 
   const backTo = id > 0 ? `/kb/${id}` : '/kb'
-  const activeChapter = book.chapters[active]
+  const safeActive = Math.min(active, book.chapters.length - 1)
+  const activeChapter = book.chapters[safeActive]
   const heading = book.title || item?.title || 'Чтение'
+  const prev = safeActive > 0 ? safeActive - 1 : null
+  const next = safeActive < book.chapters.length - 1 ? safeActive + 1 : null
 
   return (
     <div className={styles.reader}>
@@ -139,8 +112,8 @@ export function KbBookReader() {
             {book.chapters.map((ch, i) => (
               <button
                 key={ch.slug}
-                className={`${styles.tocItem} ${active === i ? styles.tocItemActive : ''}`}
-                onClick={() => goToChapter(i)}
+                className={`${styles.tocItem} ${safeActive === i ? styles.tocItemActive : ''}`}
+                onClick={() => selectChapter(i)}
               >
                 <span className={styles.tocNum}>{ch.num}</span>
                 <span className={styles.tocTitle}>{ch.title}</span>
@@ -149,24 +122,30 @@ export function KbBookReader() {
           </div>
         </nav>
 
-        <div ref={scrollRef} className={styles.pane}>
-          {book.chapters.map((ch, i) => (
-            <article
-              key={ch.slug}
-              id={ch.slug}
-              ref={(el) => { chapterRefs.current[i] = el }}
-              className={styles.chapter}
-            >
-              <div className={styles.chapterKicker}>Глава {ch.num}</div>
-              <h2 className={styles.chapterTitle}>{ch.title}</h2>
-              <div className={styles.hairline} />
-              <div
-                className={styles.prose}
-                // Sanitized in parseBook.
-                dangerouslySetInnerHTML={{ __html: ch.html }}
-              />
-            </article>
-          ))}
+        <div ref={paneRef} className={styles.pane}>
+          <article key={activeChapter.slug} className={styles.chapter}>
+            <div className={styles.chapterKicker}>Глава {activeChapter.num}</div>
+            <h2 className={styles.chapterTitle}>{activeChapter.title}</h2>
+            <div className={styles.hairline} />
+            <div
+              className={styles.prose}
+              // Sanitized in parseBook.
+              dangerouslySetInnerHTML={{ __html: activeChapter.html }}
+            />
+
+            <nav className={styles.chapterNav}>
+              {prev !== null ? (
+                <button className={styles.navBtn} onClick={() => selectChapter(prev)}>
+                  ← {book.chapters[prev].title}
+                </button>
+              ) : <span />}
+              {next !== null ? (
+                <button className={styles.navBtn} onClick={() => selectChapter(next)}>
+                  {book.chapters[next].title} →
+                </button>
+              ) : <span />}
+            </nav>
+          </article>
           <div className={styles.tail} />
         </div>
       </div>
