@@ -84,6 +84,16 @@ async def test_request_upload_validation(
     )
     assert too_big.status_code == 400
 
+    # Markdown (kind=file) разрешён — используется читалкой глав в базе знаний,
+    # а ключ объекта получает расширение .md (нужно для распознавания читалкой).
+    md = await client.post(
+        "/api/media/uploads",
+        headers=headers,
+        json={"content_type": "text/markdown", "size": 2048, "kind": "file"},
+    )
+    assert md.status_code == 200, md.text
+    assert md.json()["storage_key"].endswith(".md")
+
 
 async def test_confirm_requires_intent_and_owner(
     client: AsyncClient, make_user: MakeUser
