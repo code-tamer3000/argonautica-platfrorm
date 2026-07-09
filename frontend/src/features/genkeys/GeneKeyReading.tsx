@@ -3,6 +3,7 @@ import { Hexagram } from './Hexagram'
 import { useGeneKeyBody } from './useGeneKeyBody'
 import { getKey } from './wheel'
 import { useGenkeysBookLink } from './useGenkeysBook'
+import { IconBook } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import styles from './genkeys.module.css'
 
@@ -46,7 +47,7 @@ export function GeneKeyReading({ number, onClose }: Props) {
             to={`/kb/read/${bookLink.itemId}/${bookLink.assetId}?ch=${number}`}
             className={styles.bookLink}
           >
-            📖 Читать главу в книге «64 пути» →
+            <IconBook size={16} /> Читать главу в книге «64 пути» →
           </Link>
         )}
 
