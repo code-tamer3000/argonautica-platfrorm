@@ -37,4 +37,21 @@ Delivery while the app is closed, via the standard W3C Web Push protocol (self-h
 - Subscriptions: `push_subscriptions` table (one row per browser/device, unique `endpoint`). Endpoints returning 404/410 are pruned on send. Endpoints: `GET /api/push/vapid-key`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`. Without VAPID keys configured, `vapid-key`/`subscribe` return 503 and `enqueue_push` is a no-op (dev/test).
 - Config: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` env vars (generate the keypair once — see below). Frontend service worker (`frontend/src/sw.ts`, injectManifest) handles `push` → `showNotification` and `notificationclick` → focus/navigate. iOS delivers push **only** for an installed PWA (Add to Home Screen, iOS 16.4+) — surfaced in the profile UI.
 
-Generate a VAPID keypair (once): `python -c "from py_vapid import Vapid01 as V; v=V(); v.generate_keys(); print(v.public_key, v.private_key)"` (or any Web Push VAPID generator) and set the env vars on each stand.
+Generate a VAPID keypair (once) and set the env vars on each stand. Both values are **base64url (unpadded)**: the private key is the raw 32-byte scalar (what `pywebpush` passes to `webpush`), the public key is the 65-byte uncompressed point (what the frontend feeds `applicationServerKey`). Do **not** just `print(v.public_key)` — that prints the key *object*, not the string; you must serialize:
+
+```python
+from py_vapid import Vapid01
+from cryptography.hazmat.primitives import serialization
+import base64
+
+v = Vapid01(); v.generate_keys()
+b64u = lambda b: base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+priv = v.private_key.private_numbers().private_value.to_bytes(32, "big")
+pub = v.public_key.public_bytes(
+    serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint
+)
+print("VAPID_PUBLIC_KEY=", b64u(pub))
+print("VAPID_PRIVATE_KEY=", b64u(priv))
+```
+
+The public key starts with `B` (0x04 uncompressed-point prefix). `VAPID_SUBJECT` is a `mailto:` or `https:` contact.
