@@ -225,7 +225,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {(!room.is_personal || room.created_by === user?.id) &&
         (!room.is_news || user?.role === 'admin') &&
         (!isOwnPersonal || journalChosen) && (
-        <Composer roomId={roomId} isNews={room.is_news} />
+        <Composer roomId={roomId} isNews={room.is_news} revealOnMount={isOwnPersonal} />
       )}
       {msgMenu.menu && (
         <MessageActionsMenu

@@ -326,6 +326,15 @@
   border-top: 1px solid var(--color-frame-deep);
   background: var(--bg-surface);
 }
+/* Личный дневник: мягкое выезжание композера при выборе режима. */
+.composerReveal { animation: composerReveal 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes composerReveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composerReveal { animation: none; }
+}
 
 /* Прогресс загрузки медиа. */
 .uploadProgress { display: flex; align-items: center; gap: var(--space-2); }
@@ -775,29 +784,57 @@
   cursor: pointer; transition: var(--transition-color);
 }
 .journalBarToggle:hover { color: var(--text-primary); }
-/* Свёрнутое состояние: две кнопки — задание дня и свободная запись. */
-.journalActions {
-  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+/* Экран выбора режима: две крупные, «нажимабельные» кнопки. Занимают всю ширину,
+   на телефоне складываются в столбик — сразу понятно, что это выбор из двух. */
+.journalChoiceBar {
+  padding: var(--space-3) var(--space-4);
+  animation: journalChoiceIn 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.journalActionPrimary {
-  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
-  padding: 4px var(--space-3);
+.journalChoice {
+  display: flex; gap: var(--space-3); width: 100%;
+}
+.journalChoiceBtn {
+  display: flex; align-items: center; gap: var(--space-3);
+  flex: 1 1 0; min-width: 0; text-align: left;
+  padding: var(--space-3) var(--space-4); min-height: 56px;
   background: rgba(19, 78, 69, 0.14);
-  border: 1px solid var(--accent); border-radius: var(--radius-btn);
-  color: var(--text-primary);
-  font-family: var(--font-t4); font-size: var(--text-label-md);
-  cursor: pointer; transition: var(--transition-color);
+  border: 1.5px solid var(--accent); border-radius: var(--radius-card, 14px);
+  color: var(--text-primary); cursor: pointer;
+  transition: transform 140ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
-.journalActionPrimary:hover { background: rgba(19, 78, 69, 0.24); }
-.journalActionSecondary {
-  display: inline-flex; align-items: center; flex: 0 0 auto;
-  padding: 4px var(--space-3);
-  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
-  border-radius: var(--radius-btn); color: var(--text-secondary);
-  font-family: var(--font-t4); font-size: var(--text-label-md);
-  cursor: pointer; transition: var(--transition-color);
+.journalChoiceBtn:hover { background: rgba(19, 78, 69, 0.24); box-shadow: 0 2px 12px rgba(19, 78, 69, 0.25); }
+.journalChoiceBtn:active { transform: scale(0.97); }
+.journalChoiceBtnGhost {
+  background: var(--bg-deep); border-color: var(--color-frame-deep);
 }
-.journalActionSecondary:hover { color: var(--text-primary); }
+.journalChoiceBtnGhost:hover {
+  background: var(--bg-surface); border-color: var(--text-ghost); box-shadow: none;
+}
+.journalChoiceIcon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+.journalChoiceText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.journalChoiceTitle {
+  font-family: var(--font-t4); font-size: var(--text-label-lg, 15px); font-weight: 600;
+  color: var(--text-primary); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.journalChoiceSub {
+  font-family: var(--font-t4); font-size: var(--text-label-sm, 12px);
+  color: var(--text-ghost); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@keyframes journalChoiceIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* На узких экранах — столбиком, чтобы кнопки были крупными и не «жались вбок». */
+@media (max-width: 520px) {
+  .journalChoice { flex-direction: column; }
+  .journalChoiceBtn { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journalChoiceBar { animation: none; }
+  .journalChoiceBtn:active { transform: none; }
+}
 .journalBarTitle {
   color: inherit;
   font-family: var(--font-t4); font-size: var(--text-label-md);

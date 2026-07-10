@@ -128,18 +128,31 @@ export function DailyJournalForm({ roomId }: Props) {
     )
   }
 
-  // Выбор режима: две кнопки. Композер в этом состоянии скрыт (ChatPane).
+  // Выбор режима: две крупные кнопки. Композер в этом состоянии скрыт (ChatPane).
   return (
-    <div className={styles.journalBar}>
-      <div className={styles.journalActions}>
-        <button type="button" className={styles.journalActionPrimary} onClick={startDayTask}>
-          {dayClosed ? '✓ Задания дня выполнены' : 'Выполнить задание на день'}
-          {!dayClosed && (
-            <span className={styles.journalBarProgress}>{doneCount}/{sections.length}</span>
-          )}
+    <div className={`${styles.journalBar} ${styles.journalChoiceBar}`}>
+      <div className={styles.journalChoice}>
+        <button type="button" className={styles.journalChoiceBtn} onClick={startDayTask}>
+          <span className={styles.journalChoiceIcon}>📓</span>
+          <span className={styles.journalChoiceText}>
+            <span className={styles.journalChoiceTitle}>
+              {dayClosed ? 'Задания дня выполнены' : 'Выполнить задание на день'}
+            </span>
+            <span className={styles.journalChoiceSub}>
+              {dayClosed ? 'Можно дополнить запись' : `Прогресс дня — ${doneCount}/${sections.length}`}
+            </span>
+          </span>
         </button>
-        <button type="button" className={styles.journalActionSecondary} onClick={startFreeEntry}>
-          Запись
+        <button
+          type="button"
+          className={`${styles.journalChoiceBtn} ${styles.journalChoiceBtnGhost}`}
+          onClick={startFreeEntry}
+        >
+          <span className={styles.journalChoiceIcon}>✍️</span>
+          <span className={styles.journalChoiceText}>
+            <span className={styles.journalChoiceTitle}>Свободная запись</span>
+            <span className={styles.journalChoiceSub}>Личная заметка без формата</span>
+          </span>
         </button>
       </div>
     </div>
