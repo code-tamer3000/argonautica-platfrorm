@@ -1,0 +1,80 @@
+/* Декоративный слой шапки — за контентом (топбар ставит content поверх через
+   position:relative + z-index). Ничего не перехватывает клики. */
+.deco {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Кораблик: медленно проплывает насквозь. Горизонтальный ход — на .ship,
+   покачивание — на вложенном .hull (два transform'а не конфликтуют). */
+.ship {
+  position: absolute;
+  top: 50%;
+  height: 74%;
+  color: var(--accent);
+  opacity: 0.11;
+  transform: translateY(-50%);
+  animation: shipSail 90s linear infinite;
+}
+.hull {
+  height: 100%;
+  transform-origin: 50% 90%;
+  animation: shipBob 2.6s ease-in-out infinite;
+}
+.hull svg { display: block; height: 100%; width: auto; }
+
+@keyframes shipSail {
+  from { left: -12%; }
+  to   { left: 106%; }
+}
+@keyframes shipBob {
+  0%, 100% { transform: translateY(0)      rotate(-2.6deg); }
+  50%      { transform: translateY(-2.5px) rotate(2.6deg); }
+}
+
+/* Волна: пояс из отдельных завитков, дрейфует вбок; каждый завиток колышется
+   сам, соседи — в противофазе (задержки задаёт JS). */
+.waves {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 2px;
+  height: 20px;
+  color: var(--accent);
+  opacity: 0.16;
+}
+.track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  width: max-content;
+  animation: waveDrift 52s linear infinite;
+}
+.curl {
+  width: 28px;
+  height: 20px;
+  flex: 0 0 auto;
+  transform-origin: 50% 100%;
+  animation: waveRipple 4.2s ease-in-out infinite;
+}
+.curl svg { display: block; width: 100%; height: 100%; }
+
+@keyframes waveDrift {
+  from { transform: translateX(0); }
+  /* Ровно половина ленты — бесшовная петля (завитки дублируются в потоке). */
+  to   { transform: translateX(-896px); } /* 32 завитка × 28px */
+}
+@keyframes waveRipple {
+  0%, 100% { transform: translateY(0)    scaleY(1); }
+  50%      { transform: translateY(-3px) scaleY(1.14); }
+}
+
+/* Пользователям с prefers-reduced-motion — статичный призрак, без движения. */
+@media (prefers-reduced-motion: reduce) {
+  .ship, .hull, .track, .curl { animation: none; }
+}

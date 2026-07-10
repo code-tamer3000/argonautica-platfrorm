@@ -9,6 +9,7 @@ import { mediaUpload } from '../../lib/mediaUpload'
 import { NotificationsSection } from './NotificationsSection'
 import { toast } from '../../stores/toast'
 import { useThemeStore, type Theme } from '../../stores/theme'
+import { useShipDecoStore } from '../../stores/shipDeco'
 import { useAuth } from '../auth/AuthContext'
 import styles from './profile.module.css'
 
@@ -135,6 +136,34 @@ function ThemeSection() {
             <span>{label}</span>
           </button>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function ShipSection() {
+  const enabled = useShipDecoStore((s) => s.enabled)
+  const setEnabled = useShipDecoStore((s) => s.setEnabled)
+
+  return (
+    <div className={styles.settingCard}>
+      <h2 className={styles.settingTitle}>Оформление шапки</h2>
+      <div className={styles.notifRow}>
+        <div className={styles.notifRowText}>
+          <span className={styles.notifRowLabel}>Кораблик в шапке</span>
+          <span className={styles.notifRowHint}>Плывущий кораблик и волна в верхней панели</span>
+        </div>
+        <label className={styles.switch}>
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            aria-label="Кораблик в шапке"
+          />
+          <span className={styles.switchTrack}>
+            <span className={styles.switchThumb} />
+          </span>
+        </label>
       </div>
     </div>
   )
@@ -271,6 +300,9 @@ export function ProfileScreen() {
 
       {/* Оформление — доступно всем */}
       <ThemeSection />
+
+      {/* Кораблик в шапке — вкл/выкл, доступно всем */}
+      <ShipSection />
 
       {/* Уведомления — доступно всем */}
       <NotificationsSection />

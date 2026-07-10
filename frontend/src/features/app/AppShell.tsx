@@ -31,6 +31,7 @@ import { AdminBroadcast } from '../admin/AdminBroadcast'
 import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
 import { ProfileMenu } from './ProfileMenu'
+import { HeaderDeco } from './HeaderDeco'
 import { useNavBadges } from './useNavBadges'
 import { Spinner } from '../../components/Spinner'
 import styles from './appshell.module.css'
@@ -148,6 +149,7 @@ export function AppShell() {
   return (
     <div className={`col ${styles.shell}`}>
       <header className={styles.topbar}>
+        <HeaderDeco />
         <span className={styles.brand}>
           <img className={styles.brandMark} src="/media/monogram.png" alt="" aria-hidden />
           <span className={styles.wordmark}>Аргонавтика</span>
