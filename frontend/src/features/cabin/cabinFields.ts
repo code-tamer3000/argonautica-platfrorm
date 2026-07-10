@@ -28,7 +28,7 @@ export const CABIN_SECTIONS: Record<
   { title: string; subtitle: string; fields: FieldSpec[]; titleField: string; groupBy?: string }
 > = {
   diary: {
-    title: 'Дневник эмоций',
+    title: 'Дневник самонаблюдения',
     subtitle:
       'Фиксируйте триггерное событие и раскладывайте реакцию на составляющие: ' +
       'мысли, эмоции, телесные ощущения. Пишите коротко и по делу.',
@@ -37,29 +37,48 @@ export const CABIN_SECTIONS: Record<
     fields: [
       { name: 'date', label: 'Дата', kind: 'short', today: true },
       { name: 'trigger', label: 'Триггерное событие', hint: 'что произошло?', kind: 'long' },
-      { name: 'thoughts', label: 'Автоматические мысли — установки', hint: 'что я думаю?', kind: 'long' },
-      { name: 'emotion', label: 'Эмоция — жертва/палач', hint: 'что я чувствую?', kind: 'long' },
-      { name: 'strength', label: 'Сила', kind: 'strength' },
-      { name: 'body', label: 'Ощущение в теле — соматика', hint: 'как реагирует тело?', kind: 'long' },
-      { name: 'reaction', label: 'Реакция — нездоровое поведение', hint: 'как я реагирую?', kind: 'long' },
-      { name: 'recovery', label: 'Длительность цикла до восстановления', kind: 'short' },
+      { name: 'thoughts', label: 'Автоматические мысли', hint: 'что я думаю?', kind: 'long' },
+      { name: 'emotion', label: 'Эмоция', hint: 'что я чувствую? (страх, гнев…)', kind: 'long' },
+      { name: 'strength', label: 'Сила ощущения', kind: 'strength' },
+      { name: 'body', label: 'Ощущение в теле', hint: 'как реагирует тело? (дрожь в руках, сжатие в груди и т.д.)', kind: 'long' },
+      {
+        name: 'reaction',
+        label: 'Реакция',
+        hint: 'как я реагирую в данной ситуации? (то, что не свойственно в обычной жизни)',
+        kind: 'long',
+      },
+      {
+        name: 'recovery',
+        label: 'Длительность цикла до восстановления',
+        hint: 'несколько минут, полчаса, час, день…',
+        kind: 'short',
+      },
     ],
   },
   trigger: {
-    title: 'Триггеры',
+    title: 'Травматика прошлого',
     subtitle:
-      'Построение гипотезы: корневые события прошлого, которые питают травму. ' +
-      'Вместо даты — возраст, в конце — сформировавшийся паттерн.',
+      'Построение гипотезы: корневые события прошлого, которые питают травму.',
     titleField: 'age',
     fields: [
-      { name: 'age', label: 'Возраст', kind: 'short', hint: 'например 5' },
-      { name: 'trigger', label: 'Триггерное событие', hint: 'что произошло?', kind: 'long' },
-      { name: 'thoughts', label: 'Автоматические мысли — установки', hint: 'что я думаю?', kind: 'long' },
-      { name: 'emotion', label: 'Эмоция — жертва/палач', hint: 'что я чувствую?', kind: 'long' },
-      { name: 'strength', label: 'Сила', kind: 'strength' },
-      { name: 'body', label: 'Ощущение в теле — соматика', hint: 'как реагирует тело?', kind: 'long' },
-      { name: 'reaction', label: 'Реакция — нездоровое поведение', hint: 'как я реагирую?', kind: 'long' },
-      { name: 'pattern', label: 'Сформировавшийся паттерн', hint: 'как я поступаю сейчас?', kind: 'long' },
+      { name: 'age', label: 'Возраст', kind: 'short', hint: 'в каком возрасте произошло событие?' },
+      { name: 'trigger', label: 'Триггерное событие', hint: 'что тогда произошло?', kind: 'long' },
+      { name: 'thoughts', label: 'Автоматические мысли', hint: 'что я думал о ситуации в тот момент?', kind: 'long' },
+      { name: 'emotion', label: 'Эмоция', hint: 'что я почувствовал в тот момент?', kind: 'long' },
+      { name: 'strength', label: 'Сила ощущения', kind: 'strength' },
+      {
+        name: 'body',
+        label: 'Ощущение в теле',
+        hint: 'как отреагировало тело в тот момент? (дрожь в руках, сжатие в груди и т.д.)',
+        kind: 'long',
+      },
+      { name: 'reaction', label: 'Реакция', hint: 'как я повёл себя в той ситуации?', kind: 'long' },
+      {
+        name: 'pattern',
+        label: 'Сформировавшийся паттерн',
+        hint: 'какой шаблон поведения закрепился после той ситуации?',
+        kind: 'long',
+      },
     ],
   },
   decatastrophize: {

@@ -279,8 +279,29 @@
   width: 100%;
   box-sizing: border-box;
 }
-.textarea { resize: vertical; min-height: 52px; line-height: 1.5; }
+/* Высотой управляет useAutoGrow (растёт под текст до ~320px, затем внутренний
+   скролл) — ручной resize отключаем, чтобы не конфликтовал с инлайновой высотой. */
+.textarea { resize: none; min-height: 52px; line-height: 1.5; overflow-y: hidden; }
 .input:focus, .textarea:focus { outline: none; border-color: var(--accent); }
+
+/* Индикатор доставки оптимистичной записи (см. CabinScreen → DeliveryStatus). */
+.delivery {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.deliveryFailed { color: var(--danger, #c0392b); }
+.deliveryBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: underline;
+}
 
 .strengthInput { display: flex; align-items: center; gap: var(--space-3); }
 .strengthInput input[type='range'] { flex: 1; accent-color: var(--accent); }
@@ -294,9 +315,12 @@
 .formActions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-2);
 }
+/* «Очистить черновик» — крайняя слева, отделена от Закрыть/Добавить. */
+.formActions > :first-child:not(:only-child) { margin-right: auto; }
 
 @media (max-width: 768px) {
   .page { padding: var(--space-4); gap: var(--space-5); }

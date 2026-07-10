@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useFeedbackList, useResolveFeedback } from '../../api/feedback'
 import { useCreateRoom } from '../../api/rooms'
@@ -6,12 +7,21 @@ import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
+import cabin from '../cabin/cabin.module.css'
 import styles from './admin.module.css'
 
 const KIND_LABEL: Record<FeedbackKind, string> = {
   improvement: 'Улучшение',
   bug: 'Ошибка',
 }
+
+/** Как называется «разобранное» обращение в зависимости от типа. */
+const RESOLVED_LABEL: Record<FeedbackKind, string> = {
+  improvement: 'Реализовано',
+  bug: 'Решено',
+}
+
+type Tab = 'active' | 'done'
 
 /** Шапка ответа админа: контекст обращения + пустая строка, дальше пишет админ. */
 function buildReplyHeader(item: FeedbackOut): string {
@@ -38,6 +48,7 @@ function formatDatetime(iso: string): string {
 }
 
 export function AdminFeedback() {
+  const [tab, setTab] = useState<Tab>('active')
   const { data, isLoading } = useFeedbackList()
   const resolve = useResolveFeedback()
   const createRoom = useCreateRoom()
@@ -75,7 +86,10 @@ export function AdminFeedback() {
 
   if (isLoading) return <div className={styles.page}><Spinner /></div>
 
-  const items = data?.items ?? []
+  const allItems = data?.items ?? []
+  const items = allItems.filter((it) =>
+    tab === 'active' ? !it.resolved_at : !!it.resolved_at,
+  )
 
   return (
     <div className={styles.page}>
@@ -88,8 +102,31 @@ export function AdminFeedback() {
         )}
       </div>
 
+      <div className={cabin.segmented} role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'active'}
+          className={tab === 'active' ? cabin.segActive : cabin.seg}
+          onClick={() => setTab('active')}
+        >
+          Активные
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'done'}
+          className={tab === 'done' ? cabin.segActive : cabin.seg}
+          onClick={() => setTab('done')}
+        >
+          Завершённые
+        </button>
+      </div>
+
       {items.length === 0 ? (
-        <p className={styles.mediaEmpty}>Обращений пока нет.</p>
+        <p className={styles.mediaEmpty}>
+          {tab === 'active' ? 'Активных обращений нет.' : 'Завершённых обращений нет.'}
+        </p>
       ) : (
         <div className={styles.list}>
           {items.map((item) => (
@@ -101,11 +138,23 @@ export function AdminFeedback() {
                   </span>
                   {' '}
                   {item.user_name ?? `#${item.user_id}`} · {formatDatetime(item.created_at)}
-                  {item.resolved_at && ' · разобрано'}
                 </span>
                 <span className={styles.listDescription} style={{ whiteSpace: 'pre-wrap' }}>
                   {item.body}
                 </span>
+                {item.resolved_at && (
+                  <span className={styles.crumbs}>
+                    <span className={styles.badgePublished}>{RESOLVED_LABEL[item.kind]}</span>
+                    {' · '}
+                    <button
+                      type="button"
+                      className={styles.crumbLink}
+                      onClick={() => handleToggle(item.id, false)}
+                    >
+                      Вернуть в работу
+                    </button>
+                  </span>
+                )}
               </div>
               <div className={styles.listActions}>
                 <Button
@@ -114,11 +163,7 @@ export function AdminFeedback() {
                 >
                   Ответить
                 </Button>
-                {item.resolved_at ? (
-                  <Button variant="outline" onClick={() => handleToggle(item.id, false)}>
-                    Вернуть в работу
-                  </Button>
-                ) : (
+                {!item.resolved_at && (
                   <Button variant="outline" onClick={() => handleToggle(item.id, true)}>
                     Разобрано
                   </Button>
