@@ -400,6 +400,10 @@ export interface CabinEntryOut {
   data: CabinData
   created_at: string
   updated_at: string
+  // Только у оптимистичных, ещё не подтверждённых сервером записей (id при этом
+  // отрицательный, временный). У реальных записей с сервера этого поля нет.
+  // См. lib/cabinOutbox.ts — аналог OutboxDelivery для сообщений чата.
+  _outbox?: OutboxDelivery
 }
 export interface AdminCabinEntryOut extends CabinEntryOut {
   user_id: number

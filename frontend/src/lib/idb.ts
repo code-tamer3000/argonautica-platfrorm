@@ -6,13 +6,25 @@
 // Всё изолировано по-стору; каждый вызов открывает соединение лениво и кэширует его.
 
 const DB_NAME = 'argonautica'
-const DB_VERSION = 1
+// v2: добавлены cabinOutbox/cabinDrafts. Бампаем версию, чтобы onupgradeneeded
+// создал новые сторы у пользователей с уже существующей базой.
+const DB_VERSION = 2
 
 // Именa стора держим в одном месте, чтобы onupgradeneeded создал ровно их.
 export const STORE_OUTBOX = 'outbox'
 export const STORE_DRAFTS = 'drafts'
 export const STORE_QUERYCACHE = 'querycache'
-const STORES = [STORE_OUTBOX, STORE_DRAFTS, STORE_QUERYCACHE] as const
+// Очередь исходящих записей Каюты и черновики её форм (аналогично чату, но по
+// подразделам вместо комнат) — см. lib/cabinOutbox.ts и lib/cabinDrafts.ts.
+export const STORE_CABIN_OUTBOX = 'cabinOutbox'
+export const STORE_CABIN_DRAFTS = 'cabinDrafts'
+const STORES = [
+  STORE_OUTBOX,
+  STORE_DRAFTS,
+  STORE_QUERYCACHE,
+  STORE_CABIN_OUTBOX,
+  STORE_CABIN_DRAFTS,
+] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
 

@@ -103,11 +103,15 @@ export function CabinEntryCard({
   entry,
   actions,
   meta,
+  status,
 }: {
   kind: CabinKind
   entry: CabinEntryOut
   actions?: ReactNode
   meta?: ReactNode
+  // Индикатор доставки оптимистичной записи (см. lib/cabinOutbox.ts); undefined
+  // у обычных, уже подтверждённых сервером записей.
+  status?: ReactNode
 }) {
   const section = CABIN_SECTIONS[kind]
   const data = entry.data as unknown as Record<string, unknown>
@@ -143,6 +147,7 @@ export function CabinEntryCard({
           <h3 className={styles.cardTitle}>{headline}</h3>
         </button>
         {strength && <StrengthBadge value={Number(strength.value)} />}
+        {status}
         {actions && <div className={styles.cardActions}>{actions}</div>}
       </header>
 
