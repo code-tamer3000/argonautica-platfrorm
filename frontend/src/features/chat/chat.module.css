@@ -326,6 +326,15 @@
   border-top: 1px solid var(--color-frame-deep);
   background: var(--bg-surface);
 }
+/* Личный дневник: мягкое выезжание композера при выборе режима. */
+.composerReveal { animation: composerReveal 260ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes composerReveal {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composerReveal { animation: none; }
+}
 
 /* Прогресс загрузки медиа. */
 .uploadProgress { display: flex; align-items: center; gap: var(--space-2); }
@@ -775,6 +784,63 @@
   cursor: pointer; transition: var(--transition-color);
 }
 .journalBarToggle:hover { color: var(--text-primary); }
+/* Экран выбора режима: две крупные, «нажимабельные» кнопки. Занимают всю ширину,
+   на телефоне складываются в столбик — сразу понятно, что это выбор из двух. */
+.journalChoiceBar {
+  padding: var(--space-3) var(--space-4);
+  animation: journalChoiceIn 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.journalChoice {
+  display: flex; gap: var(--space-3); width: 100%;
+}
+.journalChoiceBtn {
+  display: flex; align-items: center; gap: var(--space-3);
+  flex: 1 1 0; min-width: 0; text-align: left;
+  padding: var(--space-3) var(--space-4); min-height: 56px;
+  background: rgba(19, 78, 69, 0.14);
+  border: 1.5px solid var(--accent); border-radius: var(--radius-card, 14px);
+  color: var(--text-primary); cursor: pointer;
+  transition: transform 140ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.journalChoiceBtn:hover { background: rgba(19, 78, 69, 0.24); box-shadow: 0 2px 12px rgba(19, 78, 69, 0.25); }
+.journalChoiceBtn:active { transform: scale(0.97); }
+.journalChoiceBtnGhost {
+  background: var(--bg-deep); border-color: var(--color-frame-deep);
+}
+.journalChoiceBtnGhost:hover {
+  background: var(--bg-surface); border-color: var(--text-ghost); box-shadow: none;
+}
+.journalChoiceIcon { flex: 0 0 auto; color: var(--accent); }
+.journalChoiceBtnGhost .journalChoiceIcon { color: var(--text-secondary); }
+.journalChoiceText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.journalChoiceTitle {
+  font-family: var(--font-t4); font-size: var(--text-label-lg, 15px); font-weight: 600;
+  color: var(--text-primary); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.journalChoiceSub {
+  font-family: var(--font-t4); font-size: var(--text-label-sm, 12px);
+  color: var(--text-ghost); line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@keyframes journalChoiceIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* На узких экранах — столбиком. Кнопки во всю ширину; заголовок при нехватке
+   места переносится на 2 строки, а не режется многоточием (из-за чего текст
+   «пережимал» кнопку). Отступы плашки одинаковые сверху/снизу. */
+@media (max-width: 520px) {
+  .journalChoiceBar { padding: var(--space-3) var(--space-4); }
+  .journalChoice { flex-direction: column; }
+  .journalChoiceBtn { width: 100%; align-items: center; }
+  .journalChoiceTitle { white-space: normal; overflow: visible; }
+  .journalChoiceSub { white-space: normal; overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .journalChoiceBar { animation: none; }
+  .journalChoiceBtn:active { transform: none; }
+}
 .journalBarTitle {
   color: inherit;
   font-family: var(--font-t4); font-size: var(--text-label-md);
@@ -785,6 +851,8 @@
   transition: transform var(--transition-base, 180ms ease);
 }
 .journalBarChevronOpen { transform: rotate(90deg); }
+.journalBarChevronBack { color: var(--text-ghost); flex: 0 0 auto; }
+.journalBarTitleIcon { color: var(--accent); flex: 0 0 auto; }
 .journalChips {
   display: flex; gap: var(--space-2); flex: 1 1 260px; min-width: 0; flex-wrap: wrap;
   animation: journalReveal 220ms ease;
