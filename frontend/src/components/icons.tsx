@@ -26,6 +26,7 @@ import {
   ListChecks,
   Settings,
   Smile,
+  Sparkle,
   Sticker,
   Sun,
   TriangleAlert,
@@ -78,4 +79,5 @@ export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
 export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
 export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />
 export const IconSun = (p: IconProps) => <Sun {...DEFAULTS} {...p} />
+export const IconStar = (p: IconProps) => <Sparkle {...DEFAULTS} {...p} />
 export const IconMoon = (p: IconProps) => <Moon {...DEFAULTS} {...p} />

@@ -18,6 +18,7 @@
   /* margin:auto вместо только flex-центрирования: при нехватке высоты (открыта
      клавиатура) карточка прижимается с равными отступами и прокручивается внутри
      .screen вместо того, чтобы браузер выталкивал/обрезал макет. */
+  position: relative;
   margin: auto;
   width: 100%;
   max-width: 380px;
@@ -28,7 +29,49 @@
   background: var(--bg-surface);
   border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card);
-  box-shadow: var(--glow-gold);
+  /* «Дышащая» золотая подсветка — статичный экран логина оживает. */
+  animation: cardGlow 5.5s ease-in-out infinite;
+}
+
+/* Переливающаяся золотая обводка: вращающийся conic-gradient под карточкой,
+   видимый только по её периметру (маска out-контента вырезает центр). */
+.card::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--divider-gold) 70deg,
+    var(--accent) 140deg,
+    var(--divider-gold) 210deg,
+    transparent 300deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: cardSheen 6s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes cardGlow {
+  0%, 100% { box-shadow: 0 0 34px rgba(194, 154, 72, 0.10); }
+  50%      { box-shadow: 0 0 56px rgba(194, 154, 72, 0.22); }
+}
+@keyframes cardSheen {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; box-shadow: var(--glow-gold); }
+  .card::before { animation: none; }
 }
 
 .wordmark {
@@ -38,6 +81,25 @@
   text-transform: uppercase;
   text-align: center;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+/* Звёздочка рядом с логотипом — мягко мерцает в тон обводке. */
+.star {
+  display: inline-flex;
+  color: var(--accent);
+  animation: starTwinkle 3.6s ease-in-out infinite;
+}
+@keyframes starTwinkle {
+  0%, 100% { opacity: 0.55; transform: rotate(0deg) scale(0.9); }
+  50%      { opacity: 1;    transform: rotate(90deg) scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star { animation: none; opacity: 0.9; }
 }
 
 .tagline {
