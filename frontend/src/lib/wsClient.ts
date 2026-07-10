@@ -6,15 +6,37 @@ import type { WsEvent } from './types'
 type Listener = (e: WsEvent) => void
 type VoidFn = () => void
 
+// Состояние сокета для индикатора связи: connecting/open — норма, closed — потеряли.
+export type WsStatus = 'connecting' | 'open' | 'closed'
+type StatusFn = (s: WsStatus) => void
+
 class WsClient {
   private ws: WebSocket | null = null
   private listeners = new Set<Listener>()
   private connectListeners = new Set<VoidFn>()
+  private statusListeners = new Set<StatusFn>()
   private subscribed = new Set<number>()
   private reconnectAttempts = 0
   private shouldRun = false
   private pingTimer: number | null = null
   private reconnectTimer: number | null = null
+  private status: WsStatus = 'closed'
+
+  getStatus(): WsStatus {
+    return this.status
+  }
+
+  /** Подписка на смену состояния сокета (для индикатора связи). */
+  onStatus(fn: StatusFn): () => void {
+    this.statusListeners.add(fn)
+    return () => this.statusListeners.delete(fn)
+  }
+
+  private setStatus(s: WsStatus): void {
+    if (this.status === s) return
+    this.status = s
+    this.statusListeners.forEach((fn) => fn(s))
+  }
 
   start(): void {
     if (this.shouldRun) return
@@ -28,6 +50,19 @@ class WsClient {
     this.subscribed.clear()
     this.ws?.close()
     this.ws = null
+    this.setStatus('closed')
+  }
+
+  /** Форсировать немедленный реконнект (напр. вкладку вернули из фона). */
+  reconnectNow(): void {
+    if (!this.shouldRun) return
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) return
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.reconnectAttempts = 0
+    this.connect()
   }
 
   on(fn: Listener): () => void {
@@ -74,6 +109,7 @@ class WsClient {
 
   private connect(): void {
     if (!this.shouldRun) return
+    this.setStatus('connecting')
     const token = getAccessToken()
     if (!token) {
       // access ещё не поднят (рефреш в процессе) — повторим скоро
@@ -86,6 +122,7 @@ class WsClient {
 
     ws.onopen = () => {
       this.reconnectAttempts = 0
+      this.setStatus('open')
       for (const room of this.subscribed) this.send({ type: 'subscribe', room_id: room })
       this.pingTimer = window.setInterval(() => this.send({ type: 'ping' }), 25_000)
       this.connectListeners.forEach((fn) => fn())
@@ -100,6 +137,7 @@ class WsClient {
     }
     ws.onclose = () => {
       this.clearTimers()
+      this.setStatus(this.shouldRun ? 'connecting' : 'closed')
       if (!this.shouldRun) return
       const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000)
       this.reconnectAttempts += 1

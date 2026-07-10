@@ -4,7 +4,9 @@ import { Button } from '../../components/Button'
 import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
+import { useOutbox } from '../../hooks/useOutbox'
 import { wsClient } from '../../lib/wsClient'
+import { ConnectionBanner } from './ConnectionBanner'
 import { useAuth } from '../auth/AuthContext'
 import { ChatLayout } from '../chat/ChatLayout'
 import { CalendarView } from '../calendar/CalendarView'
@@ -58,6 +60,9 @@ export function AppShell() {
 
   // Проводка WS-событий в кэш (один раз в корне).
   useRealtime()
+
+  // Outbox: отправка сообщений с переживанием офлайна/перезагрузки (один раз в корне).
+  useOutbox()
 
   // «Живой» золотой индикатор: один общий элемент, который переезжает под
   // активную вкладку (а не отдельная подсветка на каждой ссылке). Меряем
@@ -151,6 +156,7 @@ export function AppShell() {
         </span>
         <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
       </header>
+      <ConnectionBanner />
       <div className={styles.body}>
         <nav ref={navRef} className={styles.sidenav}>
           {glider && (
