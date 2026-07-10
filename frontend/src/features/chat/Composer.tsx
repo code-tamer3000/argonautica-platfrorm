@@ -27,9 +27,12 @@ interface Props {
   // Новостной канал: здесь композер умеет «держать» репост (pendingRepost) и даёт
   // дописать к нему комментарий перед отправкой.
   isNews?: boolean
+  // Личный дневник: композер появляется по выбору режима — проигрываем мягкое
+  // выезжание при монтировании, чтобы он не «выпрыгивал».
+  revealOnMount?: boolean
 }
 
-export function Composer({ roomId, isNews }: Props) {
+export function Composer({ roomId, isNews, revealOnMount }: Props) {
   const [text, setText] = useState('')
   const [pendingFiles, setPendingFiles] = useState<MediaAssetOut[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -243,7 +246,7 @@ export function Composer({ roomId, isNews }: Props) {
     : ''
 
   return (
-    <div className={styles.composer}>
+    <div className={`${styles.composer} ${revealOnMount ? styles.composerReveal : ''}`}>
       {repost && (
         <div className={styles.contextBar}>
           <span className={styles.ctxLabel}>Репост от {repostAuthor}:</span>
