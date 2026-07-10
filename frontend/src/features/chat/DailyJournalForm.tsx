@@ -104,7 +104,7 @@ export function DailyJournalForm({ roomId }: Props) {
           <IconChevronLeft size={16} className={styles.journalBarChevronBack} />
           <IconDiary size={15} className={styles.journalBarTitleIcon} />
           <span className={styles.journalBarTitle}>
-            {dayClosed ? 'Задания дня выполнены' : 'Задание дня'}
+            {dayClosed ? 'Задания дня выполнены' : 'Задания дня'}
           </span>
           {!dayClosed && (
             <span className={styles.journalBarProgress}>{doneCount}/{sections.length}</span>
@@ -138,7 +138,7 @@ export function DailyJournalForm({ roomId }: Props) {
           <IconDiary size={22} className={styles.journalChoiceIcon} />
           <span className={styles.journalChoiceText}>
             <span className={styles.journalChoiceTitle}>
-              {dayClosed ? 'Задания дня выполнены' : 'Выполнить задание на день'}
+              {dayClosed ? 'Задания дня выполнены' : 'Выполнить задания на день'}
             </span>
             <span className={styles.journalChoiceSub}>
               {dayClosed ? 'Можно дополнить запись' : `Прогресс дня — ${doneCount}/${sections.length}`}
