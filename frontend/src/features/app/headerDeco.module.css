@@ -1,5 +1,7 @@
 /* Декоративный слой шапки — за контентом (топбар ставит content поверх через
-   position:relative + z-index). Ничего не перехватывает клики. */
+   position:relative + z-index). Ничего не перехватывает клики.
+   Значения анимаций подобраны в Wave Lab. Слой корабля — МЕЖДУ волнами:
+   waveB (линии) снизу → корабль → waveA (завитки) сверху. */
 .deco {
   position: absolute;
   inset: 0;
@@ -8,6 +10,11 @@
   overflow: hidden;
 }
 
+/* Порядок слоёв (снизу вверх): waveB(1) · ship(2) · waveA(3). */
+.waveB { z-index: 1; }
+.ship  { z-index: 2; }
+.waveA { z-index: 3; }
+
 /* Кораблик: медленно проплывает насквозь. Горизонтальный ход — на .ship,
    покачивание — на вложенном .hull (два transform'а не конфликтуют). */
 .ship {
@@ -15,9 +22,9 @@
   top: 50%;
   height: 74%;
   color: var(--accent);
-  opacity: 0.11;
+  opacity: 0.5;
   transform: translateY(-50%);
-  animation: shipSail 90s linear infinite;
+  animation: shipSail 180s linear infinite;
 }
 .hull {
   height: 100%;
@@ -35,16 +42,12 @@
   50%      { transform: translateY(-2.5px) rotate(2.6deg); }
 }
 
-/* Волна: пояс из отдельных завитков, дрейфует вбок; каждый завиток колышется
-   сам, соседи — в противофазе (задержки задаёт JS). */
+/* Общее для обеих волн. */
 .waves {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 2px;
-  height: 20px;
   color: var(--accent);
-  opacity: 0.16;
 }
 .track {
   position: absolute;
@@ -53,21 +56,35 @@
   display: flex;
   align-items: flex-end;
   width: max-content;
-  animation: waveDrift 52s linear infinite;
 }
 .curl {
-  width: 28px;
-  height: 20px;
   flex: 0 0 auto;
   transform-origin: 50% 100%;
-  animation: waveRipple 4.2s ease-in-out infinite;
 }
 .curl svg { display: block; width: 100%; height: 100%; }
 
-@keyframes waveDrift {
+/* ── Волна A · спиральные завитки (верхний слой) ── */
+/* .track/.curl базовые классы вешаются в компоненте рядом с A/B-специфичными,
+   поэтому здесь только отличия (composes не нужен). */
+.waveA { bottom: 2px; height: 22px; opacity: 0.5; }
+.trackA { animation: waveDriftA 52s linear infinite; }
+.curlA { width: 34px; height: 22px; animation: waveRipple 4.2s ease-in-out infinite; }
+
+/* ── Волна B · слоистые линии (между A) ── */
+.waveB { bottom: 4px; height: 18px; opacity: 0.49; }
+.trackB { animation: waveDriftB 38s linear infinite; }
+.curlB { width: 46px; height: 18px; animation: waveRipple 5.5s ease-in-out infinite; }
+
+/* Дрейф: половина ленты кратна 4 завиткам → бесшовная петля.
+   A: 48 завитков × 34px → half = 24 × 34 = 816px.
+   B: 40 завитков × 46px → half = 20 × 46 = 920px. */
+@keyframes waveDriftA {
   from { transform: translateX(0); }
-  /* Ровно половина ленты — бесшовная петля (завитки дублируются в потоке). */
-  to   { transform: translateX(-896px); } /* 32 завитка × 28px */
+  to   { transform: translateX(-816px); }
+}
+@keyframes waveDriftB {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-920px); }
 }
 @keyframes waveRipple {
   0%, 100% { transform: translateY(0)    scaleY(1); }
@@ -76,5 +93,5 @@
 
 /* Пользователям с prefers-reduced-motion — статичный призрак, без движения. */
 @media (prefers-reduced-motion: reduce) {
-  .ship, .hull, .track, .curl { animation: none; }
+  .ship, .hull, .trackA, .trackB, .curlA, .curlB { animation: none; }
 }
