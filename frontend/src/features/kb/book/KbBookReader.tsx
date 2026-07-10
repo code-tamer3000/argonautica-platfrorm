@@ -78,7 +78,15 @@ export function KbBookReader() {
     return <div className="center grow muted">В этом документе пока нет глав</div>
   }
 
-  const backTo = id > 0 ? `/kb/${id}` : '/kb'
+  // Return to wherever the reader was opened from. A Gene Key deep-link carries
+  // `from=genkeys&key=N`, so «Назад» reopens that key on the wheel instead of
+  // dropping into the KB article the book happens to live in.
+  const backTo =
+    searchParams.get('from') === 'genkeys'
+      ? `/genkeys?key=${searchParams.get('key') ?? ''}`
+      : id > 0
+        ? `/kb/${id}`
+        : '/kb'
   const safeActive = Math.min(active, book.chapters.length - 1)
   const activeChapter = book.chapters[safeActive]
   const heading = book.title || item?.title || 'Чтение'
