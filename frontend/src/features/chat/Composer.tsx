@@ -11,11 +11,10 @@ import { useUsersMap } from '../../api/users'
 import { IconAttach, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
 import { mediaUpload } from '../../lib/mediaUpload'
-import type { MediaAssetOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
-import { enqueue as outboxEnqueue } from '../../lib/outbox'
+import { enqueue as outboxEnqueue, type LocalAttachment } from '../../lib/outbox'
 import { clearDraft, saveDraft, loadDraft } from '../../lib/drafts'
 import { useAuth } from '../auth/AuthContext'
 import { StickerPicker } from './StickerPicker'
@@ -34,7 +33,9 @@ interface Props {
 
 export function Composer({ roomId, isNews, revealOnMount }: Props) {
   const [text, setText] = useState('')
-  const [pendingFiles, setPendingFiles] = useState<MediaAssetOut[]>([])
+  // Прикреплённые, но ещё не отправленные вложения: ассет (уже в MinIO) + его байты,
+  // чтобы outbox закэшировал их и превью пережило перезагрузку (см. lib/outbox.ts).
+  const [pendingFiles, setPendingFiles] = useState<LocalAttachment[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   // Прогресс текущей загрузки в процентах (null — загрузки нет).
@@ -116,8 +117,8 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
     setUploading(true)
     setProgress(0)
     try {
-      const asset = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
-      setPendingFiles(prev => [...prev, asset])
+      const local = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
+      setPendingFiles(prev => [...prev, local])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
@@ -141,21 +142,24 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
     enqueueSend({ sticker_id: stickerId })
   }
 
-  function sendBody() {
+  // Собрать тело + снимок локальных вложений для outbox, очистив композер.
+  function sendBody(): { body: SendBody; locals: LocalAttachment[] } {
     const content = text.trim()
     const body: SendBody = {}
     if (content) body.content = content
-    if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
+    const locals = pendingFiles
+    if (locals.length) body.attachment_ids = locals.map(l => l.asset.id)
     setText('')
     setPendingFiles([])
-    return body
+    return { body, locals }
   }
 
   // Обычная отправка через outbox: сообщение сразу видно в ленте как «отправляется»
-  // и переживает падение сети/перезагрузку (см. lib/outbox.ts). Черновик комнаты
-  // очищаем — текст ушёл в очередь.
-  function enqueueSend(body: SendBody) {
-    if (user) outboxEnqueue(roomId, body, user.id)
+  // и переживает падение сети/перезагрузку (см. lib/outbox.ts). Байты вложений
+  // (locals) кэшируются, чтобы превью не пропало после перезагрузки. Черновик
+  // комнаты очищаем — текст ушёл в очередь.
+  function enqueueSend(body: SendBody, locals: LocalAttachment[] = []) {
+    if (user) outboxEnqueue(roomId, body, user.id, locals)
     else send.mutate(body) // без пользователя (не должно случаться) — прямой путь
     void clearDraft(roomId)
   }
@@ -175,7 +179,7 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       }
       if (!value && pendingFiles.length === 0) return
       const body: SendBody = { content: buildJournalContent(journalMeta, value) }
-      if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
+      if (pendingFiles.length) body.attachment_ids = pendingFiles.map(l => l.asset.id)
       setText('')
       setPendingFiles([])
       send.mutate(body, { onSuccess: afterJournalSent })
@@ -195,15 +199,16 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       }
       setPendingRepost(null)
       setReposting(false)
-      const body = sendBody()
-      if (body.content || body.attachment_ids?.length) enqueueSend(body)
+      const { body, locals } = sendBody()
+      if (body.content || body.attachment_ids?.length) enqueueSend(body, locals)
       toast('Отправлено в новости')
       return
     }
 
     const content = text.trim()
     if (!content && pendingFiles.length === 0) return
-    enqueueSend(sendBody())
+    const { body, locals } = sendBody()
+    enqueueSend(body, locals)
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -275,15 +280,15 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       )}
       {pendingFiles.length > 0 && (
         <div className={styles.pendingAtt}>
-          {pendingFiles.map(a => (
-            <span key={a.id} className={styles.pendingChip}>
+          {pendingFiles.map(({ asset }) => (
+            <span key={asset.id} className={styles.pendingChip}>
               <IconAttach size={13} />
               <span className={styles.pendingChipLabel}>
-                {a.kind === 'image' ? 'Изображение' : a.kind === 'video' ? 'Видео' : 'Файл'}
+                {asset.kind === 'image' ? 'Изображение' : asset.kind === 'video' ? 'Видео' : 'Файл'}
               </span>
               <button
                 className={styles.pendingChipX}
-                onClick={() => setPendingFiles(prev => prev.filter(f => f.id !== a.id))}
+                onClick={() => setPendingFiles(prev => prev.filter(f => f.asset.id !== asset.id))}
                 aria-label="Убрать вложение"
               >
                 ✕
@@ -363,13 +368,13 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
           </button>
         ) : (
           <VoiceComposer
-            onSend={(assetId) =>
+            onSend={(local) =>
               journalMeta
                 ? send.mutate(
-                    { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [assetId] },
+                    { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [local.asset.id] },
                     { onSuccess: afterJournalSent },
                   )
-                : enqueueSend({ attachment_ids: [assetId] })
+                : enqueueSend({ attachment_ids: [local.asset.id] }, [local])
             }
             onActiveChange={setVoiceActive}
           />

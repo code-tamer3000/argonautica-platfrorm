@@ -19,7 +19,7 @@ function PackRow({ pack }: { pack: StickerpackOut }) {
     // reset so the same file can be picked again
     e.target.value = ''
     try {
-      const asset = await mediaUpload(file)
+      const { asset } = await mediaUpload(file)
       setPendingAsset(asset)
       setKeyword('')
     } catch (err: unknown) {

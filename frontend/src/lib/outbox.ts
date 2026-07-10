@@ -13,8 +13,15 @@
 //     оптимистичные сообщения оказывались ниже в ленте (лента newest-last).
 //   - очередь строго последовательна на комнату — сохраняем порядок отправки.
 import { http, ApiError } from './apiClient'
-import { idbDelete, idbGetAll, idbSet, STORE_OUTBOX } from './idb'
-import type { MessageOut } from './types'
+import {
+  idbDelete,
+  idbGet,
+  idbGetAll,
+  idbSet,
+  STORE_OUTBOX,
+  STORE_OUTBOX_BLOBS,
+} from './idb'
+import type { AttachmentOut, MediaAssetOut, MessageOut } from './types'
 import type { SendBody } from '../api/messages'
 
 export interface OutboxItem {
@@ -23,10 +30,43 @@ export interface OutboxItem {
   body: SendBody
   senderId: number
   createdAt: string
-  // Снимок вложений для оптимистичного показа (presigned-URL уже есть у ассета).
+  // Снимок вложений для оптимистичного показа. URL здесь — локальный `blob:` (см.
+  // blobAssetIds), а НЕ presigned: presigned протух бы к моменту повторной отправки
+  // после долгого офлайна, а blob-URL живёт, пока жива вкладка, и заново куётся из
+  // IndexedDB при гидрации.
   attachments: MessageOut['attachments']
+  // asset_id вложений, чьи байты лежат в STORE_OUTBOX_BLOBS (ключ `${clientId}:${id}`).
+  // По ним при гидрации перевыпускаем blob-URL и чистим байты после отправки/отмены.
+  blobAssetIds: number[]
   tempId: number
   attempts: number
+}
+
+// Локальное вложение отправляемого сообщения: ассет (уже на сервере) + его байты,
+// которые мы кладём в IndexedDB, чтобы превью пережило перезагрузку.
+export interface LocalAttachment {
+  asset: MediaAssetOut
+  blob: Blob
+}
+
+function blobKey(clientId: string, assetId: number): string {
+  return `${clientId}:${assetId}`
+}
+
+// Снимок AttachmentOut из ассета + локального blob-URL (kind/размеры/длительность
+// уже известны из media_assets — плеер сразу рисует правильную коробку).
+function snapshotFromAsset(asset: MediaAssetOut, url: string): AttachmentOut {
+  return {
+    asset_id: asset.id,
+    url,
+    thumb_url: asset.kind === 'image' ? url : null,
+    kind: asset.kind,
+    mime_type: asset.mime_type,
+    size: asset.size,
+    width: asset.width,
+    height: asset.height,
+    duration: asset.duration,
+  }
 }
 
 type Mutator = (item: OutboxItem) => void
@@ -57,6 +97,28 @@ function clientId(): string {
 // Очередь в памяти (source of truth — IndexedDB; это её зеркало для воркера).
 const queue: OutboxItem[] = []
 let draining = false
+
+// Живые blob:-URL по clientId — освобождаем их (revokeObjectURL) и удаляем байты из
+// IndexedDB, когда сообщение отправилось/отменено, чтобы не течь памятью/местом.
+const liveBlobUrls = new Map<string, string[]>()
+
+function trackBlobUrl(clientId: string, url: string): void {
+  const arr = liveBlobUrls.get(clientId) ?? []
+  arr.push(url)
+  liveBlobUrls.set(clientId, arr)
+}
+
+// Освободить blob:-URL и стереть сами байты вложений сообщения из IndexedDB.
+function releaseBlobs(item: OutboxItem): void {
+  const urls = liveBlobUrls.get(item.clientId)
+  if (urls) {
+    for (const u of urls) URL.revokeObjectURL(u)
+    liveBlobUrls.delete(item.clientId)
+  }
+  for (const assetId of item.blobAssetIds) {
+    void idbDelete(STORE_OUTBOX_BLOBS, blobKey(item.clientId, assetId))
+  }
+}
 
 export function configureOutbox(cbs: {
   enqueue: Mutator
@@ -93,19 +155,35 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
 // Поставить сообщение в очередь. Возвращает clientId. Оптимистичное сообщение
 // сразу уходит в кэш через onEnqueue. Тред-ответы (reply_to_message_id) в ленту
 // не кладём — их обрабатывает отдельный путь; для них outbox не используем.
+//
+// `locals` — вложения (аудио/файлы), уже залитые в MinIO, чьи БАЙТЫ мы кэшируем в
+// IndexedDB. Из них куём blob-URL для оптимистичного превью: оно так переживает
+// перезагрузку, пока сообщение в очереди, и не зависит от протухания presigned-URL.
 export function enqueue(
   roomId: number,
   body: SendBody,
   senderId: number,
-  attachments: MessageOut['attachments'] = [],
+  locals: LocalAttachment[] = [],
 ): string {
+  const cid = clientId()
+  const attachments: AttachmentOut[] = []
+  const blobAssetIds: number[] = []
+  for (const { asset, blob } of locals) {
+    const url = URL.createObjectURL(blob)
+    trackBlobUrl(cid, url)
+    attachments.push(snapshotFromAsset(asset, url))
+    blobAssetIds.push(asset.id)
+    // Байты — в отдельный стор; переживут перезагрузку (см. hydrateOutbox).
+    void idbSet(STORE_OUTBOX_BLOBS, blobKey(cid, asset.id), blob)
+  }
   const item: OutboxItem = {
-    clientId: clientId(),
+    clientId: cid,
     roomId,
     body,
     senderId,
     createdAt: new Date().toISOString(),
     attachments,
+    blobAssetIds,
     tempId: nextTempId(),
     attempts: 0,
   }
@@ -117,6 +195,8 @@ export function enqueue(
 }
 
 // Поднять очередь из IndexedDB при старте (сообщения, не ушедшие в прошлой сессии).
+// Для вложений с кэшированными байтами перевыпускаем blob:-URL (старые из прошлой
+// сессии мертвы) и подставляем их в снимок attachments, чтобы превью нарисовалось.
 export async function hydrateOutbox(): Promise<OutboxItem[]> {
   const rows = await idbGetAll<OutboxItem>(STORE_OUTBOX)
   const items = rows
@@ -125,10 +205,29 @@ export async function hydrateOutbox(): Promise<OutboxItem[]> {
     // Сохраняем порядок постановки (по убыванию |tempId|, т.е. по времени).
     .sort((a, b) => b.tempId - a.tempId)
   for (const it of items) {
+    // Легаси-item'ы (до v3) поля blobAssetIds не имеют — подстрахуемся.
+    if (!Array.isArray(it.blobAssetIds)) it.blobAssetIds = []
+    await rehydrateBlobUrls(it)
     // При восстановлении считаем статус pending — воркер попробует снова.
     queue.push(it)
   }
   return items
+}
+
+// Перевыпустить blob:-URL для вложений item'а из байтов в IndexedDB и заменить ими
+// протухшие URL прошлой сессии в снимке attachments (in place).
+async function rehydrateBlobUrls(item: OutboxItem): Promise<void> {
+  for (const assetId of item.blobAssetIds) {
+    const blob = await idbGet<Blob>(STORE_OUTBOX_BLOBS, blobKey(item.clientId, assetId))
+    if (!blob) continue
+    const url = URL.createObjectURL(blob)
+    trackBlobUrl(item.clientId, url)
+    const att = item.attachments.find((a) => a.asset_id === assetId)
+    if (att) {
+      att.url = url
+      if (att.kind === 'image') att.thumb_url = url
+    }
+  }
 }
 
 // Ручной повтор для «зависшего» (failed) сообщения — например по кнопке.
@@ -145,6 +244,7 @@ export function discard(clientId: string): void {
   if (idx === -1) return
   const [item] = queue.splice(idx, 1)
   void idbDelete(STORE_OUTBOX, item.clientId)
+  releaseBlobs(item)
   onDrop?.(item.roomId, item.tempId)
 }
 
@@ -169,9 +269,11 @@ async function drain(): Promise<void> {
       const item = queue[0]
       try {
         const real = await http.post<MessageOut>(`/api/rooms/${item.roomId}/messages`, item.body)
-        // Успех: убрать из очереди/IndexedDB и заменить temp реальным сообщением.
+        // Успех: убрать из очереди/IndexedDB, освободить кэш байтов и заменить temp
+        // реальным сообщением (у него уже presigned-URL с сервера).
         queue.shift()
         void idbDelete(STORE_OUTBOX, item.clientId)
+        releaseBlobs(item)
         onResolve?.(item, real)
       } catch (err) {
         item.attempts += 1

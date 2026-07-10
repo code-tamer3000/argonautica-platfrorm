@@ -130,8 +130,8 @@ export function ThreadPanel({ roomId, rootId, canPin, isNews, onRepost, onClose 
               </button>
             ) : (
               <VoiceComposer
-                onSend={(assetId) =>
-                  send.mutate({ attachment_ids: [assetId], reply_to_message_id: rootId })
+                onSend={(local) =>
+                  send.mutate({ attachment_ids: [local.asset.id], reply_to_message_id: rootId })
                 }
                 onActiveChange={setVoiceActive}
               />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { IconClose, IconMic, IconSend, IconTrash } from '../../components/icons'
 import { VoicePlayer } from '../../components/VoicePlayer'
 import { voiceUpload } from '../../lib/mediaUpload'
+import type { LocalAttachment } from '../../lib/outbox'
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder'
 import { toast } from '../../stores/toast'
 import styles from './chat.module.css'
@@ -13,8 +14,12 @@ function fmtDur(sec: number): string {
 }
 
 interface Props {
-  /** Загрузка завершена → отправить ассет (верхний уровень или ответ в тред). */
-  onSend: (assetId: number) => void
+  /**
+   * Загрузка завершена → отправить голосовое (верхний уровень или ответ в тред).
+   * Отдаём ассет вместе с байтами (LocalAttachment), чтобы outbox закэшировал их и
+   * превью пережило перезагрузку, пока сообщение в очереди.
+   */
+  onSend: (local: LocalAttachment) => void
   /** Сообщает родителю, идёт ли запись/превью — по нему он прячет поле ввода. */
   onActiveChange?: (active: boolean) => void
   disabled?: boolean
@@ -71,8 +76,8 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
     if (!voice.recorded || sending) return
     setSending(true)
     try {
-      const asset = await voiceUpload(voice.recorded.blob, voice.recorded.duration)
-      onSend(asset.id)
+      const local = await voiceUpload(voice.recorded.blob, voice.recorded.duration)
+      onSend(local)
       discard()
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Не удалось отправить голосовое', 'error')

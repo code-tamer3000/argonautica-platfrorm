@@ -6,9 +6,12 @@
 // Всё изолировано по-стору; каждый вызов открывает соединение лениво и кэширует его.
 
 const DB_NAME = 'argonautica'
-// v2: добавлены cabinOutbox/cabinDrafts. Бампаем версию, чтобы onupgradeneeded
-// создал новые сторы у пользователей с уже существующей базой.
-const DB_VERSION = 2
+// v2: добавлены cabinOutbox/cabinDrafts. v3: outboxBlobs — байты вложений
+// (аудио/файлы) отправляемого сообщения, чтобы превью в ленте не пропадало после
+// перезагрузки, пока сообщение ещё в очереди (presigned-URL к тому моменту протух
+// бы). Бампаем версию, чтобы onupgradeneeded создал новые сторы у пользователей с
+// уже существующей базой.
+const DB_VERSION = 3
 
 // Именa стора держим в одном месте, чтобы onupgradeneeded создал ровно их.
 export const STORE_OUTBOX = 'outbox'
@@ -18,12 +21,17 @@ export const STORE_QUERYCACHE = 'querycache'
 // подразделам вместо комнат) — см. lib/cabinOutbox.ts и lib/cabinDrafts.ts.
 export const STORE_CABIN_OUTBOX = 'cabinOutbox'
 export const STORE_CABIN_DRAFTS = 'cabinDrafts'
+// Blob-байты вложений сообщений из outbox: ключ `${clientId}:${assetId}` → Blob.
+// Держим отдельно от самого outbox-item, чтобы гидрация очереди (idbGetAll по
+// STORE_OUTBOX) не тащила мегабайты медиа в память без нужды.
+export const STORE_OUTBOX_BLOBS = 'outboxBlobs'
 const STORES = [
   STORE_OUTBOX,
   STORE_DRAFTS,
   STORE_QUERYCACHE,
   STORE_CABIN_OUTBOX,
   STORE_CABIN_DRAFTS,
+  STORE_OUTBOX_BLOBS,
 ] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
