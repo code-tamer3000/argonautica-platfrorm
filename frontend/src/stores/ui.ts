@@ -41,6 +41,12 @@ interface UiState {
   pendingJournal: PendingJournal | null
   setPendingJournal: (j: PendingJournal | null) => void
 
+  // «Свободная запись» в личном дневнике: roomId канала, где пользователь выбрал
+  // писать без формата. В личном дневнике композер скрыт, пока не выбран режим —
+  // либо раздел задания (pendingJournal), либо свободная запись (этот флаг).
+  journalFreeEntry: number | null
+  setJournalFreeEntry: (roomId: number | null) => void
+
   // roomId -> userIds, печатающие прямо сейчас (с авто-истечением)
   typing: Record<number, number[]>
   // userId онлайн
@@ -71,6 +77,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   pendingJournal: null,
   setPendingJournal: (j) => set({ pendingJournal: j }),
+
+  journalFreeEntry: null,
+  setJournalFreeEntry: (roomId) => set({ journalFreeEntry: roomId }),
 
   typing: {},
   online: [],

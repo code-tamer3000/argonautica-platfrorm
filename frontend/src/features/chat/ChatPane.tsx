@@ -38,6 +38,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const setDmPeer = useUiStore((s) => s.setDmPeer)
   const setPendingRepost = useUiStore((s) => s.setPendingRepost)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
+  const pendingJournal = useUiStore((s) => s.pendingJournal)
+  const journalFreeEntry = useUiStore((s) => s.journalFreeEntry)
+  const setJournalFreeEntry = useUiStore((s) => s.setJournalFreeEntry)
 
   const query = useMessages(roomId)
   const markRead = useMarkRead(roomId)
@@ -89,7 +92,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setShowProfile(false)
     setHighlightedMsgId(null)
     setPendingJournal(null)
-  }, [roomId, setPendingJournal])
+    setJournalFreeEntry(null)
+  }, [roomId, setPendingJournal, setJournalFreeEntry])
 
   // Вывести пира личного чата из сообщений (API не отдаёт состав dm).
   useEffect(() => {
@@ -133,6 +137,12 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const title = roomTitle(room, dmPeers, users)
   const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
+
+  // Свой личный дневник: композер держим скрытым, пока пользователь не выбрал
+  // режим в DailyJournalForm — раздел задания или свободную запись.
+  const isOwnPersonal = !!room.is_personal && room.created_by === user?.id
+  const journalChosen =
+    pendingJournal?.roomId === roomId || journalFreeEntry === roomId
 
   function openHeaderInfo() {
     if (room?.type === 'dm') {
@@ -209,9 +219,12 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       )}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
           в новостном — только админ. Комментировать можно через треды.
-          Выбранная в баре «отписки дня» категория «заряжает» этот же composer. */}
+          В своём личном дневнике композер СКРЫТ, пока пользователь не выбрал режим
+          в DailyJournalForm — раздел задания (pendingJournal) или свободную запись
+          (journalFreeEntry): нельзя написать «просто так», не выбрав ничего. */}
       {(!room.is_personal || room.created_by === user?.id) &&
-        (!room.is_news || user?.role === 'admin') && (
+        (!room.is_news || user?.role === 'admin') &&
+        (!isOwnPersonal || journalChosen) && (
         <Composer roomId={roomId} isNews={room.is_news} />
       )}
       {msgMenu.menu && (
