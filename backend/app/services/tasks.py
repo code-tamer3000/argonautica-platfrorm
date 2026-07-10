@@ -147,6 +147,22 @@ async def _admin_ids(session: AsyncSession) -> list[int]:
     return list(rows.scalars().all())
 
 
+async def participant_count(session: AsyncSession) -> int:
+    """Сколько активных участников на платформе (знаменатель прогресса общей задачи).
+
+    Общая задача адресована каждому участнику (role='participant'), но строки
+    назначений создаются лениво — поэтому «из скольки» для неё считаем по числу
+    участников, а не по числу уже созданных назначений.
+    """
+    return (
+        await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.role == "participant")
+        )
+    ) or 0
+
+
 async def task_recipients(session: AsyncSession, task: Task) -> list[int]:
     """Кому доставлять WS-события задачи.
 

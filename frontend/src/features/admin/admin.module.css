@@ -88,9 +88,16 @@
   /* Строка списка: заголовок сверху, действия снизу отдельным рядом — иначе
      3-4 кнопки в один ряд с заголовком «схлопываются» и выглядят смазанно. */
   .listItem { flex-direction: column; align-items: stretch; gap: var(--space-3); }
-  .listItemMain { width: 100%; }
+  .listItemMain { width: 100%; flex-wrap: wrap; align-items: flex-start; }
   .listActions { flex-wrap: wrap; }
   .listActions > * { flex: 1 1 auto; }
+  /* Кнопка «Открыть» обёрнута в <Link> — тянем и ссылку, и кнопку внутри. */
+  .listActions > a { display: flex; }
+  .listActions > a > * { flex: 1 1 auto; width: 100%; }
+
+  /* Задача (раздел «Задачи»): та же логика — заголовок/мета сверху, ряд из 4
+     кнопок отдельной строкой на всю ширину, иначе всё съезжает и наезжает. */
+  .taskItemRow { flex-direction: column; align-items: stretch; gap: var(--space-3); }
 
   /* Модалка/форма на всю ширину экрана. */
   .form { max-width: 100%; }

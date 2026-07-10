@@ -141,6 +141,36 @@
 }
 .event:hover { border-color: var(--divider-gold); transform: translateY(-1px); }
 
+/* Дедлайн задачи — мягкий, «свой»: тёплый акцентный левый край и лёгкая заливка,
+   визуально отличается от анонса (обычное .event). Кликабелен (это <a>). */
+.eventTask {
+  text-decoration: none;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-surface));
+}
+.eventTask:hover { border-color: var(--divider-gold); border-left-color: var(--accent-bright); }
+
+/* Выполненная задача: приглушаем, как «сделано» — и в разделе задач, и здесь. */
+.eventDone { opacity: 0.7; border-left-color: var(--accent-bright); }
+.eventDone .eventTitle { color: var(--text-secondary); }
+
+.taskIcon {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 6px;
+  color: var(--accent);
+}
+.eventDone .taskIcon { color: var(--accent-bright); }
+
+.taskTag {
+  display: inline-block;
+  margin-top: var(--space-2);
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  color: var(--accent);
+}
+.taskTagDone { color: var(--accent-bright); }
+
 .eventTime {
   font-family: var(--font-t4);
   font-size: var(--text-label);

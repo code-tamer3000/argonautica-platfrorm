@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   addMonths,
   eachDayOfInterval,
@@ -14,17 +15,32 @@ import {
 } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { useCalendarEvents } from '../../api/calendar'
+import { useAuth } from '../auth/AuthContext'
 import { Spinner } from '../../components/Spinner'
-import { IconChevronLeft, IconChevronRight, IconPin } from '../../components/icons'
+import {
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconPin,
+  IconTasks,
+} from '../../components/icons'
 import { dayKeyMsk, timeHMMsk } from '../../lib/format'
 import type { CalendarEventOut } from '../../lib/types'
 import styles from './calendar.module.css'
+
+// Заголовок дедлайн-события хранится как «Дедлайн: <название>» — в календаре
+// показываем мягко: иконка задачи + само название, без канцелярского префикса.
+function taskEventTitle(title: string): string {
+  return title.replace(/^Дедлайн:\s*/i, '')
+}
 
 const WEEK_OPTS = { weekStartsOn: 1 as const } // неделя с понедельника
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const dayKey = (d: Date) => format(d, 'yyyy-MM-dd')
 
 export function CalendarView() {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [selected, setSelected] = useState<Date>(() => new Date())
 
@@ -136,28 +152,63 @@ export function CalendarView() {
         )}
         <div className={styles.eventList}>
           {selectedEvents.map((ev) => (
-            <div key={ev.id} className={`${styles.event} rise`}>
-              <div className={styles.eventTime}>
-                {ev.all_day
-                  ? 'Весь день'
-                  : `${timeHMMsk(ev.starts_at)}${
-                      ev.ends_at ? ` — ${timeHMMsk(ev.ends_at)}` : ''
-                    } МСК`}
-              </div>
-              <div className={styles.eventBody}>
-                <div className={styles.eventTitle}>{ev.title}</div>
-                {ev.description && (
-                  <div className={styles.eventDesc}>{ev.description}</div>
-                )}
-                {ev.room_id != null && (
-                  <span className={styles.roomTag}>
-                    <IconPin size={13} /> В комнате
-                  </span>
-                )}
-              </div>
-            </div>
+            <EventCard key={ev.id} ev={ev} isAdmin={isAdmin} />
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// Карточка события. Три интуитивно разных вида:
+//  • дедлайн задачи (task_id) — мягкий, с иконкой задачи, кликабелен → к себе в
+//    раздел «Задачи»; у выполненной галочка, у админа — прогресс «сдали X из Y»;
+//  • событие комнаты — с меткой «В комнате»;
+//  • анонс проекта — обычное событие.
+function EventCard({ ev, isAdmin }: { ev: CalendarEventOut; isAdmin: boolean }) {
+  const timeLabel = ev.all_day
+    ? 'Весь день'
+    : `${timeHMMsk(ev.starts_at)}${ev.ends_at ? ` — ${timeHMMsk(ev.ends_at)}` : ''} МСК`
+
+  if (ev.task_id != null) {
+    const done = ev.task_done
+    const cls = `${styles.event} ${styles.eventTask} ${done ? styles.eventDone : ''} rise`
+    return (
+      <Link to={`/tasks/${ev.task_id}`} className={cls}>
+        <div className={styles.eventTime}>{timeLabel}</div>
+        <div className={styles.eventBody}>
+          <div className={styles.eventTitle}>
+            <span className={styles.taskIcon} aria-hidden>
+              {done ? <IconCheck size={15} /> : <IconTasks size={15} />}
+            </span>
+            {taskEventTitle(ev.title)}
+          </div>
+          {ev.description && <div className={styles.eventDesc}>{ev.description}</div>}
+          {isAdmin && ev.task_total_count != null ? (
+            <span className={styles.taskTag}>
+              сдали {ev.task_submitted_count} из {ev.task_total_count}
+            </span>
+          ) : (
+            <span className={`${styles.taskTag} ${done ? styles.taskTagDone : ''}`}>
+              {done ? 'Выполнено' : 'Ваша задача'}
+            </span>
+          )}
+        </div>
+      </Link>
+    )
+  }
+
+  return (
+    <div className={`${styles.event} rise`}>
+      <div className={styles.eventTime}>{timeLabel}</div>
+      <div className={styles.eventBody}>
+        <div className={styles.eventTitle}>{ev.title}</div>
+        {ev.description && <div className={styles.eventDesc}>{ev.description}</div>}
+        {ev.room_id != null && (
+          <span className={styles.roomTag}>
+            <IconPin size={13} /> В комнате
+          </span>
+        )}
       </div>
     </div>
   )

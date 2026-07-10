@@ -475,6 +475,108 @@ async def test_common_deadline_event_visible_to_all(
     assert any(e.get("task_id") == task["id"] for e in events)
 
 
+# --- агрегаты для админа (список задач + календарь) --------------------------
+
+
+async def test_admin_list_counts(client: AsyncClient, make_user: MakeUser) -> None:
+    """Список задач у админа несёт submitted/unreviewed/total_recipients.
+
+    unreviewed = сдано и ещё не отревьюено; total_recipients = число адресатов
+    (individual) или число участников (common).
+    """
+    admin = await make_user(role="admin")
+    a = await make_user()
+    b = await make_user()
+    admin_h = await _headers(client, admin)
+    a_h = await _headers(client, a)
+
+    task = await _create_task(
+        client,
+        admin_h,
+        type="individual",
+        title="Counts",
+        assignee_ids=[a.id, b.id],
+    )
+    # Один из двух адресатов сдал → submitted=1, unreviewed=1, total=2.
+    await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=a_h, json={"body": "x"}
+    )
+
+    items = (await client.get("/api/tasks", headers=admin_h)).json()["items"]
+    row = next(t for t in items if t["id"] == task["id"])
+    assert row["submitted_count"] == 1
+    assert row["unreviewed_count"] == 1
+    assert row["total_recipients"] == 2
+
+    # Приняли → уже не «на проверке»: unreviewed падает до 0, submitted остаётся.
+    tracks = (
+        await client.get(f"/api/tasks/{task['id']}/submissions", headers=admin_h)
+    ).json()
+    aid = next(t["assignment_id"] for t in tracks if t["user_id"] == a.id)
+    await client.post(
+        f"/api/tasks/assignments/{aid}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    items2 = (await client.get("/api/tasks", headers=admin_h)).json()["items"]
+    row2 = next(t for t in items2 if t["id"] == task["id"])
+    assert row2["submitted_count"] == 1
+    assert row2["unreviewed_count"] == 0
+
+
+async def test_calendar_deadline_event_enrichment(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Дедлайн-события обогащены: участник видит task_done, админ — прогресс сдачи."""
+    admin = await make_user(role="admin")
+    assignee = await make_user()
+    admin_h = await _headers(client, admin)
+    assignee_h = await _headers(client, assignee)
+
+    deadline = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    task = await _create_task(
+        client,
+        admin_h,
+        type="individual",
+        title="Enriched",
+        assignee_ids=[assignee.id],
+        deadline_at=deadline,
+    )
+
+    def _ev(events: list[dict]) -> dict:
+        return next(e for e in events if e.get("task_id") == task["id"])
+
+    # До сдачи: у участника task_done=False; у админа прогресс 0 из 1.
+    assignee_ev = _ev(
+        (await client.get("/api/calendar/events", headers=assignee_h)).json()
+    )
+    admin_ev = _ev((await client.get("/api/calendar/events", headers=admin_h)).json())
+    assert assignee_ev["task_done"] is False
+    assert assignee_ev["task_submitted_count"] is None  # чужой прогресс не раскрываем
+    assert admin_ev["task_submitted_count"] == 0
+    assert admin_ev["task_total_count"] == 1
+
+    # Сдал и принят → у участника task_done=True; у админа сдали 1 из 1.
+    await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=assignee_h, json={"body": "x"}
+    )
+    tracks = (
+        await client.get(f"/api/tasks/{task['id']}/submissions", headers=admin_h)
+    ).json()
+    await client.post(
+        f"/api/tasks/assignments/{tracks[0]['assignment_id']}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    assignee_ev2 = _ev(
+        (await client.get("/api/calendar/events", headers=assignee_h)).json()
+    )
+    admin_ev2 = _ev((await client.get("/api/calendar/events", headers=admin_h)).json())
+    assert assignee_ev2["task_done"] is True
+    assert admin_ev2["task_submitted_count"] == 1
+    assert admin_ev2["task_total_count"] == 1
+
+
 # --- доступ к медиа сдачи ----------------------------------------------------
 
 

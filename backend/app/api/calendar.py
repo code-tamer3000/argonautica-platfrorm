@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin
@@ -23,6 +23,7 @@ from app.schemas.calendar import (
     CalendarEventUpdate,
 )
 from app.services.rooms import assert_room_access, load_room
+from app.services.tasks import participant_count
 
 router = APIRouter(prefix="/api/calendar", tags=["calendar"])
 
@@ -105,7 +106,7 @@ async def list_events(
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: Annotated[datetime | None, Query()] = None,
     room_id: Annotated[int | None, Query()] = None,
-) -> list[CalendarEvent]:
+) -> list[CalendarEventOut]:
     """События, видимые юзеру: project-wide + комнаты, к которым есть доступ
     (канал — всем, dm/group — по членству; та же логика, что в списке комнат)."""
     member_rooms = select(RoomMember.room_id).where(
@@ -143,7 +144,83 @@ async def list_events(
         stmt = stmt.where(CalendarEvent.starts_at <= to)
     stmt = stmt.order_by(CalendarEvent.starts_at)
 
-    return list((await session.execute(stmt)).scalars().all())
+    events = list((await session.execute(stmt)).scalars().all())
+    return await _enrich_task_events(session, events, current_user)
+
+
+async def _enrich_task_events(
+    session: AsyncSession,
+    events: list[CalendarEvent],
+    user: User,
+) -> list[CalendarEventOut]:
+    """Обогатить дедлайн-события состоянием задачи (одним батч-запросом).
+
+    Для участника проставляем `task_done` (его назначение принято) — чтобы
+    выполненный дедлайн в календаре читался так же, как в разделе «Задачи».
+    Для админа добавляем прогресс проверки `submitted / total` по задаче; чужой
+    прогресс участнику не раскрываем (анти-IDOR, п.1).
+    """
+    is_admin = user.role == "admin"
+    task_ids = [e.task_id for e in events if e.task_id is not None]
+
+    my_accepted: set[int] = set()
+    admin_progress: dict[int, tuple[int, int]] = {}
+    if task_ids:
+        if not is_admin:
+            rows = await session.execute(
+                select(TaskAssignment.task_id).where(
+                    TaskAssignment.task_id.in_(task_ids),
+                    TaskAssignment.user_id == user.id,
+                    TaskAssignment.status == "accepted",
+                )
+            )
+            my_accepted = set(rows.scalars().all())
+        else:
+            # Сдали (у кого назначение сдано/возвращено/принято) по каждой задаче.
+            agg = await session.execute(
+                select(
+                    TaskAssignment.task_id,
+                    func.count().filter(
+                        TaskAssignment.status.in_(
+                            ("submitted", "returned", "accepted")
+                        )
+                    ),
+                    func.count(),
+                )
+                .where(TaskAssignment.task_id.in_(task_ids))
+                .group_by(TaskAssignment.task_id)
+            )
+            submitted_by_task: dict[int, int] = {}
+            assigned_by_task: dict[int, int] = {}
+            for tid, submitted, total in agg.all():
+                submitted_by_task[tid] = submitted
+                assigned_by_task[tid] = total
+            # Знаменатель: individual → число адресатов; common → участники (лениво).
+            type_rows = await session.execute(
+                select(Task.id, Task.type).where(Task.id.in_(task_ids))
+            )
+            participants: int | None = None
+            for tid, ttype in type_rows.all():
+                if ttype == "common":
+                    if participants is None:
+                        participants = await participant_count(session)
+                    total = participants
+                else:
+                    total = assigned_by_task.get(tid, 0)
+                admin_progress[tid] = (submitted_by_task.get(tid, 0), total)
+
+    out: list[CalendarEventOut] = []
+    for e in events:
+        item = CalendarEventOut.model_validate(e)
+        if e.task_id is not None:
+            if is_admin:
+                submitted, total = admin_progress.get(e.task_id, (0, 0))
+                item.task_submitted_count = submitted
+                item.task_total_count = total
+            else:
+                item.task_done = e.task_id in my_accepted
+        out.append(item)
+    return out
 
 
 @router.get("/events/{event_id}", response_model=CalendarEventOut)

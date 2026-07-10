@@ -49,3 +49,11 @@ class CalendarEventOut(BaseModel):
     task_id: int | None = None
     created_by: int
     created_at: datetime
+    # --- Обогащение дедлайн-событий задачи (заполняется только при task_id) ---
+    # Выполнил ли задачу текущий юзер (его назначение принято). Для участника —
+    # чтобы в календаре показать выполненный дедлайн так же, как в разделе задач.
+    task_done: bool = False
+    # Прогресс проверки для админа: сдали / всего адресатов. Для участника — None
+    # (чужой прогресс не раскрываем).
+    task_submitted_count: int | None = None
+    task_total_count: int | None = None

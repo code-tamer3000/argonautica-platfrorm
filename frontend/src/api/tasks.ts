@@ -26,6 +26,8 @@ export interface TaskWithStatusOut extends TaskOut {
   assignee_count: number | null
   submitted_count: number
   accepted_count: number
+  unreviewed_count: number
+  total_recipients: number
 }
 
 export interface ProgressOut {

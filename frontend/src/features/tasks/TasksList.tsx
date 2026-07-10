@@ -67,6 +67,18 @@ function TaskCard({ task, isAdmin }: { task: TaskWithStatusOut; isAdmin: boolean
         {task.deadline_soon && <span className={`${styles.chip} ${styles.chipSoon}`}>Подходит срок</span>}
         {task.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
       </div>
+      {isAdmin && (
+        <div className={styles.progressRow}>
+          <span className={styles.progressStat}>
+            сдали {task.submitted_count} из {task.total_recipients}
+          </span>
+          {task.unreviewed_count > 0 && (
+            <span className={`${styles.chip} ${styles.chipUnreviewed}`}>
+              {task.unreviewed_count} на проверке
+            </span>
+          )}
+        </div>
+      )}
       {isAdmin && task.type === 'individual' && <AssigneeChips taskId={task.id} />}
       {task.deadline_at && (
         <div className={styles.cardMeta}>Дедлайн: {dayLabel(task.deadline_at)}</div>
