@@ -59,6 +59,7 @@ from app.services.tasks import (
     fan_out_task_event,
     get_or_create_assignment,
     load_task,
+    participant_count,
     sync_task_calendar_event,
 )
 from app.ws import schemas as ws_schemas
@@ -410,10 +411,11 @@ async def list_tasks(
         )
         my_assignments = {a.task_id: a for a in rows.scalars().all()}
 
-    # Агрегаты по назначениям задачи (кол-во адресатов, сдано, принято).
+    # Агрегаты по назначениям задачи (кол-во адресатов, сдано, принято, на проверке).
     assignee_counts: dict[int, int] = {}
     submitted_counts: dict[int, int] = {}
     accepted_counts: dict[int, int] = {}
+    unreviewed_counts: dict[int, int] = {}
     if task_ids:
         agg = await session.execute(
             select(
@@ -423,14 +425,19 @@ async def list_tasks(
                     TaskAssignment.status.in_(("submitted", "returned", "accepted"))
                 ),
                 func.count().filter(TaskAssignment.status == "accepted"),
+                func.count().filter(TaskAssignment.status == "submitted"),
             )
             .where(TaskAssignment.task_id.in_(task_ids))
             .group_by(TaskAssignment.task_id)
         )
-        for tid, total, submitted, accepted in agg.all():
+        for tid, total, submitted, accepted, unreviewed in agg.all():
             assignee_counts[tid] = total
             submitted_counts[tid] = submitted
             accepted_counts[tid] = accepted
+            unreviewed_counts[tid] = unreviewed
+
+    # Знаменатель «сдали X из Y»: для common — число участников (назначения ленивы).
+    participants = await participant_count(session)
 
     task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
 
@@ -453,6 +460,12 @@ async def list_tasks(
             ),
             submitted_count=submitted_counts.get(t.id, 0),
             accepted_count=accepted_counts.get(t.id, 0),
+            unreviewed_count=unreviewed_counts.get(t.id, 0),
+            total_recipients=(
+                assignee_counts.get(t.id, 0)
+                if t.type == "individual"
+                else participants
+            ),
         )
         for t in tasks
     ]
@@ -491,10 +504,11 @@ async def get_task(
                     TaskAssignment.status.in_(("submitted", "returned", "accepted"))
                 ),
                 func.count().filter(TaskAssignment.status == "accepted"),
+                func.count().filter(TaskAssignment.status == "submitted"),
             ).where(TaskAssignment.task_id == task.id)
         )
     ).one()
-    total, submitted, accepted = agg
+    total, submitted, accepted, unreviewed = agg
     task_attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
     return TaskWithStatusOut(
         id=task.id,
@@ -512,6 +526,10 @@ async def get_task(
         assignee_count=(total if task.type == "individual" else None),
         submitted_count=submitted,
         accepted_count=accepted,
+        unreviewed_count=unreviewed,
+        total_recipients=(
+            total if task.type == "individual" else await participant_count(session)
+        ),
     )
 
 

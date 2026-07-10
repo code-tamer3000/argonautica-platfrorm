@@ -24,7 +24,7 @@ export default defineConfig({
       manifest: {
         name: 'Аргонавтика',
         short_name: 'Аргонавтика',
-        description: 'База знаний и реалтайм-чат',
+        description: 'Система проявления для людей с миссией',
         lang: 'ru',
         theme_color: '#0B100E',
         background_color: '#0B100E',

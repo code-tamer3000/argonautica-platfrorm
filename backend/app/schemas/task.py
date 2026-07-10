@@ -64,6 +64,11 @@ class TaskWithStatusOut(TaskOut):
     assignee_count: int | None  # только individual, иначе None
     submitted_count: int
     accepted_count: int
+    # Ждут проверки: сдано и ещё не отревьюено (статус 'submitted'). Для бейджа админа.
+    unreviewed_count: int
+    # Знаменатель прогресса «сдали X из Y»: individual → число адресатов;
+    # common → число активных участников платформы (назначения ленивы).
+    total_recipients: int
 
 
 class ProgressOut(BaseModel):

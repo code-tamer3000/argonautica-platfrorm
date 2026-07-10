@@ -25,9 +25,17 @@ Author assigns work; participants submit; admin reviews. A task is either **comm
 
 - `attention_count` (in `list_tasks`, feeds the «Задачи» nav badge) = user's assignments not yet `accepted` (`assigned`/`submitted`/`returned`, common & individual) **plus** untouched common tasks (no assignment row yet). Accepting a task decrements it; when everything is accepted it is 0. A freshly assigned individual task increments it immediately. See `attention_count` in `services/tasks.py`.
 
+## Progress counts (per task row)
+
+`list_tasks` / `get_task` return per-task aggregates so the admin sees progress on the «Задачи» section itself (no need to open the management panel):
+
+- `submitted_count` — assignments in `submitted`/`returned`/`accepted` (i.e. "сдали"); `accepted_count` — `accepted`; `unreviewed_count` — `submitted` only (awaiting review).
+- `total_recipients` — the "из скольки" denominator: **individual** → assignee count; **common** → active participant count (`participant_count` in `services/tasks.py`), since common assignment rows are created lazily.
+- `assignee_count` stays `individual`-only (null for common).
+
 ## Deadlines
 
-- `tasks.deadline_at` is synced into `calendar_events` (`services/tasks.py`) so deadlines show on the calendar. See [CALENDAR.md](CALENDAR.md).
+- `tasks.deadline_at` is synced into `calendar_events` (`services/tasks.py`) so deadlines show on the calendar. Deadline events are **enriched** per viewer — see [CALENDAR.md](CALENDAR.md).
 
 ## Realtime
 

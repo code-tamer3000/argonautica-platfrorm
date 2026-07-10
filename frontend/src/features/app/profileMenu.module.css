@@ -1,0 +1,107 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: border-color var(--transition-base);
+}
+.trigger:hover {
+  border-color: var(--divider-gold);
+}
+
+/* Точка-маркер, что это админ (полный текст «admin» — уже в самом меню). */
+.adminDot {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg-surface);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 220px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  box-shadow: var(--glow-gold);
+  z-index: 90;
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-frame);
+}
+.headText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.name {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.adminTag {
+  align-self: flex-start;
+  font-size: var(--text-label);
+  letter-spacing: var(--ls-label-sm);
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-2);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+  transition: background var(--transition-base), color var(--transition-base);
+}
+.item:hover {
+  background: var(--color-more-glub);
+  color: var(--text-primary);
+}
+.itemDanger {
+  border-top: 1px solid var(--color-frame);
+  color: var(--text-muted);
+}
+.itemDanger:hover {
+  color: var(--blood-bright);
+}

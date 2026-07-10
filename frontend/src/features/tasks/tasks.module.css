@@ -135,6 +135,25 @@
   border-color: var(--divider);
   color: var(--text-muted);
 }
+/* «N на проверке» — акцент для админа: непроверенные сдачи требуют действия. */
+.chipUnreviewed {
+  border-color: var(--color-more);
+  background: color-mix(in srgb, var(--color-more) 14%, transparent);
+  color: var(--color-more-yar);
+}
+
+/* Строка прогресса задачи в админском списке «сдали X из Y» + бейдж проверки. */
+.progressRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.progressStat {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+}
 
 /* ───── Деталь задачи ───── */
 .viewer {

@@ -18,6 +18,7 @@
   /* margin:auto вместо только flex-центрирования: при нехватке высоты (открыта
      клавиатура) карточка прижимается с равными отступами и прокручивается внутри
      .screen вместо того, чтобы браузер выталкивал/обрезал макет. */
+  position: relative;
   margin: auto;
   width: 100%;
   max-width: 380px;
@@ -28,21 +29,85 @@
   background: var(--bg-surface);
   border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card);
-  box-shadow: var(--glow-gold);
+  /* «Дышащая» золотая подсветка — статичный экран логина мягко оживает.
+     Без вращающихся деталей: только пульсация свечения. */
+  animation: cardGlow 5.5s ease-in-out infinite;
 }
+
+@keyframes cardGlow {
+  0%, 100% { box-shadow: 0 0 30px rgba(194, 154, 72, 0.08); }
+  50%      { box-shadow: 0 0 52px rgba(194, 154, 72, 0.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card { animation: none; box-shadow: var(--glow-gold); }
+}
+
+/* Логотип: монограмма + слово. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+.brandMark {
+  height: 26px;
+  width: auto;
+  display: block;
+  /* Монограмма — тёмная картинка; инвертируем под светлое золото. В светлой
+     теме инверсия не нужна. */
+  filter: invert(1);
+  opacity: 0.9;
+}
+:global([data-theme='light']) .brandMark { filter: none; opacity: 0.9; }
 
 .wordmark {
   font-family: var(--font-t1);
   font-size: var(--text-h2);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  text-align: center;
   color: var(--text-primary);
+  line-height: 1;
 }
 
+/* Тэглайн — курсивный serif вместо канцелярского капса. */
 .tagline {
   text-align: center;
-  margin-top: calc(-1 * var(--space-3));
+  margin-top: var(--space-3);
+  font-family: var(--font-t3);
+  font-style: italic;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Разделитель со звездой под тэглайном — «воздух» перед полями. */
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.rule {
+  height: 1px;
+  width: 54px;
+  background: linear-gradient(90deg, transparent, var(--divider-gold));
+}
+.ruleR { background: linear-gradient(90deg, var(--divider-gold), transparent); }
+
+/* Блик (StarSpark) — мягко мерцает, без вращения. */
+.star {
+  display: inline-flex;
+  color: var(--accent);
+  animation: starTwinkle 3.8s ease-in-out infinite;
+}
+@keyframes starTwinkle {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star { animation: none; opacity: 0.9; }
 }
 
 .field {

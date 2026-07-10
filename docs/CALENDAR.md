@@ -11,6 +11,15 @@ Project events (dates, titles, descriptions). An event is either **project-wide*
 - Read (participants): `GET /api/calendar/events` — project-wide events visible to all; a room event only when the caller has room access (same visibility as the room list). Filters: `from` / `to` / `room_id`.
 - `GET /api/calendar/events/{id}` — for a room event, `assert_room_access` (see [ROOMS.md](ROOMS.md)).
 
+## Task deadline events
+
+Task deadlines are synced into `calendar_events` (`task_id` set) — see [TASKS.md](TASKS.md). On `GET /events` these rows are **enriched per viewer** (`_enrich_task_events` in `api/calendar.py`), so the UI can render them as a soft, task-flavoured entry (task icon + title, link to `/tasks/{id}`) distinct from plain announcements:
+
+- `task_done` — participant only: whether the caller's own assignment is `accepted` (mirrors the "done" look in the Tasks section). Always `false` for admins.
+- `task_submitted_count` / `task_total_count` — **admin only** ("сдали X из Y"); `null` for participants (never leak others' progress — anti-IDOR). Denominator = assignee count for individual tasks, participant count for common (lazy assignments).
+
+Enrichment is batched (one aggregate query for the whole list). `GET /events/{id}` returns the raw event (no enrichment); the calendar UI reads from the list.
+
 ## Related
 
 Task deadlines are synced into `calendar_events` — see [TASKS.md](TASKS.md).

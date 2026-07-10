@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { Button } from '../../components/Button'
 import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
+import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { useOutbox } from '../../hooks/useOutbox'
@@ -30,6 +30,7 @@ import { AdminFaq } from '../admin/AdminFaq'
 import { AdminBroadcast } from '../admin/AdminBroadcast'
 import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
+import { ProfileMenu } from './ProfileMenu'
 import { useNavBadges } from './useNavBadges'
 import { Spinner } from '../../components/Spinner'
 import styles from './appshell.module.css'
@@ -44,7 +45,7 @@ const KbBookReader = lazy(() =>
 )
 
 export function AppShell() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const location = useLocation()
   const badges = useNavBadges()
 
@@ -147,14 +148,14 @@ export function AppShell() {
   return (
     <div className={`col ${styles.shell}`}>
       <header className={styles.topbar}>
-        <span className={styles.wordmark}>Аргонавтика</span>
+        <span className={styles.brand}>
+          <img className={styles.brandMark} src="/media/monogram.png" alt="" aria-hidden />
+          <span className={styles.wordmark}>Аргонавтика</span>
+          <span className={styles.brandStar} aria-hidden><StarSpark size={12} /></span>
+        </span>
         <div className={styles.spacer} />
         <NotificationBell />
-        <span className={styles.user}>
-          {user?.display_name}
-          {user?.role === 'admin' && <span className={styles.adminTag}>admin</span>}
-        </span>
-        <Button variant="outline" onClick={() => void logout()}>Выйти</Button>
+        <ProfileMenu />
       </header>
       <ConnectionBanner />
       <div className={styles.body}>

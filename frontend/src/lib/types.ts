@@ -191,6 +191,12 @@ export interface CalendarEventOut {
   task_id: number | null
   created_by: number
   created_at: string
+  // Обогащение дедлайн-событий задачи (только при task_id):
+  // выполнил ли задачу текущий юзер (для участника).
+  task_done: boolean
+  // Прогресс проверки для админа (сдали / всего адресатов); у участника — null.
+  task_submitted_count: number | null
+  task_total_count: number | null
 }
 
 export interface StickerOut {
