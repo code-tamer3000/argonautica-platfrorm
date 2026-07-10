@@ -775,6 +775,29 @@
   cursor: pointer; transition: var(--transition-color);
 }
 .journalBarToggle:hover { color: var(--text-primary); }
+/* Свёрнутое состояние: две кнопки — задание дня и свободная запись. */
+.journalActions {
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+}
+.journalActionPrimary {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  padding: 4px var(--space-3);
+  background: rgba(19, 78, 69, 0.14);
+  border: 1px solid var(--accent); border-radius: var(--radius-btn);
+  color: var(--text-primary);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  cursor: pointer; transition: var(--transition-color);
+}
+.journalActionPrimary:hover { background: rgba(19, 78, 69, 0.24); }
+.journalActionSecondary {
+  display: inline-flex; align-items: center; flex: 0 0 auto;
+  padding: 4px var(--space-3);
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn); color: var(--text-secondary);
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  cursor: pointer; transition: var(--transition-color);
+}
+.journalActionSecondary:hover { color: var(--text-primary); }
 .journalBarTitle {
   color: inherit;
   font-family: var(--font-t4); font-size: var(--text-label-md);
