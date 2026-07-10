@@ -34,15 +34,16 @@
   color: var(--text-primary);
 }
 
-/* Золотая звёздочка после слова — мягко мерцает, «оживляет» шапку. */
+/* Золотой блик (StarSpark) после слова — мягко мерцает, «оживляет» шапку.
+   Без вращения: только opacity + лёгкий масштаб. */
 .brandStar {
   display: inline-flex;
   color: var(--accent);
-  animation: brandStarTwinkle 3.6s ease-in-out infinite;
+  animation: brandStarTwinkle 3.8s ease-in-out infinite;
 }
 @keyframes brandStarTwinkle {
-  0%, 100% { opacity: 0.5; transform: rotate(0deg) scale(0.9); }
-  50%      { opacity: 1;   transform: rotate(90deg) scale(1.08); }
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.08); }
 }
 @media (prefers-reduced-motion: reduce) {
   .brandStar { animation: none; opacity: 0.9; }

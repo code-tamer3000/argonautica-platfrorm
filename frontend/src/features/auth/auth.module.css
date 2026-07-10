@@ -29,82 +29,85 @@
   background: var(--bg-surface);
   border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card);
-  /* «Дышащая» золотая подсветка — статичный экран логина оживает. */
+  /* «Дышащая» золотая подсветка — статичный экран логина мягко оживает.
+     Без вращающихся деталей: только пульсация свечения. */
   animation: cardGlow 5.5s ease-in-out infinite;
 }
 
-/* Переливающаяся золотая обводка: вращающийся conic-gradient под карточкой,
-   видимый только по её периметру (маска out-контента вырезает центр). */
-.card::before {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    var(--divider-gold) 70deg,
-    var(--accent) 140deg,
-    var(--divider-gold) 210deg,
-    transparent 300deg,
-    transparent 360deg
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  animation: cardSheen 6s linear infinite;
-  pointer-events: none;
-}
-
 @keyframes cardGlow {
-  0%, 100% { box-shadow: 0 0 34px rgba(194, 154, 72, 0.10); }
-  50%      { box-shadow: 0 0 56px rgba(194, 154, 72, 0.22); }
-}
-@keyframes cardSheen {
-  to { transform: rotate(360deg); }
+  0%, 100% { box-shadow: 0 0 30px rgba(194, 154, 72, 0.08); }
+  50%      { box-shadow: 0 0 52px rgba(194, 154, 72, 0.18); }
 }
 @media (prefers-reduced-motion: reduce) {
   .card { animation: none; box-shadow: var(--glow-gold); }
-  .card::before { animation: none; }
 }
+
+/* Логотип: монограмма + слово. */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+.brandMark {
+  height: 26px;
+  width: auto;
+  display: block;
+  /* Монограмма — тёмная картинка; инвертируем под светлое золото. В светлой
+     теме инверсия не нужна. */
+  filter: invert(1);
+  opacity: 0.9;
+}
+:global([data-theme='light']) .brandMark { filter: none; opacity: 0.9; }
 
 .wordmark {
   font-family: var(--font-t1);
   font-size: var(--text-h2);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  text-align: center;
   color: var(--text-primary);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
+  line-height: 1;
 }
 
-/* Звёздочка рядом с логотипом — мягко мерцает в тон обводке. */
+/* Тэглайн — курсивный serif вместо канцелярского капса. */
+.tagline {
+  text-align: center;
+  margin-top: var(--space-3);
+  font-family: var(--font-t3);
+  font-style: italic;
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+/* Разделитель со звездой под тэглайном — «воздух» перед полями. */
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.rule {
+  height: 1px;
+  width: 54px;
+  background: linear-gradient(90deg, transparent, var(--divider-gold));
+}
+.ruleR { background: linear-gradient(90deg, var(--divider-gold), transparent); }
+
+/* Блик (StarSpark) — мягко мерцает, без вращения. */
 .star {
   display: inline-flex;
   color: var(--accent);
-  animation: starTwinkle 3.6s ease-in-out infinite;
+  animation: starTwinkle 3.8s ease-in-out infinite;
 }
 @keyframes starTwinkle {
-  0%, 100% { opacity: 0.55; transform: rotate(0deg) scale(0.9); }
-  50%      { opacity: 1;    transform: rotate(90deg) scale(1.1); }
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.08); }
 }
 @media (prefers-reduced-motion: reduce) {
   .star { animation: none; opacity: 0.9; }
-}
-
-.tagline {
-  text-align: center;
-  margin-top: calc(-1 * var(--space-3));
 }
 
 .field {

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError } from '../../lib/apiClient'
 import { Button } from '../../components/Button'
-import { IconStar } from '../../components/icons'
+import { StarSpark } from '../../components/StarSpark'
 import { useAuth } from './AuthContext'
 import styles from './auth.module.css'
 
@@ -29,11 +29,18 @@ export function LoginScreen() {
     <div className={styles.screen}>
       <form className={styles.card} onSubmit={onSubmit}>
         <div>
-          <div className={styles.wordmark}>
-            Аргонавтика
-            <span className={styles.star} aria-hidden><IconStar size={15} /></span>
+          <div className={styles.brand}>
+            <img className={styles.brandMark} src="/media/monogram.png" alt="" aria-hidden />
+            <span className={styles.wordmark}>Аргонавтика</span>
           </div>
-          <div className={`${styles.tagline} label`}>Система проявления для людей с миссией</div>
+          <div className={styles.tagline}>
+            Система проявления<br />для людей с миссией
+          </div>
+          <div className={styles.divider} aria-hidden>
+            <span className={styles.rule} />
+            <span className={styles.star}><StarSpark size={16} /></span>
+            <span className={`${styles.rule} ${styles.ruleR}`} />
+          </div>
         </div>
         <div className={styles.field}>
           <label className="label" htmlFor="username">Логин</label>

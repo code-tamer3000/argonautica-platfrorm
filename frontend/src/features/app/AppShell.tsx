@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconStar, IconSupport, IconTasks, IconUser } from '../../components/icons'
+import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
+import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { useOutbox } from '../../hooks/useOutbox'
@@ -150,7 +151,7 @@ export function AppShell() {
         <span className={styles.brand}>
           <img className={styles.brandMark} src="/media/monogram.png" alt="" aria-hidden />
           <span className={styles.wordmark}>Аргонавтика</span>
-          <span className={styles.brandStar} aria-hidden><IconStar size={13} /></span>
+          <span className={styles.brandStar} aria-hidden><StarSpark size={12} /></span>
         </span>
         <div className={styles.spacer} />
         <NotificationBell />
