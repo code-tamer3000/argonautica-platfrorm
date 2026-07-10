@@ -508,6 +508,13 @@
 }
 .contextBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contextBar .ctxLabel { flex: 0 0 auto; color: var(--accent); }
+/* Плашка «описания задания» дневника: описание важно видеть целиком, поэтому
+   даём ему переноситься на несколько строк, а не обрезаться многоточием. */
+.contextBarJournal { align-items: flex-start; }
+.contextBarJournal .ctxDesc {
+  overflow: visible; text-overflow: clip; white-space: normal;
+  line-height: 1.35; word-break: break-word;
+}
 .iconBtn {
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto; width: 44px; height: 44px;
@@ -829,7 +836,8 @@
 }
 /* На узких экранах — столбиком. Кнопки во всю ширину; заголовок при нехватке
    места переносится на 2 строки, а не режется многоточием (из-за чего текст
-   «пережимал» кнопку). Отступы плашки одинаковые сверху/снизу. */
+   «пережимал» кнопку). Отступ сверху (от линии над лентой) и снизу (до нижнего
+   таб-бара) одинаковый — по var(--space-3). */
 @media (max-width: 520px) {
   .journalChoiceBar { padding: var(--space-3) var(--space-4); }
   .journalChoice { flex-direction: column; }
