@@ -18,13 +18,18 @@ function currentDateStr() {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
 }
 
-// Бар «отписки дня» над композером личного канала. Сам ввод больше не держит —
-// выбор категории «заряжает» основной composer (см. pendingJournal), там доступны
-// текст, вложения, голос и стикеры. Здесь только выбор категории и прогресс дня.
+// Панель дневника над композером личного канала. Сам ввод не держит — выбор
+// раздела «заряжает» основной composer (см. pendingJournal), там доступны текст,
+// вложения, голос и стикеры.
 //
-// По умолчанию свёрнут в одну строку («📓 Отписка дня  N/3»), по тапу
-// разъезжается вправо, раскрывая кнопки категорий. Если категория уже «заряжена»
-// в composer — держим раскрытым, чтобы было видно активный выбор.
+// По умолчанию — две кнопки: «Выполнить задание на день» и «Запись».
+//  • «Выполнить задание на день» раскрывает бар с чипами разделов и сразу
+//    заряжает ПЕРВЫЙ раздел задания — человек видит плашку с описанием и, даже
+//    если не переключит раздел, выполнит хотя бы его. Крестик в composer снимает
+//    заряд (задание «скидывается»).
+//  • «Запись» — свободная личная запись без формата: снимает любой заряд
+//    дневника, оставляя обычный composer (сообщение не идёт в прогресс дня).
+// Когда бар раскрыт, чипы позволяют переключиться на любой другой раздел.
 export function DailyJournalForm({ roomId }: Props) {
   const today = currentDateStr()
   const now = new Date()
@@ -40,6 +45,8 @@ export function DailyJournalForm({ roomId }: Props) {
   const active = pendingJournal?.roomId === roomId ? pendingJournal.category : null
 
   const [open, setOpen] = useState(false)
+  // Раскрыт, пока идёт выбор раздела задания. Кнопка «Запись» держит бар
+  // свёрнутым (active == null и open == false).
   const expanded = open || active != null
 
   // Пока структура не загружена / задание без разделов — бар скрыт.
@@ -50,24 +57,45 @@ export function DailyJournalForm({ roomId }: Props) {
     setPendingJournal(active === category ? null : { roomId, category })
   }
 
-  // Сворачивание кнопок заодно снимает «заряженную» категорию — вместе с ней
-  // закрывается и context-bar «ответа на сообщение» над композером.
-  function toggleOpen() {
-    if (expanded) {
-      setOpen(false)
-      if (active != null) setPendingJournal(null)
-    } else {
-      setOpen(true)
-    }
+  // «Выполнить задание на день»: раскрываем чипы и заряжаем первый раздел задания
+  // (всегда первый, даже если он уже сдан сегодня — можно дополнить запись).
+  function startDayTask() {
+    setOpen(true)
+    const first = sections[0]
+    if (first) setPendingJournal({ roomId, category: first.key })
+  }
+
+  // «Запись»: свободная запись без формата — сворачиваем бар и снимаем заряд.
+  function startFreeEntry() {
+    setOpen(false)
+    if (active != null) setPendingJournal(null)
+  }
+
+  if (!expanded) {
+    return (
+      <div className={styles.journalBar}>
+        <div className={styles.journalActions}>
+          <button type="button" className={styles.journalActionPrimary} onClick={startDayTask}>
+            {dayClosed ? '✓ Задания дня выполнены' : 'Выполнить задание на день'}
+            {!dayClosed && (
+              <span className={styles.journalBarProgress}>{doneCount}/{sections.length}</span>
+            )}
+          </button>
+          <button type="button" className={styles.journalActionSecondary} onClick={startFreeEntry}>
+            Запись
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className={`${styles.journalBar} ${expanded ? styles.journalBarOpen : ''}`}>
+    <div className={styles.journalBar}>
       <button
         type="button"
         className={styles.journalBarToggle}
-        onClick={toggleOpen}
-        aria-expanded={expanded}
+        onClick={startFreeEntry}
+        aria-expanded
       >
         <span className={styles.journalBarTitle}>
           {dayClosed ? '✓ Задания дня выполнены' : '📓 Записи дня'}
@@ -77,27 +105,25 @@ export function DailyJournalForm({ roomId }: Props) {
         )}
         <IconChevronRight
           size={16}
-          className={`${styles.journalBarChevron} ${expanded ? styles.journalBarChevronOpen : ''}`}
+          className={`${styles.journalBarChevron} ${styles.journalBarChevronOpen}`}
         />
       </button>
-      {expanded && (
-        <div className={styles.journalChips}>
-          {sections.map((section) => {
-            const done = todayCats.has(section.key)
-            return (
-              <button
-                key={section.key}
-                className={`${styles.journalChip} ${active === section.key ? styles.journalChipActive : ''}`}
-                onClick={() => toggle(section.key)}
-                title={done ? `${section.label} — уже опубликовано сегодня` : section.label}
-              >
-                <span>{section.emoji} {section.label}</span>
-                {done && <span className={styles.journalCheck}>✓</span>}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      <div className={styles.journalChips}>
+        {sections.map((section) => {
+          const done = todayCats.has(section.key)
+          return (
+            <button
+              key={section.key}
+              className={`${styles.journalChip} ${active === section.key ? styles.journalChipActive : ''}`}
+              onClick={() => toggle(section.key)}
+              title={done ? `${section.label} — уже опубликовано сегодня` : section.label}
+            >
+              <span>{section.emoji} {section.label}</span>
+              {done && <span className={styles.journalCheck}>✓</span>}
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
