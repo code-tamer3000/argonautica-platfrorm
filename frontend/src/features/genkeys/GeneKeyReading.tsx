@@ -59,7 +59,7 @@ export function GeneKeyReading({ number, onClose }: Props) {
             not buried under the whole reading. Chapter N contemplates key N. */}
         {bookLink && (
           <Link
-            to={`/kb/read/${bookLink.itemId}/${bookLink.assetId}?ch=${number}`}
+            to={`/kb/read/${bookLink.itemId}/${bookLink.assetId}?ch=${number}&from=genkeys&key=${number}`}
             className={styles.bookLink}
           >
             <IconBook size={16} /> Читать главу в книге «64 пути» →

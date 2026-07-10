@@ -508,6 +508,13 @@
 }
 .contextBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contextBar .ctxLabel { flex: 0 0 auto; color: var(--accent); }
+/* Плашка «описания задания» дневника: описание важно видеть целиком, поэтому
+   даём ему переноситься на несколько строк, а не обрезаться многоточием. */
+.contextBarJournal { align-items: flex-start; }
+.contextBarJournal .ctxDesc {
+  overflow: visible; text-overflow: clip; white-space: normal;
+  line-height: 1.35; word-break: break-word;
+}
 .iconBtn {
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto; width: 44px; height: 44px;

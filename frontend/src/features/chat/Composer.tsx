@@ -261,9 +261,9 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
         </div>
       )}
       {journalMeta && (
-        <div className={styles.contextBar}>
+        <div className={`${styles.contextBar} ${styles.contextBarJournal}`}>
           <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
-          <span>{journalMeta.placeholder}</span>
+          <span className={styles.ctxDesc}>{journalMeta.placeholder}</span>
           <button
             className={styles.pendingChipX}
             onClick={() => setPendingJournal(null)}

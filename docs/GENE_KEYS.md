@@ -53,8 +53,14 @@ Chapter N contemplates gene key N, so a key's reading deep-links into that chapt
   `.md`. No dedicated "book" entity — the link simply disappears if no such article
   is published.
 - If found, `GeneKeyReading.tsx` renders a «📖 Читать главу…» link near the **top**
-  of the reading (`styles.bookLink`) to `/kb/read/{itemId}/{assetId}?ch={number}`;
-  the reader resolves `?ch=N` to the matching chapter and scrolls to it.
+  of the reading (`styles.bookLink`) to
+  `/kb/read/{itemId}/{assetId}?ch={number}&from=genkeys&key={number}`; the reader
+  resolves `?ch=N` to the matching chapter and scrolls to it.
+- **Back navigation** honours origin. `KbBookReader`'s «Назад» normally returns to
+  the KB article (`/kb/{itemId}`), but when the deep-link carries `from=genkeys`
+  it returns to `/genkeys?key=N` instead. `GeneKeysScreen` reads `?key=N` on mount,
+  reopens that key's reading, then strips the param from the URL (history replace)
+  so the reading isn't force-reopened on a later revisit.
 
 ## Wheel geometry (`wheel.ts`)
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { GeneKeysWheel } from './GeneKeysWheel'
 import { GeneKeyReading } from './GeneKeyReading'
 import { GeneKeyPicker } from './GeneKeyPicker'
@@ -22,6 +23,21 @@ export function GeneKeysScreen() {
   const dwellRef = useRef<number | null>(null)
   const pickRef = useRef<number | null>(null)
   const stageRef = useRef<HTMLElement>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Deep-link back from the «64 пути» book: `?key=N` reopens that key's reading
+  // so «Назад» in the reader lands the user back where they were, not in the KB.
+  // Consume the param once (replace history) so closing the reading, then
+  // navigating away and back, doesn't force it open again.
+  useEffect(() => {
+    const keyParam = searchParams.get('key')
+    if (!keyParam) return
+    const n = Number(keyParam)
+    if (getKey(n)) setActiveKey(n)
+    searchParams.delete('key')
+    setSearchParams(searchParams, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Debounced hover: schedule the commit after DWELL_MS; a new hover (or leave)
   // cancels the pending one. Clearing to null is immediate (fast reset).
