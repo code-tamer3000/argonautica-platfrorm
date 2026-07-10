@@ -810,7 +810,8 @@
 .journalChoiceBtnGhost:hover {
   background: var(--bg-surface); border-color: var(--text-ghost); box-shadow: none;
 }
-.journalChoiceIcon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+.journalChoiceIcon { flex: 0 0 auto; color: var(--accent); }
+.journalChoiceBtnGhost .journalChoiceIcon { color: var(--text-secondary); }
 .journalChoiceText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .journalChoiceTitle {
   font-family: var(--font-t4); font-size: var(--text-label-lg, 15px); font-weight: 600;
@@ -845,7 +846,8 @@
   transition: transform var(--transition-base, 180ms ease);
 }
 .journalBarChevronOpen { transform: rotate(90deg); }
-.journalBarChevronBack { color: var(--text-ghost); font-size: var(--text-label-md); }
+.journalBarChevronBack { color: var(--text-ghost); flex: 0 0 auto; }
+.journalBarTitleIcon { color: var(--accent); flex: 0 0 auto; }
 .journalChips {
   display: flex; gap: var(--space-2); flex: 1 1 260px; min-width: 0; flex-wrap: wrap;
   animation: journalReveal 220ms ease;

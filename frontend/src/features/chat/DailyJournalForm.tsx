@@ -1,5 +1,6 @@
 import { useJournalDays } from '../../api/messages'
 import { useJournalStructure } from '../../api/journal'
+import { IconChevronLeft, IconDiary, IconEdit } from '../../components/icons'
 import { useUiStore } from '../../stores/ui'
 import styles from './chat.module.css'
 
@@ -83,7 +84,7 @@ export function DailyJournalForm({ roomId }: Props) {
     return (
       <div className={styles.journalBar}>
         <button type="button" className={styles.journalBarToggle} onClick={backToChoice}>
-          <span className={styles.journalBarChevronBack}>←</span>
+          <IconChevronLeft size={16} className={styles.journalBarChevronBack} />
           <span className={styles.journalBarTitle}>Свободная запись</span>
         </button>
       </div>
@@ -100,9 +101,10 @@ export function DailyJournalForm({ roomId }: Props) {
           onClick={backToChoice}
           aria-expanded
         >
-          <span className={styles.journalBarChevronBack}>←</span>
+          <IconChevronLeft size={16} className={styles.journalBarChevronBack} />
+          <IconDiary size={15} className={styles.journalBarTitleIcon} />
           <span className={styles.journalBarTitle}>
-            {dayClosed ? '✓ Задания дня выполнены' : '📓 Задание дня'}
+            {dayClosed ? 'Задания дня выполнены' : 'Задание дня'}
           </span>
           {!dayClosed && (
             <span className={styles.journalBarProgress}>{doneCount}/{sections.length}</span>
@@ -133,7 +135,7 @@ export function DailyJournalForm({ roomId }: Props) {
     <div className={`${styles.journalBar} ${styles.journalChoiceBar}`}>
       <div className={styles.journalChoice}>
         <button type="button" className={styles.journalChoiceBtn} onClick={startDayTask}>
-          <span className={styles.journalChoiceIcon}>📓</span>
+          <IconDiary size={22} className={styles.journalChoiceIcon} />
           <span className={styles.journalChoiceText}>
             <span className={styles.journalChoiceTitle}>
               {dayClosed ? 'Задания дня выполнены' : 'Выполнить задание на день'}
@@ -148,7 +150,7 @@ export function DailyJournalForm({ roomId }: Props) {
           className={`${styles.journalChoiceBtn} ${styles.journalChoiceBtnGhost}`}
           onClick={startFreeEntry}
         >
-          <span className={styles.journalChoiceIcon}>✍️</span>
+          <IconEdit size={22} className={styles.journalChoiceIcon} />
           <span className={styles.journalChoiceText}>
             <span className={styles.journalChoiceTitle}>Свободная запись</span>
             <span className={styles.journalChoiceSub}>Личная заметка без формата</span>
