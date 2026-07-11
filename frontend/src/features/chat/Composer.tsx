@@ -11,6 +11,7 @@ import { useUsersMap } from '../../api/users'
 import { IconAttach, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
 import { mediaUpload } from '../../lib/mediaUpload'
+import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
@@ -30,9 +31,19 @@ interface Props {
   // Личный дневник: композер появляется по выбору режима — проигрываем мягкое
   // выезжание при монтировании, чтобы он не «выпрыгивал».
   revealOnMount?: boolean
+  // Открыт инлайн-тред: этот же композер шлёт ответы В ТРЕД (reply_to_message_id =
+  // threadRootId), над полем — контекст-бар «Ответ в тред». Отдельного тредового
+  // композера больше нет — вложения/стикеры/голос работают и в треде. threadRoot —
+  // само корневое сообщение для превью в контекст-баре (может быть null, если корень
+  // уехал за пагинацию: режим треда всё равно активен по threadRootId).
+  threadRootId?: number | null
+  threadRoot?: MessageOut | null
+  onExitThread?: () => void
 }
 
-export function Composer({ roomId, isNews, revealOnMount }: Props) {
+export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, threadRoot, onExitThread }: Props) {
+  // Режим треда активен по id (корень для превью может отсутствовать в ленте).
+  const inThread = threadRootId != null
   const [text, setText] = useState('')
   // Прикреплённые, но ещё не отправленные вложения: ассет (уже в MinIO) + его байты,
   // чтобы outbox закэшировал их и превью пережило перезагрузку (см. lib/outbox.ts).
@@ -77,6 +88,17 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
   const mentions = useMentionAutocomplete(inputRef, text, setText)
+
+  // Смена контекста ответа (вошли/вышли из треда / другой корень) — начинаем с чистого
+  // поля: текст верхнего уровня не должен утекать в тред и наоборот.
+  const prevThreadRootId = useRef(threadRootId)
+  useEffect(() => {
+    if (prevThreadRootId.current !== threadRootId) {
+      prevThreadRootId.current = threadRootId
+      setText('')
+      setPendingFiles([])
+    }
+  }, [threadRootId])
 
   // Восстановление сохранённого черновика при открытии комнаты: если пользователь
   // печатал и ушёл (сменил вкладку/комнату, перезагрузил), текст возвращается.
@@ -161,6 +183,13 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
   // (locals) кэшируются, чтобы превью не пропало после перезагрузки. Черновик
   // комнаты очищаем — текст ушёл в очередь.
   function enqueueSend(body: SendBody, locals: LocalAttachment[] = []) {
+    // Ответ в тред идёт прямым mutate (не через outbox): тред-реплики не живут в
+    // оптимистичной ленте комнаты, открытый тред обновится по инвалидации thread-query
+    // (как журнал/репост — свой путь со связанными сайд-эффектами).
+    if (inThread && threadRootId != null) {
+      send.mutate({ ...body, reply_to_message_id: threadRootId })
+      return
+    }
     if (user) outboxEnqueue(roomId, body, user.id, locals)
     else send.mutate(body) // без пользователя (не должно случаться) — прямой путь
     void clearDraft(roomId)
@@ -170,6 +199,16 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
     if (send.isPending || reposting) return
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 300)
+
+    // Ответ в тред: обычное тело (текст/вложения) + reply_to (в enqueueSend). Дневник/
+    // репост в треде не применяются — тред остаётся открытым, обновится по инвалидации.
+    if (inThread) {
+      const content = text.trim()
+      if (!content && pendingFiles.length === 0) return
+      const { body, locals } = sendBody()
+      enqueueSend(body, locals)
+      return
+    }
 
     // Запись дневника: маркер+заголовок раздела в content (+ опциональные вложения).
     // Для раздела-«заголовка» (input_type='title') текст обязателен — он и есть заголовок.
@@ -233,9 +272,9 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
   function onChange(value: string) {
     setText(value)
     mentions.onValueChange()
-    // Черновик комнаты (дебаунс внутри). Записи дневника/репост не кэшируем как
-    // черновик — у них свой «заряд» и очистка; сохраняем только обычный текст.
-    if (!journalMeta && !repost) saveDraft(roomId, value)
+    // Черновик комнаты (дебаунс внутри). Записи дневника/репост/тред не кэшируем как
+    // черновик — у них свой контекст; сохраняем только обычный текст верхнего уровня.
+    if (!journalMeta && !repost && !inThread) saveDraft(roomId, value)
     const now = Date.now()
     if (now - lastTyping.current > 2500) {
       lastTyping.current = now
@@ -255,8 +294,26 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       (repost.message.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
+  const threadSnippet = threadRoot
+    ? threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+      (threadRoot.sticker_id != null ? '[стикер]' : '[вложение]')
+    : ''
+
   return (
     <div className={`${styles.composer} ${revealOnMount ? styles.composerReveal : ''}`}>
+      {inThread && (
+        <div className={`${styles.contextBar} ${styles.contextBarThread}`}>
+          <span className={styles.ctxLabel}>Ответ в тред:</span>
+          <span className={styles.ctxSnippet}>{threadSnippet || '…'}</span>
+          <button
+            className={styles.pendingChipX}
+            onClick={() => onExitThread?.()}
+            aria-label="Выйти из треда"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {repost && (
         <div className={styles.contextBar}>
           <span className={styles.ctxLabel}>Репост от {repostAuthor}:</span>
@@ -351,7 +408,11 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
               className={styles.composerInput}
               rows={1}
               placeholder={
-                repost ? 'Добавить сообщение к репосту…' : 'Сообщение…'
+                inThread
+                  ? 'Ответить в тред…'
+                  : repost
+                    ? 'Добавить сообщение к репосту…'
+                    : 'Сообщение…'
               }
               value={text}
               onChange={(e) => onChange(e.target.value)}

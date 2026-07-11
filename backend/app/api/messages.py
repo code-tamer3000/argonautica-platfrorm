@@ -63,6 +63,29 @@ async def _attachments_map(
     return result
 
 
+async def _unread_replies_map(
+    session: AsyncSession, root_ids: list[int], last_read: int
+) -> dict[int, int]:
+    """root_id -> число непрочитанных ответов (id > last_read), одним запросом.
+
+    Читает только ответы новее курсора: для роста непрочитанных нужен count, для
+    уже прочитанных треды в выборку не попадают. Удалённые не считаем. last_read=0
+    (канал без строки членства / ни разу не читал) — считаются все ответы.
+    """
+    if not root_ids:
+        return {}
+    rows = await session.execute(
+        select(Message.thread_root_id, func.count())
+        .where(
+            Message.thread_root_id.in_(root_ids),
+            Message.id > last_read,
+            Message.deleted_at.is_(None),
+        )
+        .group_by(Message.thread_root_id)
+    )
+    return {root_id: count for root_id, count in rows.all()}
+
+
 def _to_out(message: Message, attachments: list[AttachmentOut]) -> MessageOut:
     out = MessageOut.model_validate(message)
     out.attachments = attachments
@@ -260,7 +283,8 @@ async def list_messages(
 ) -> list[MessageOut]:
     """Лента комнаты: верхний уровень, без удалённых. Курсор по id (before/after)."""
     room = await load_room(session, room_id)
-    await assert_room_access(session, room, current_user)
+    membership = await assert_room_access(session, room, current_user)
+    last_read = (membership.last_read_message_id or 0) if membership else 0
 
     stmt = (
         select(Message)
@@ -279,7 +303,15 @@ async def list_messages(
 
     messages = list((await session.execute(stmt)).scalars().all())
     attachments = await resolve_attachments(session, [m.id for m in messages])
-    return [_to_out(m, attachments.get(m.id, [])) for m in messages]
+    # Непрочитанные ответы в тредах — только для корней с ответами (иначе лишний скан).
+    roots_with_replies = [m.id for m in messages if m.reply_count > 0]
+    unread = await _unread_replies_map(session, roots_with_replies, last_read)
+    out = []
+    for m in messages:
+        item = _to_out(m, attachments.get(m.id, []))
+        item.unread_reply_count = unread.get(m.id, 0)
+        out.append(item)
+    return out
 
 
 @router.get("/{room_id}/messages/{root_id}/thread", response_model=ThreadOut)

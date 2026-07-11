@@ -143,6 +143,7 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
     thread_root_id: item.body.reply_to_message_id != null ? item.body.reply_to_message_id : null,
     forwarded_from_sender_id: null,
     reply_count: 0,
+    unread_reply_count: 0,
     last_reply_at: null,
     created_at: item.createdAt,
     edited_at: null,

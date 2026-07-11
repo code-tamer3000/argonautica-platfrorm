@@ -137,6 +137,13 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
 
+  // Открытый инлайн-тред: его корень (для контекст-бара основного композера). Корни
+  // верхнеуровневые, поэтому обычно есть в загруженной ленте; если уехал за пагинацию —
+  // null, композер всё равно шлёт по threadRootId (см. Composer.threadRoot).
+  const threadRoot = threadRootId != null
+    ? messages.find((m) => m.id === threadRootId) ?? null
+    : null
+
   // Свой личный дневник: композер держим скрытым, пока пользователь не выбрал
   // режим в DailyJournalForm — раздел задания или свободную запись.
   const isOwnPersonal = !!room.is_personal && room.created_by === user?.id
@@ -227,11 +234,21 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           в новостном — только админ. Комментировать можно через треды.
           В своём личном дневнике композер СКРЫТ, пока пользователь не выбрал режим
           в DailyJournalForm — раздел задания (pendingJournal) или свободную запись
-          (journalFreeEntry): нельзя написать «просто так», не выбрав ничего. */}
-      {(!room.is_personal || room.created_by === user?.id) &&
-        (!room.is_news || user?.role === 'admin') &&
-        (!isOwnPersonal || journalChosen) && (
-        <Composer roomId={roomId} isNews={room.is_news} revealOnMount={isOwnPersonal} />
+          (journalFreeEntry): нельзя написать «просто так», не выбрав ничего.
+          НО когда открыт тред — композер показываем всегда (в режиме ответа): ответить
+          в тред можно везде, даже там, где верхний уровень запрещён (комментарии). */}
+      {(threadRootId != null ||
+        ((!room.is_personal || room.created_by === user?.id) &&
+          (!room.is_news || user?.role === 'admin') &&
+          (!isOwnPersonal || journalChosen))) && (
+        <Composer
+          roomId={roomId}
+          isNews={room.is_news}
+          revealOnMount={isOwnPersonal}
+          threadRootId={threadRootId}
+          threadRoot={threadRoot}
+          onExitThread={() => setThreadRootId(null)}
+        />
       )}
       {msgMenu.menu && (
         <MessageActionsMenu

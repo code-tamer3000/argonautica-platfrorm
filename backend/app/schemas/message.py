@@ -35,6 +35,10 @@ class MessageOut(BaseModel):
     thread_root_id: int | None
     forwarded_from_sender_id: int | None
     reply_count: int
+    # Сколько ответов в треде этого корня непрочитано текущим зрителем (id ответа >
+    # его last_read_message_id). Считается только для корней ленты; в остальных
+    # местах (сам тред, вложенные) — 0. Денормализацией не храним — считаем на чтение.
+    unread_reply_count: int = 0
     last_reply_at: datetime | None
     created_at: datetime
     edited_at: datetime | None
