@@ -1,35 +1,28 @@
 /*
  * Стабилизация мобильного вьюпорта под экранную клавиатуру.
  *
- * Проблема: на мобиле layout viewport (100%/100vh) не сжимается при открытии
- * клавиатуры — сжимается только visual viewport. Из-за этого браузер сам
- * прокручивает страницу (window/documentElement), чтобы показать фокус-поле, и
- * весь макет «прыгает»: топбар уезжает, composer скачет, а поле ввода «улетает
- * вверх в космос», потому что фикс-оболочка (#root/body) сдвигается вместе со
- * скроллом layout viewport.
+ * Проблема: на мобиле layout viewport (100vh) не сжимается при открытии клавиатуры —
+ * сжимается только visual viewport. Из-за этого низ чата/композер прячется за
+ * клавиатурой.
  *
- * Решение:
- *  1) держим высоту приложения равной visualViewport.height (CSS-переменная
- *     --app-height) и помечаем состояние «клавиатура открыта» на <html>;
- *  2) ПРИНУДИТЕЛЬНО держим скролл окна в нуле — не даём браузеру утащить
- *     фикс-оболочку наверх при фокусе на поле. Наш layout сам держит composer/поля
- *     видимыми (flex-колонка + #root = visual height), нативный скролл не нужен.
+ * Решение (простое и без петель обратной связи):
+ *  - #root — position:fixed слой на всю ВИДИМУЮ область (см. global.css): top:0 +
+ *    height = --app-height (= visualViewport.height). Окну нечего скроллить под
+ *    фокус-поле → браузер не утаскивает шапку вверх.
+ *  - Здесь только выставляем --app-height по visualViewport.height. Никакого
+ *    pinScroll и слежки за offsetTop: и то, и другое во время анимации выезда
+ *    клавиатуры даёт петлю (scroll → apply → scroll…) и шапка «скачет мячиком».
+ *
+ * offsetTop НЕ компенсируем намеренно: при overflow:hidden на html/body и фикс-слое
+ * iOS держит visual viewport у верхней кромки (offsetTop≈0), а живое слежение за ним
+ * во время анимации как раз и болтало шапку.
  */
 
 // Порог (px), выше которого сжатие visual viewport считаем открытой клавиатурой.
 const KEYBOARD_THRESHOLD = 120
 
 let installed = false
-let kbOpen = false
 let lastHeight = 0
-let lastOffsetTop = 0
-
-/** Вернуть окно/документ в нулевой скролл — гасим нативный «scroll into view». */
-function pinScroll() {
-  if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0)
-  const se = document.scrollingElement
-  if (se && se.scrollTop !== 0) se.scrollTop = 0
-}
 
 function apply() {
   const vv = window.visualViewport
@@ -38,29 +31,17 @@ function apply() {
 
   // Обновляем --app-height только при заметном изменении (>2px): во время анимации
   // выезда клавиатуры visualViewport шлёт десятки resize-событий на суб-пиксельных
-  // высотах — каждое пере-раскладывало бы весь макет (дёрганье шапки). Округляем и
-  // гасим микро-дрожь.
+  // высотах — каждое пере-раскладывало бы весь макет. Округляем и гасим микро-дрожь.
   const rounded = Math.round(height)
   if (Math.abs(rounded - lastHeight) > 2) {
     lastHeight = rounded
     root.style.setProperty('--app-height', `${rounded}px`)
   }
 
-  // #root position:fixed прибит к верху layout viewport; на iOS visual viewport может
-  // СДВИНУТЬСЯ вниз (offsetTop>0) при фокусе у нижнего края — тогда фикс-слой уехал бы
-  // под клавиатуру. Компенсируем сдвигом top на offsetTop, чтобы шапка оставалась ровно
-  // на верхней кромке видимой области.
-  const offsetTop = vv ? Math.round(vv.offsetTop) : 0
-  if (offsetTop !== lastOffsetTop) {
-    lastOffsetTop = offsetTop
-    root.style.setProperty('--vv-top', `${offsetTop}px`)
-  }
-
-  // clientHeight = layout viewport (на iOS не сжимается клавиатурой);
-  // если visual viewport заметно меньше — клавиатура открыта.
+  // Пометка «клавиатура открыта» на <html> — для CSS-хуков (напр. скрыть нижнюю
+  // навигацию под клавиатурой). Считаем по разнице layout vs visual высоты.
   const layoutHeight = root.clientHeight
-  kbOpen = layoutHeight - height > KEYBOARD_THRESHOLD
-  if (kbOpen) root.setAttribute('data-kb', 'open')
+  if (layoutHeight - height > KEYBOARD_THRESHOLD) root.setAttribute('data-kb', 'open')
   else root.removeAttribute('data-kb')
 }
 
@@ -72,27 +53,11 @@ export function setupViewport() {
   const vv = window.visualViewport
   if (vv) {
     vv.addEventListener('resize', apply)
-    vv.addEventListener('scroll', apply)
+    // scroll visualViewport НЕ слушаем: он шлёт события во время анимации клавиатуры,
+    // а реагировать на них (менять layout) — верный способ получить осцилляцию.
   }
   window.addEventListener('resize', apply)
   window.addEventListener('orientationchange', apply)
-
-  // Фокус на поле = момент, когда iOS пытается «подскроллить» к нему и уносит
-  // фикс-оболочку. Возвращаем скролл в ноль сразу и на следующем кадре (после
-  // нативного скролла браузера).
-  document.addEventListener(
-    'focusin',
-    (e) => {
-      const t = e.target as HTMLElement | null
-      if (!t || !t.matches('input, textarea, [contenteditable]')) return
-      pinScroll()
-      requestAnimationFrame(pinScroll)
-      setTimeout(pinScroll, 300)
-    },
-    true,
-  )
-  // Любой паразитный скролл окна при открытой клавиатуре — сбрасываем.
-  window.addEventListener('scroll', () => { if (kbOpen) pinScroll() }, { passive: true })
 
   apply()
 }
