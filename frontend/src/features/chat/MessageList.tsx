@@ -2,15 +2,18 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Spinner } from '../../components/Spinner'
 import { dayLabel, sameDay } from '../../lib/format'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
+import { InlineThread } from './InlineThread'
 import { MessageItem } from './MessageItem'
 import styles from './chat.module.css'
 
 export interface MessageListHandle {
   scrollToMessage: (id: number) => boolean
   isAtBottom: () => boolean
+  scrollToBottom: () => void
 }
 
 interface Props {
+  roomId: number
   messages: MessageOut[]
   hasMore: boolean
   loadMore: () => void
@@ -19,15 +22,21 @@ interface Props {
   editingId?: number | null
   selectedMsgId?: number | null
   highlightedMsgId?: number | null
+  // Корень, чей тред развёрнут прямо в ленте (аккордеон под сообщением). null → все свёрнуты.
+  expandedThreadId?: number | null
+  canPin?: boolean
+  isNews?: boolean
   onClearEdit?: () => void
-  onOpenThread?: (rootId: number) => void
+  onToggleThread?: (rootId: number) => void
+  onRepost?: (msg: MessageOut) => void
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
-  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    onClearEdit, onOpenThread, onOpenMenu, onAtBottomChange },
+  { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
+    expandedThreadId, canPin, isNews, onClearEdit, onToggleThread, onRepost,
+    onOpenMenu, onAtBottomChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -51,12 +60,46 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
       return true
     },
     isAtBottom: () => atBottom.current,
+    scrollToBottom() {
+      const el = containerRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    },
   }))
 
   // Автоскролл вниз при новых сообщениях, если уже были внизу.
   useEffect(() => {
     const el = containerRef.current
     if (el && atBottom.current) el.scrollTop = el.scrollHeight
+  }, [count])
+
+  // Пока мы «внизу», удерживаем ленту у нижней кромки при ЛЮБОМ изменении высоты —
+  // содержимого (поздняя декодировка картинок/медиа) ИЛИ самого контейнера (открылась
+  // экранная клавиатура → область ленты сжалась). Без этого последнее сообщение
+  // прячется за клавиатурой, а лента «подпрыгивает» к сообщению выше.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const pin = () => { if (atBottom.current) el.scrollTop = el.scrollHeight }
+    const ro = new ResizeObserver(pin)
+    // Контейнер: его высота уменьшается при открытии клавиатуры (Android/interactive-widget).
+    ro.observe(el)
+    // Дети-обёртки: их высота растёт при декодировке вложений.
+    for (const child of Array.from(el.children)) ro.observe(child)
+    // iOS: layout viewport клавиатурой не сжимается (ResizeObserver молчит) — ловим
+    // сжатие visual viewport напрямую и до-пинниваем ленту к низу.
+    const vv = window.visualViewport
+    let prevH = vv?.height ?? 0
+    const onVv = () => {
+      if (!vv) return
+      const shrank = vv.height < prevH - 60
+      prevH = vv.height
+      if (shrank) requestAnimationFrame(pin)
+    }
+    vv?.addEventListener('resize', onVv)
+    return () => {
+      ro.disconnect()
+      vv?.removeEventListener('resize', onVv)
+    }
   }, [count])
 
   function onScroll() {
@@ -100,10 +143,20 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
+              threadOpen={expandedThreadId === m.id}
               onClearEdit={onClearEdit}
-              onOpenThread={onOpenThread}
+              onToggleThread={onToggleThread}
               onOpenMenu={onOpenMenu}
             />
+            {expandedThreadId === m.id && (
+              <InlineThread
+                roomId={roomId}
+                rootId={m.id}
+                canPin={canPin}
+                isNews={isNews}
+                onRepost={onRepost}
+              />
+            )}
           </div>
         )
       })}

@@ -60,7 +60,7 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
     setUploading(true)
     setProgress(0)
     try {
-      const asset = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
+      const { asset } = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
       if (item) {
         // Редактирование: линкуем к материалу сразу.
         attachMedia.mutate(

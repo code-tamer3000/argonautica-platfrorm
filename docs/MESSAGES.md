@@ -6,6 +6,7 @@
 ## Send / edit / delete
 
 - **Send** — text, sticker, and/or attachments; a message must carry at least one of them. Attachments must be the sender's own assets (see [FILES.md](FILES.md)).
+- **@-mentions** — `@username` in the body generates a `mention` notification to each tagged user who can see the room (see [NOTIFICATIONS.md](NOTIFICATIONS.md)); parsing/authorization is server-side (client can't pick recipients). The composer offers @-autocomplete; the feed renders text as plain text with mentions highlighted (`lib/messageText.tsx`, no markdown — see [FRONTEND.md](FRONTEND.md)).
 - **Edit** (`PATCH /api/rooms/{room_id}/messages/{message_id}`) — **author only** (admin does not rewrite others' text, unlike delete); sticker/attachment-only has nothing to edit → 400; sets `edited_at`.
 - **Delete** — soft (`deleted_at`), by author or admin.
 
@@ -20,7 +21,9 @@
 - `thread_root_id = X` → a reply under root X.
 - **Flatness rule:** a reply never points at another reply. When replying to a message that is itself a reply, use its `thread_root_id`, not its `id`. No nesting by construction.
 - **Denormalization:** `reply_count` and `last_reply_at` on the root, updated when a reply is added (show "N replies" without recount).
+- **`unread_reply_count`** on each feed root — replies with `id > viewer.last_read_message_id` (computed at read time in `list_messages`, one grouped query per page; 0 elsewhere). Drives the "N новых" badge on the thread button.
 - Open thread query: `thread_root_id = <root id>` (plus the root itself).
+- **UI:** threads expand inline in the feed (accordion under the root), not in a side drawer. The "Тред · N · M новых" button toggles it; a long branch shows the last few replies with a "показать ещё" control. There is **no separate thread composer** — replying in a thread reuses the room's **main composer** in thread mode: a context bar above it holds **«Свернуть тред · N»** (collapses the branch + exits reply mode — always reachable without scrolling up) and the root snippet. Opening a thread scrolls the feed so the branch end + composer are in view. Attachments/stickers/voice all work; it sends with `reply_to_message_id = root id` (keeps the branch flat) via the direct mutate path (not the outbox — thread replies don't live in the room's optimistic feed). Thread replies are allowed even where top-level posting is not (comments in a news/read-only channel). Live via the same `message.new` → thread-query invalidation.
 
 ## Read receipts (no per-message table)
 

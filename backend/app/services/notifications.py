@@ -11,7 +11,7 @@
 import logging
 import re
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
@@ -65,6 +65,58 @@ async def _news_recipients(session: AsyncSession, sender_id: int) -> list[int]:
     return list(rows.scalars().all())
 
 
+# @упоминание: `@username` — латиница/цифры/подчёркивание (как в Telegram-нике).
+# Границу слева держим на неслове, чтобы не ловить e-mail (foo@bar) и т.п.
+_MENTION_RE = re.compile(r"(?<![\w@])@([A-Za-z0-9_]{1,32})")
+
+
+def _mentioned_usernames(content: str | None) -> set[str]:
+    """Уникальные @ники из текста, в нижнем регистре (сравнение регистронезависимо)."""
+    if not content:
+        return set()
+    return {m.lower() for m in _MENTION_RE.findall(content)}
+
+
+async def _room_user_ids(session: AsyncSession, room: Room) -> set[int] | None:
+    """Кто имеет доступ к комнате (для проверки права на упоминание).
+
+    channel — доступ у всех участников платформы (вариант А), возвращаем None как
+    «все». dm/group — только по строкам членства (IDOR: нельзя пинговать чужого,
+    кто не в комнате).
+    """
+    if room.type == "channel":
+        return None
+    rows = await session.execute(
+        select(RoomMember.user_id).where(RoomMember.room_id == room.id)
+    )
+    return set(rows.scalars().all())
+
+
+async def _mention_recipient_ids(
+    session: AsyncSession, message: Message, room: Room
+) -> list[int]:
+    """id пользователей, упомянутых через @ в тексте и имеющих доступ к комнате.
+
+    Себя не уведомляем. Для dm/group упоминание чужого (не участника) молча
+    игнорируем — уведомление ушло бы тому, кто комнату даже не видит.
+    """
+    usernames = _mentioned_usernames(message.content)
+    if not usernames:
+        return []
+    rows = await session.execute(
+        select(User.id, User.username).where(func.lower(User.username).in_(usernames))
+    )
+    allowed = await _room_user_ids(session, room)
+    result: list[int] = []
+    for uid, _username in rows.all():
+        if uid == message.sender_id:
+            continue
+        if allowed is not None and uid not in allowed:
+            continue
+        result.append(uid)
+    return result
+
+
 async def _recipients(
     session: AsyncSession, message: Message, room: Room
 ) -> tuple[str, list[int]]:
@@ -89,15 +141,21 @@ async def on_new_message(
     Не должна ронять основной путь отправки: любую ошибку логируем и глотаем.
     """
     try:
+        # Основной вид (reply/dm/news) + @упоминания. Один пользователь получает не
+        # более одного уведомления по сообщению: основной вид приоритетнее mention
+        # (не пингуем дважды того, кому и так «ответили»/пришла личка).
         kind, recipient_ids = await _recipients(session, message, room)
-        if not recipient_ids:
+        kind_by_uid: dict[int, str] = {uid: kind for uid in recipient_ids}
+        for uid in await _mention_recipient_ids(session, message, room):
+            kind_by_uid.setdefault(uid, "mention")
+        if not kind_by_uid:
             return
 
         preview = _preview(message.content)
         # Настройки получателей — для фильтра нативного push (in-app лента идёт всем).
         rows_settings = (
             await session.execute(
-                select(User.id, User.settings).where(User.id.in_(recipient_ids))
+                select(User.id, User.settings).where(User.id.in_(kind_by_uid))
             )
         ).all()
         settings_by_uid: dict[int, dict[str, object]] = {
@@ -106,12 +164,12 @@ async def on_new_message(
         rows = [
             Notification(
                 user_id=uid,
-                kind=kind,
+                kind=row_kind,
                 room_id=message.room_id,
                 message_id=message.id,
                 actor_id=sender.id,
             )
-            for uid in recipient_ids
+            for uid, row_kind in kind_by_uid.items()
         ]
         session.add_all(rows)
         await session.flush()  # присваивает id и created_at (нужны для payload)
@@ -132,10 +190,10 @@ async def on_new_message(
             await publish_user_event(
                 row.user_id, ws_schemas.notification_new_event(out)
             )
-            if push_allowed(settings_by_uid.get(row.user_id), kind):
+            if push_allowed(settings_by_uid.get(row.user_id), row.kind):
                 # Клик по push ведёт в приложение: новости — на /news (канал
                 # авто-открывается), остальные комнаты открываются через ленту на /.
-                url = "/news" if kind == "news" else "/"
+                url = "/news" if row.kind == "news" else "/"
                 push_service.enqueue_push(
                     row.user_id,
                     push_service.build_payload(

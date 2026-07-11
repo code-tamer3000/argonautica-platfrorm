@@ -18,7 +18,6 @@ import { MessageList, type MessageListHandle } from './MessageList'
 import { useMessageMenu } from './useMessageMenu'
 import { PinsBar } from './PinsBar'
 import { PinsDrawer } from './PinsDrawer'
-import { ThreadPanel } from './ThreadPanel'
 import { TypingIndicator } from './TypingIndicator'
 import { UserProfileModal } from './UserProfileModal'
 import { roomAvatarUrl, roomTitle } from './util'
@@ -138,6 +137,13 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const peerId = room.type === 'dm' ? (dmPeers[roomId] ?? room.peer_id) : undefined
   const peer = peerId != null ? users.get(peerId) : undefined
 
+  // Открытый инлайн-тред: его корень (для контекст-бара основного композера). Корни
+  // верхнеуровневые, поэтому обычно есть в загруженной ленте; если уехал за пагинацию —
+  // null, композер всё равно шлёт по threadRootId (см. Composer.threadRoot).
+  const threadRoot = threadRootId != null
+    ? messages.find((m) => m.id === threadRootId) ?? null
+    : null
+
   // Свой личный дневник: композер держим скрытым, пока пользователь не выбрал
   // режим в DailyJournalForm — раздел задания или свободную запись.
   const isOwnPersonal = !!room.is_personal && room.created_by === user?.id
@@ -199,7 +205,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       )}
       {room.is_personal && showCalendar && <ChannelCalendar roomId={roomId} />}
       <MessageList
+        key={roomId}
         ref={messageListRef}
+        roomId={roomId}
         messages={messages}
         hasMore={!!query.hasNextPage}
         loadMore={() => void query.fetchNextPage()}
@@ -208,8 +216,12 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         editingId={editingId}
         selectedMsgId={msgMenu.menu?.msg.id ?? null}
         highlightedMsgId={highlightedMsgId}
+        expandedThreadId={threadRootId}
+        canPin={canPin}
+        isNews={!!room.is_news}
         onClearEdit={() => setEditingId(null)}
-        onOpenThread={(rootId) => setThreadRootId(rootId)}
+        onToggleThread={(rootId) => setThreadRootId((cur) => (cur === rootId ? null : rootId))}
+        onRepost={handleRepost}
         onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
@@ -221,11 +233,30 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           в новостном — только админ. Комментировать можно через треды.
           В своём личном дневнике композер СКРЫТ, пока пользователь не выбрал режим
           в DailyJournalForm — раздел задания (pendingJournal) или свободную запись
-          (journalFreeEntry): нельзя написать «просто так», не выбрав ничего. */}
-      {(!room.is_personal || room.created_by === user?.id) &&
-        (!room.is_news || user?.role === 'admin') &&
-        (!isOwnPersonal || journalChosen) && (
-        <Composer roomId={roomId} isNews={room.is_news} revealOnMount={isOwnPersonal} />
+          (journalFreeEntry): нельзя написать «просто так», не выбрав ничего.
+          НО когда открыт тред — композер показываем всегда (в режиме ответа): ответить
+          в тред можно везде, даже там, где верхний уровень запрещён (комментарии). */}
+      {(threadRootId != null ||
+        ((!room.is_personal || room.created_by === user?.id) &&
+          (!room.is_news || user?.role === 'admin') &&
+          (!isOwnPersonal || journalChosen))) && (
+        <Composer
+          roomId={roomId}
+          isNews={room.is_news}
+          revealOnMount={isOwnPersonal}
+          threadRootId={threadRootId}
+          threadRoot={threadRoot}
+          onExitThread={() => setThreadRootId(null)}
+          onFocusInput={() => {
+            // Тап по полю → клавиатура открывается; докручиваем ленту к низу и сразу,
+            // и после того как вьюпорт сожмётся (несколько кадров), чтобы последнее
+            // сообщение осталось над клавиатурой.
+            const toBottom = () => messageListRef.current?.scrollToBottom()
+            toBottom()
+            setTimeout(toBottom, 150)
+            setTimeout(toBottom, 350)
+          }}
+        />
       )}
       {msgMenu.menu && (
         <MessageActionsMenu
@@ -233,9 +264,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           items={msgMenu.buildItems(msgMenu.menu.msg)}
           onClose={msgMenu.closeMenu}
         />
-      )}
-      {threadRootId != null && (
-        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} isNews={!!room.is_news} onRepost={handleRepost} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />

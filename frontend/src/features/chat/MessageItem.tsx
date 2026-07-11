@@ -2,8 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
+import { IconChevronDown } from '../../components/icons'
 import { timeHM } from '../../lib/format'
-import { renderMarkdown } from '../../lib/markdown'
+import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { Attachment } from './Attachment'
@@ -18,8 +19,10 @@ interface Props {
   editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
+  // Тред этого сообщения сейчас развёрнут инлайн под ним (см. InlineThread).
+  threadOpen?: boolean
   onClearEdit?: () => void
-  onOpenThread?: (rootId: number) => void
+  onToggleThread?: (rootId: number) => void
   // Тап по сообщению → открыть контекстное меню действий (позиция = rect сообщения).
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
 }
@@ -33,8 +36,9 @@ export function MessageItem({
   editingId,
   isSelected,
   isHighlighted,
+  threadOpen,
   onClearEdit,
-  onOpenThread,
+  onToggleThread,
   onOpenMenu,
 }: Props) {
   const stickerMap = useStickerMap()
@@ -65,8 +69,11 @@ export function MessageItem({
       ? forwardedFrom?.display_name ?? `Участник #${msg.forwarded_from_sender_id}`
       : null
   const sticker = msg.sticker_id != null ? stickerMap.get(msg.sticker_id) : undefined
-  const contentHtml = useMemo(
-    () => (msg.content ? renderMarkdown(msg.content) : ''),
+  // Текст сообщения — как есть: без markdown (звёздочки/решётки/списки — это оформление
+  // базы знаний, в чате их не используют). Сохраняем переносы строк и делаем «голые»
+  // ссылки кликабельными (renderMessageText). Никакого dangerouslySetInnerHTML.
+  const contentParts = useMemo(
+    () => (msg.content ? renderMessageText(msg.content, styles.mention) : null),
     [msg.content],
   )
 
@@ -160,10 +167,7 @@ export function MessageItem({
             )}
 
             {msg.content && (
-              <div
-                className={`${styles.msgText} ${styles.markdown}`}
-                dangerouslySetInnerHTML={{ __html: contentHtml }}
-              />
+              <div className={styles.msgText}>{contentParts}</div>
             )}
           </>
         )}
@@ -190,10 +194,15 @@ export function MessageItem({
 
         {msg.reply_count > 0 && !isInThread && (
           <button
-            className={styles.threadLink}
-            onClick={(e) => { e.stopPropagation(); onOpenThread?.(msg.id) }}
+            className={`${styles.threadLink} ${threadOpen ? styles.threadLinkOpen : ''}`}
+            onClick={(e) => { e.stopPropagation(); onToggleThread?.(msg.id) }}
+            aria-expanded={threadOpen}
           >
-            Тред · {msg.reply_count}
+            <IconChevronDown size={15} className={styles.threadLinkChevron} />
+            {threadOpen ? 'Свернуть' : `Тред · ${msg.reply_count}`}
+            {!threadOpen && msg.unread_reply_count > 0 && (
+              <span className={styles.threadLinkNew}>{msg.unread_reply_count} новых</span>
+            )}
           </button>
         )}
       </div>

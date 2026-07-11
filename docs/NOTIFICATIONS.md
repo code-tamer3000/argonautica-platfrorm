@@ -11,6 +11,7 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 |---|---|---|
 | `dm` | direct message to you | set |
 | `reply` | reply in a thread on your message | set |
+| `mention` | someone `@`-mentioned you in a message you can see | set |
 | `news` | post in the news channel | set |
 | `cabin_granted` | admin opened Cabin access to you (system) | all of room/message/actor NULL |
 | `admin` | admin broadcast to everyone | room/message/actor NULL; `title`/`body` set (heading + text) |
@@ -20,6 +21,7 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 ## Generation & delivery
 
 - Message-driven kinds are generated in the send transaction (`on_new_message`): recipients = thread-root author (reply) / the other dm participant / everyone (news).
+- `mention` — parsed from the message body (`@username`, case-insensitive, Telegram-style handle chars). Recipients must have **access to the room** (channel → any user; dm/group → members only — never notify a non-member, IDOR). Additive to the primary kind but **deduped per user**: if a mentioned user is already the reply/dm/news recipient, they get one notification and the primary kind wins (no double-ping). Self-mentions are skipped.
 - `cabin_granted` — `notify_cabin_granted` on the `can_access_cabin` false→true transition (see [CABIN.md](CABIN.md)).
 - `admin` — `broadcast_admin` (one row per user, `title`/`body` set). Endpoint: `POST /api/admin/notifications/broadcast` (admin-only, body `{title, body}`, returns `{recipients}`).
 - Realtime delivery over the personal Redis pub/sub channel `user:{id}` → WS events `notification.new` / `notification.removed` (see [MESSAGES.md](MESSAGES.md)).
@@ -34,8 +36,8 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 
 Delivery while the app is closed, via the standard W3C Web Push protocol (self-hosted, no third party — `pywebpush` with a VAPID keypair from env). Layered **on top of** the same generation points as the in-app feed: wherever we write a `notifications` row + publish the `user:{id}` WS event, we also `enqueue_push` (best-effort, fire-and-forget background task with its own session — never inside the request transaction, never blocking the response).
 
-- Pushed kinds: `dm`, `reply`, `news`, `admin`, `cabin_granted`. Deadlines are **not** pushed yet (no scheduler exists; deferred).
-- Per-user prefs live in `User.settings["notifications"]`: master `push_enabled` + per-kind toggles (`dm`/`reply`/`news`/`admin`), all default on (opt-out). In-app feed is **not** gated by these — toggles only mute native delivery. See `services/notify_prefs.py` (`push_allowed`).
+- Pushed kinds: `dm`, `reply`, `mention`, `news`, `admin`, `cabin_granted`. Deadlines are **not** pushed yet (no scheduler exists; deferred).
+- Per-user prefs live in `User.settings["notifications"]`: master `push_enabled` + per-kind toggles (`dm`/`reply`/`mention`/`news`/`admin`), all default on (opt-out). In-app feed is **not** gated by these — toggles only mute native delivery. See `services/notify_prefs.py` (`push_allowed`).
 - Subscriptions: `push_subscriptions` table (one row per browser/device, unique `endpoint`). Endpoints returning 404/410 are pruned on send. Endpoints: `GET /api/push/vapid-key`, `POST /api/push/subscribe`, `POST /api/push/unsubscribe`. Without VAPID keys configured, `vapid-key`/`subscribe` return 503 and `enqueue_push` is a no-op (dev/test).
 - Config: `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` env vars (generate the keypair once — see below). Frontend service worker (`frontend/src/sw.ts`, injectManifest) handles `push` → `showNotification` and `notificationclick` → focus/navigate. iOS delivers push **only** for an installed PWA (Add to Home Screen, iOS 16.4+) — surfaced in the profile UI.
 

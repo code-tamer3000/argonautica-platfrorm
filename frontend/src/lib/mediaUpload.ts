@@ -168,10 +168,20 @@ function putWithProgress(
   })
 }
 
+/**
+ * Ассет + локальный blob исходного файла. Blob нужен вызывающему коду чата, чтобы
+ * положить байты в outbox (IndexedDB) и рисовать превью из `blob:`-URL, переживающего
+ * перезагрузку, пока сообщение ещё в очереди (см. lib/outbox.ts).
+ */
+export interface UploadResult {
+  asset: MediaAssetOut
+  blob: Blob
+}
+
 export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
-): Promise<MediaAssetOut> {
+): Promise<UploadResult> {
   const contentType = contentTypeFor(file)
   const kind = kindFor(contentType)
   const ticket = await http.post<UploadTicket>('/api/media/uploads', {
@@ -190,12 +200,13 @@ export async function mediaUpload(
     const poster = await capturePoster(file)
     if (poster) thumbStorageKey = (await uploadPoster(poster)) ?? undefined
   }
-  return http.post<MediaAssetOut>('/api/media/assets', {
+  const asset = await http.post<MediaAssetOut>('/api/media/assets', {
     storage_key: ticket.storage_key,
     width: dims.width,
     height: dims.height,
     thumb_storage_key: thumbStorageKey,
   })
+  return { asset, blob: file }
 }
 
 /**
@@ -209,7 +220,7 @@ export async function voiceUpload(
   blob: Blob,
   durationSec: number,
   onProgress?: UploadProgress,
-): Promise<MediaAssetOut> {
+): Promise<UploadResult> {
   const contentType = blob.type || 'audio/webm'
   const ticket = await http.post<UploadTicket>('/api/media/uploads', {
     content_type: contentType,
@@ -217,10 +228,11 @@ export async function voiceUpload(
     kind: 'audio' as MediaKind,
   })
   await putWithProgress(ticket.upload_url, blob, contentType, onProgress)
-  return http.post<MediaAssetOut>('/api/media/assets', {
+  const asset = await http.post<MediaAssetOut>('/api/media/assets', {
     storage_key: ticket.storage_key,
     duration: Math.max(1, Math.round(durationSec)),
   })
+  return { asset, blob }
 }
 
 export function guessMediaKind(url: string): MediaKind {

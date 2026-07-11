@@ -166,7 +166,7 @@ export function ProfileScreen() {
     e.target.value = ''
     setAvatarUploading(true)
     try {
-      const asset = await mediaUpload(file)
+      const { asset } = await mediaUpload(file)
       patchMe.mutate(
         { avatar_media_id: asset.id },
         {

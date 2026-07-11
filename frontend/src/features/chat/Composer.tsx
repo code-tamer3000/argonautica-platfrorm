@@ -8,17 +8,19 @@ import {
 } from '../../api/messages'
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
-import { IconAttach, IconSend, IconSticker } from '../../components/icons'
+import { IconAttach, IconChevronDown, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
+import { plural } from '../../lib/format'
 import { mediaUpload } from '../../lib/mediaUpload'
-import type { MediaAssetOut } from '../../lib/types'
+import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
-import { enqueue as outboxEnqueue } from '../../lib/outbox'
+import { enqueue as outboxEnqueue, type LocalAttachment } from '../../lib/outbox'
 import { clearDraft, saveDraft, loadDraft } from '../../lib/drafts'
 import { useAuth } from '../auth/AuthContext'
 import { StickerPicker } from './StickerPicker'
+import { useMentionAutocomplete } from './useMentionAutocomplete'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
@@ -30,11 +32,27 @@ interface Props {
   // Личный дневник: композер появляется по выбору режима — проигрываем мягкое
   // выезжание при монтировании, чтобы он не «выпрыгивал».
   revealOnMount?: boolean
+  // Открыт инлайн-тред: этот же композер шлёт ответы В ТРЕД (reply_to_message_id =
+  // threadRootId), над полем — контекст-бар «Ответ в тред». Отдельного тредового
+  // композера больше нет — вложения/стикеры/голос работают и в треде. threadRoot —
+  // само корневое сообщение для превью в контекст-баре (может быть null, если корень
+  // уехал за пагинацию: режим треда всё равно активен по threadRootId).
+  threadRootId?: number | null
+  threadRoot?: MessageOut | null
+  onExitThread?: () => void
+  // Фокус на поле ввода (тап, чтобы писать) → пролистать ленту к низу, чтобы последнее
+  // сообщение не пряталось за клавиатурой. В режиме треда не вызываем — тред скроллит
+  // свой конец сам (InlineThread).
+  onFocusInput?: () => void
 }
 
-export function Composer({ roomId, isNews, revealOnMount }: Props) {
+export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, threadRoot, onExitThread, onFocusInput }: Props) {
+  // Режим треда активен по id (корень для превью может отсутствовать в ленте).
+  const inThread = threadRootId != null
   const [text, setText] = useState('')
-  const [pendingFiles, setPendingFiles] = useState<MediaAssetOut[]>([])
+  // Прикреплённые, но ещё не отправленные вложения: ассет (уже в MinIO) + его байты,
+  // чтобы outbox закэшировал их и превью пережило перезагрузку (см. lib/outbox.ts).
+  const [pendingFiles, setPendingFiles] = useState<LocalAttachment[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   // Прогресс текущей загрузки в процентах (null — загрузки нет).
@@ -74,6 +92,18 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
+  const mentions = useMentionAutocomplete(inputRef, text, setText)
+
+  // Смена контекста ответа (вошли/вышли из треда / другой корень) — начинаем с чистого
+  // поля: текст верхнего уровня не должен утекать в тред и наоборот.
+  const prevThreadRootId = useRef(threadRootId)
+  useEffect(() => {
+    if (prevThreadRootId.current !== threadRootId) {
+      prevThreadRootId.current = threadRootId
+      setText('')
+      setPendingFiles([])
+    }
+  }, [threadRootId])
 
   // Восстановление сохранённого черновика при открытии комнаты: если пользователь
   // печатал и ушёл (сменил вкладку/комнату, перезагрузил), текст возвращается.
@@ -116,8 +146,8 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
     setUploading(true)
     setProgress(0)
     try {
-      const asset = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
-      setPendingFiles(prev => [...prev, asset])
+      const local = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
+      setPendingFiles(prev => [...prev, local])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
@@ -141,21 +171,31 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
     enqueueSend({ sticker_id: stickerId })
   }
 
-  function sendBody() {
+  // Собрать тело + снимок локальных вложений для outbox, очистив композер.
+  function sendBody(): { body: SendBody; locals: LocalAttachment[] } {
     const content = text.trim()
     const body: SendBody = {}
     if (content) body.content = content
-    if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
+    const locals = pendingFiles
+    if (locals.length) body.attachment_ids = locals.map(l => l.asset.id)
     setText('')
     setPendingFiles([])
-    return body
+    return { body, locals }
   }
 
   // Обычная отправка через outbox: сообщение сразу видно в ленте как «отправляется»
-  // и переживает падение сети/перезагрузку (см. lib/outbox.ts). Черновик комнаты
-  // очищаем — текст ушёл в очередь.
-  function enqueueSend(body: SendBody) {
-    if (user) outboxEnqueue(roomId, body, user.id)
+  // и переживает падение сети/перезагрузку (см. lib/outbox.ts). Байты вложений
+  // (locals) кэшируются, чтобы превью не пропало после перезагрузки. Черновик
+  // комнаты очищаем — текст ушёл в очередь.
+  function enqueueSend(body: SendBody, locals: LocalAttachment[] = []) {
+    // Ответ в тред идёт прямым mutate (не через outbox): тред-реплики не живут в
+    // оптимистичной ленте комнаты, открытый тред обновится по инвалидации thread-query
+    // (как журнал/репост — свой путь со связанными сайд-эффектами).
+    if (inThread && threadRootId != null) {
+      send.mutate({ ...body, reply_to_message_id: threadRootId })
+      return
+    }
+    if (user) outboxEnqueue(roomId, body, user.id, locals)
     else send.mutate(body) // без пользователя (не должно случаться) — прямой путь
     void clearDraft(roomId)
   }
@@ -164,6 +204,16 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
     if (send.isPending || reposting) return
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 300)
+
+    // Ответ в тред: обычное тело (текст/вложения) + reply_to (в enqueueSend). Дневник/
+    // репост в треде не применяются — тред остаётся открытым, обновится по инвалидации.
+    if (inThread) {
+      const content = text.trim()
+      if (!content && pendingFiles.length === 0) return
+      const { body, locals } = sendBody()
+      enqueueSend(body, locals)
+      return
+    }
 
     // Запись дневника: маркер+заголовок раздела в content (+ опциональные вложения).
     // Для раздела-«заголовка» (input_type='title') текст обязателен — он и есть заголовок.
@@ -175,7 +225,7 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       }
       if (!value && pendingFiles.length === 0) return
       const body: SendBody = { content: buildJournalContent(journalMeta, value) }
-      if (pendingFiles.length) body.attachment_ids = pendingFiles.map(a => a.id)
+      if (pendingFiles.length) body.attachment_ids = pendingFiles.map(l => l.asset.id)
       setText('')
       setPendingFiles([])
       send.mutate(body, { onSuccess: afterJournalSent })
@@ -195,18 +245,21 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       }
       setPendingRepost(null)
       setReposting(false)
-      const body = sendBody()
-      if (body.content || body.attachment_ids?.length) enqueueSend(body)
+      const { body, locals } = sendBody()
+      if (body.content || body.attachment_ids?.length) enqueueSend(body, locals)
       toast('Отправлено в новости')
       return
     }
 
     const content = text.trim()
     if (!content && pendingFiles.length === 0) return
-    enqueueSend(sendBody())
+    const { body, locals } = sendBody()
+    enqueueSend(body, locals)
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // @-автодополнение перехватывает стрелки/Enter/Tab/Esc, пока открыт попап.
+    if (mentions.onKeyDown(e)) return
     if (e.key !== 'Enter' || e.shiftKey) return
     // Spurious Enter after button tap on mobile — just swallow it
     if (justSentRef.current) {
@@ -223,9 +276,10 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
 
   function onChange(value: string) {
     setText(value)
-    // Черновик комнаты (дебаунс внутри). Записи дневника/репост не кэшируем как
-    // черновик — у них свой «заряд» и очистка; сохраняем только обычный текст.
-    if (!journalMeta && !repost) saveDraft(roomId, value)
+    mentions.onValueChange()
+    // Черновик комнаты (дебаунс внутри). Записи дневника/репост/тред не кэшируем как
+    // черновик — у них свой контекст; сохраняем только обычный текст верхнего уровня.
+    if (!journalMeta && !repost && !inThread) saveDraft(roomId, value)
     const now = Date.now()
     if (now - lastTyping.current > 2500) {
       lastTyping.current = now
@@ -245,8 +299,34 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       (repost.message.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
+  const threadSnippet = threadRoot
+    ? threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+      (threadRoot.sticker_id != null ? '[стикер]' : '[вложение]')
+    : ''
+
   return (
     <div className={`${styles.composer} ${revealOnMount ? styles.composerReveal : ''}`}>
+      {inThread && (
+        <div className={`${styles.contextBar} ${styles.contextBarThread}`}>
+          {/* «Свернуть тред» живёт здесь, над композером — всегда на виду, не нужно
+              долистывать ленту вверх. Клик сворачивает инлайн-ветку и выходит из
+              режима ответа (одно и то же состояние threadRootId). */}
+          <button
+            className={styles.threadCollapseBtn}
+            onClick={() => onExitThread?.()}
+            aria-label="Свернуть тред"
+          >
+            <IconChevronDown size={16} className={styles.threadCollapseChevron} />
+            Свернуть тред
+            {threadRoot != null && threadRoot.reply_count > 0 && (
+              <span className={styles.ctxThreadCount}>
+                · {threadRoot.reply_count} {plural(threadRoot.reply_count, ['ответ', 'ответа', 'ответов'])}
+              </span>
+            )}
+          </button>
+          <span className={styles.ctxSnippet}>{threadSnippet || '…'}</span>
+        </div>
+      )}
       {repost && (
         <div className={styles.contextBar}>
           <span className={styles.ctxLabel}>Репост от {repostAuthor}:</span>
@@ -275,15 +355,15 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       )}
       {pendingFiles.length > 0 && (
         <div className={styles.pendingAtt}>
-          {pendingFiles.map(a => (
-            <span key={a.id} className={styles.pendingChip}>
+          {pendingFiles.map(({ asset }) => (
+            <span key={asset.id} className={styles.pendingChip}>
               <IconAttach size={13} />
               <span className={styles.pendingChipLabel}>
-                {a.kind === 'image' ? 'Изображение' : a.kind === 'video' ? 'Видео' : 'Файл'}
+                {asset.kind === 'image' ? 'Изображение' : asset.kind === 'video' ? 'Видео' : 'Файл'}
               </span>
               <button
                 className={styles.pendingChipX}
-                onClick={() => setPendingFiles(prev => prev.filter(f => f.id !== a.id))}
+                onClick={() => setPendingFiles(prev => prev.filter(f => f.asset.id !== asset.id))}
                 aria-label="Убрать вложение"
               >
                 ✕
@@ -303,6 +383,7 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       )}
 
       {pickerOpen && <StickerPicker onPick={handleSticker} />}
+      {mentions.popup}
 
       <input
         ref={fileInputRef}
@@ -340,11 +421,16 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
               className={styles.composerInput}
               rows={1}
               placeholder={
-                repost ? 'Добавить сообщение к репосту…' : 'Сообщение…'
+                inThread
+                  ? 'Ответить в тред…'
+                  : repost
+                    ? 'Добавить сообщение к репосту…'
+                    : 'Сообщение…'
               }
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
+              onFocus={() => { if (!inThread) onFocusInput?.() }}
               enterKeyHint="enter"
             />
           </>
@@ -363,13 +449,13 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
           </button>
         ) : (
           <VoiceComposer
-            onSend={(assetId) =>
+            onSend={(local) =>
               journalMeta
                 ? send.mutate(
-                    { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [assetId] },
+                    { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [local.asset.id] },
                     { onSuccess: afterJournalSent },
                   )
-                : enqueueSend({ attachment_ids: [assetId] })
+                : enqueueSend({ attachment_ids: [local.asset.id] }, [local])
             }
             onActiveChange={setVoiceActive}
           />

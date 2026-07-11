@@ -60,7 +60,7 @@ export function MediaComposer({
     setUploading(true)
     setProgress(0)
     try {
-      const asset = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
+      const { asset } = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
       onAttachmentsChange([...attachments, { id: asset.id, kind: asset.kind }])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
