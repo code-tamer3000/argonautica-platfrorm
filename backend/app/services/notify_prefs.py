@@ -15,13 +15,14 @@ from typing import Any
 # journal_missed/cabin_granted — системные, отдельного тумблера не имеют
 # (cabin_granted пушим по мастер-флагу; journal_missed нативно не пушится — он
 # досоздаётся лениво при открытии ленты, событийной точки для push нет).
-PUSHABLE_KINDS = ("dm", "reply", "news", "admin")
+PUSHABLE_KINDS = ("dm", "reply", "news", "mention", "admin")
 
 _DEFAULTS: dict[str, bool] = {
     "push_enabled": True,
     "dm": True,
     "reply": True,
     "news": True,
+    "mention": True,
     "admin": True,
 }
 

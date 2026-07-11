@@ -13,9 +13,12 @@ import styles from './profile.module.css'
 
 // Пер-видовые тумблеры (что именно пушить). journal_missed/cabin_granted отдельного
 // тумблера не имеют — управляются мастер-флагом. См. backend notify_prefs.py.
-const KIND_TOGGLES: { key: 'dm' | 'reply' | 'news' | 'admin'; label: string }[] = [
+type KindKey = 'dm' | 'reply' | 'news' | 'mention' | 'admin'
+
+const KIND_TOGGLES: { key: KindKey; label: string }[] = [
   { key: 'dm', label: 'Личные сообщения' },
   { key: 'reply', label: 'Ответы на мои сообщения' },
+  { key: 'mention', label: 'Упоминания через @' },
   { key: 'news', label: 'Новости в канале' },
   { key: 'admin', label: 'Объявления от администрации' },
 ]
@@ -25,6 +28,7 @@ interface NotifPrefs {
   dm: boolean
   reply: boolean
   news: boolean
+  mention: boolean
   admin: boolean
 }
 
@@ -36,6 +40,7 @@ function readPrefs(settings: Record<string, unknown>): NotifPrefs {
     dm: bool('dm'),
     reply: bool('reply'),
     news: bool('news'),
+    mention: bool('mention'),
     admin: bool('admin'),
   }
 }
@@ -112,7 +117,7 @@ export function NotificationsSection() {
     }
   }
 
-  async function handleKindToggle(key: 'dm' | 'reply' | 'news' | 'admin', v: boolean) {
+  async function handleKindToggle(key: KindKey, v: boolean) {
     try {
       await savePrefs({ [key]: v })
     } catch (err) {

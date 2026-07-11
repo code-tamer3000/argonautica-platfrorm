@@ -9,6 +9,7 @@ import styles from './admin.module.css'
 const KIND_CHIPS: { key: keyof UserNotifPrefs; label: string }[] = [
   { key: 'dm', label: 'ЛС' },
   { key: 'reply', label: 'Ответы' },
+  { key: 'mention', label: '@упоминания' },
   { key: 'news', label: 'Новости' },
   { key: 'admin', label: 'Объявления' },
 ]

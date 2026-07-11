@@ -471,6 +471,7 @@ async def notification_prefs_overview(
                 dm=prefs["dm"],
                 reply=prefs["reply"],
                 news=prefs["news"],
+                mention=prefs["mention"],
                 admin=prefs["admin"],
                 devices=devices_by_uid.get(uid, 0),
             )

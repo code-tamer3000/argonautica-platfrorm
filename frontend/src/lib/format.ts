@@ -52,3 +52,16 @@ export function initials(name: string): string {
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
   return name.trim().slice(0, 2).toUpperCase()
 }
+
+/**
+ * Русская форма слова по числу: `plural(n, ['ответ', 'ответа', 'ответов'])`.
+ * Формы — [1 / 2–4 / 5–20], по обычным правилам склонения (11–14 → «ответов»).
+ */
+export function plural(n: number, forms: [string, string, string]): string {
+  const abs = Math.abs(n) % 100
+  const d = abs % 10
+  if (abs > 10 && abs < 20) return forms[2]
+  if (d > 1 && d < 5) return forms[1]
+  if (d === 1) return forms[0]
+  return forms[2]
+}

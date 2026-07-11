@@ -5,9 +5,11 @@ import { useUsersMap } from '../../api/users'
 import { IconChevronDown, IconSend } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { useAutosize } from '../../hooks/useAutosize'
+import { plural } from '../../lib/format'
 import type { MessageOut } from '../../lib/types'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageItem } from './MessageItem'
+import { useMentionAutocomplete } from './useMentionAutocomplete'
 import { useMessageMenu } from './useMessageMenu'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
@@ -43,6 +45,7 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
   const users = useUsersMap()
   const markRead = useMarkRead(roomId)
   const replyRef = useAutosize(text)
+  const mentions = useMentionAutocomplete(replyRef, text, setText)
   // «Ответить» в меню не показываем — мы уже в треде, ответ уходит в корень через поле снизу.
   const msgMenu = useMessageMenu({
     roomId,
@@ -81,10 +84,19 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
     <div className={styles.inlineThread}>
       <div className={styles.inlineThreadRail} />
       <div className={styles.inlineThreadBody}>
-        <button className={styles.inlineThreadCollapse} onClick={onCollapse}>
-          <IconChevronDown size={16} className={styles.inlineThreadChevron} />
-          Свернуть тред
-        </button>
+        {/* Шапка треда «прилипает» к верху скролл-области ленты, пока ветка на экране —
+            кнопка «свернуть» всегда под рукой, даже в длинном треде. */}
+        <div className={styles.inlineThreadHeader}>
+          <button className={styles.inlineThreadCollapse} onClick={onCollapse}>
+            <IconChevronDown size={16} className={styles.inlineThreadChevron} />
+            Свернуть тред
+          </button>
+          {replies.length > 0 && (
+            <span className={styles.inlineThreadCount}>
+              {replies.length} {plural(replies.length, ['ответ', 'ответа', 'ответов'])}
+            </span>
+          )}
+        </div>
 
         {isLoading && (
           <div className="center" style={{ padding: 12 }}>
@@ -94,7 +106,7 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
 
         {hidden > 0 && (
           <button className={styles.inlineThreadMore} onClick={() => setExpandedAll(true)}>
-            Показать ещё {hidden}
+            Показать ещё {hidden} {plural(hidden, ['ответ', 'ответа', 'ответов'])}
           </button>
         )}
 
@@ -116,6 +128,7 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
         {/* Поле ответа в потоке под ветвью (не прибито к низу) — на мобиле фиксированный
             футер уезжал бы вместе с клавиатурой. */}
         <div className={styles.threadReplyRow}>
+          {mentions.popup}
           {!voiceActive && (
             <textarea
               ref={replyRef}
@@ -123,8 +136,12 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
               rows={1}
               placeholder="Ответить в тред…"
               value={text}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => {
+                setText(e.target.value)
+                mentions.onValueChange()
+              }}
               onKeyDown={(e) => {
+                if (mentions.onKeyDown(e)) return
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()
                   handleSend()

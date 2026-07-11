@@ -73,7 +73,7 @@ export function MessageItem({
   // базы знаний, в чате их не используют). Сохраняем переносы строк и делаем «голые»
   // ссылки кликабельными (renderMessageText). Никакого dangerouslySetInnerHTML.
   const contentParts = useMemo(
-    () => (msg.content ? renderMessageText(msg.content) : null),
+    () => (msg.content ? renderMessageText(msg.content, styles.mention) : null),
     [msg.content],
   )
 

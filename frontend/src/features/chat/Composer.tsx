@@ -18,6 +18,7 @@ import { enqueue as outboxEnqueue, type LocalAttachment } from '../../lib/outbox
 import { clearDraft, saveDraft, loadDraft } from '../../lib/drafts'
 import { useAuth } from '../auth/AuthContext'
 import { StickerPicker } from './StickerPicker'
+import { useMentionAutocomplete } from './useMentionAutocomplete'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
@@ -75,6 +76,7 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
+  const mentions = useMentionAutocomplete(inputRef, text, setText)
 
   // Восстановление сохранённого черновика при открытии комнаты: если пользователь
   // печатал и ушёл (сменил вкладку/комнату, перезагрузил), текст возвращается.
@@ -212,6 +214,8 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    // @-автодополнение перехватывает стрелки/Enter/Tab/Esc, пока открыт попап.
+    if (mentions.onKeyDown(e)) return
     if (e.key !== 'Enter' || e.shiftKey) return
     // Spurious Enter after button tap on mobile — just swallow it
     if (justSentRef.current) {
@@ -228,6 +232,7 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
 
   function onChange(value: string) {
     setText(value)
+    mentions.onValueChange()
     // Черновик комнаты (дебаунс внутри). Записи дневника/репост не кэшируем как
     // черновик — у них свой «заряд» и очистка; сохраняем только обычный текст.
     if (!journalMeta && !repost) saveDraft(roomId, value)
@@ -308,6 +313,7 @@ export function Composer({ roomId, isNews, revealOnMount }: Props) {
       )}
 
       {pickerOpen && <StickerPicker onPick={handleSticker} />}
+      {mentions.popup}
 
       <input
         ref={fileInputRef}
