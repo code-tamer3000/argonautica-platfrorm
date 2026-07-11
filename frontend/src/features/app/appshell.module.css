@@ -10,17 +10,6 @@
   padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--color-frame-deep);
   background: var(--bg-surface);
-  /* Кораблик/волна (HeaderDeco) не должны вылезать за пределы шапки. */
-  overflow: hidden;
-}
-/* Декоративный слой (HeaderDeco) — position:absolute, z-index:0, ПЕРВЫЙ потомок.
-   Колокол и профиль сами position:relative и идут в DOM позже → рисуются выше
-   deco без доп. правил. Непозиционированным .brand/.spacer явно даём relative+
-   z-index, иначе абсолютный deco перекрыл бы их. */
-.topbar > .brand,
-.topbar > .spacer {
-  position: relative;
-  z-index: 1;
 }
 
 .brand {
