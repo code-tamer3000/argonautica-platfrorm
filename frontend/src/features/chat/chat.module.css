@@ -555,6 +555,8 @@
 .threadCollapseBtn:hover { color: var(--accent-bright); }
 .threadCollapseChevron { transform: rotate(-180deg); }
 .ctxThreadCount { flex: 0 0 auto; color: var(--text-ghost); white-space: nowrap; }
+/* Плашка «описания задания» дневника: описание важно видеть целиком, поэтому
+   даём ему переноситься на несколько строк, а не обрезаться многоточием. */
 .contextBarJournal { align-items: flex-start; }
 .contextBarJournal .ctxDesc {
   overflow: visible; text-overflow: clip; white-space: normal;
