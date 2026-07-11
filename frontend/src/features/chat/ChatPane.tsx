@@ -56,8 +56,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showProfile, setShowProfile] = useState(false)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   const messageListRef = useRef<MessageListHandle>(null)
-  // Корень треда, который только что свернули — чтобы после закрытия плавно
-  // подтянуть ленту обратно к сообщению, от которого шёл тред (см. useEffect ниже).
+  // Корень треда, который только что свернули: после размонтирования InlineThread
+  // (высота ленты уменьшится) плавно доводим экран обратно к нему, а не роняем в низ.
   const collapsedThreadRootRef = useRef<number | null>(null)
 
   // Право закрепления зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда;
@@ -88,7 +88,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   useEffect(() => {
     setEditingId(null)
     setThreadRootId(null)
-    collapsedThreadRootRef.current = null
+    collapsedThreadRootRef.current = null // не доводить к корню из прошлой комнаты
     setShowPins(false)
     setShowMembers(false)
     setShowCalendar(false)
@@ -129,21 +129,25 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setTimeout(() => setHighlightedMsgId(null), 2000)
   }
 
-  // Свернуть тред и запомнить его корень: после того как InlineThread размонтируется
-  // (высота ленты изменится), плавно подтягиваем экран обратно к сообщению-корню.
+  // Свернуть тред, оставшись на месте разговора. Раскрытый тред обычно упирается в
+  // низ ленты, поэтому лента «прилипла» к нижней кромке; при схлопывании ResizeObserver
+  // в MessageList утащил бы скролл в самый конец. Поэтому СНАЧАЛА снимаем прилипание
+  // (releaseBottom — синхронно, до изменения высоты), запоминаем корень и после
+  // размонтирования InlineThread плавно доводим экран к корневому сообщению.
   const closeThread = useCallback(() => {
+    messageListRef.current?.releaseBottom()
     collapsedThreadRootRef.current = threadRootId
     setThreadRootId(null)
   }, [threadRootId])
 
   // После сворачивания треда лента «схлопывается» — доводим её плавно к корню,
-  // от которого шёл тред, чтобы на мобильном не терять место в разговоре. Ждём
-  // кадр, чтобы размонтирование InlineThread успело применить новую высоту.
+  // от которого шёл тред, чтобы на мобильном не терять место в разговоре.
   useEffect(() => {
     if (threadRootId != null) return
     const rootId = collapsedThreadRootRef.current
     if (rootId == null) return
     collapsedThreadRootRef.current = null
+    // Ждём кадр: размонтирование InlineThread успевает применить новую высоту ленты.
     requestAnimationFrame(() => messageListRef.current?.scrollToMessage(rootId))
   }, [threadRootId])
 

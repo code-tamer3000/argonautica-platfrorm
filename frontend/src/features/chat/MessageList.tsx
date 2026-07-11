@@ -10,6 +10,10 @@ export interface MessageListHandle {
   scrollToMessage: (id: number) => boolean
   isAtBottom: () => boolean
   scrollToBottom: () => void
+  // Снять «прилипание к низу»: следующее изменение высоты ленты (например, схлопывание
+  // инлайн-треда) не утащит скролл в конец через ResizeObserver-pin. Зовём синхронно
+  // ДО того, как высота изменится.
+  releaseBottom: () => void
 }
 
 interface Props {
@@ -65,6 +69,9 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
     scrollToBottom() {
       const el = containerRef.current
       if (el) el.scrollTop = el.scrollHeight
+    },
+    releaseBottom() {
+      atBottom.current = false
     },
   }))
 
