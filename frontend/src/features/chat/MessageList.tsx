@@ -9,6 +9,7 @@ import styles from './chat.module.css'
 export interface MessageListHandle {
   scrollToMessage: (id: number) => boolean
   isAtBottom: () => boolean
+  scrollToBottom: () => void
 }
 
 interface Props {
@@ -59,6 +60,10 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
       return true
     },
     isAtBottom: () => atBottom.current,
+    scrollToBottom() {
+      const el = containerRef.current
+      if (el) el.scrollTop = el.scrollHeight
+    },
   }))
 
   // Автоскролл вниз при новых сообщениях, если уже были внизу.

@@ -40,9 +40,13 @@ interface Props {
   threadRootId?: number | null
   threadRoot?: MessageOut | null
   onExitThread?: () => void
+  // Фокус на поле ввода (тап, чтобы писать) → пролистать ленту к низу, чтобы последнее
+  // сообщение не пряталось за клавиатурой. В режиме треда не вызываем — тред скроллит
+  // свой конец сам (InlineThread).
+  onFocusInput?: () => void
 }
 
-export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, threadRoot, onExitThread }: Props) {
+export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, threadRoot, onExitThread, onFocusInput }: Props) {
   // Режим треда активен по id (корень для превью может отсутствовать в ленте).
   const inThread = threadRootId != null
   const [text, setText] = useState('')
@@ -426,6 +430,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
+              onFocus={() => { if (!inThread) onFocusInput?.() }}
               enterKeyHint="enter"
             />
           </>

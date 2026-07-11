@@ -247,6 +247,15 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           threadRootId={threadRootId}
           threadRoot={threadRoot}
           onExitThread={() => setThreadRootId(null)}
+          onFocusInput={() => {
+            // Тап по полю → клавиатура открывается; докручиваем ленту к низу и сразу,
+            // и после того как вьюпорт сожмётся (несколько кадров), чтобы последнее
+            // сообщение осталось над клавиатурой.
+            const toBottom = () => messageListRef.current?.scrollToBottom()
+            toBottom()
+            setTimeout(toBottom, 150)
+            setTimeout(toBottom, 350)
+          }}
         />
       )}
       {msgMenu.menu && (

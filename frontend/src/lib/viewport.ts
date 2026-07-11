@@ -22,6 +22,7 @@ const KEYBOARD_THRESHOLD = 120
 let installed = false
 let kbOpen = false
 let lastHeight = 0
+let lastOffsetTop = 0
 
 /** Вернуть окно/документ в нулевой скролл — гасим нативный «scroll into view». */
 function pinScroll() {
@@ -45,17 +46,22 @@ function apply() {
     root.style.setProperty('--app-height', `${rounded}px`)
   }
 
+  // #root position:fixed прибит к верху layout viewport; на iOS visual viewport может
+  // СДВИНУТЬСЯ вниз (offsetTop>0) при фокусе у нижнего края — тогда фикс-слой уехал бы
+  // под клавиатуру. Компенсируем сдвигом top на offsetTop, чтобы шапка оставалась ровно
+  // на верхней кромке видимой области.
+  const offsetTop = vv ? Math.round(vv.offsetTop) : 0
+  if (offsetTop !== lastOffsetTop) {
+    lastOffsetTop = offsetTop
+    root.style.setProperty('--vv-top', `${offsetTop}px`)
+  }
+
   // clientHeight = layout viewport (на iOS не сжимается клавиатурой);
   // если visual viewport заметно меньше — клавиатура открыта.
   const layoutHeight = root.clientHeight
   kbOpen = layoutHeight - height > KEYBOARD_THRESHOLD
-  if (kbOpen) {
-    root.setAttribute('data-kb', 'open')
-    // При открытой клавиатуре браузер норовит проскроллить окно к полю — отменяем.
-    pinScroll()
-  } else {
-    root.removeAttribute('data-kb')
-  }
+  if (kbOpen) root.setAttribute('data-kb', 'open')
+  else root.removeAttribute('data-kb')
 }
 
 /** Однократная установка слушателей. Безопасно вызывать повторно. */
