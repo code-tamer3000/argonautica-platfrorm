@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type RefObject,
@@ -13,7 +15,11 @@ import styles from './chat.module.css'
 // Активный @-токен под курсором: @ на границе слова + буквы/цифры/_ до каретки.
 // Требуем, чтобы перед @ был пробел/начало строки — иначе это e-mail и т.п.
 const AT_TOKEN_RE = /(?:^|\s)@([A-Za-z0-9_]*)$/
-const MAX_SUGGESTIONS = 6
+// Платформа маленькая (≈20–30 человек), поэтому в попапе показываем всех подходящих —
+// список скроллится (max-height у .mentionPop). Раньше стоял жёсткий лимит 6: на
+// канале с непустым составом остальных участников просто нельзя было выбрать —
+// они молча отсекались, а не уезжали под скролл.
+const MAX_SUGGESTIONS = 50
 
 interface MentionState {
   /** Индекс @ в тексте (для замены). */
@@ -48,6 +54,11 @@ export function useMentionAutocomplete(
   const { data: users } = useUsers()
   const [mention, setMention] = useState<MentionState | null>(null)
   const [active, setActive] = useState(0)
+  // Активная опция — держим её видимой при листании стрелками (список скроллится).
+  const activeRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ block: 'nearest' })
+  }, [active])
 
   const candidates = useMemo(() => {
     if (!mention || !users) return []
@@ -133,6 +144,7 @@ export function useMentionAutocomplete(
       {candidates.map((u, i) => (
         <button
           key={u.id}
+          ref={i === active ? activeRef : undefined}
           type="button"
           role="option"
           aria-selected={i === active}

@@ -56,6 +56,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showProfile, setShowProfile] = useState(false)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   const messageListRef = useRef<MessageListHandle>(null)
+  // Корень треда, который только что свернули — чтобы после закрытия плавно
+  // подтянуть ленту обратно к сообщению, от которого шёл тред (см. useEffect ниже).
+  const collapsedThreadRootRef = useRef<number | null>(null)
 
   // Право закрепления зеркалит backend `assert_can_pin` (SPEC §4.7): admin — всегда;
   // group — только владелец; dm — оба участника; channel — никому, кроме admin.
@@ -85,6 +88,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   useEffect(() => {
     setEditingId(null)
     setThreadRootId(null)
+    collapsedThreadRootRef.current = null
     setShowPins(false)
     setShowMembers(false)
     setShowCalendar(false)
@@ -124,6 +128,24 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setHighlightedMsgId(msgId)
     setTimeout(() => setHighlightedMsgId(null), 2000)
   }
+
+  // Свернуть тред и запомнить его корень: после того как InlineThread размонтируется
+  // (высота ленты изменится), плавно подтягиваем экран обратно к сообщению-корню.
+  const closeThread = useCallback(() => {
+    collapsedThreadRootRef.current = threadRootId
+    setThreadRootId(null)
+  }, [threadRootId])
+
+  // После сворачивания треда лента «схлопывается» — доводим её плавно к корню,
+  // от которого шёл тред, чтобы на мобильном не терять место в разговоре. Ждём
+  // кадр, чтобы размонтирование InlineThread успело применить новую высоту.
+  useEffect(() => {
+    if (threadRootId != null) return
+    const rootId = collapsedThreadRootRef.current
+    if (rootId == null) return
+    collapsedThreadRootRef.current = null
+    requestAnimationFrame(() => messageListRef.current?.scrollToMessage(rootId))
+  }, [threadRootId])
 
   if (!room) {
     return (
@@ -224,7 +246,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         // личные чаты/группы — простой текст.
         markdown={room.type === 'channel' && !room.is_news}
         onClearEdit={() => setEditingId(null)}
-        onToggleThread={(rootId) => setThreadRootId((cur) => (cur === rootId ? null : rootId))}
+        onToggleThread={(rootId) => (threadRootId === rootId ? closeThread() : setThreadRootId(rootId))}
         onRepost={handleRepost}
         onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
@@ -250,7 +272,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           revealOnMount={isOwnPersonal}
           threadRootId={threadRootId}
           threadRoot={threadRoot}
-          onExitThread={() => setThreadRootId(null)}
+          onExitThread={closeThread}
           onFocusInput={() => {
             // Тап по полю → клавиатура открывается; докручиваем ленту к низу и сразу,
             // и после того как вьюпорт сожмётся (несколько кадров), чтобы последнее

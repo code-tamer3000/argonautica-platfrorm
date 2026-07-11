@@ -11,12 +11,12 @@ import { useUsersMap } from '../../api/users'
 import { IconAttach, IconChevronDown, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
-import { mediaUpload } from '../../lib/mediaUpload'
+import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
-import { enqueue as outboxEnqueue, type LocalAttachment } from '../../lib/outbox'
+import { enqueue as outboxEnqueue, enqueueMedia } from '../../lib/outbox'
 import { clearDraft, saveDraft, loadDraft } from '../../lib/drafts'
 import { useAuth } from '../auth/AuthContext'
 import { StickerPicker } from './StickerPicker'
@@ -50,13 +50,14 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   // Режим треда активен по id (корень для превью может отсутствовать в ленте).
   const inThread = threadRootId != null
   const [text, setText] = useState('')
-  // Прикреплённые, но ещё не отправленные вложения: ассет (уже в MinIO) + его байты,
-  // чтобы outbox закэшировал их и превью пережило перезагрузку (см. lib/outbox.ts).
-  const [pendingFiles, setPendingFiles] = useState<LocalAttachment[]>([])
+  // Прикреплённые, но ещё не отправленные вложения: сырые описатели (байты + мета),
+  // ЕЩЁ НЕ залитые в MinIO. Обычная отправка/ответ в тред уводит их в outbox
+  // (enqueueMedia) — заливка идёт в фоне из очереди, поэтому файл/голос переживают
+  // офлайн так же, как текст. Дневник/репост требуют залитых ассетов → там заливаем
+  // синхронно при отправке (см. submit).
+  const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
-  // Прогресс текущей загрузки в процентах (null — загрузки нет).
-  const [progress, setProgress] = useState<number | null>(null)
   // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
   const [voiceActive, setVoiceActive] = useState(false)
   // Идёт отправка репоста (форвард создаётся до комментария).
@@ -144,15 +145,15 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     if (!file) return
     e.target.value = ''
     setUploading(true)
-    setProgress(0)
     try {
-      const local = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
-      setPendingFiles(prev => [...prev, local])
+      // Только локальная подготовка (размеры/постер) — БЕЗ сети. Сама заливка уйдёт
+      // в outbox при отправке, поэтому прикрепить файл можно и офлайн.
+      const pending = await preparePendingUpload(file)
+      setPendingFiles(prev => [...prev, pending])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
       setUploading(false)
-      setProgress(null)
     }
   }
 
@@ -168,66 +169,106 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       setText('')
       return
     }
-    enqueueSend({ sticker_id: stickerId })
+    // Стикер уходит отдельным сообщением (как раньше) — набранный текст не трогаем.
+    enqueueTopLevel({ sticker_id: stickerId }, [])
   }
 
-  // Собрать тело + снимок локальных вложений для outbox, очистив композер.
-  function sendBody(): { body: SendBody; locals: LocalAttachment[] } {
-    const content = text.trim()
-    const body: SendBody = {}
-    if (content) body.content = content
-    const locals = pendingFiles
-    if (locals.length) body.attachment_ids = locals.map(l => l.asset.id)
-    setText('')
-    setPendingFiles([])
-    return { body, locals }
-  }
-
-  // Обычная отправка через outbox: сообщение сразу видно в ленте как «отправляется»
-  // и переживает падение сети/перезагрузку (см. lib/outbox.ts). Байты вложений
-  // (locals) кэшируются, чтобы превью не пропало после перезагрузки. Черновик
-  // комнаты очищаем — текст ушёл в очередь.
-  function enqueueSend(body: SendBody, locals: LocalAttachment[] = []) {
-    // Ответ в тред идёт прямым mutate (не через outbox): тред-реплики не живут в
-    // оптимистичной ленте комнаты, открытый тред обновится по инвалидации thread-query
-    // (как журнал/репост — свой путь со связанными сайд-эффектами).
-    if (inThread && threadRootId != null) {
-      send.mutate({ ...body, reply_to_message_id: threadRootId })
+  // Отправка голосового. Верхний уровень — в outbox (enqueueMedia): переживает офлайн
+  // так же, как файл. Дневник/ответ в тред — синхронная заливка (свои пути мимо outbox).
+  async function handleVoice(pending: PendingUpload) {
+    if (journalMeta) {
+      try {
+        const [assetId] = await uploadAll([pending])
+        send.mutate(
+          { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [assetId] },
+          { onSuccess: afterJournalSent },
+        )
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Не удалось отправить голосовое', 'error')
+      }
       return
     }
-    if (user) outboxEnqueue(roomId, body, user.id, locals)
-    else send.mutate(body) // без пользователя (не должно случаться) — прямой путь
+    if (inThread && threadRootId != null) {
+      try {
+        const [assetId] = await uploadAll([pending])
+        send.mutate({ reply_to_message_id: threadRootId, attachment_ids: [assetId] })
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Не удалось отправить голосовое', 'error')
+      }
+      return
+    }
+    enqueueTopLevel({}, [pending])
+  }
+
+  // Синхронно залить прикреплённые описатели и вернуть их asset_id. Используется на
+  // путях, которые НЕ идут через outbox (дневник/репост/ответ в тред): им нужны
+  // готовые ассеты, поэтому там заливка требует сети (бросит при офлайне).
+  async function uploadAll(uploads: PendingUpload[]): Promise<number[]> {
+    const ids: number[] = []
+    for (const pu of uploads) {
+      const asset = await runPendingUpload(pu)
+      ids.push(asset.id)
+    }
+    return ids
+  }
+
+  // Верхнеуровневая отправка (обычное сообщение/голос): текст+стикер сразу, а сырые
+  // вложения — в outbox через enqueueMedia (заливка в фоне из очереди, переживает
+  // офлайн/перезагрузку). Без вложений — обычный enqueue. Черновик комнаты очищаем.
+  function enqueueTopLevel(body: SendBody, uploads: PendingUpload[]) {
+    if (!user) {
+      send.mutate(body) // без пользователя (не должно случаться) — прямой путь
+      return
+    }
+    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads)
+    else outboxEnqueue(roomId, body, user.id)
     void clearDraft(roomId)
   }
 
   async function submit() {
-    if (send.isPending || reposting) return
+    if (send.isPending || reposting || uploading) return
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 300)
 
-    // Ответ в тред: обычное тело (текст/вложения) + reply_to (в enqueueSend). Дневник/
-    // репост в треде не применяются — тред остаётся открытым, обновится по инвалидации.
-    if (inThread) {
-      const content = text.trim()
+    const content = text.trim()
+
+    // Ответ в тред: прямой mutate (тред-реплики не живут в оптимистичной ленте
+    // комнаты). Вложения тут заливаем синхронно — офлайн-outbox сюда не заведён.
+    if (inThread && threadRootId != null) {
       if (!content && pendingFiles.length === 0) return
-      const { body, locals } = sendBody()
-      enqueueSend(body, locals)
+      const uploads = pendingFiles
+      setText('')
+      setPendingFiles([])
+      const body: SendBody = { reply_to_message_id: threadRootId }
+      if (content) body.content = content
+      try {
+        if (uploads.length) body.attachment_ids = await uploadAll(uploads)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
+        return
+      }
+      send.mutate(body)
       return
     }
 
     // Запись дневника: маркер+заголовок раздела в content (+ опциональные вложения).
     // Для раздела-«заголовка» (input_type='title') текст обязателен — он и есть заголовок.
     if (journalMeta) {
-      const value = text.trim()
-      if (journalMeta.input_type === 'title' && !value) {
+      if (journalMeta.input_type === 'title' && !content) {
         toast(`Введите: ${journalMeta.label}`, 'error')
         return
       }
-      if (!value && pendingFiles.length === 0) return
-      const body: SendBody = { content: buildJournalContent(journalMeta, value) }
-      if (pendingFiles.length) body.attachment_ids = pendingFiles.map(l => l.asset.id)
+      if (!content && pendingFiles.length === 0) return
+      const uploads = pendingFiles
       setText('')
       setPendingFiles([])
+      const body: SendBody = { content: buildJournalContent(journalMeta, content) }
+      try {
+        if (uploads.length) body.attachment_ids = await uploadAll(uploads)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
+        return
+      }
       send.mutate(body, { onSuccess: afterJournalSent })
       return
     }
@@ -245,16 +286,29 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       }
       setPendingRepost(null)
       setReposting(false)
-      const { body, locals } = sendBody()
-      if (body.content || body.attachment_ids?.length) enqueueSend(body, locals)
+      const uploads = pendingFiles
+      setText('')
+      setPendingFiles([])
+      const body: SendBody = {}
+      if (content) body.content = content
+      try {
+        if (uploads.length) body.attachment_ids = await uploadAll(uploads)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
+        return
+      }
+      if (body.content || body.attachment_ids?.length) enqueueTopLevel(body, [])
       toast('Отправлено в новости')
       return
     }
 
-    const content = text.trim()
     if (!content && pendingFiles.length === 0) return
-    const { body, locals } = sendBody()
-    enqueueSend(body, locals)
+    const uploads = pendingFiles
+    setText('')
+    setPendingFiles([])
+    const body: SendBody = {}
+    if (content) body.content = content
+    enqueueTopLevel(body, uploads)
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -355,30 +409,21 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       )}
       {pendingFiles.length > 0 && (
         <div className={styles.pendingAtt}>
-          {pendingFiles.map(({ asset }) => (
-            <span key={asset.id} className={styles.pendingChip}>
+          {pendingFiles.map((pu, i) => (
+            <span key={i} className={styles.pendingChip}>
               <IconAttach size={13} />
               <span className={styles.pendingChipLabel}>
-                {asset.kind === 'image' ? 'Изображение' : asset.kind === 'video' ? 'Видео' : 'Файл'}
+                {pu.kind === 'image' ? 'Изображение' : pu.kind === 'video' ? 'Видео' : 'Файл'}
               </span>
               <button
                 className={styles.pendingChipX}
-                onClick={() => setPendingFiles(prev => prev.filter(f => f.asset.id !== asset.id))}
+                onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))}
                 aria-label="Убрать вложение"
               >
                 ✕
               </button>
             </span>
           ))}
-        </div>
-      )}
-
-      {progress !== null && (
-        <div className={styles.uploadProgress}>
-          <div className={styles.uploadBar}>
-            <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
-          </div>
-          <span className={styles.uploadPct}>{progress}%</span>
         </div>
       )}
 
@@ -449,14 +494,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
           </button>
         ) : (
           <VoiceComposer
-            onSend={(local) =>
-              journalMeta
-                ? send.mutate(
-                    { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [local.asset.id] },
-                    { onSuccess: afterJournalSent },
-                  )
-                : enqueueSend({ attachment_ids: [local.asset.id] }, [local])
-            }
+            onSend={handleVoice}
             onActiveChange={setVoiceActive}
           />
         )}

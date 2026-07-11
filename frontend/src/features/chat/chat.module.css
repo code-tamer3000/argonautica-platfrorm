@@ -625,10 +625,14 @@
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-3); box-shadow: var(--glow-gold);
 }
-/* @-автодополнение: всплывает над полем ввода (bottom:100% от .composer). */
+/* @-автодополнение: всплывает над полем ввода (bottom:100% от .composer). Список
+   участников скроллится внутри себя (max-height): на канале с полным составом их
+   больше, чем влезает, а выбрать нужно любого. -webkit-overflow-scrolling + contain —
+   чтобы прокрутка ловилась пальцем на мобиле и не «протекала» на ленту под попапом. */
 .mentionPop {
   position: absolute; bottom: calc(100% + var(--space-2)); left: var(--space-5); z-index: 30;
   min-width: 240px; max-width: 340px; max-height: 260px; overflow-y: auto;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-1); box-shadow: var(--glow-gold);
 }
@@ -817,8 +821,9 @@
   .composer { padding: var(--space-2) var(--space-3) var(--space-3); }
   .typing { padding: 2px var(--space-4) var(--space-2); }
 
-  /* Стикер-пикер не должен уезжать за край */
+  /* Стикер-пикер и @-попап не должны уезжать за край */
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
+  .mentionPop { left: var(--space-3); right: var(--space-3); max-width: none; }
   .attImageWrap, .attImage, .attVideo { max-width: 100%; }
 }
 
