@@ -5,7 +5,7 @@
 
 ## Stack
 
-React 18 + TypeScript + Vite. TanStack Query v5 (server state), Zustand (UI state), react-router-dom v6. Markdown via `marked` + `DOMPurify`. No test runner yet — the gate is `tsc --noEmit`.
+React 18 + TypeScript + Vite. TanStack Query v5 (server state), Zustand (UI state), react-router-dom v6. Markdown (`marked` + `DOMPurify`) is used **only** in the knowledge base and tasks (curated, admin-authored bodies). Chat/news messages render as **plain text** (`lib/messageText.tsx`): newlines preserved, bare URLs auto-linked, no markdown syntax — nobody formats chat with `**`/`#`, and rendering it just swallowed literal characters. No test runner yet — the gate is `tsc --noEmit`.
 
 ## Structure (`src/`)
 
