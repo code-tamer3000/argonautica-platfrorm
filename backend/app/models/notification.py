@@ -37,7 +37,8 @@ class Notification(Base):
     __tablename__ = "notifications"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('dm', 'reply', 'news', 'journal_missed', 'cabin_granted', 'admin')",
+            "kind IN ('dm', 'reply', 'news', 'mention', 'journal_missed', "
+            "'cabin_granted', 'admin')",
             name="notification_kind_valid",
         ),
         # Лента колокольчика: последние уведомления пользователя.

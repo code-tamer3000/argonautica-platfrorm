@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 NotificationKind = Literal[
-    "dm", "reply", "news", "journal_missed", "cabin_granted", "admin"
+    "dm", "reply", "news", "mention", "journal_missed", "cabin_granted", "admin"
 ]
 
 

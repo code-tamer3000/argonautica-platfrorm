@@ -6,6 +6,7 @@
 ## Send / edit / delete
 
 - **Send** — text, sticker, and/or attachments; a message must carry at least one of them. Attachments must be the sender's own assets (see [FILES.md](FILES.md)).
+- **@-mentions** — `@username` in the body generates a `mention` notification to each tagged user who can see the room (see [NOTIFICATIONS.md](NOTIFICATIONS.md)); parsing/authorization is server-side (client can't pick recipients). The composer offers @-autocomplete; the feed renders text as plain text with mentions highlighted (`lib/messageText.tsx`, no markdown — see [FRONTEND.md](FRONTEND.md)).
 - **Edit** (`PATCH /api/rooms/{room_id}/messages/{message_id}`) — **author only** (admin does not rewrite others' text, unlike delete); sticker/attachment-only has nothing to edit → 400; sets `edited_at`.
 - **Delete** — soft (`deleted_at`), by author or admin.
 

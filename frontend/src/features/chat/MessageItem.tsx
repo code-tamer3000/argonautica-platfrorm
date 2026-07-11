@@ -4,7 +4,7 @@ import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
 import { IconChevronDown } from '../../components/icons'
 import { timeHM } from '../../lib/format'
-import { renderMarkdown } from '../../lib/markdown'
+import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { Attachment } from './Attachment'
@@ -69,8 +69,11 @@ export function MessageItem({
       ? forwardedFrom?.display_name ?? `Участник #${msg.forwarded_from_sender_id}`
       : null
   const sticker = msg.sticker_id != null ? stickerMap.get(msg.sticker_id) : undefined
-  const contentHtml = useMemo(
-    () => (msg.content ? renderMarkdown(msg.content) : ''),
+  // Текст сообщения — как есть: без markdown (звёздочки/решётки/списки — это оформление
+  // базы знаний, в чате их не используют). Сохраняем переносы строк и делаем «голые»
+  // ссылки кликабельными (renderMessageText). Никакого dangerouslySetInnerHTML.
+  const contentParts = useMemo(
+    () => (msg.content ? renderMessageText(msg.content, styles.mention) : null),
     [msg.content],
   )
 
@@ -164,10 +167,7 @@ export function MessageItem({
             )}
 
             {msg.content && (
-              <div
-                className={`${styles.msgText} ${styles.markdown}`}
-                dangerouslySetInnerHTML={{ __html: contentHtml }}
-              />
+              <div className={styles.msgText}>{contentParts}</div>
             )}
           </>
         )}

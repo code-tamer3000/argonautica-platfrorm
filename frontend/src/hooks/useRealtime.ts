@@ -24,6 +24,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   dm: 'Новое сообщение',
   reply: 'Ответил(а) на ваше сообщение',
   news: 'Новый пост в новостях',
+  mention: 'Вас упомянули',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
 }

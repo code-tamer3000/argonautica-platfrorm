@@ -33,9 +33,9 @@ class AdminBroadcastRequest(BaseModel):
 class UserNotifPrefsOut(BaseModel):
     """Настройки уведомлений одного пользователя — для админ-обзора «у кого включено».
 
-    push_enabled — мастер-согласие на native push. Пер-видовые (dm/reply/news/admin) —
-    что именно пушить (по умолчанию всё включено). devices — сколько активных
-    push-подписок (браузеров/устройств) зарегистрировано.
+    push_enabled — мастер-согласие на native push. Пер-видовые
+    (dm/reply/news/mention/admin) — что именно пушить (по умолчанию всё включено).
+    devices — сколько активных push-подписок (браузеров/устройств) зарегистрировано.
     """
 
     user_id: int
@@ -44,6 +44,7 @@ class UserNotifPrefsOut(BaseModel):
     dm: bool
     reply: bool
     news: bool
+    mention: bool
     admin: bool
     devices: int
 

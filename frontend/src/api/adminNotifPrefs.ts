@@ -8,6 +8,7 @@ export interface UserNotifPrefs {
   dm: boolean
   reply: boolean
   news: boolean
+  mention: boolean
   admin: boolean
   devices: number
 }

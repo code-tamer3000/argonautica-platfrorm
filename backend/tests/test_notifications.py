@@ -151,6 +151,120 @@ async def test_news_post_notifies_participants(
     assert await _db_count(session, admin.id) == 0
 
 
+async def test_mention_notifies_group_member(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+
+    await _send(
+        client, await _headers(client, a), room.id, content=f"эй @{b.username} глянь"
+    )
+
+    data = await _notifications(client, await _headers(client, b))
+    assert data["unread_count"] == 1
+    item = data["items"][0]
+    assert item["kind"] == "mention"
+    assert item["actor_id"] == a.id
+    assert item["room_id"] == room.id
+
+
+async def test_mention_is_case_insensitive(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+
+    # Ник в верхнем регистре в тексте — совпадение регистронезависимо.
+    await _send(
+        client, await _headers(client, a), room.id, content=f"привет @{b.username.upper()}"
+    )
+
+    data = await _notifications(client, await _headers(client, b))
+    assert data["unread_count"] == 1
+    assert data["items"][0]["kind"] == "mention"
+
+
+async def test_mention_of_non_member_is_ignored(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    outsider = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+
+    await _send(
+        client, await _headers(client, a), room.id, content=f"@{outsider.username} ау"
+    )
+
+    # Аутсайдер не в комнате — уведомление ему не уходит (IDOR).
+    assert await _db_count(session, outsider.id) == 0
+
+
+async def test_self_mention_creates_no_notification(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    a = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+
+    await _send(
+        client, await _headers(client, a), room.id, content=f"напоминалка @{a.username}"
+    )
+
+    assert await _db_count(session, a.id) == 0
+
+
+async def test_reply_wins_over_mention_no_double_notify(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+
+    ha = await _headers(client, a)
+    hb = await _headers(client, b)
+    root = await _send(client, ha, room.id, content="root")
+    before = await _db_count(session, a.id)
+    # B отвечает на корень A и заодно упоминает A в тексте — ровно одно уведомление,
+    # вид 'reply' (приоритетнее mention).
+    await _send(
+        client, hb, room.id, content=f"@{a.username} вот", reply_to_message_id=root["id"]
+    )
+
+    data = await _notifications(client, ha)
+    assert data["items"][0]["kind"] == "reply"
+    assert await _db_count(session, a.id) == before + 1
+
+
 async def test_mark_read_clears_unread(
     client: AsyncClient,
     make_user: MakeUser,

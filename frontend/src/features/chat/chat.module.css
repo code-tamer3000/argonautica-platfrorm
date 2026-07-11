@@ -246,7 +246,7 @@
 }
 
 .threadDivider { border-bottom: 1px solid var(--color-frame-deep); margin: var(--space-2) 0 var(--space-3); }
-.threadReplyRow { display: flex; align-items: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
+.threadReplyRow { position: relative; display: flex; align-items: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
 
 .msg { display: flex; gap: var(--space-3); padding: 2px 0; }
 /* Плавное появление нового (реалтайм/только что отправленного) сообщения. */
@@ -256,36 +256,13 @@
 .msgHead { display: flex; align-items: baseline; gap: var(--space-2); }
 .msgAuthor { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent); }
 .msgTime { font-family: var(--font-t4); font-size: var(--text-label); color: var(--text-ghost); }
+/* Текст сообщения — простой текст (без markdown, см. lib/messageText.tsx): переносы
+   строк сохранены, «голые» ссылки кликабельны. Markdown-оформление живёт только в
+   базе знаний. */
 .msgText { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-
-/* Markdown-содержимое сообщения: сбрасываем pre-wrap (переносы уже как <br>),
-   поджимаем отступы блоков, оформляем ссылки/заголовки/списки/код. */
-.markdown { white-space: normal; }
-.markdown > :first-child { margin-top: 0; }
-.markdown > :last-child { margin-bottom: 0; }
-.markdown p { margin: 0 0 var(--space-2); }
-.markdown a { color: var(--accent); text-decoration: underline; word-break: break-all; }
-.markdown h1, .markdown h2, .markdown h3 {
-  font-family: var(--font-t4); margin: var(--space-2) 0 var(--space-1); line-height: 1.3;
-}
-.markdown h1 { font-size: calc(var(--text-body-sm) * 1.25); }
-.markdown h2 { font-size: calc(var(--text-body-sm) * 1.15); }
-.markdown h3 { font-size: var(--text-body-sm); }
-.markdown ul, .markdown ol { margin: 0 0 var(--space-2); padding-left: 1.4em; }
-.markdown li { margin: 2px 0; }
-.markdown code {
-  font-family: var(--font-mono, monospace); font-size: 0.9em;
-  background: var(--bg-deep); padding: 1px 4px; border-radius: 4px;
-}
-.markdown pre {
-  background: var(--bg-deep); padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-btn); overflow-x: auto; margin: 0 0 var(--space-2);
-}
-.markdown pre code { background: none; padding: 0; }
-.markdown blockquote {
-  margin: 0 0 var(--space-2); padding-left: var(--space-3);
-  border-left: 2px solid var(--divider-gold-strong); color: var(--text-muted);
-}
+.msgText a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+/* @упоминание в тексте — акцентная подсветка (не ссылка, клика пока нет). */
+.mention { color: var(--accent); font-weight: 600; }
 .msgContinuation .msgText { padding-left: 0; }
 .msgMeta { font-size: var(--text-label); color: var(--text-ghost); font-family: var(--font-t4); }
 .msgPlaceholder { color: var(--text-muted); font-style: italic; }
@@ -321,6 +298,7 @@
 
 /* --- Composer --- */
 .composer {
+  position: relative;
   display: flex; flex-direction: column; gap: var(--space-2);
   padding: var(--space-3) var(--space-5) var(--space-4);
   border-top: 1px solid var(--color-frame-deep);
@@ -526,17 +504,33 @@
   opacity: 0.5;
 }
 .inlineThreadBody { min-width: 0; }
+/* Шапка треда прилипает к верху скролл-области (.messages), пока ветка видна —
+   «свернуть» всегда в зоне досягаемости. Фон/размытие, чтобы реплики не просвечивали
+   под текстом кнопки. z-index — над сообщениями треда. */
+.inlineThreadHeader {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  margin-bottom: var(--space-2); padding: var(--space-1) 0;
+  background: var(--bg);
+}
 .inlineThreadCollapse {
-  display: inline-flex; align-items: center; gap: 4px; margin-bottom: var(--space-2);
+  display: inline-flex; align-items: center; gap: 4px;
   font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted);
   background: transparent; border: none; cursor: pointer; padding: 0;
 }
 .inlineThreadCollapse:hover { color: var(--text-secondary); }
 .inlineThreadChevron { transform: rotate(-180deg); }
+.inlineThreadCount {
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost);
+  white-space: nowrap;
+}
+/* «Показать ещё N» — центрированный разделитель на всю ширину ветки (раньше жался к
+   левому краю и не читался как продолжение сверху). */
 .inlineThreadMore {
-  display: inline-block; margin-bottom: var(--space-2);
+  display: block; width: 100%; margin: 0 0 var(--space-2);
   font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent);
-  background: transparent; border: none; cursor: pointer; padding: var(--space-1) 0;
+  background: transparent; border: none; cursor: pointer;
+  padding: var(--space-1) 0; text-align: center;
 }
 .inlineThreadMore:hover { color: var(--accent-bright); }
 @keyframes threadOpen {
@@ -606,6 +600,28 @@
   width: 320px; max-height: 360px; overflow-y: auto;
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-3); box-shadow: var(--glow-gold);
+}
+/* @-автодополнение: всплывает над полем ввода (bottom:100% от .composer/.threadReplyRow). */
+.mentionPop {
+  position: absolute; bottom: calc(100% + var(--space-2)); left: var(--space-5); z-index: 30;
+  min-width: 240px; max-width: 340px; max-height: 260px; overflow-y: auto;
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); padding: var(--space-1); box-shadow: var(--glow-gold);
+}
+.threadReplyRow .mentionPop { left: 0; }
+.mentionOption {
+  display: flex; align-items: center; gap: var(--space-2); width: 100%;
+  padding: var(--space-2); border: none; border-radius: var(--radius-btn);
+  background: transparent; cursor: pointer; text-align: left;
+}
+.mentionOptionActive { background: rgba(19, 78, 69, 0.18); }
+.mentionName {
+  font-family: var(--font-t4); font-size: var(--text-body-sm); color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mentionHandle {
+  margin-left: auto; font-family: var(--font-t4); font-size: var(--text-label-md);
+  color: var(--text-ghost); white-space: nowrap;
 }
 .pickerPack { margin-bottom: var(--space-3); }
 .pickerGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }

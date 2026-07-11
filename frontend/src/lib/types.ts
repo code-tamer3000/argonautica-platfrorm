@@ -310,7 +310,7 @@ export interface JournalProgram {
 }
 
 // --- Уведомления (колокольчик + всплывающие тосты) ---
-export type NotificationKind = 'dm' | 'reply' | 'news' | 'cabin_granted' | 'admin'
+export type NotificationKind = 'dm' | 'reply' | 'news' | 'mention' | 'cabin_granted' | 'admin'
 
 export interface NotificationOut {
   id: number

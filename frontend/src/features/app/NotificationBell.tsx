@@ -12,6 +12,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   dm: 'написал(а) вам',
   reply: 'ответил(а) на ваше сообщение',
   news: 'новый пост в новостях',
+  mention: 'упомянул(а) вас',
   cabin_granted: '',
   admin: '',
 }
@@ -20,6 +21,7 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   dm: 'Новое сообщение',
   reply: 'Новый ответ',
   news: 'Смотреть в новостях',
+  mention: 'Вас упомянули',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
 }
