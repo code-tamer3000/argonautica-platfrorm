@@ -30,6 +30,48 @@ function pinScroll() {
   if (document.body.scrollTop !== 0) document.body.scrollTop = 0
 }
 
+/**
+ * iOS при фокусе на поле «подскроллливает» его в видимость, двигая scrollTop даже у
+ * контейнеров с overflow:hidden (шапка приложения/чата уезжает вверх, хотя эти блоки
+ * скроллиться не должны). Ловим scroll в ФАЗЕ ЗАХВАТА (scroll не всплывает) и, если
+ * уехал именно клиппинг-контейнер (overflow-y: hidden/clip/visible — т.е. НЕ легитимный
+ * скроллер ленты), синхронно возвращаем его в ноль. Настоящие панели (.messages,
+ * overflow:auto/scroll) не трогаем — они скроллятся как надо.
+ */
+function resetIfClipping(el: HTMLElement) {
+  if (el.scrollTop === 0 && el.scrollLeft === 0) return
+  const oy = getComputedStyle(el).overflowY
+  if (oy !== 'auto' && oy !== 'scroll') {
+    // Клиппинг-контейнер уехал по вине iOS — гвоздями обратно.
+    el.scrollTop = 0
+    el.scrollLeft = 0
+  }
+}
+
+function onAnyScroll(e: Event) {
+  const el = e.target
+  // Скролл документа/окна — общий сброс; иначе смотрим на конкретный элемент.
+  if (!(el instanceof HTMLElement)) {
+    pinScroll()
+    return
+  }
+  resetIfClipping(el)
+}
+
+/**
+ * После фокуса на поле iOS может «подскроллить» клиппинг-предков БЕЗ scroll-события —
+ * проходим по цепочке предков поля и обнуляем всё, что уехало (шапки), плюс окно.
+ * Несколько раз (rAF/таймауты): iOS двигает не сразу, а по ходу анимации клавиатуры.
+ */
+function unscrollAncestors(start: HTMLElement | null) {
+  pinScroll()
+  let el: HTMLElement | null = start
+  while (el) {
+    resetIfClipping(el)
+    el = el.parentElement
+  }
+}
+
 function applyHeight() {
   const vv = window.visualViewport
   const height = vv ? vv.height : window.innerHeight
@@ -72,7 +114,21 @@ export function setupViewport() {
   // Любой скролл документа (iOS scroll-to-field при фокусе) — синхронно в ноль.
   // Синхронно и без rAF/таймаута: иначе слой успевает уехать вверх (эффект «мячика»).
   window.addEventListener('scroll', pinScroll, { passive: true })
-  document.addEventListener('scroll', pinScroll, { passive: true })
+  // Capture-фаза: scroll НЕ всплывает, но виден на захвате — так ловим и вложенные
+  // клиппинг-контейнеры (шапки), которые iOS уводит вверх под фокус-поле.
+  document.addEventListener('scroll', onAnyScroll, { capture: true, passive: true })
+
+  // Фокус на поле — момент, когда iOS начинает двигать предков (иногда без scroll-события).
+  // Обнуляем цепочку предков несколько раз по ходу выезда клавиатуры.
+  document.addEventListener('focusin', (e) => {
+    const t = e.target
+    if (!(t instanceof HTMLElement) || !t.matches('input, textarea, [contenteditable]')) return
+    const reset = () => unscrollAncestors(t)
+    reset()
+    requestAnimationFrame(reset)
+    setTimeout(reset, 100)
+    setTimeout(reset, 300)
+  })
 
   applyHeight()
 }
