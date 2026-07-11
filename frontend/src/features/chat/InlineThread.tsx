@@ -19,6 +19,8 @@ interface Props {
   rootId: number
   canPin?: boolean
   isNews?: boolean
+  // Канал-дневник → текст ответов рендерится как markdown (см. MessageItem).
+  markdown?: boolean
   onRepost?: (msg: MessageOut) => void
 }
 
@@ -29,7 +31,7 @@ interface Props {
  * и на компе, с вложениями/стикерами/голосом. Ответ уходит в корень (плоский тред,
  * см. docs/MESSAGES.md); открытый тред обновляется по инвалидации thread-query.
  */
-export function InlineThread({ roomId, rootId, canPin, isNews, onRepost }: Props) {
+export function InlineThread({ roomId, rootId, canPin, isNews, markdown, onRepost }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedAll, setExpandedAll] = useState(false)
@@ -117,6 +119,7 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost }: Props
             key={r.id}
             msg={r}
             continuation={false}
+            markdown={markdown}
             author={users.get(r.sender_id)}
             forwardedFrom={r.forwarded_from_sender_id != null ? users.get(r.forwarded_from_sender_id) : undefined}
             isInThread
