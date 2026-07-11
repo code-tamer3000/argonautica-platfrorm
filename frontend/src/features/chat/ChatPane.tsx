@@ -221,7 +221,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         isNews={!!room.is_news}
         onClearEdit={() => setEditingId(null)}
         onToggleThread={(rootId) => setThreadRootId((cur) => (cur === rootId ? null : rootId))}
-        onCollapseThread={() => setThreadRootId(null)}
         onRepost={handleRepost}
         onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}

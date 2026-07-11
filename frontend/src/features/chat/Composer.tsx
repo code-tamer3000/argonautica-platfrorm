@@ -8,8 +8,9 @@ import {
 } from '../../api/messages'
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
-import { IconAttach, IconSend, IconSticker } from '../../components/icons'
+import { IconAttach, IconChevronDown, IconSend, IconSticker } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
+import { plural } from '../../lib/format'
 import { mediaUpload } from '../../lib/mediaUpload'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -303,15 +304,23 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     <div className={`${styles.composer} ${revealOnMount ? styles.composerReveal : ''}`}>
       {inThread && (
         <div className={`${styles.contextBar} ${styles.contextBarThread}`}>
-          <span className={styles.ctxLabel}>Ответ в тред:</span>
-          <span className={styles.ctxSnippet}>{threadSnippet || '…'}</span>
+          {/* «Свернуть тред» живёт здесь, над композером — всегда на виду, не нужно
+              долистывать ленту вверх. Клик сворачивает инлайн-ветку и выходит из
+              режима ответа (одно и то же состояние threadRootId). */}
           <button
-            className={styles.pendingChipX}
+            className={styles.threadCollapseBtn}
             onClick={() => onExitThread?.()}
-            aria-label="Выйти из треда"
+            aria-label="Свернуть тред"
           >
-            ✕
+            <IconChevronDown size={16} className={styles.threadCollapseChevron} />
+            Свернуть тред
+            {threadRoot != null && threadRoot.reply_count > 0 && (
+              <span className={styles.ctxThreadCount}>
+                · {threadRoot.reply_count} {plural(threadRoot.reply_count, ['ответ', 'ответа', 'ответов'])}
+              </span>
+            )}
           </button>
+          <span className={styles.ctxSnippet}>{threadSnippet || '…'}</span>
         </div>
       )}
       {repost && (

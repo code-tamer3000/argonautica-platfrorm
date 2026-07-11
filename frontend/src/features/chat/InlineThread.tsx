@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { useMarkRead } from '../../api/messages'
 import { useThread } from '../../api/threads'
 import { useUsersMap } from '../../api/users'
-import { IconChevronDown } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { plural } from '../../lib/format'
 import type { MessageOut } from '../../lib/types'
@@ -21,7 +20,6 @@ interface Props {
   canPin?: boolean
   isNews?: boolean
   onRepost?: (msg: MessageOut) => void
-  onCollapse: () => void
 }
 
 /**
@@ -31,12 +29,16 @@ interface Props {
  * и на компе, с вложениями/стикерами/голосом. Ответ уходит в корень (плоский тред,
  * см. docs/MESSAGES.md); открытый тред обновляется по инвалидации thread-query.
  */
-export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onCollapse }: Props) {
+export function InlineThread({ roomId, rootId, canPin, isNews, onRepost }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedAll, setExpandedAll] = useState(false)
   const users = useUsersMap()
   const markRead = useMarkRead(roomId)
+  // Якорь на конце ветки: при открытии треда докручиваем ленту вниз, чтобы сразу
+  // видеть последние ответы и композер с полем «Ответить в тред».
+  const endRef = useRef<HTMLDivElement>(null)
+  const scrolledRef = useRef(false)
   // «Ответить» в меню не показываем — мы уже в треде, ответ уходит в корень через композер.
   const msgMenu = useMessageMenu({
     roomId,
@@ -62,6 +64,16 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
   const replies = data?.replies ?? []
   const hidden = expandedAll ? 0 : Math.max(0, replies.length - PREVIEW_COUNT)
   const shown = hidden > 0 ? replies.slice(-PREVIEW_COUNT) : replies
+
+  // Один раз после первой загрузки ветки — плавно докрутить её конец в область
+  // видимости (block:'nearest' — сдвигаем ровно на сколько нужно, без рывка вверх).
+  useEffect(() => {
+    if (scrolledRef.current || !data) return
+    scrolledRef.current = true
+    requestAnimationFrame(() => {
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    })
+  }, [data])
 
   return (
     <div className={styles.inlineThread}>
@@ -93,18 +105,9 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
             onOpenMenu={msgMenu.openMenu}
           />
         ))}
-
-        {/* «Свернуть тред · N» — снизу ветки, чтобы не перекрывать содержимое сверху.
-            Сам ввод ответа — в основном композере (контекст-бар «Ответ в тред»). */}
-        <button className={styles.inlineThreadCollapse} onClick={onCollapse}>
-          <IconChevronDown size={16} className={styles.inlineThreadChevron} />
-          Свернуть тред
-          {replies.length > 0 && (
-            <span className={styles.inlineThreadCount}>
-              · {replies.length} {plural(replies.length, ['ответ', 'ответа', 'ответов'])}
-            </span>
-          )}
-        </button>
+        {/* «Свернуть тред» и поле ответа живут в основном композере снизу
+            (контекст-бар «Ответ в тред»), чтобы быть всегда на виду. */}
+        <div ref={endRef} />
       </div>
 
       {msgMenu.menu && (

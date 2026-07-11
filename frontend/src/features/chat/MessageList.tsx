@@ -27,7 +27,6 @@ interface Props {
   isNews?: boolean
   onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
-  onCollapseThread?: () => void
   onRepost?: (msg: MessageOut) => void
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
@@ -35,7 +34,7 @@ interface Props {
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    expandedThreadId, canPin, isNews, onClearEdit, onToggleThread, onCollapseThread, onRepost,
+    expandedThreadId, canPin, isNews, onClearEdit, onToggleThread, onRepost,
     onOpenMenu, onAtBottomChange },
   ref,
 ) {
@@ -138,7 +137,6 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
                 canPin={canPin}
                 isNews={isNews}
                 onRepost={onRepost}
-                onCollapse={() => onCollapseThread?.()}
               />
             )}
           </div>

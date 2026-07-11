@@ -508,16 +508,6 @@
   opacity: 0.5;
 }
 .inlineThreadBody { min-width: 0; }
-/* «Свернуть тред» — под ветвью (снизу), а не сверху: сверху кнопка перекрывала контент.
-   Полоса на всю ширину, чтобы читалась как завершение ветки. */
-.inlineThreadCollapse {
-  display: inline-flex; align-items: center; gap: 4px; margin-top: var(--space-2);
-  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted);
-  background: transparent; border: none; cursor: pointer; padding: var(--space-1) 0;
-}
-.inlineThreadCollapse:hover { color: var(--text-secondary); }
-.inlineThreadChevron { transform: rotate(-180deg); }
-.inlineThreadCount { color: var(--text-ghost); white-space: nowrap; }
 /* «Показать ещё N» — центрированный разделитель на всю ширину ветки (раньше жался к
    левому краю и не читался как продолжение сверху). */
 .inlineThreadMore {
@@ -554,10 +544,17 @@
 }
 .contextBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .contextBar .ctxLabel { flex: 0 0 auto; color: var(--accent); }
-/* Плашка «описания задания» дневника: описание важно видеть целиком, поэтому
-   даём ему переноситься на несколько строк, а не обрезаться многоточием. */
-/* Плашка «Ответ в тред» над основным композером — тем же стилем, что репост. */
-.contextBarThread .ctxSnippet { color: var(--text-secondary); }
+/* Плашка «Ответ в тред» над основным композером — «Свернуть тред · N» слева (сворачивает
+   ветку и выходит из режима ответа), справа — сниппет корня. */
+.contextBarThread .ctxSnippet { flex: 1; min-width: 0; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.threadCollapseBtn {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; border: none; cursor: pointer; padding: 0;
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent);
+}
+.threadCollapseBtn:hover { color: var(--accent-bright); }
+.threadCollapseChevron { transform: rotate(-180deg); }
+.ctxThreadCount { flex: 0 0 auto; color: var(--text-ghost); white-space: nowrap; }
 .contextBarJournal { align-items: flex-start; }
 .contextBarJournal .ctxDesc {
   overflow: visible; text-overflow: clip; white-space: normal;
