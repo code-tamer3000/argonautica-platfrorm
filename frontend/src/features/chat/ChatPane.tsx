@@ -219,6 +219,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         expandedThreadId={threadRootId}
         canPin={canPin}
         isNews={!!room.is_news}
+        // Каналы-дневники («Дневник» / «Личный дневник») рендерят текст как markdown —
+        // там ведут ежедневные записи с оформлением. Новостной канал (тоже channel) и
+        // личные чаты/группы — простой текст.
+        markdown={room.type === 'channel' && !room.is_news}
         onClearEdit={() => setEditingId(null)}
         onToggleThread={(rootId) => setThreadRootId((cur) => (cur === rootId ? null : rootId))}
         onRepost={handleRepost}

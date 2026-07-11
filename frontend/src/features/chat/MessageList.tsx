@@ -26,6 +26,8 @@ interface Props {
   expandedThreadId?: number | null
   canPin?: boolean
   isNews?: boolean
+  // Канал-дневник → текст сообщений рендерится как markdown (см. MessageItem).
+  markdown?: boolean
   onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
   onRepost?: (msg: MessageOut) => void
@@ -35,7 +37,7 @@ interface Props {
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    expandedThreadId, canPin, isNews, onClearEdit, onToggleThread, onRepost,
+    expandedThreadId, canPin, isNews, markdown, onClearEdit, onToggleThread, onRepost,
     onOpenMenu, onAtBottomChange },
   ref,
 ) {
@@ -138,6 +140,7 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
             <MessageItem
               msg={m}
               continuation={continuation}
+              markdown={markdown}
               author={users.get(m.sender_id)}
               forwardedFrom={m.forwarded_from_sender_id != null ? users.get(m.forwarded_from_sender_id) : undefined}
               editingId={editingId}
@@ -154,6 +157,7 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
                 rootId={m.id}
                 canPin={canPin}
                 isNews={isNews}
+                markdown={markdown}
                 onRepost={onRepost}
               />
             )}

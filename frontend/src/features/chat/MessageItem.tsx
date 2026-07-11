@@ -4,6 +4,7 @@ import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
 import { IconChevronDown } from '../../components/icons'
 import { timeHM } from '../../lib/format'
+import { renderMarkdown } from '../../lib/markdown'
 import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
@@ -16,6 +17,10 @@ interface Props {
   author?: PublicUserOut
   forwardedFrom?: PublicUserOut
   isInThread?: boolean
+  // Каналы-дневники рендерят текст как markdown (заголовки/списки/жирный —
+  // участники ведут ежедневные записи с оформлением). Личные чаты, группы и
+  // новости — простой текст. См. lib/markdown.ts / lib/messageText.tsx.
+  markdown?: boolean
   editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
@@ -33,6 +38,7 @@ export function MessageItem({
   author,
   forwardedFrom,
   isInThread,
+  markdown,
   editingId,
   isSelected,
   isHighlighted,
@@ -69,12 +75,17 @@ export function MessageItem({
       ? forwardedFrom?.display_name ?? `Участник #${msg.forwarded_from_sender_id}`
       : null
   const sticker = msg.sticker_id != null ? stickerMap.get(msg.sticker_id) : undefined
-  // Текст сообщения — как есть: без markdown (звёздочки/решётки/списки — это оформление
-  // базы знаний, в чате их не используют). Сохраняем переносы строк и делаем «голые»
-  // ссылки кликабельными (renderMessageText). Никакого dangerouslySetInnerHTML.
+  // В каналах-дневниках текст оформляют markdown-ом (заголовки/списки/жирный) —
+  // рендерим в санированный HTML. В личных чатах/группах/новостях markdown не
+  // используют: там простой текст с сохранёнными переносами, кликабельными «голыми»
+  // ссылками и подсветкой @упоминаний (renderMessageText, без dangerouslySetInnerHTML).
+  const markdownHtml = useMemo(
+    () => (markdown && msg.content ? renderMarkdown(msg.content) : null),
+    [markdown, msg.content],
+  )
   const contentParts = useMemo(
-    () => (msg.content ? renderMessageText(msg.content, styles.mention) : null),
-    [msg.content],
+    () => (!markdown && msg.content ? renderMessageText(msg.content, styles.mention) : null),
+    [markdown, msg.content],
   )
 
   const isEditing = editingId === msg.id
@@ -167,7 +178,14 @@ export function MessageItem({
             )}
 
             {msg.content && (
-              <div className={styles.msgText}>{contentParts}</div>
+              markdownHtml != null ? (
+                <div
+                  className={`${styles.msgText} ${styles.markdown}`}
+                  dangerouslySetInnerHTML={{ __html: markdownHtml }}
+                />
+              ) : (
+                <div className={styles.msgText}>{contentParts}</div>
+              )
             )}
           </>
         )}
