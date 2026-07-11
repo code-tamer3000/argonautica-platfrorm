@@ -98,6 +98,53 @@ async def test_reply_count_grows(
     assert len(body["replies"]) == 2
 
 
+async def test_unread_reply_count_in_feed(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    reader = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    await add_membership(room.id, reader.id, "member")
+    oh = await _headers(client, owner)
+    rh = await _headers(client, reader)
+
+    root = await _send(client, oh, room.id, content="root")
+    r1 = await _send(client, oh, room.id, content="r1", reply_to_message_id=root["id"])
+
+    # reader ставит курсор прочтения на первый ответ → он не «новый».
+    resp = await client.post(
+        f"/api/rooms/{room.id}/read",
+        headers=rh,
+        json={"last_read_message_id": r1["id"]},
+    )
+    assert resp.status_code == 200
+
+    # Ещё два ответа приходят после курсора reader'а — их и считаем новыми.
+    await _send(client, oh, room.id, content="r2", reply_to_message_id=root["id"])
+    r3 = await _send(client, oh, room.id, content="r3", reply_to_message_id=root["id"])
+
+    feed = await client.get(f"/api/rooms/{room.id}/messages", headers=rh)
+    assert feed.status_code == 200
+    root_item = next(m for m in feed.json() if m["id"] == root["id"])
+    assert root_item["reply_count"] == 3
+    assert root_item["unread_reply_count"] == 2
+
+    # После прочтения вплоть до последнего ответа — непрочитанных не остаётся.
+    all_read = await client.post(
+        f"/api/rooms/{room.id}/read",
+        headers=rh,
+        json={"last_read_message_id": r3["id"]},
+    )
+    assert all_read.status_code == 200
+    feed2 = await client.get(f"/api/rooms/{room.id}/messages", headers=rh)
+    root_item2 = next(m for m in feed2.json() if m["id"] == root["id"])
+    assert root_item2["unread_reply_count"] == 0
+
+
 # --- лента -----------------------------------------------------------------
 
 

@@ -63,6 +63,9 @@ export interface MessageOut {
   thread_root_id: number | null
   forwarded_from_sender_id: number | null
   reply_count: number
+  // Непрочитанные ответы в треде этого корня (ответы с id > нашего last_read).
+  // Задаётся только для корней ленты; иначе 0. Оптимистичные (outbox) — 0.
+  unread_reply_count: number
   last_reply_at: string | null
   created_at: string
   edited_at: string | null

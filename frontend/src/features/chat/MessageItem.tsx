@@ -200,6 +200,9 @@ export function MessageItem({
           >
             <IconChevronDown size={15} className={styles.threadLinkChevron} />
             {threadOpen ? 'Свернуть' : `Тред · ${msg.reply_count}`}
+            {!threadOpen && msg.unread_reply_count > 0 && (
+              <span className={styles.threadLinkNew}>{msg.unread_reply_count} новых</span>
+            )}
           </button>
         )}
       </div>

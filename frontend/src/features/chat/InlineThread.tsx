@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMarkRead, useSendMessage } from '../../api/messages'
+import { useMarkRead } from '../../api/messages'
 import { useThread } from '../../api/threads'
 import { useUsersMap } from '../../api/users'
-import { IconChevronDown, IconSend } from '../../components/icons'
+import { IconChevronDown } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
 import type { MessageOut } from '../../lib/types'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageItem } from './MessageItem'
-import { useMentionAutocomplete } from './useMentionAutocomplete'
 import { useMessageMenu } from './useMessageMenu'
-import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
 // Сколько ответов показываем сразу; остальные — по кнопке «показать ещё». Тред
@@ -29,24 +26,18 @@ interface Props {
 
 /**
  * Ветка треда, раскрытая прямо в ленте под корневым сообщением (аккордеон, не drawer).
- * Корень остаётся в ленте на своём месте — здесь показываем только ответы, поле ввода
- * и, при длинной ветке, кнопку «показать ещё». Ответ всегда уходит в корень
- * (`reply_to_message_id: rootId`) — тред плоский по построению (см. docs/MESSAGES.md).
- * Живые обновления бесплатны: `message.new` инвалидирует thread-query (см. useRealtime).
+ * Здесь ТОЛЬКО ответы + кнопки «показать ещё» / «свернуть» (снизу). Ввод ответа — через
+ * ОСНОВНОЙ композер чата в режиме треда (Composer.threadRoot): один композер на телефоне
+ * и на компе, с вложениями/стикерами/голосом. Ответ уходит в корень (плоский тред,
+ * см. docs/MESSAGES.md); открытый тред обновляется по инвалидации thread-query.
  */
 export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onCollapse }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
-  const [text, setText] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedAll, setExpandedAll] = useState(false)
-  // Идёт запись/превью голосового ответа → прячем текстовое поле.
-  const [voiceActive, setVoiceActive] = useState(false)
-  const send = useSendMessage(roomId)
   const users = useUsersMap()
   const markRead = useMarkRead(roomId)
-  const replyRef = useAutosize(text)
-  const mentions = useMentionAutocomplete(replyRef, text, setText)
-  // «Ответить» в меню не показываем — мы уже в треде, ответ уходит в корень через поле снизу.
+  // «Ответить» в меню не показываем — мы уже в треде, ответ уходит в корень через композер.
   const msgMenu = useMessageMenu({
     roomId,
     isNews: !!isNews,
@@ -68,14 +59,6 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
-  function handleSend() {
-    if (!text.trim() || send.isPending) return
-    send.mutate({ content: text.trim(), reply_to_message_id: rootId })
-    setText('')
-    // После своего ответа показываем ветку целиком — чтобы новое сообщение было видно.
-    setExpandedAll(true)
-  }
-
   const replies = data?.replies ?? []
   const hidden = expandedAll ? 0 : Math.max(0, replies.length - PREVIEW_COUNT)
   const shown = hidden > 0 ? replies.slice(-PREVIEW_COUNT) : replies
@@ -84,20 +67,6 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
     <div className={styles.inlineThread}>
       <div className={styles.inlineThreadRail} />
       <div className={styles.inlineThreadBody}>
-        {/* Шапка треда «прилипает» к верху скролл-области ленты, пока ветка на экране —
-            кнопка «свернуть» всегда под рукой, даже в длинном треде. */}
-        <div className={styles.inlineThreadHeader}>
-          <button className={styles.inlineThreadCollapse} onClick={onCollapse}>
-            <IconChevronDown size={16} className={styles.inlineThreadChevron} />
-            Свернуть тред
-          </button>
-          {replies.length > 0 && (
-            <span className={styles.inlineThreadCount}>
-              {replies.length} {plural(replies.length, ['ответ', 'ответа', 'ответов'])}
-            </span>
-          )}
-        </div>
-
         {isLoading && (
           <div className="center" style={{ padding: 12 }}>
             <Spinner size={18} />
@@ -125,51 +94,17 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost, onColla
           />
         ))}
 
-        {/* Поле ответа в потоке под ветвью (не прибито к низу) — на мобиле фиксированный
-            футер уезжал бы вместе с клавиатурой. */}
-        <div className={styles.threadReplyRow}>
-          {mentions.popup}
-          {!voiceActive && (
-            <textarea
-              ref={replyRef}
-              className={styles.composerInput}
-              rows={1}
-              placeholder="Ответить в тред…"
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value)
-                mentions.onValueChange()
-              }}
-              onKeyDown={(e) => {
-                if (mentions.onKeyDown(e)) return
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSend()
-                }
-              }}
-            />
+        {/* «Свернуть тред · N» — снизу ветки, чтобы не перекрывать содержимое сверху.
+            Сам ввод ответа — в основном композере (контекст-бар «Ответ в тред»). */}
+        <button className={styles.inlineThreadCollapse} onClick={onCollapse}>
+          <IconChevronDown size={16} className={styles.inlineThreadChevron} />
+          Свернуть тред
+          {replies.length > 0 && (
+            <span className={styles.inlineThreadCount}>
+              · {replies.length} {plural(replies.length, ['ответ', 'ответа', 'ответов'])}
+            </span>
           )}
-          {/* Есть текст → отправка; иначе — голосовой ответ (VoiceComposer шлёт с
-              reply_to_message_id корня, тред остаётся плоским). */}
-          {!!text.trim() && !voiceActive ? (
-            <button
-              className={styles.sendBtn}
-              onClick={handleSend}
-              disabled={send.isPending}
-              title="Ответить"
-              aria-label="Ответить"
-            >
-              {send.isPending ? <span className={styles.spin} /> : <IconSend size={20} />}
-            </button>
-          ) : (
-            <VoiceComposer
-              onSend={(local) =>
-                send.mutate({ attachment_ids: [local.asset.id], reply_to_message_id: rootId })
-              }
-              onActiveChange={setVoiceActive}
-            />
-          )}
-        </div>
+        </button>
       </div>
 
       {msgMenu.menu && (

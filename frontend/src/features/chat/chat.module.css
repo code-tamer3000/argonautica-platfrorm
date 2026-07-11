@@ -245,8 +245,6 @@
   padding: 2px var(--space-3); border: 1px solid var(--color-frame); border-radius: var(--radius-pill);
 }
 
-.threadDivider { border-bottom: 1px solid var(--color-frame-deep); margin: var(--space-2) 0 var(--space-3); }
-.threadReplyRow { position: relative; display: flex; align-items: flex-end; gap: var(--space-2); margin-top: var(--space-3); }
 
 .msg { display: flex; gap: var(--space-3); padding: 2px 0; }
 /* Плавное появление нового (реалтайм/только что отправленного) сообщения. */
@@ -486,6 +484,12 @@
 .threadLink:hover { color: var(--accent-bright); }
 .threadLinkChevron { transition: transform 180ms var(--ease-out-soft); }
 .threadLinkOpen .threadLinkChevron { transform: rotate(-180deg); }
+/* Бейдж непрочитанных ответов рядом с «Тред · N» — «3 новых». */
+.threadLinkNew {
+  margin-left: 6px; padding: 0 6px; border-radius: var(--radius-pill);
+  background: var(--accent); color: var(--color-bezdna);
+  font-family: var(--font-t4); font-size: var(--text-label-md); line-height: 1.5;
+}
 
 /* ── Инлайн-тред: ветка ответов раскрывается прямо под корнем (аккордеон) ─────────
    Плавное раскрытие без измерения высоты в JS: grid-строка едет 0fr → 1fr, внутренний
@@ -504,26 +508,16 @@
   opacity: 0.5;
 }
 .inlineThreadBody { min-width: 0; }
-/* Шапка треда прилипает к верху скролл-области (.messages), пока ветка видна —
-   «свернуть» всегда в зоне досягаемости. Фон/размытие, чтобы реплики не просвечивали
-   под текстом кнопки. z-index — над сообщениями треда. */
-.inlineThreadHeader {
-  position: sticky; top: 0; z-index: 2;
-  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
-  margin-bottom: var(--space-2); padding: var(--space-1) 0;
-  background: var(--bg);
-}
+/* «Свернуть тред» — под ветвью (снизу), а не сверху: сверху кнопка перекрывала контент.
+   Полоса на всю ширину, чтобы читалась как завершение ветки. */
 .inlineThreadCollapse {
-  display: inline-flex; align-items: center; gap: 4px;
+  display: inline-flex; align-items: center; gap: 4px; margin-top: var(--space-2);
   font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted);
-  background: transparent; border: none; cursor: pointer; padding: 0;
+  background: transparent; border: none; cursor: pointer; padding: var(--space-1) 0;
 }
 .inlineThreadCollapse:hover { color: var(--text-secondary); }
 .inlineThreadChevron { transform: rotate(-180deg); }
-.inlineThreadCount {
-  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-ghost);
-  white-space: nowrap;
-}
+.inlineThreadCount { color: var(--text-ghost); white-space: nowrap; }
 /* «Показать ещё N» — центрированный разделитель на всю ширину ветки (раньше жался к
    левому краю и не читался как продолжение сверху). */
 .inlineThreadMore {
@@ -562,6 +556,8 @@
 .contextBar .ctxLabel { flex: 0 0 auto; color: var(--accent); }
 /* Плашка «описания задания» дневника: описание важно видеть целиком, поэтому
    даём ему переноситься на несколько строк, а не обрезаться многоточием. */
+/* Плашка «Ответ в тред» над основным композером — тем же стилем, что репост. */
+.contextBarThread .ctxSnippet { color: var(--text-secondary); }
 .contextBarJournal { align-items: flex-start; }
 .contextBarJournal .ctxDesc {
   overflow: visible; text-overflow: clip; white-space: normal;
@@ -601,14 +597,13 @@
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-3); box-shadow: var(--glow-gold);
 }
-/* @-автодополнение: всплывает над полем ввода (bottom:100% от .composer/.threadReplyRow). */
+/* @-автодополнение: всплывает над полем ввода (bottom:100% от .composer). */
 .mentionPop {
   position: absolute; bottom: calc(100% + var(--space-2)); left: var(--space-5); z-index: 30;
   min-width: 240px; max-width: 340px; max-height: 260px; overflow-y: auto;
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-1); box-shadow: var(--glow-gold);
 }
-.threadReplyRow .mentionPop { left: 0; }
 .mentionOption {
   display: flex; align-items: center; gap: var(--space-2); width: 100%;
   padding: var(--space-2); border: none; border-radius: var(--radius-btn);
