@@ -75,6 +75,27 @@ export function InlineThread({ roomId, rootId, canPin, isNews, onRepost }: Props
     })
   }, [data])
 
+  // Сжался вьюпорт (открылась/анимируется клавиатура), пока тред раскрыт → держим
+  // конец ветки в видимой области, чтобы последние ответы не прятались за клавиатурой.
+  // Слушаем visualViewport напрямую: срабатывает и на Android (layout-resize), и на iOS
+  // (visual-only). Реагируем только на УМЕНЬШЕНИЕ высоты (открытие), не на закрытие.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    let prev = vv.height
+    const onResize = () => {
+      const shrank = vv.height < prev - 60
+      prev = vv.height
+      if (shrank) {
+        requestAnimationFrame(() =>
+          endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }),
+        )
+      }
+    }
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
+
   return (
     <div className={styles.inlineThread}>
       <div className={styles.inlineThreadRail} />

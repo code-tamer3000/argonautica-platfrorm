@@ -67,21 +67,34 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
     if (el && atBottom.current) el.scrollTop = el.scrollHeight
   }, [count])
 
-  // Пока мы «внизу», удерживаем ленту у нижней кромки при любом изменении высоты
-  // содержимого — в первую очередь при поздней декодировке картинок/медиа (lazy img
-  // растёт после первого layout). Без этого лента, разово прокрученная вниз на
-  // старую scrollHeight, потом «подпрыгивала» к сообщению выше по мере роста контента.
+  // Пока мы «внизу», удерживаем ленту у нижней кромки при ЛЮБОМ изменении высоты —
+  // содержимого (поздняя декодировка картинок/медиа) ИЛИ самого контейнера (открылась
+  // экранная клавиатура → область ленты сжалась). Без этого последнее сообщение
+  // прячется за клавиатурой, а лента «подпрыгивает» к сообщению выше.
   useEffect(() => {
     const el = containerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(() => {
-      if (atBottom.current) el.scrollTop = el.scrollHeight
-    })
-    // Наблюдаем детей-обёртки сообщений: их высота растёт, когда внутри декодируется
-    // картинка/медиа. (Сам контейнер фикс-высоты — его border-box не меняется, поэтому
-    // observe(el) бесполезен; рост ловим по детям.)
+    const pin = () => { if (atBottom.current) el.scrollTop = el.scrollHeight }
+    const ro = new ResizeObserver(pin)
+    // Контейнер: его высота уменьшается при открытии клавиатуры (Android/interactive-widget).
+    ro.observe(el)
+    // Дети-обёртки: их высота растёт при декодировке вложений.
     for (const child of Array.from(el.children)) ro.observe(child)
-    return () => ro.disconnect()
+    // iOS: layout viewport клавиатурой не сжимается (ResizeObserver молчит) — ловим
+    // сжатие visual viewport напрямую и до-пинниваем ленту к низу.
+    const vv = window.visualViewport
+    let prevH = vv?.height ?? 0
+    const onVv = () => {
+      if (!vv) return
+      const shrank = vv.height < prevH - 60
+      prevH = vv.height
+      if (shrank) requestAnimationFrame(pin)
+    }
+    vv?.addEventListener('resize', onVv)
+    return () => {
+      ro.disconnect()
+      vv?.removeEventListener('resize', onVv)
+    }
   }, [count])
 
   function onScroll() {

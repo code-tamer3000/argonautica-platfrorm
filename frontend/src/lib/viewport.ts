@@ -21,6 +21,7 @@ const KEYBOARD_THRESHOLD = 120
 
 let installed = false
 let kbOpen = false
+let lastHeight = 0
 
 /** Вернуть окно/документ в нулевой скролл — гасим нативный «scroll into view». */
 function pinScroll() {
@@ -34,7 +35,15 @@ function apply() {
   const height = vv ? vv.height : window.innerHeight
   const root = document.documentElement
 
-  root.style.setProperty('--app-height', `${Math.round(height)}px`)
+  // Обновляем --app-height только при заметном изменении (>2px): во время анимации
+  // выезда клавиатуры visualViewport шлёт десятки resize-событий на суб-пиксельных
+  // высотах — каждое пере-раскладывало бы весь макет (дёрганье шапки). Округляем и
+  // гасим микро-дрожь.
+  const rounded = Math.round(height)
+  if (Math.abs(rounded - lastHeight) > 2) {
+    lastHeight = rounded
+    root.style.setProperty('--app-height', `${rounded}px`)
+  }
 
   // clientHeight = layout viewport (на iOS не сжимается клавиатурой);
   // если visual viewport заметно меньше — клавиатура открыта.
