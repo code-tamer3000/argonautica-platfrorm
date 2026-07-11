@@ -182,30 +182,8 @@ export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
 ): Promise<UploadResult> {
-  const contentType = contentTypeFor(file)
-  const kind = kindFor(contentType)
-  const ticket = await http.post<UploadTicket>('/api/media/uploads', {
-    content_type: contentType,
-    size: file.size,
-    kind,
-  })
-  // Прямой PUT клиент → MinIO (минуя бэкенд) с прогрессом. ContentType PUT'а
-  // должен совпадать с подписанным (иначе MinIO вернёт SignatureDoesNotMatch).
-  await putWithProgress(ticket.upload_url, file, contentType, onProgress)
-  const dims = await mediaDims(file)
-  // Видео: снимаем и заливаем постер-кадр (превью для ленты). Не блокирует загрузку —
-  // если не собрался, thumb_storage_key останется пустым и видео будет без постера.
-  let thumbStorageKey: string | undefined
-  if (kind === 'video') {
-    const poster = await capturePoster(file)
-    if (poster) thumbStorageKey = (await uploadPoster(poster)) ?? undefined
-  }
-  const asset = await http.post<MediaAssetOut>('/api/media/assets', {
-    storage_key: ticket.storage_key,
-    width: dims.width,
-    height: dims.height,
-    thumb_storage_key: thumbStorageKey,
-  })
+  const pending = await preparePendingUpload(file)
+  const asset = await runPendingUpload(pending, onProgress)
   return { asset, blob: file }
 }
 
@@ -213,26 +191,98 @@ export async function mediaUpload(
  * Загрузка голосового сообщения (тот же 3-шаговый presigned-поток, что и файлы).
  *
  * У записанного Blob нет имени, а `.type` несёт кодек (`audio/webm;codecs=opus`) —
- * поэтому оборачиваем в File с явным типом и прокидываем длительность (секунды) в
- * confirm: она уедет в `media_assets.duration` и покажется в плеере до подписи GET.
+ * поэтому прокидываем длительность (секунды) в confirm: она уедет в
+ * `media_assets.duration` и покажется в плеере до подписи GET.
  */
 export async function voiceUpload(
   blob: Blob,
   durationSec: number,
   onProgress?: UploadProgress,
 ): Promise<UploadResult> {
-  const contentType = blob.type || 'audio/webm'
-  const ticket = await http.post<UploadTicket>('/api/media/uploads', {
-    content_type: contentType,
-    size: blob.size,
-    kind: 'audio' as MediaKind,
-  })
-  await putWithProgress(ticket.upload_url, blob, contentType, onProgress)
-  const asset = await http.post<MediaAssetOut>('/api/media/assets', {
-    storage_key: ticket.storage_key,
-    duration: Math.max(1, Math.round(durationSec)),
-  })
+  const pending = await preparePendingVoice(blob, durationSec)
+  const asset = await runPendingUpload(pending, onProgress)
   return { asset, blob }
+}
+
+// ───────────────────── Отложенная загрузка (offline outbox) ─────────────────────
+//
+// mediaUpload/voiceUpload заливают файл СРАЗУ и лишь потом ставят сообщение в outbox,
+// поэтому без сети они падают ещё ДО очереди — вложение теряется («fail load» у файла,
+// пропавший кружок у голосового). Это ломало обещание «сообщение с файлом/голосом
+// сохраняется без интернета».
+//
+// Поэтому расщепляем поток на две фазы:
+//   1) prepare* — БЕЗ сети: снимаем размеры/постер локально, кладём сырой blob в
+//      описатель PendingUpload (его сериализуем в IndexedDB, показываем blob:-превью).
+//   2) runPendingUpload — сетевые шаги (ticket → PUT → asset). Их гоняет воркер
+//      outbox'а с ретраями/ожиданием online ПЕРЕД отправкой самого сообщения.
+
+/**
+ * Сырое вложение, готовое к отложенной заливке: байты (`blob`) + всё для confirm'а
+ * ассета (kind/mime/размеры/длительность) + опциональный постер видео. Blob и
+ * posterBlob переживают structured clone в IndexedDB.
+ */
+export interface PendingUpload {
+  blob: Blob
+  contentType: string
+  kind: MediaKind
+  width?: number
+  height?: number
+  duration?: number
+  posterBlob?: Blob
+}
+
+/** Файл из проводника → описатель отложенной заливки (размеры/постер сняты локально). */
+export async function preparePendingUpload(file: File): Promise<PendingUpload> {
+  const contentType = contentTypeFor(file)
+  const kind = kindFor(contentType)
+  const dims = await mediaDims(file)
+  let posterBlob: Blob | undefined
+  if (kind === 'video') {
+    posterBlob = (await capturePoster(file)) ?? undefined
+  }
+  return { blob: file, contentType, kind, width: dims.width, height: dims.height, posterBlob }
+}
+
+/** Записанное голосовое → описатель отложенной заливки. */
+export async function preparePendingVoice(
+  blob: Blob,
+  durationSec: number,
+): Promise<PendingUpload> {
+  return {
+    blob,
+    contentType: blob.type || 'audio/webm',
+    kind: 'audio',
+    duration: Math.max(1, Math.round(durationSec)),
+  }
+}
+
+/**
+ * Сетевые шаги отложенной заливки: presigned ticket → PUT в MinIO → confirm ассета.
+ * Постер видео (если снят) льём отдельным объектом — best-effort. Гоняется воркером
+ * outbox'а; при офлайне/ошибке бросает — воркер ретраит.
+ */
+export async function runPendingUpload(
+  pu: PendingUpload,
+  onProgress?: UploadProgress,
+): Promise<MediaAssetOut> {
+  const ticket = await http.post<UploadTicket>('/api/media/uploads', {
+    content_type: pu.contentType,
+    size: pu.blob.size,
+    kind: pu.kind,
+  })
+  // Прямой PUT клиент → MinIO (минуя бэкенд). ContentType PUT'а должен совпадать с
+  // подписанным (иначе MinIO вернёт SignatureDoesNotMatch).
+  await putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress)
+  let thumbStorageKey: string | undefined
+  if (pu.posterBlob) thumbStorageKey = (await uploadPoster(pu.posterBlob)) ?? undefined
+  return http.post<MediaAssetOut>('/api/media/assets', {
+    storage_key: ticket.storage_key,
+    width: pu.width,
+    height: pu.height,
+    duration: pu.duration,
+    thumb_storage_key: thumbStorageKey,
+  })
 }
 
 export function guessMediaKind(url: string): MediaKind {

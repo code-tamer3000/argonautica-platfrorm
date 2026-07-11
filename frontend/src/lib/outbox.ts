@@ -21,8 +21,23 @@ import {
   STORE_OUTBOX,
   STORE_OUTBOX_BLOBS,
 } from './idb'
-import type { AttachmentOut, MediaAssetOut, MessageOut } from './types'
+import { runPendingUpload, type PendingUpload } from './mediaUpload'
+import type { AttachmentOut, MediaAssetOut, MediaKind, MessageOut } from './types'
 import type { SendBody } from '../api/messages'
+
+// Вложение, которое ещё НЕ залито в MinIO (сообщение поставлено в очередь офлайн).
+// Несёт метаданные для отложенной заливки (kind/mime/размеры/длительность) и временный
+// отрицательный tempAssetId, под которым его байты лежат в STORE_OUTBOX_BLOBS. Воркер
+// зальёт его перед отправкой сообщения (см. resolvePendingUploads).
+export interface PendingUploadRef {
+  tempAssetId: number
+  contentType: string
+  kind: MediaKind
+  width?: number
+  height?: number
+  duration?: number
+  hasPoster?: boolean
+}
 
 export interface OutboxItem {
   clientId: string
@@ -38,6 +53,10 @@ export interface OutboxItem {
   // asset_id вложений, чьи байты лежат в STORE_OUTBOX_BLOBS (ключ `${clientId}:${id}`).
   // По ним при гидрации перевыпускаем blob-URL и чистим байты после отправки/отмены.
   blobAssetIds: number[]
+  // Вложения, которые надо ЗАЛИТЬ перед отправкой сообщения (офлайн-путь: файл/голос
+  // прикреплён без сети). Пусто у обычных сообщений, где ассеты уже в MinIO. Воркер
+  // резолвит их в реальные asset_id и наполняет body.attachment_ids (см. drain).
+  pendingUploads?: PendingUploadRef[]
   tempId: number
   attempts: number
 }
@@ -53,6 +72,18 @@ function blobKey(clientId: string, assetId: number): string {
   return `${clientId}:${assetId}`
 }
 
+// Ключ байтов постера видео отложенной заливки (отдельно от самого файла).
+function posterKey(clientId: string, tempAssetId: number): string {
+  return `${clientId}:${tempAssetId}:poster`
+}
+
+let assetSeq = 0
+// Временный отрицательный asset_id для оптимистичного вложения (реальные id > 0).
+function nextTempAssetId(): number {
+  assetSeq += 1
+  return -(Date.now() * 1000 + (assetSeq % 1000))
+}
+
 // Снимок AttachmentOut из ассета + локального blob-URL (kind/размеры/длительность
 // уже известны из media_assets — плеер сразу рисует правильную коробку).
 function snapshotFromAsset(asset: MediaAssetOut, url: string): AttachmentOut {
@@ -66,6 +97,22 @@ function snapshotFromAsset(asset: MediaAssetOut, url: string): AttachmentOut {
     width: asset.width,
     height: asset.height,
     duration: asset.duration,
+  }
+}
+
+// Снимок AttachmentOut для ещё не залитого вложения: kind/размеры/длительность из
+// локально снятых метаданных, url — blob:-превью. asset_id временный (отрицательный).
+function snapshotFromPending(pending: PendingUploadRef, url: string): AttachmentOut {
+  return {
+    asset_id: pending.tempAssetId,
+    url,
+    thumb_url: pending.kind === 'image' ? url : null,
+    kind: pending.kind,
+    mime_type: pending.contentType,
+    size: 0,
+    width: pending.width ?? null,
+    height: pending.height ?? null,
+    duration: pending.duration ?? null,
   }
 }
 
@@ -117,6 +164,10 @@ function releaseBlobs(item: OutboxItem): void {
   }
   for (const assetId of item.blobAssetIds) {
     void idbDelete(STORE_OUTBOX_BLOBS, blobKey(item.clientId, assetId))
+  }
+  for (const pu of item.pendingUploads ?? []) {
+    void idbDelete(STORE_OUTBOX_BLOBS, blobKey(item.clientId, pu.tempAssetId))
+    void idbDelete(STORE_OUTBOX_BLOBS, posterKey(item.clientId, pu.tempAssetId))
   }
 }
 
@@ -195,6 +246,57 @@ export function enqueue(
   return item.clientId
 }
 
+// Поставить в очередь сообщение с вложениями, которые ЕЩЁ НЕ ЗАЛИТЫ (офлайн-путь:
+// файл/голос прикреплён без сети). Байты кладём в IndexedDB, оптимистичное превью
+// рисуем из blob:-URL. Воркер зальёт вложения (resolvePendingUploads) перед отправкой
+// самого сообщения — так медиа переживает офлайн/перезагрузку так же, как текст.
+export function enqueueMedia(
+  roomId: number,
+  body: SendBody,
+  senderId: number,
+  uploads: PendingUpload[],
+): string {
+  const cid = clientId()
+  const attachments: AttachmentOut[] = []
+  const pendingUploads: PendingUploadRef[] = []
+  for (const pu of uploads) {
+    const tempAssetId = nextTempAssetId()
+    const url = URL.createObjectURL(pu.blob)
+    trackBlobUrl(cid, url)
+    const ref: PendingUploadRef = {
+      tempAssetId,
+      contentType: pu.contentType,
+      kind: pu.kind,
+      width: pu.width,
+      height: pu.height,
+      duration: pu.duration,
+      hasPoster: !!pu.posterBlob,
+    }
+    pendingUploads.push(ref)
+    attachments.push(snapshotFromPending(ref, url))
+    // Байты файла + постера (если есть) — в отдельный стор; переживут перезагрузку.
+    void idbSet(STORE_OUTBOX_BLOBS, blobKey(cid, tempAssetId), pu.blob)
+    if (pu.posterBlob) void idbSet(STORE_OUTBOX_BLOBS, posterKey(cid, tempAssetId), pu.posterBlob)
+  }
+  const item: OutboxItem = {
+    clientId: cid,
+    roomId,
+    body,
+    senderId,
+    createdAt: new Date().toISOString(),
+    attachments,
+    blobAssetIds: [],
+    pendingUploads,
+    tempId: nextTempId(),
+    attempts: 0,
+  }
+  queue.push(item)
+  void idbSet(STORE_OUTBOX, item.clientId, item)
+  onEnqueue?.(item)
+  void drain()
+  return item.clientId
+}
+
 // Поднять очередь из IndexedDB при старте (сообщения, не ушедшие в прошлой сессии).
 // Для вложений с кэшированными байтами перевыпускаем blob:-URL (старые из прошлой
 // сессии мертвы) и подставляем их в снимок attachments, чтобы превью нарисовалось.
@@ -216,9 +318,14 @@ export async function hydrateOutbox(): Promise<OutboxItem[]> {
 }
 
 // Перевыпустить blob:-URL для вложений item'а из байтов в IndexedDB и заменить ими
-// протухшие URL прошлой сессии в снимке attachments (in place).
+// протухшие URL прошлой сессии в снимке attachments (in place). Покрывает и уже
+// залитые вложения (blobAssetIds), и ещё не залитые (pendingUploads).
 async function rehydrateBlobUrls(item: OutboxItem): Promise<void> {
-  for (const assetId of item.blobAssetIds) {
+  const assetIds = [
+    ...item.blobAssetIds,
+    ...(item.pendingUploads ?? []).map((p) => p.tempAssetId),
+  ]
+  for (const assetId of assetIds) {
     const blob = await idbGet<Blob>(STORE_OUTBOX_BLOBS, blobKey(item.clientId, assetId))
     if (!blob) continue
     const url = URL.createObjectURL(blob)
@@ -254,12 +361,56 @@ export function pendingCount(): number {
   return queue.length
 }
 
+// Есть ли в очереди неотправленное сообщение этой комнаты. По нему WS-обработчик
+// понимает, что своё message.new — это эхо ещё живущего оптимистичного сообщения
+// (temp-id ≠ реальный, дедуп по id не сработает), и не рисует дубль. На других
+// устройствах того же юзера очереди нет → там своё сообщение из WS покажется.
+export function hasPending(roomId: number): boolean {
+  return queue.some((q) => q.roomId === roomId)
+}
+
 // Форсировать проталкивание очереди (сеть вернулась / реконнект WS).
 export function flush(): void {
   void drain()
 }
 
 const BACKOFF = [1000, 2000, 5000, 10_000, 15_000]
+
+// Залить все ещё не залитые вложения item'а и наполнить body.attachment_ids реальными
+// id ассетов. Каждый успешный ассет фиксируем в IndexedDB и убираем из pendingUploads,
+// чтобы повтор после сбоя на следующем шаге не заливал уже загруженное дважды. Бросает
+// при офлайне/ошибке — drain поймает и отправит item на backoff/ретрай.
+async function resolvePendingUploads(item: OutboxItem): Promise<void> {
+  while (item.pendingUploads && item.pendingUploads.length > 0) {
+    const ref = item.pendingUploads[0]
+    const blob = await idbGet<Blob>(STORE_OUTBOX_BLOBS, blobKey(item.clientId, ref.tempAssetId))
+    if (!blob) {
+      // Байты пропали (например, приватный режим/чистка стораджа) — отбрасываем это
+      // вложение, но сообщение не блокируем: отправим с тем, что осталось.
+      item.pendingUploads.shift()
+      continue
+    }
+    const posterBlob = ref.hasPoster
+      ? await idbGet<Blob>(STORE_OUTBOX_BLOBS, posterKey(item.clientId, ref.tempAssetId))
+      : undefined
+    const pending: PendingUpload = {
+      blob,
+      contentType: ref.contentType,
+      kind: ref.kind,
+      width: ref.width,
+      height: ref.height,
+      duration: ref.duration,
+      posterBlob: posterBlob ?? undefined,
+    }
+    const asset = await runPendingUpload(pending)
+    item.body.attachment_ids = [...(item.body.attachment_ids ?? []), asset.id]
+    item.pendingUploads.shift()
+    // Байты больше не нужны — ассет уже в MinIO.
+    void idbDelete(STORE_OUTBOX_BLOBS, blobKey(item.clientId, ref.tempAssetId))
+    void idbDelete(STORE_OUTBOX_BLOBS, posterKey(item.clientId, ref.tempAssetId))
+    void idbSet(STORE_OUTBOX, item.clientId, item)
+  }
+}
 
 async function drain(): Promise<void> {
   if (draining) return
@@ -269,6 +420,11 @@ async function drain(): Promise<void> {
       if (typeof navigator !== 'undefined' && !navigator.onLine) break
       const item = queue[0]
       try {
+        // Офлайн-медиа: сперва заливаем ещё не залитые вложения и наполняем
+        // body.attachment_ids — только потом отправляем само сообщение.
+        if (item.pendingUploads && item.pendingUploads.length > 0) {
+          await resolvePendingUploads(item)
+        }
         const real = await http.post<MessageOut>(`/api/rooms/${item.roomId}/messages`, item.body)
         // Успех: убрать из очереди/IndexedDB, освободить кэш байтов и заменить temp
         // реальным сообщением (у него уже presigned-URL с сервера).

@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
 import { IconClose, IconMic, IconSend, IconTrash } from '../../components/icons'
 import { VoicePlayer } from '../../components/VoicePlayer'
-import { voiceUpload } from '../../lib/mediaUpload'
-import type { LocalAttachment } from '../../lib/outbox'
+import { preparePendingVoice, type PendingUpload } from '../../lib/mediaUpload'
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder'
 import { toast } from '../../stores/toast'
 import styles from './chat.module.css'
@@ -15,11 +14,11 @@ function fmtDur(sec: number): string {
 
 interface Props {
   /**
-   * Загрузка завершена → отправить голосовое (верхний уровень или ответ в тред).
-   * Отдаём ассет вместе с байтами (LocalAttachment), чтобы outbox закэшировал их и
-   * превью пережило перезагрузку, пока сообщение в очереди.
+   * Запись готова → отдаём сырой описатель (PendingUpload, БЕЗ заливки). Родитель сам
+   * решает, слать через outbox (верхний уровень, переживает офлайн) или залить
+   * синхронно (дневник/тред). Заливать здесь нельзя — иначе офлайн терял бы голосовое.
    */
-  onSend: (local: LocalAttachment) => void
+  onSend: (pending: PendingUpload) => void
   /** Сообщает родителю, идёт ли запись/превью — по нему он прячет поле ввода. */
   onActiveChange?: (active: boolean) => void
   disabled?: boolean
@@ -76,8 +75,10 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
     if (!voice.recorded || sending) return
     setSending(true)
     try {
-      const local = await voiceUpload(voice.recorded.blob, voice.recorded.duration)
-      onSend(local)
+      // Только локальная упаковка (без сети) — сама заливка идёт в родителе (outbox
+      // для верхнего уровня). Так голосовое ставится в очередь и офлайн.
+      const pending = await preparePendingVoice(voice.recorded.blob, voice.recorded.duration)
+      onSend(pending)
       discard()
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Не удалось отправить голосовое', 'error')

@@ -15,6 +15,7 @@ import { useUsersMap } from '../api/users'
 import { useAuth } from '../features/auth/AuthContext'
 import { useOpenNotification } from '../features/app/useOpenNotification'
 import { http } from '../lib/apiClient'
+import { hasPending as outboxHasPending } from '../lib/outbox'
 import { wsClient } from '../lib/wsClient'
 import type { NotificationKind, NotificationListOut, RoomOut, WsEvent } from '../lib/types'
 import { notify } from '../stores/toast'
@@ -126,7 +127,14 @@ export function useRealtime(): void {
         case 'message.new': {
           const msg = e.message
           if (msg.thread_root_id === null) {
-            appendMessage(qc, msg.room_id, msg)
+            // Пропускаем WS-эхо, если это своё сообщение, а в очереди ещё живёт его
+            // оптимистичный двойник (temp-id ≠ реальный → дедуп по id не сработает,
+            // и на миг виден дубль: серое «отправляется…» + рядом уже не-серое, потом
+            // схлопываются). Его вставит путь отправки (resolveOptimistic). На чужом
+            // сообщении и на другом устройстве (очереди нет) — добавляем как обычно.
+            if (!(msg.sender_id === me && outboxHasPending(msg.room_id))) {
+              appendMessage(qc, msg.room_id, msg)
+            }
           } else {
             // Ответ в тред: обновить счётчик на корне и открытый тред.
             bumpReplyCount(qc, msg.room_id, msg.thread_root_id, msg.created_at)
