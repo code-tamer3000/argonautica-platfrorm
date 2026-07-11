@@ -421,12 +421,33 @@
 .attachments:not(:first-child) { margin-top: var(--space-2); }
 .attachments + .msgText, .sticker + .msgText { margin-top: var(--space-2); }
 /* Фон коробки — единственный плейсхолдер до декодирования картинки (без крутилки).
-   Размер коробки резервирует aspect-ratio из width/height (инлайновый style). */
-.attImageWrap { position: relative; display: inline-block; max-width: 280px; overflow: hidden; border-radius: var(--radius-media); background: var(--bg-deep); }
-/* height: auto держит натуральные пропорции при width:100% (иначе max-height обрезал бы
-   высоту и искажал фото). object-fit: contain — страховка, когда коробке задан aspect-ratio. */
-.attImage { max-width: 280px; max-height: 360px; height: auto; border-radius: var(--radius-media); cursor: pointer; display: block; width: 100%; object-fit: contain; }
-.attImageWrap .attImage { max-width: 100%; }
+   Размер коробки резервирует aspect-ratio из width/height (инлайновый style).
+   Коробка сама ограничена и по ширине, и по высоте; с заданным aspect-ratio браузер
+   сам подбирает меньшее измерение — так портретные фото не выходят за 360px по высоте,
+   а под картинкой не остаётся полосы фона (bg-deep). */
+.attImageWrap {
+  position: relative;
+  display: block;
+  max-width: 280px;
+  max-height: 360px;
+  overflow: hidden;
+  border-radius: var(--radius-media);
+  background: var(--bg-deep);
+}
+/* Картинка заполняет уже правильно спропорционированную коробку без «прыжка»:
+   при заданном коробке aspect-ratio object-fit тут не искажает (соотношения совпадают),
+   а без него (легаси-фото без размеров) коробка сжимается по натуральным пропорциям img. */
+.attImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-height: 360px;
+  border-radius: var(--radius-media);
+  cursor: pointer;
+  object-fit: contain;
+}
+/* Легаси без width/height: у коробки нет aspect-ratio → пусть высоту задаёт сама картинка. */
+.attImageWrap:not([style*='aspect-ratio']) .attImage { height: auto; }
 .attVideo { max-width: 320px; max-height: 280px; border-radius: var(--radius-media); }
 .attFile {
   display: inline-flex; align-items: center; gap: var(--space-2);
@@ -722,7 +743,7 @@
 
   /* Стикер-пикер не должен уезжать за край */
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
-  .attImage, .attVideo { max-width: 100%; }
+  .attImageWrap, .attImage, .attVideo { max-width: 100%; }
 }
 
 /* --- Календарь личного канала --- */

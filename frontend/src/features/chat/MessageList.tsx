@@ -59,6 +59,23 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
     if (el && atBottom.current) el.scrollTop = el.scrollHeight
   }, [count])
 
+  // Пока мы «внизу», удерживаем ленту у нижней кромки при любом изменении высоты
+  // содержимого — в первую очередь при поздней декодировке картинок/медиа (lazy img
+  // растёт после первого layout). Без этого лента, разово прокрученная вниз на
+  // старую scrollHeight, потом «подпрыгивала» к сообщению выше по мере роста контента.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (atBottom.current) el.scrollTop = el.scrollHeight
+    })
+    // Наблюдаем детей-обёртки сообщений: их высота растёт, когда внутри декодируется
+    // картинка/медиа. (Сам контейнер фикс-высоты — его border-box не меняется, поэтому
+    // observe(el) бесполезен; рост ловим по детям.)
+    for (const child of Array.from(el.children)) ro.observe(child)
+    return () => ro.disconnect()
+  }, [count])
+
   function onScroll() {
     const el = containerRef.current
     if (!el) return

@@ -199,6 +199,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       )}
       {room.is_personal && showCalendar && <ChannelCalendar roomId={roomId} />}
       <MessageList
+        key={roomId}
         ref={messageListRef}
         messages={messages}
         hasMore={!!query.hasNextPage}
