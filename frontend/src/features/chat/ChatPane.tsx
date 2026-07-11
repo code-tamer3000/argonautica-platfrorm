@@ -18,7 +18,6 @@ import { MessageList, type MessageListHandle } from './MessageList'
 import { useMessageMenu } from './useMessageMenu'
 import { PinsBar } from './PinsBar'
 import { PinsDrawer } from './PinsDrawer'
-import { ThreadPanel } from './ThreadPanel'
 import { TypingIndicator } from './TypingIndicator'
 import { UserProfileModal } from './UserProfileModal'
 import { roomAvatarUrl, roomTitle } from './util'
@@ -201,6 +200,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       <MessageList
         key={roomId}
         ref={messageListRef}
+        roomId={roomId}
         messages={messages}
         hasMore={!!query.hasNextPage}
         loadMore={() => void query.fetchNextPage()}
@@ -209,8 +209,13 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         editingId={editingId}
         selectedMsgId={msgMenu.menu?.msg.id ?? null}
         highlightedMsgId={highlightedMsgId}
+        expandedThreadId={threadRootId}
+        canPin={canPin}
+        isNews={!!room.is_news}
         onClearEdit={() => setEditingId(null)}
-        onOpenThread={(rootId) => setThreadRootId(rootId)}
+        onToggleThread={(rootId) => setThreadRootId((cur) => (cur === rootId ? null : rootId))}
+        onCollapseThread={() => setThreadRootId(null)}
+        onRepost={handleRepost}
         onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
       />
@@ -234,9 +239,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           items={msgMenu.buildItems(msgMenu.menu.msg)}
           onClose={msgMenu.closeMenu}
         />
-      )}
-      {threadRootId != null && (
-        <ThreadPanel roomId={roomId} rootId={threadRootId} canPin={canPin} isNews={!!room.is_news} onRepost={handleRepost} onClose={() => setThreadRootId(null)} />
       )}
       {showPins && (
         <PinsDrawer roomId={roomId} onClose={() => setShowPins(false)} onNavigate={navigateToMessage} />

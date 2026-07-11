@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Spinner } from '../../components/Spinner'
 import { dayLabel, sameDay } from '../../lib/format'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
+import { InlineThread } from './InlineThread'
 import { MessageItem } from './MessageItem'
 import styles from './chat.module.css'
 
@@ -11,6 +12,7 @@ export interface MessageListHandle {
 }
 
 interface Props {
+  roomId: number
   messages: MessageOut[]
   hasMore: boolean
   loadMore: () => void
@@ -19,15 +21,22 @@ interface Props {
   editingId?: number | null
   selectedMsgId?: number | null
   highlightedMsgId?: number | null
+  // Корень, чей тред развёрнут прямо в ленте (аккордеон под сообщением). null → все свёрнуты.
+  expandedThreadId?: number | null
+  canPin?: boolean
+  isNews?: boolean
   onClearEdit?: () => void
-  onOpenThread?: (rootId: number) => void
+  onToggleThread?: (rootId: number) => void
+  onCollapseThread?: () => void
+  onRepost?: (msg: MessageOut) => void
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
-  { messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    onClearEdit, onOpenThread, onOpenMenu, onAtBottomChange },
+  { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
+    expandedThreadId, canPin, isNews, onClearEdit, onToggleThread, onCollapseThread, onRepost,
+    onOpenMenu, onAtBottomChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -117,10 +126,21 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
+              threadOpen={expandedThreadId === m.id}
               onClearEdit={onClearEdit}
-              onOpenThread={onOpenThread}
+              onToggleThread={onToggleThread}
               onOpenMenu={onOpenMenu}
             />
+            {expandedThreadId === m.id && (
+              <InlineThread
+                roomId={roomId}
+                rootId={m.id}
+                canPin={canPin}
+                isNews={isNews}
+                onRepost={onRepost}
+                onCollapse={() => onCollapseThread?.()}
+              />
+            )}
           </div>
         )
       })}

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
+import { IconChevronDown } from '../../components/icons'
 import { timeHM } from '../../lib/format'
 import { renderMarkdown } from '../../lib/markdown'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
@@ -18,8 +19,10 @@ interface Props {
   editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
+  // Тред этого сообщения сейчас развёрнут инлайн под ним (см. InlineThread).
+  threadOpen?: boolean
   onClearEdit?: () => void
-  onOpenThread?: (rootId: number) => void
+  onToggleThread?: (rootId: number) => void
   // Тап по сообщению → открыть контекстное меню действий (позиция = rect сообщения).
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
 }
@@ -33,8 +36,9 @@ export function MessageItem({
   editingId,
   isSelected,
   isHighlighted,
+  threadOpen,
   onClearEdit,
-  onOpenThread,
+  onToggleThread,
   onOpenMenu,
 }: Props) {
   const stickerMap = useStickerMap()
@@ -190,10 +194,12 @@ export function MessageItem({
 
         {msg.reply_count > 0 && !isInThread && (
           <button
-            className={styles.threadLink}
-            onClick={(e) => { e.stopPropagation(); onOpenThread?.(msg.id) }}
+            className={`${styles.threadLink} ${threadOpen ? styles.threadLinkOpen : ''}`}
+            onClick={(e) => { e.stopPropagation(); onToggleThread?.(msg.id) }}
+            aria-expanded={threadOpen}
           >
-            Тред · {msg.reply_count}
+            <IconChevronDown size={15} className={styles.threadLinkChevron} />
+            {threadOpen ? 'Свернуть' : `Тред · ${msg.reply_count}`}
           </button>
         )}
       </div>

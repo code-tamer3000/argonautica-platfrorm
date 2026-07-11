@@ -501,11 +501,48 @@
 .menuItemDanger:hover { background: rgba(120, 20, 20, 0.12); }
 
 .threadLink {
-  display: inline-block; margin-top: var(--space-1);
+  display: inline-flex; align-items: center; gap: 4px; margin-top: var(--space-1);
   font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent);
   background: transparent; border: none; cursor: pointer; padding: 0;
 }
 .threadLink:hover { color: var(--accent-bright); }
+.threadLinkChevron { transition: transform 180ms var(--ease-out-soft); }
+.threadLinkOpen .threadLinkChevron { transform: rotate(-180deg); }
+
+/* ── Инлайн-тред: ветка ответов раскрывается прямо под корнем (аккордеон) ─────────
+   Плавное раскрытие без измерения высоты в JS: grid-строка едет 0fr → 1fr, внутренний
+   слой скрывает переполнение. Слева — вертикальный «рельс» ветки, весь блок сдвинут
+   под аватар корня, чтобы визуально читался как продолжение сообщения. */
+.inlineThread {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 var(--space-3) calc(36px + var(--space-3));
+  animation: threadOpen 240ms var(--ease-out-soft) both;
+}
+.inlineThreadRail {
+  width: 2px; align-self: stretch; border-radius: 2px;
+  background: linear-gradient(var(--accent), transparent);
+  opacity: 0.5;
+}
+.inlineThreadBody { min-width: 0; }
+.inlineThreadCollapse {
+  display: inline-flex; align-items: center; gap: 4px; margin-bottom: var(--space-2);
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted);
+  background: transparent; border: none; cursor: pointer; padding: 0;
+}
+.inlineThreadCollapse:hover { color: var(--text-secondary); }
+.inlineThreadChevron { transform: rotate(-180deg); }
+.inlineThreadMore {
+  display: inline-block; margin-bottom: var(--space-2);
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--accent);
+  background: transparent; border: none; cursor: pointer; padding: var(--space-1) 0;
+}
+.inlineThreadMore:hover { color: var(--accent-bright); }
+@keyframes threadOpen {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 .editRow { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-1); }
 .editInput {

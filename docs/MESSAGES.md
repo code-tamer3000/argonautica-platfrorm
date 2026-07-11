@@ -21,6 +21,7 @@
 - **Flatness rule:** a reply never points at another reply. When replying to a message that is itself a reply, use its `thread_root_id`, not its `id`. No nesting by construction.
 - **Denormalization:** `reply_count` and `last_reply_at` on the root, updated when a reply is added (show "N replies" without recount).
 - Open thread query: `thread_root_id = <root id>` (plus the root itself).
+- **UI:** threads expand inline in the feed (accordion under the root), not in a side drawer. The "Тред · N" button toggles it; a long branch shows the last few replies with a "показать ещё" control. The reply field always sends with `reply_to_message_id = root id` (keeps the branch flat). Live via the same `message.new` → thread-query invalidation.
 
 ## Read receipts (no per-message table)
 
