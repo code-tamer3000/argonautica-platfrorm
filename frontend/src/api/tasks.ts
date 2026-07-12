@@ -4,7 +4,7 @@ import type { AttachmentOut } from '../lib/types'
 
 // --- Контракт бэкенда (поля = ответы API) ---
 
-export type TaskType = 'common' | 'individual'
+export type TaskType = 'common' | 'individual' | 'pair'
 export type MyTaskStatus = 'assigned' | 'submitted' | 'returned' | 'accepted' | null
 
 export interface TaskOut {
@@ -13,10 +13,26 @@ export interface TaskOut {
   title: string
   body: string | null
   kb_item_id: number | null
+  pair_id: number | null // задан только у перекрёстной задачи (взаимное обучение)
   deadline_at: string | null
   created_by: number
   created_at: string
   attachments: AttachmentOut[]
+}
+
+// Один участник пары в глазах смотрящего + выданная им перекрёстная задача.
+export interface PairMemberOut {
+  user_id: number
+  is_meeting_organizer: boolean
+  cross_task_id: number | null
+}
+
+export interface PairOut {
+  pair_id: number
+  members: PairMemberOut[]
+  meeting_at: string | null
+  viewer_user_id: number | null // чьими глазами смотрим (null у админа-неучастника)
+  can_manage_meeting: boolean
 }
 
 export interface TaskWithStatusOut extends TaskOut {
@@ -28,6 +44,8 @@ export interface TaskWithStatusOut extends TaskOut {
   accepted_count: number
   unreviewed_count: number
   total_recipients: number
+  // Только для type='pair': пары смотрящего (участник — свою; админ — все).
+  pairs: PairOut[] | null
 }
 
 export interface ProgressOut {
@@ -104,6 +122,10 @@ export function useTask(id: number) {
 
 // --- Admin CRUD ---
 
+export interface PairInput {
+  user_ids: [number, number]
+}
+
 export interface TaskCreateBody {
   type: TaskType
   title: string
@@ -111,6 +133,7 @@ export interface TaskCreateBody {
   kb_item_id?: number | null
   deadline_at?: string | null
   assignee_ids?: number[]
+  pairs?: PairInput[]
   media_asset_ids?: number[]
 }
 
@@ -236,5 +259,92 @@ export function useAdminAssignments(id: number) {
     queryKey: adminAssignmentsKey(id),
     queryFn: () => http.get<AdminAssignmentOut[]>(`/api/tasks/${id}/assignments`),
     enabled: id > 0,
+  })
+}
+
+// --- Пары (взаимное обучение) ---
+
+function invalidateTask(qc: ReturnType<typeof useQueryClient>, taskId: number) {
+  qc.invalidateQueries({ queryKey: tasksKey })
+  qc.invalidateQueries({ queryKey: taskKey(taskId) })
+}
+
+// Назначить/перенести (meeting_at) или отменить (null) встречу пары.
+export function useUpdateMeeting(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ pairId, meetingAt }: { pairId: number; meetingAt: string | null }) =>
+      http.patch<null>(`/api/tasks/${taskId}/pairs/${pairId}/meeting`, {
+        meeting_at: meetingAt,
+      }),
+    onSuccess: () => invalidateTask(qc, taskId),
+  })
+}
+
+export interface CrossTaskBody {
+  title: string
+  body?: string | null
+  deadline_at?: string | null
+  media_asset_ids?: number[]
+}
+
+// Выдать задачу партнёру (получатель предопределён).
+export function useCreateCrossTask(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ pairId, ...body }: { pairId: number } & CrossTaskBody) =>
+      http.post<TaskOut>(`/api/tasks/${taskId}/pairs/${pairId}/cross-task`, body),
+    onSuccess: () => invalidateTask(qc, taskId),
+  })
+}
+
+// Править выданную перекрёстную задачу (пока нет сдач).
+export function useUpdateCrossTask(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      pairId,
+      crossTaskId,
+      ...body
+    }: { pairId: number; crossTaskId: number } & Partial<CrossTaskBody>) =>
+      http.patch<TaskOut>(
+        `/api/tasks/${taskId}/pairs/${pairId}/cross-task/${crossTaskId}`,
+        body,
+      ),
+    onSuccess: (t) => {
+      invalidateTask(qc, taskId)
+      qc.invalidateQueries({ queryKey: taskKey(t.id) })
+    },
+  })
+}
+
+// Admin: заменить участника пары (только пока внутри пары ничего не выдано).
+export function useReplacePairMember(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      pairId,
+      oldUserId,
+      newUserId,
+    }: {
+      pairId: number
+      oldUserId: number
+      newUserId: number
+    }) =>
+      http.patch<null>(`/api/tasks/${taskId}/pairs/${pairId}`, {
+        old_user_id: oldUserId,
+        new_user_id: newUserId,
+      }),
+    onSuccess: () => invalidateTask(qc, taskId),
+  })
+}
+
+// Admin: расформировать пару (скрытое действие).
+export function useDeletePair(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (pairId: number) =>
+      http.del<null>(`/api/tasks/${taskId}/pairs/${pairId}`),
+    onSuccess: () => invalidateTask(qc, taskId),
   })
 }

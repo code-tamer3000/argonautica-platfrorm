@@ -330,23 +330,46 @@ See [SUPPORT.md](SUPPORT.md).
 **Index:** (`user_id`, `kind`, `created_at`).
 
 ## Tasks
-Section "Задачи". Six tables. See [TASKS.md](TASKS.md).
+Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 
 **tasks**
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
-| type | TEXT | NOT NULL, CHECK | `'common'` \| `'individual'` |
+| type | TEXT | NOT NULL, CHECK | `'common'` \| `'individual'` \| `'pair'` |
 | title | TEXT | NOT NULL | |
 | body | TEXT | NULL | markdown |
 | kb_item_id | BIGINT | FK kb_items, NULL | optional link to a KB item |
+| pair_id | BIGINT | FK task_pairs, NULL | set only on a cross-task (peer-learning); links it to its pair |
 | deadline_at | TIMESTAMPTZ | NULL | synced to `calendar_events` (services/tasks.py) |
-| created_by | BIGINT | FK users, NOT NULL | |
+| created_by | BIGINT | FK users, NOT NULL | author; for a cross-task = the giving participant |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
 
 **task_media** — task-prompt media (admin), mirror of task_submission_media. PK (`task_id`, `media_asset_id`).
+
+**task_pairs** — a pair inside a `pair`-type task (peer-learning). Soft delete. See [TASKS.md](TASKS.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| task_id | BIGINT | FK tasks, NOT NULL | the parent `pair`-task; index (`task_id`) |
+| meeting_organizer_id | BIGINT | FK users, NOT NULL | member who manages the meeting (random at creation) |
+| meeting_at | TIMESTAMPTZ | NULL | informational meeting time; NULL = none/cancelled |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| deleted_at | TIMESTAMPTZ | NULL | soft delete (admin disbands the pair) |
+
+**task_pair_members** — membership in a pair (two rows per pair).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| pair_id | BIGINT | FK task_pairs, NOT NULL | index (`pair_id`) |
+| task_id | BIGINT | FK tasks, NOT NULL | denormalized for the unique constraint below |
+| user_id | BIGINT | FK users, NOT NULL | |
+
+**UNIQUE:** (`task_id`, `user_id`) — one user in at most one pair per pair-task.
 
 **task_assignments**
 
@@ -424,6 +447,8 @@ tasks --< task_media >-- media_assets
 tasks --< task_assignments >-- users
 task_assignments --< task_submissions --< task_submission_media >-- media_assets
 task_submissions --< task_comments >-- users
+tasks --< task_pairs (pair-type) --< task_pair_members >-- users
+tasks --> task_pairs                   (pair_id nullable; cross-task → its pair)
 tasks --> kb_items                     (kb_item_id nullable)
 media_assets                           (shared: messages, KB, tasks, avatars, stickers)
 ```
@@ -432,7 +457,7 @@ media_assets                           (shared: messages, KB, tasks, avatars, st
 
 ## Migrations gotchas
 
-`alembic revision --autogenerate` (i.e. `make migration`) re-reports **three phantom
+`alembic revision --autogenerate` (i.e. `make migration`) re-reports **four phantom
 index diffs** even on a clean, up-to-date schema. They are NOT real drift — alembic
 cannot round-trip these indexes against the models (a partial/conditional index; the
 FK indexes are declared in the migrations, not on the model columns):
@@ -442,7 +467,8 @@ FK indexes are declared in the migrations, not on the model columns):
 | `drop_index('uq_rooms_single_news')` on `rooms` | partial unique | `WHERE is_news` — enforces the single news channel |
 | `drop_index('ix_journal_pardons_user_id')` on `journal_pardons` | btree on `user_id` | created by the journal_pardons migration |
 | `drop_index('ix_journal_credits_user_id')` on `journal_credits` | btree on `user_id` | created by the journal_credits migration |
+| `drop_index('ix_journal_sections_program_id')` on `journal_sections` | btree on `program_id` | created by the journal_sections migration |
 
-Rule: **NEVER** include drops/recreates of these three indexes in a migration.
+Rule: **NEVER** include drops/recreates of these four indexes in a migration.
 After `make migration`, delete those lines from the generated file before committing;
 keep only the real changes. (Migrations are expand/contract only — see CLAUDE.md.)

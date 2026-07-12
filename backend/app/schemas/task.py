@@ -13,16 +13,31 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.schemas.media import AttachmentOut
 
 
-class TaskCreate(BaseModel):
-    """Создание задачи. Для individual `assignee_ids` обязателен непустой
-    (проверяется в эндпоинте — там же валидируется существование юзеров)."""
+class PairInput(BaseModel):
+    """Одна пара при создании парного задания: ровно два разных участника."""
 
-    type: Literal["common", "individual"]
+    user_ids: list[int] = Field(min_length=2, max_length=2)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> "PairInput":
+        if self.user_ids[0] == self.user_ids[1]:
+            raise ValueError("A pair needs two distinct users")
+        return self
+
+
+class TaskCreate(BaseModel):
+    """Создание задачи. Для individual `assignee_ids` обязателен непустой; для pair
+    `pairs` обязателен непустой, каждый участник — максимум в одной паре (проверяется
+    в эндпоинте, там же валидируется существование юзеров)."""
+
+    type: Literal["common", "individual", "pair"]
     title: str
     body: str | None = None  # markdown
     kb_item_id: int | None = None
     deadline_at: datetime | None = None
     assignee_ids: list[int] = []
+    # Пары для type='pair'. Организатор встречи выбирается сервером случайно.
+    pairs: list[PairInput] = []
     # Медиа условия задачи (создаёт admin). Ассеты должны существовать.
     media_asset_ids: list[int] = []
 
@@ -49,10 +64,32 @@ class TaskOut(BaseModel):
     title: str
     body: str | None
     kb_item_id: int | None
+    pair_id: int | None = None  # set only on a cross-task (peer-learning)
     deadline_at: datetime | None
     created_by: int
     created_at: datetime
     attachments: list[AttachmentOut] = []
+
+
+class PairMemberOut(BaseModel):
+    """Один участник пары в глазах смотрящего + выданная им перекрёстная задача."""
+
+    user_id: int
+    is_meeting_organizer: bool
+    # Перекрёстная задача, которую ЭТОТ участник выдал партнёру (если уже выдана).
+    cross_task_id: int | None = None
+
+
+class PairOut(BaseModel):
+    """Пара для карточки парного задания. Участнику отдаётся только его пара;
+    админу — любая. `viewer_user_id` — чьими глазами смотрим (для UI-разводки
+    «моя задача» / «задача партнёра»); None у админа-неучастника."""
+
+    pair_id: int
+    members: list[PairMemberOut]
+    meeting_at: datetime | None
+    viewer_user_id: int | None
+    can_manage_meeting: bool  # смотрящий — организатор встречи этой пары
 
 
 class TaskWithStatusOut(TaskOut):
@@ -69,6 +106,36 @@ class TaskWithStatusOut(TaskOut):
     # Знаменатель прогресса «сдали X из Y»: individual → число адресатов;
     # common → число активных участников платформы (назначения ленивы).
     total_recipients: int
+    # Только для type='pair': пара(ы) смотрящего. Участник видит одну свою пару;
+    # админ — все пары задания. None/[] для обычных задач.
+    pairs: list[PairOut] | None = None
+
+
+class MeetingUpdate(BaseModel):
+    """Назначить/перенести встречу (meeting_at) или отменить (null)."""
+
+    meeting_at: datetime | None = None
+
+
+class CrossTaskCreate(BaseModel):
+    """Выдать задачу партнёру внутри пары. Получатель предопределён (партнёр).
+    Полный набор полей обычной задачи; дедлайн опционален."""
+
+    title: str
+    body: str | None = None
+    deadline_at: datetime | None = None
+    media_asset_ids: list[int] = []
+
+
+class CrossTaskUpdate(BaseModel):
+    """Правка выданной перекрёстной задачи (пока нет сдач)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = None
+    body: str | None = None
+    deadline_at: datetime | None = None
+    media_asset_ids: list[int] | None = None
 
 
 class ProgressOut(BaseModel):
