@@ -34,18 +34,26 @@ function pinScroll() {
  * iOS при фокусе на поле «подскроллливает» его в видимость, двигая scrollTop даже у
  * контейнеров с overflow:hidden (шапка приложения/чата уезжает вверх, хотя эти блоки
  * скроллиться не должны). Ловим scroll в ФАЗЕ ЗАХВАТА (scroll не всплывает) и, если
- * уехал именно клиппинг-контейнер (overflow-y: hidden/clip/visible — т.е. НЕ легитимный
- * скроллер ленты), синхронно возвращаем его в ноль. Настоящие панели (.messages,
+ * уехал именно клиппинг-контейнер (overflow: hidden/clip/visible — т.е. НЕ легитимный
+ * скроллер), синхронно возвращаем его в ноль. Настоящие панели (.messages,
  * overflow:auto/scroll) не трогаем — они скроллятся как надо.
+ *
+ * ВАЖНО: решение принимаем ПООСЕВО. Раньше сброс завязывался только на overflow-y,
+ * поэтому горизонтальный скроллер (нижний таб-бар: overflow-x:auto + overflow-y:hidden)
+ * считался «клиппингом» и его scrollLeft гвоздями возвращался в ноль — панель разделов
+ * на мобиле залипала и отпрыгивала назад при свайпе вбок. Теперь ось X трогаем, только
+ * если по X реально нет скролла, а ось Y — только если нет скролла по Y.
  */
+function isScroller(overflow: string) {
+  return overflow === 'auto' || overflow === 'scroll'
+}
 function resetIfClipping(el: HTMLElement) {
   if (el.scrollTop === 0 && el.scrollLeft === 0) return
-  const oy = getComputedStyle(el).overflowY
-  if (oy !== 'auto' && oy !== 'scroll') {
-    // Клиппинг-контейнер уехал по вине iOS — гвоздями обратно.
-    el.scrollTop = 0
-    el.scrollLeft = 0
-  }
+  const cs = getComputedStyle(el)
+  // Клиппинг-контейнер уехал по вине iOS — гвоздями обратно, но только по той оси,
+  // по которой элемент НЕ является легитимным скроллером.
+  if (el.scrollTop !== 0 && !isScroller(cs.overflowY)) el.scrollTop = 0
+  if (el.scrollLeft !== 0 && !isScroller(cs.overflowX)) el.scrollLeft = 0
 }
 
 function onAnyScroll(e: Event) {
