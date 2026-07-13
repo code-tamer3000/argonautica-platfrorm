@@ -8,7 +8,7 @@ import {
 } from '../../api/messages'
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
-import { IconAttach, IconChevronDown, IconSend, IconSticker } from '../../components/icons'
+import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
 import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
@@ -62,6 +62,8 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   // Меню скрепки (Файл / Материал / Задача) и открытый пикер ссылки.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [refPickerOpen, setRefPickerOpen] = useState(false)
+  // С какого таба открыть пикер (Материал/Задача из меню скрепки).
+  const [refPickerTab, setRefPickerTab] = useState<'kb' | 'task'>('kb')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
@@ -464,7 +466,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       {pendingRef && (
         <div className={styles.pendingAtt}>
           <span className={styles.pendingChip}>
-            <span aria-hidden>{pendingRef.kind === 'kb' ? '📄' : '✅'}</span>
+            {pendingRef.kind === 'kb' ? <IconBook size={13} /> : <IconTasks size={13} />}
             <span className={styles.pendingChipLabel}>{pendingRef.title}</span>
             <button
               className={styles.pendingChipX}
@@ -480,6 +482,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       {pickerOpen && <StickerPicker onPick={handleSticker} />}
       {refPickerOpen && (
         <RefPicker
+          initialTab={refPickerTab}
           onClose={() => setRefPickerOpen(false)}
           onPick={(ref) => {
             setPendingRef(ref)
@@ -519,16 +522,27 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                         fileInputRef.current?.click()
                       }}
                     >
-                      📎 Файл
+                      <IconFile size={18} /> Файл
                     </button>
                     <button
                       className={styles.attachMenuItem}
                       onClick={() => {
                         setAttachMenuOpen(false)
+                        setRefPickerTab('kb')
                         setRefPickerOpen(true)
                       }}
                     >
-                      🔗 Ссылка на материал / задачу
+                      <IconBook size={18} /> Материал
+                    </button>
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => {
+                        setAttachMenuOpen(false)
+                        setRefPickerTab('task')
+                        setRefPickerOpen(true)
+                      }}
+                    >
+                      <IconTasks size={18} /> Задача
                     </button>
                   </div>
                 </>

@@ -11,6 +11,7 @@ import {
   Copy,
   CornerUpLeft,
   Dna,
+  File,
   Flame,
   LifeBuoy,
   MessageSquare,
@@ -56,6 +57,7 @@ export const IconUsers = (p: IconProps) => <Users {...DEFAULTS} {...p} />
 export const IconBack = (p: IconProps) => <ArrowLeft {...DEFAULTS} {...p} />
 export const IconPlus = (p: IconProps) => <Plus {...DEFAULTS} {...p} />
 export const IconAttach = (p: IconProps) => <Paperclip {...DEFAULTS} {...p} />
+export const IconFile = (p: IconProps) => <File {...DEFAULTS} {...p} />
 export const IconSmile = (p: IconProps) => <Smile {...DEFAULTS} {...p} />
 export const IconSticker = (p: IconProps) => <Sticker {...DEFAULTS} {...p} />
 export const IconChevronDown = (p: IconProps) => <ChevronDown {...DEFAULTS} {...p} />

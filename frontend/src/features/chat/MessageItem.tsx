@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
-import { IconChevronDown } from '../../components/icons'
+import { IconBook, IconChevronDown, IconTasks } from '../../components/icons'
 import { timeHM } from '../../lib/format'
 import { renderMarkdown } from '../../lib/markdown'
 import { renderMessageText } from '../../lib/messageText'
@@ -190,7 +190,7 @@ export function MessageItem({
                   if (msg.ref?.available) navigate(msg.ref.url)
                 }}
               >
-                <span aria-hidden>{msg.ref.kind === 'kb' ? '📄' : '✅'}</span>
+                {msg.ref.kind === 'kb' ? <IconBook size={16} /> : <IconTasks size={16} />}
                 <span className={styles.refLinkText}>
                   {msg.ref.available
                     ? `Перейти к ${msg.ref.kind === 'kb' ? 'материалу' : 'задаче'}: ${msg.ref.title}`

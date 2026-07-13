@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useKbItems } from '../../api/kb'
 import { useTasks } from '../../api/tasks'
+import { IconBook, IconTasks } from '../../components/icons'
 import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
 import type { RefKind } from '../../lib/types'
@@ -17,6 +18,8 @@ export interface PickedRef {
 interface Props {
   onPick: (ref: PickedRef) => void
   onClose: () => void
+  // С какого таба открыть (из меню скрепки: «Материал» → kb, «Задача» → task).
+  initialTab?: RefKind
 }
 
 /**
@@ -25,8 +28,8 @@ interface Props {
  * отдаёт только видимое участнику (опубликованные материалы / доступные задачи),
  * так что подставить недоступный id из пикера нельзя.
  */
-export function RefPicker({ onPick, onClose }: Props) {
-  const [tab, setTab] = useState<RefKind>('kb')
+export function RefPicker({ onPick, onClose, initialTab = 'kb' }: Props) {
+  const [tab, setTab] = useState<RefKind>(initialTab)
   const [q, setQ] = useState('')
 
   const kb = useKbItems()
@@ -91,7 +94,7 @@ export function RefPicker({ onPick, onClose }: Props) {
               className={styles.refRow}
               onClick={() => onPick({ kind: 'kb', id: i.id, title: i.title })}
             >
-              <span className={styles.refRowIcon}>📄</span>
+              <IconBook size={16} className={styles.refRowIcon} />
               <span className={styles.refRowTitle}>{i.title}</span>
             </button>
           ))}
@@ -102,7 +105,7 @@ export function RefPicker({ onPick, onClose }: Props) {
               className={styles.refRow}
               onClick={() => onPick({ kind: 'task', id: t.id, title: t.title })}
             >
-              <span className={styles.refRowIcon}>✅</span>
+              <IconTasks size={16} className={styles.refRowIcon} />
               <span className={styles.refRowTitle}>{t.title}</span>
             </button>
           ))}
