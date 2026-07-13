@@ -10,15 +10,20 @@ import {
 import { useUsersMap } from '../../api/users'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
+import { Modal } from '../../components/Overlay'
 import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import styles from './tasks.module.css'
 
+// datetime-local ↔ ISO (как в админской форме задач).
 function isoToLocalInput(iso: string | null): string {
   if (!iso) return ''
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+function localInputToIso(value: string): string | null {
+  return value ? new Date(value).toISOString() : null
 }
 
 function errMsg(err: unknown): string {
@@ -138,63 +143,102 @@ function MeetingBlock({
   nameOf: (uid: number) => string
 }) {
   const update = useUpdateMeeting(taskId)
+  const [editing, setEditing] = useState(false)
   const [value, setValue] = useState(isoToLocalInput(pair.meeting_at))
+  const partnerName = partner ? nameOf(partner.user_id) : 'партнёром'
 
   function save(meetingAt: string | null) {
     update.mutate(
       { pairId: pair.pair_id, meetingAt },
       {
-        onSuccess: () => toast(meetingAt ? 'Встреча сохранена' : 'Встреча отменена'),
+        onSuccess: () => {
+          toast(meetingAt ? 'Встреча назначена' : 'Встреча отменена')
+          setEditing(false)
+        },
         onError: (err) => toast(errMsg(err), 'error'),
       },
     )
   }
 
+  // Второй участник (не организатор) — только видит.
+  if (!pair.can_manage_meeting) {
+    return (
+      <div className={styles.myStatusRow}>
+        <span className={styles.myStatusLabel}>Встреча:</span>
+        <span>
+          {pair.meeting_at
+            ? dateTimeMsk(pair.meeting_at)
+            : `Свяжитесь с ${partnerName}, чтобы назначить встречу`}
+        </span>
+      </div>
+    )
+  }
+
+  // Организатор, режим редактирования (выбор даты).
+  if (editing) {
+    return (
+      <div className={styles.myStatusRow}>
+        <span className={styles.myStatusLabel}>Встреча:</span>
+        <input
+          type="datetime-local"
+          className={styles.composerInput}
+          style={{ maxWidth: 220 }}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        <Button
+          type="button"
+          disabled={update.isPending || !value}
+          onClick={() => save(localInputToIso(value))}
+        >
+          Сохранить
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={update.isPending}
+          onClick={() => {
+            setValue(isoToLocalInput(pair.meeting_at))
+            setEditing(false)
+          }}
+        >
+          Отмена
+        </Button>
+      </div>
+    )
+  }
+
+  // Организатор, встреча уже назначена — дата + перенести/отменить.
+  if (pair.meeting_at) {
+    return (
+      <div className={styles.myStatusRow}>
+        <span className={styles.myStatusLabel}>Встреча с {partnerName}:</span>
+        <span>{dateTimeMsk(pair.meeting_at)}</span>
+        <Button type="button" variant="outline" onClick={() => setEditing(true)}>
+          Перенести
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={update.isPending}
+          onClick={() => {
+            setValue('')
+            save(null)
+          }}
+        >
+          Отменить
+        </Button>
+      </div>
+    )
+  }
+
+  // Организатор, встреча не назначена — кнопка с подписью.
   return (
     <div className={styles.myStatusRow}>
       <span className={styles.myStatusLabel}>Встреча:</span>
-      {pair.can_manage_meeting ? (
-        <>
-          <input
-            type="datetime-local"
-            className={styles.composerInput}
-            style={{ maxWidth: 220 }}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={update.isPending || !value}
-            onClick={() => save(value ? new Date(value).toISOString() : null)}
-          >
-            Сохранить
-          </Button>
-          {pair.meeting_at && (
-            <Button
-              type="button"
-              variant="outline"
-              disabled={update.isPending}
-              onClick={() => {
-                setValue('')
-                save(null)
-              }}
-            >
-              Отменить
-            </Button>
-          )}
-        </>
-      ) : (
-        <span>
-          {pair.meeting_at ? (
-            dateTimeMsk(pair.meeting_at)
-          ) : partner ? (
-            `Свяжитесь с ${nameOf(partner.user_id)}, чтобы назначить встречу`
-          ) : (
-            'Не назначена'
-          )}
-        </span>
-      )}
+      <Button type="button" onClick={() => setEditing(true)}>
+        Назначить встречу с {partnerName}
+      </Button>
     </div>
   )
 }
@@ -212,11 +256,8 @@ function GiveTaskBlock({
 }) {
   const create = useCreateCrossTask(taskId)
   const [open, setOpen] = useState(false)
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [media, setMedia] = useState<MediaChip[]>([])
 
-  // Уже выдал задачу партнёру → показываем ссылку, композер не нужен.
+  // Уже выдал задачу партнёру → показываем ссылку, форма не нужна.
   if (me.cross_task_id != null) {
     return (
       <div className={styles.myStatusRow}>
@@ -228,58 +269,116 @@ function GiveTaskBlock({
     )
   }
 
-  function submit() {
-    if (!title.trim() || create.isPending) return
-    create.mutate(
-      { pairId, title: title.trim(), body: body || null, media_asset_ids: media.map((m) => m.id) },
-      {
-        onSuccess: () => {
-          toast('Задача выдана')
-          setOpen(false)
-          setTitle('')
-          setBody('')
-          setMedia([])
-        },
-        onError: (err) => toast(errMsg(err), 'error'),
-      },
-    )
-  }
-
-  if (!open) {
-    return (
+  return (
+    <>
       <div className={styles.reviewActions}>
         <Button type="button" onClick={() => setOpen(true)}>
           Выдать задачу партнёру
         </Button>
       </div>
-    )
+      {open && (
+        <Modal title={`Задача для ${partnerName}`} onClose={() => setOpen(false)}>
+          <GiveTaskForm
+            partnerName={partnerName}
+            pending={create.isPending}
+            onCancel={() => setOpen(false)}
+            onSubmit={(values) =>
+              create.mutate(
+                { pairId, ...values },
+                {
+                  onSuccess: () => {
+                    toast('Задача выдана')
+                    setOpen(false)
+                  },
+                  onError: (err) => toast(errMsg(err), 'error'),
+                },
+              )
+            }
+          />
+        </Modal>
+      )}
+    </>
+  )
+}
+
+// Полноценная форма выдачи задачи партнёру (как в админке): заголовок, описание с
+// MediaComposer, необязательный дедлайн.
+function GiveTaskForm({
+  partnerName,
+  pending,
+  onSubmit,
+  onCancel,
+}: {
+  partnerName: string
+  pending: boolean
+  onSubmit: (v: {
+    title: string
+    body: string | null
+    deadline_at: string | null
+    media_asset_ids: number[]
+  }) => void
+  onCancel: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [deadline, setDeadline] = useState('')
+  const [media, setMedia] = useState<MediaChip[]>([])
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!title.trim() || pending) return
+    onSubmit({
+      title: title.trim(),
+      body: body || null,
+      deadline_at: localInputToIso(deadline),
+      media_asset_ids: media.map((m) => m.id),
+    })
   }
 
   return (
-    <div className={styles.section}>
-      <input
-        className={styles.composerInput}
-        placeholder={`Заголовок задачи для ${partnerName}…`}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-      />
-      <MediaComposer
-        value={body}
-        onChange={setBody}
-        attachments={media}
-        onAttachmentsChange={setMedia}
-        placeholder="Условие задачи (поддерживается Markdown)…"
-        rows={4}
-      />
+    <form onSubmit={handleSubmit} className={styles.section}>
+      <label className={styles.myStatusLabel}>
+        Заголовок
+        <input
+          className={styles.composerInput}
+          placeholder={`Что отработать с ${partnerName}…`}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+        />
+      </label>
+
+      <div className={styles.myStatusLabel}>
+        Описание
+        <MediaComposer
+          value={body}
+          onChange={setBody}
+          attachments={media}
+          onAttachmentsChange={setMedia}
+          placeholder="Условие задачи (поддерживается Markdown)…"
+          rows={6}
+        />
+      </div>
+
+      <label className={styles.myStatusLabel}>
+        Дедлайн (необязательно)
+        <input
+          type="datetime-local"
+          className={styles.composerInput}
+          value={deadline}
+          onChange={(e) => setDeadline(e.target.value)}
+        />
+      </label>
+
       <div className={styles.reviewActions}>
-        <Button type="button" onClick={submit} disabled={create.isPending || !title.trim()}>
+        <Button type="submit" disabled={pending || !title.trim()}>
           Выдать
         </Button>
-        <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+        <Button type="button" variant="outline" onClick={onCancel}>
           Отмена
         </Button>
       </div>
-    </div>
+    </form>
   )
 }
 
