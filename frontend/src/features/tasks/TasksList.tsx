@@ -113,7 +113,7 @@ export function TasksList() {
 
       {firstItems.length > 0 && (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Активные</h2>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>Активные</h2>
           <div className={styles.grid}>
             {firstItems.map((task) => (
               <TaskCard key={task.id} task={task} isAdmin={isAdmin} />
