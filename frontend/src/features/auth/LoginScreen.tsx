@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { ApiError } from '../../lib/apiClient'
+import { ApiError, isNetworkError } from '../../lib/apiClient'
 import { Button } from '../../components/Button'
 import { StarSpark } from '../../components/StarSpark'
 import { useAuth } from './AuthContext'
@@ -19,7 +19,11 @@ export function LoginScreen() {
     try {
       await login(username.trim(), password)
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? 'Неверный логин или пароль' : 'Не удалось войти')
+      if (isNetworkError(err)) {
+        setError('Нет связи с сервером. Проверьте интернет и попробуйте снова.')
+      } else {
+        setError(err instanceof ApiError && err.status === 401 ? 'Неверный логин или пароль' : 'Не удалось войти')
+      }
     } finally {
       setBusy(false)
     }

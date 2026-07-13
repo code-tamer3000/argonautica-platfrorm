@@ -12,6 +12,20 @@ export class ApiError extends Error {
   }
 }
 
+// Запрос не долетел до сервера (offline, таймаут, DNS): про токен/сессию ничего
+// не известно. НЕ путать с ответом сервера — сессию по этому трогать нельзя.
+export class NetworkError extends Error {
+  constructor(cause?: unknown) {
+    super('network error')
+    this.name = 'NetworkError'
+    this.cause = cause
+  }
+}
+
+export function isNetworkError(err: unknown): err is NetworkError {
+  return err instanceof NetworkError
+}
+
 let onUnauthorized: (() => void) | null = null
 export function setUnauthorizedHandler(fn: () => void): void {
   onUnauthorized = fn
@@ -37,11 +51,19 @@ async function rawRequest(path: string, init: RequestInit, auth: boolean): Promi
     const token = getAccessToken()
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
-  return fetch(path, { ...init, headers })
+  try {
+    return await fetch(path, { ...init, headers })
+  } catch (err) {
+    // fetch реджектится только когда запрос не долетел (сеть/CORS/abort),
+    // а не на HTTP-ошибках — это всегда сетевой сбой.
+    throw new NetworkError(err)
+  }
 }
 
 let refreshing: Promise<boolean> | null = null
 
+// true — access обновлён; false — сервер отклонил refresh (токен мёртв);
+// NetworkError — до сервера не достучались (сессию трогать нельзя).
 async function doRefresh(): Promise<boolean> {
   const rt = getRefreshToken()
   if (!rt) return false
@@ -75,6 +97,8 @@ export async function api<T>(path: string, init: RequestInit = {}, opts: ApiOpti
   let res = await rawRequest(path, init, auth)
 
   if (res.status === 401 && auth) {
+    // tryRefresh может реджектнуться NetworkError — тогда не разлогиниваем,
+    // а пробрасываем сетевую ошибку наверх (сессия могла остаться живой).
     const ok = await tryRefresh()
     if (ok) {
       res = await rawRequest(path, init, auth)

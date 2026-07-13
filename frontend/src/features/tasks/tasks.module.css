@@ -285,6 +285,12 @@
   gap: var(--space-3);
   margin-bottom: var(--space-3);
 }
+.trackToggle {
+  color: var(--text-secondary);
+  font-size: var(--text-ui);
+  width: 1em;
+  flex: none;
+}
 .trackName {
   font-family: var(--font-t4);
   font-size: var(--text-ui);

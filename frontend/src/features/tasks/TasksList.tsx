@@ -15,6 +15,7 @@ import styles from './tasks.module.css'
 const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
+  pair: 'Парная',
 }
 
 const STATUS_LABEL: Record<Exclude<MyTaskStatus, null>, string> = {

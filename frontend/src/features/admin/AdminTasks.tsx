@@ -20,6 +20,7 @@ import styles from './admin.module.css'
 const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
+  pair: 'Парная',
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -36,6 +37,8 @@ interface TaskFormValues {
   deadline_at: string | null
   kb_item_id: number | null
   assignee_ids: number[]
+  // Пары для type='pair': каждая — [userA, userB]. Организатор встречи выбирается сервером.
+  pairs: [number, number][]
   media: MediaChip[]
 }
 
@@ -65,6 +68,10 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   const [deadline, setDeadline] = useState(isoToLocalInput(initial?.deadline_at ?? null))
   const [kbItemId, setKbItemId] = useState<number | null>(initial?.kb_item_id ?? null)
   const [assignees, setAssignees] = useState<number[]>([])
+  // Пары для парного задания. Черновик текущей собираемой пары — [a, b].
+  const [pairs, setPairs] = useState<[number, number][]>([])
+  const [draftA, setDraftA] = useState<number | ''>('')
+  const [draftB, setDraftB] = useState<number | ''>('')
   // При редактировании инициализируем вложения из existing attachments.
   const [media, setMedia] = useState<MediaChip[]>(
     () => (initial?.attachments ?? []).map((a) => ({ id: a.asset_id, kind: a.kind }))
@@ -74,8 +81,24 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   const { data: users = [] } = useUsers()
   const participants = users.filter((u) => u.role !== 'admin')
 
+  // Пары: в них могут участвовать и админы, поэтому берём всех. Уже занятых в паре
+  // не предлагаем (один человек — максимум в одной паре задания).
+  const takenInPairs = new Set(pairs.flat())
+  const nameOf = (uid: number) => users.find((u) => u.id === uid)?.display_name ?? `#${uid}`
+
   function toggleAssignee(id: number) {
     setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  function addPair() {
+    if (draftA === '' || draftB === '' || draftA === draftB) return
+    setPairs((prev) => [...prev, [draftA, draftB]])
+    setDraftA('')
+    setDraftB('')
+  }
+
+  function removePair(idx: number) {
+    setPairs((prev) => prev.filter((_, i) => i !== idx))
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -87,6 +110,7 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
       deadline_at: localInputToIso(deadline),
       kb_item_id: kbItemId,
       assignee_ids: assignees,
+      pairs,
       media,
     })
   }
@@ -114,6 +138,15 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
                 onChange={() => setType('individual')}
               />
               Индивидуальная
+            </label>
+            <label className={styles.checkLabel}>
+              <input
+                type="radio"
+                name="task-type"
+                checked={type === 'pair'}
+                onChange={() => setType('pair')}
+              />
+              Парная (взаимное обучение)
             </label>
           </div>
         </div>
@@ -180,6 +213,63 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
               </label>
             ))}
             {participants.length === 0 && <p className={styles.mediaEmpty}>Нет участников</p>}
+          </div>
+        </div>
+      )}
+
+      {!editing && type === 'pair' && (
+        <div className={styles.formRow}>
+          <label>Пары</label>
+          <div className={styles.list}>
+            {pairs.map((p, idx) => (
+              <div className={styles.listItem} key={idx}>
+                <div className={styles.listItemMain}>
+                  <span className={styles.listTitle}>
+                    {nameOf(p[0])} ↔ {nameOf(p[1])}
+                  </span>
+                </div>
+                <div className={styles.listActions}>
+                  <Button type="button" variant="outline" onClick={() => removePair(idx)}>
+                    Убрать
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {pairs.length === 0 && <p className={styles.mediaEmpty}>Пар пока нет</p>}
+          </div>
+          <div className={styles.checkRow}>
+            <select
+              className={styles.input}
+              value={draftA}
+              onChange={(e) => setDraftA(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">— участник —</option>
+              {users
+                .filter((u) => !takenInPairs.has(u.id) && u.id !== draftB)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>{u.display_name}</option>
+                ))}
+            </select>
+            <select
+              className={styles.input}
+              value={draftB}
+              onChange={(e) => setDraftB(e.target.value ? Number(e.target.value) : '')}
+            >
+              <option value="">— партнёр —</option>
+              {users
+                .filter((u) => !takenInPairs.has(u.id) && u.id !== draftA)
+                .map((u) => (
+                  <option key={u.id} value={u.id}>{u.display_name}</option>
+                ))}
+            </select>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={addPair}
+              disabled={draftA === '' || draftB === '' || draftA === draftB}
+            >
+              Добавить пару
+            </Button>
           </div>
         </div>
       )}
@@ -290,8 +380,12 @@ function isOverdue(task: TaskWithStatusOut): boolean {
 export function AdminTasks() {
   const { data } = useTasks()
   const items = data?.items ?? []
-  const active = items.filter((t) => !isOverdue(t))
-  const overdue = items.filter(isOverdue)
+  // Перекрёстные задачи из пар (pair_id != null) выносим в отдельный сворачиваемый
+  // раздел — иначе они засоряют общий список (по 2 на каждую пару).
+  const crossTasks = items.filter((t) => t.pair_id != null)
+  const mainTasks = items.filter((t) => t.pair_id == null)
+  const active = mainTasks.filter((t) => !isOverdue(t))
+  const overdue = mainTasks.filter(isOverdue)
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
@@ -299,8 +393,13 @@ export function AdminTasks() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTask, setEditTask] = useState<TaskWithStatusOut | null>(null)
   const [progressFor, setProgressFor] = useState<TaskWithStatusOut | null>(null)
+  const [crossOpen, setCrossOpen] = useState(false)
 
   function handleCreate(values: TaskFormValues) {
+    if (values.type === 'pair' && values.pairs.length === 0) {
+      toast('Добавьте хотя бы одну пару', 'error')
+      return
+    }
     createTask.mutate(
       {
         type: values.type,
@@ -309,6 +408,10 @@ export function AdminTasks() {
         deadline_at: values.deadline_at,
         kb_item_id: values.kb_item_id,
         assignee_ids: values.type === 'individual' ? values.assignee_ids : undefined,
+        pairs:
+          values.type === 'pair'
+            ? values.pairs.map(([a, b]) => ({ user_ids: [a, b] as [number, number] }))
+            : undefined,
         media_asset_ids: values.media.map((m) => m.id),
       },
       {
@@ -390,6 +493,31 @@ export function AdminTasks() {
               />
             ))}
           </div>
+        </>
+      )}
+
+      {crossTasks.length > 0 && (
+        <>
+          <button
+            type="button"
+            className={styles.sectionToggle}
+            onClick={() => setCrossOpen((v) => !v)}
+          >
+            {crossOpen ? '▾' : '▸'} Перекрёстные задачи из пар ({crossTasks.length})
+          </button>
+          {crossOpen && (
+            <div className={styles.list}>
+              {crossTasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
+                  onEdit={() => setEditTask(task)}
+                  onDelete={() => handleDelete(task.id)}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
 
