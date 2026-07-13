@@ -32,6 +32,17 @@
   border-color: var(--accent);
 }
 
+.categorySection {
+  margin-bottom: var(--space-6);
+}
+
+.categoryTitle {
+  font-family: var(--font-t2);
+  font-size: 18px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
