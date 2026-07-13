@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
@@ -49,6 +50,7 @@ export function MessageItem({
 }: Props) {
   const stickerMap = useStickerMap()
   const editMutation = useEditMessage(msg.room_id)
+  const navigate = useNavigate()
 
   const [editText, setEditText] = useState(msg.content ?? '')
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -175,6 +177,26 @@ export function MessageItem({
               sticker?.image_url
                 ? <img className={styles.sticker} src={sticker.image_url} alt={sticker.keyword ?? ''} />
                 : <span className={styles.msgPlaceholder}>[стикер]</span>
+            )}
+
+            {msg.ref && (
+              // Ссылка на материал/задачу — кнопка перед текстом. Недоступную зрителю
+              // цель (черновик / чужая задача / удалённая) не даём открыть.
+              <button
+                className={`${styles.refLink} ${!msg.ref.available ? styles.refLinkDisabled : ''}`}
+                disabled={!msg.ref.available}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (msg.ref?.available) navigate(msg.ref.url)
+                }}
+              >
+                <span aria-hidden>{msg.ref.kind === 'kb' ? '📄' : '✅'}</span>
+                <span className={styles.refLinkText}>
+                  {msg.ref.available
+                    ? `Перейти к ${msg.ref.kind === 'kb' ? 'материалу' : 'задаче'}: ${msg.ref.title}`
+                    : `${msg.ref.kind === 'kb' ? 'Материал' : 'Задача'} недоступен`}
+                </span>
+              </button>
             )}
 
             {msg.content && (

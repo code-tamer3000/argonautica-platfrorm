@@ -24,6 +24,7 @@ from app.schemas.media import AttachmentOut
 from app.schemas.message import (
     EditMessageRequest,
     MessageOut,
+    MessageRefOut,
     PinnedOut,
     ReadRequest,
     ReadStateOut,
@@ -31,6 +32,11 @@ from app.schemas.message import (
     ThreadOut,
 )
 from app.services.media import resolve_attachments
+from app.services.message_refs import (
+    assert_ref_visible,
+    resolve_message_refs,
+    resolve_ref_for_broadcast,
+)
 from app.services.notifications import on_new_message
 from app.services.ratelimit import enforce_rate_limit
 from app.services.rooms import (
@@ -86,23 +92,46 @@ async def _unread_replies_map(
     return {root_id: count for root_id, count in rows.all()}
 
 
-def _to_out(message: Message, attachments: list[AttachmentOut]) -> MessageOut:
+async def _refs_map(
+    session: AsyncSession, messages: list[Message], viewer: User
+) -> dict[tuple[str, int], MessageRefOut]:
+    """Разрешить ссылки всех сообщений батчем для зрителя (title/url/available)."""
+    refs = [
+        (m.ref_kind, m.ref_id)
+        for m in messages
+        if m.ref_kind is not None and m.ref_id is not None
+    ]
+    if not refs:
+        return {}
+    return await resolve_message_refs(session, refs, viewer)
+
+
+def _to_out(
+    message: Message,
+    attachments: list[AttachmentOut],
+    refs: dict[tuple[str, int], MessageRefOut] | None = None,
+) -> MessageOut:
     out = MessageOut.model_validate(message)
     out.attachments = attachments
     # attachment_ids — для обратной совместимости со старыми клиентами (см. схему).
     out.attachment_ids = [att.asset_id for att in attachments]
+    if message.ref_kind is not None and message.ref_id is not None and refs is not None:
+        out.ref = refs.get((message.ref_kind, message.ref_id))
     return out
 
 
 def _pinned_out(
-    pin: PinnedMessage, message: Message, attachments: list[AttachmentOut]
+    pin: PinnedMessage,
+    message: Message,
+    attachments: list[AttachmentOut],
+    refs: dict[tuple[str, int], MessageRefOut] | None = None,
 ) -> PinnedOut:
     return PinnedOut(
         room_id=pin.room_id,
         message_id=pin.message_id,
         pinned_by=pin.pinned_by,
         pinned_at=pin.pinned_at,
-        message=_to_out(message, attachments),
+        message=_to_out(message, attachments, refs),
     )
 
 
@@ -151,6 +180,11 @@ async def send_message(
         if set(found.scalars().all()) != set(body.attachment_ids):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
 
+    # Ссылка на материал/задачу: цель должна существовать и быть видимой отправителю
+    # (анти-IDOR — нельзя сослаться на черновик КБ / чужую задачу).
+    if body.ref_kind is not None and body.ref_id is not None:
+        await assert_ref_visible(session, body.ref_kind, body.ref_id, current_user)
+
     # Плоскость тредов (п.2): привязка всегда к КОРНЮ. Отвечают на ответ —
     # берём его thread_root_id, не его id.
     thread_root_id: int | None = None
@@ -170,6 +204,8 @@ async def send_message(
         content=body.content,
         sticker_id=body.sticker_id,
         thread_root_id=thread_root_id,
+        ref_kind=body.ref_kind,
+        ref_id=body.ref_id,
     )
     session.add(message)
     await session.flush()
@@ -190,9 +226,17 @@ async def send_message(
     await session.flush()
     await session.refresh(message)
     resolved = await resolve_attachments(session, [message.id])
-    out = _to_out(message, resolved.get(message.id, []))
-    # Живая доставка подписчикам комнаты (payload самодостаточный).
-    await publish_room_event(room_id, ws_schemas.message_new_event(out))
+    refs = await _refs_map(session, [message], current_user)
+    out = _to_out(message, resolved.get(message.id, []), refs)
+    # Живая доставка подписчикам комнаты (payload самодостаточный). Ссылку в
+    # broadcast резолвим консервативно (заголовок только для универсально видимой
+    # цели) — payload один на всех, нельзя раскрыть чужой черновик.
+    ws_out = _to_out(message, resolved.get(message.id, []))
+    if message.ref_kind is not None and message.ref_id is not None:
+        ws_out.ref = await resolve_ref_for_broadcast(
+            session, message.ref_kind, message.ref_id
+        )
+    await publish_room_event(room_id, ws_schemas.message_new_event(ws_out))
     # Уведомления получателям (личка / ответ на сообщение / пост в новостях).
     await on_new_message(session, message, room, current_user)
     return out
@@ -253,6 +297,9 @@ async def repost_to_news(
         sticker_id=source.sticker_id,
         # Цепочка репостов сохраняет ПЕРВОГО автора, а не промежуточного репостера.
         forwarded_from_sender_id=source.forwarded_from_sender_id or source.sender_id,
+        # Ссылка на материал/задачу переносится вместе с репостом.
+        ref_kind=source.ref_kind,
+        ref_id=source.ref_id,
     )
     session.add(repost)
     await session.flush()
@@ -265,8 +312,14 @@ async def repost_to_news(
     await session.flush()
     await session.refresh(repost)
     resolved = await resolve_attachments(session, [repost.id])
-    out = _to_out(repost, resolved.get(repost.id, []))
-    await publish_room_event(news.id, ws_schemas.message_new_event(out))
+    refs = await _refs_map(session, [repost], current_user)
+    out = _to_out(repost, resolved.get(repost.id, []), refs)
+    ws_out = _to_out(repost, resolved.get(repost.id, []))
+    if repost.ref_kind is not None and repost.ref_id is not None:
+        ws_out.ref = await resolve_ref_for_broadcast(
+            session, repost.ref_kind, repost.ref_id
+        )
+    await publish_room_event(news.id, ws_schemas.message_new_event(ws_out))
     # Репост — новый верхнеуровневый пост в новостях: уведомить всех участников.
     await on_new_message(session, repost, news, current_user)
     return out
@@ -303,12 +356,13 @@ async def list_messages(
 
     messages = list((await session.execute(stmt)).scalars().all())
     attachments = await resolve_attachments(session, [m.id for m in messages])
+    refs = await _refs_map(session, messages, current_user)
     # Непрочитанные ответы в тредах — только для корней с ответами (иначе лишний скан).
     roots_with_replies = [m.id for m in messages if m.reply_count > 0]
     unread = await _unread_replies_map(session, roots_with_replies, last_read)
     out = []
     for m in messages:
-        item = _to_out(m, attachments.get(m.id, []))
+        item = _to_out(m, attachments.get(m.id, []), refs)
         item.unread_reply_count = unread.get(m.id, 0)
         out.append(item)
     return out
@@ -352,9 +406,10 @@ async def get_thread(
     attachments = await resolve_attachments(
         session, [root.id, *[r.id for r in replies]]
     )
+    refs = await _refs_map(session, [root, *replies], current_user)
     return ThreadOut(
-        root=_to_out(root, attachments.get(root.id, [])),
-        replies=[_to_out(r, attachments.get(r.id, [])) for r in replies],
+        root=_to_out(root, attachments.get(root.id, []), refs),
+        replies=[_to_out(r, attachments.get(r.id, []), refs) for r in replies],
     )
 
 
@@ -392,8 +447,14 @@ async def edit_message(
     await session.refresh(message)
 
     attachments = await resolve_attachments(session, [message.id])
-    out = _to_out(message, attachments.get(message.id, []))
-    await publish_room_event(room_id, ws_schemas.message_edited_event(out))
+    refs = await _refs_map(session, [message], current_user)
+    out = _to_out(message, attachments.get(message.id, []), refs)
+    ws_out = _to_out(message, attachments.get(message.id, []))
+    if message.ref_kind is not None and message.ref_id is not None:
+        ws_out.ref = await resolve_ref_for_broadcast(
+            session, message.ref_kind, message.ref_id
+        )
+    await publish_room_event(room_id, ws_schemas.message_edited_event(ws_out))
     return out
 
 
@@ -545,7 +606,8 @@ async def pin_message(
         )
 
     attachments = await resolve_attachments(session, [message.id])
-    return _pinned_out(pin, message, attachments.get(message.id, []))
+    refs = await _refs_map(session, [message], current_user)
+    return _pinned_out(pin, message, attachments.get(message.id, []), refs)
 
 
 @router.delete(
@@ -596,7 +658,10 @@ async def list_pins(
     )
     pairs = list(rows.all())
     attachments = await resolve_attachments(session, [m.id for _, m in pairs])
-    return [_pinned_out(p, m, attachments.get(m.id, [])) for p, m in pairs]
+    refs = await _refs_map(session, [m for _, m in pairs], current_user)
+    return [
+        _pinned_out(p, m, attachments.get(m.id, []), refs) for p, m in pairs
+    ]
 
 
 @router.get("/{room_id}/journal-days", response_model=dict[str, list[str]])
