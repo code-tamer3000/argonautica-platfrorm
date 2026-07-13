@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { EditableInput, type EditableHandle } from './EditableInput'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
@@ -9,7 +10,6 @@ import {
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
 import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
-import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
 import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
 import type { MessageOut, MessageRefOut } from '../../lib/types'
@@ -100,7 +100,10 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
-  const inputRef = useAutosize(text)
+  // Поле ввода — contenteditable (см. EditableInput): на iOS у него нет нативной панели
+  // аксессуаров (стрелки/«Готово»), которая перекрывала низ композера. Хэндл textarea-
+  // совместим, поэтому @-меншены и восстановление черновика читают его как раньше.
+  const inputRef = useRef<EditableHandle>(null)
   const mentions = useMentionAutocomplete(inputRef, text, setText)
 
   // Смена контекста ответа (вошли/вышли из треда / другой корень) — начинаем с чистого
@@ -347,7 +350,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     enqueueTopLevel(body, uploads, ref)
   }
 
-  function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+  function onKey(e: KeyboardEvent<HTMLDivElement>) {
     // @-автодополнение перехватывает стрелки/Enter/Tab/Esc, пока открыт попап.
     if (mentions.onKeyDown(e)) return
     if (e.key !== 'Enter' || e.shiftKey) return
@@ -567,10 +570,10 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
             >
               <IconSticker size={18} />
             </button>
-            <textarea
+            <EditableInput
               ref={inputRef}
               className={styles.composerInput}
-              rows={1}
+              ariaLabel="Сообщение"
               placeholder={
                 inThread
                   ? 'Ответить в тред…'
@@ -579,10 +582,9 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                     : 'Сообщение…'
               }
               value={text}
-              onChange={(e) => onChange(e.target.value)}
+              onChange={onChange}
               onKeyDown={onKey}
               onFocus={() => { if (!inThread) onFocusInput?.() }}
-              enterKeyHint="enter"
             />
           </>
         )}

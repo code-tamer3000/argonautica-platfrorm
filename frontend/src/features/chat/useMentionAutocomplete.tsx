@@ -7,6 +7,7 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from 'react'
+import type { EditableHandle } from './EditableInput'
 import { useUsers } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import type { PublicUserOut } from '../../lib/types'
@@ -47,7 +48,10 @@ function findActiveMention(value: string, caret: number): MentionState | null {
  *  - `onValueChange` — вызвать при каждом изменении текста, чтобы пересчитать токен.
  */
 export function useMentionAutocomplete(
-  textareaRef: RefObject<HTMLTextAreaElement>,
+  // Поле ввода композера — contenteditable (EditableInput), но выставляет textarea-
+  // совместимый хэндл (value/selectionStart/focus/setSelectionRange), поэтому логика
+  // токенов ниже не меняется.
+  textareaRef: RefObject<EditableHandle>,
   value: string,
   setValue: (next: string) => void,
 ) {
@@ -112,7 +116,7 @@ export function useMentionAutocomplete(
   )
 
   const onKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    (e: KeyboardEvent<HTMLElement>): boolean => {
       if (!open) return false
       if (e.key === 'ArrowDown') {
         e.preventDefault()

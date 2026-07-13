@@ -362,18 +362,29 @@
   background: var(--color-error, #d9534f); animation: arg-rec-pulse 1.2s ease-in-out infinite;
 }
 @keyframes arg-rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* Поле ввода — contenteditable div (не textarea): на iOS у него нет нативной панели
+   аксессуаров над клавиатурой. Растёт под содержимое само (min-height..max-height),
+   дальше — внутренний скролл. white-space: pre-wrap сохраняет переводы строк/пробелы. */
 .composerInput {
-  flex: 1; resize: none; max-height: 160px; min-height: 44px;
+  flex: 1; min-width: 0; max-height: 160px; min-height: 44px;
   padding: var(--space-3) var(--space-4);
   font-family: var(--font-t3); font-size: var(--text-body-sm); line-height: 1.5;
   background: var(--bg-deep); border: 1px solid var(--color-frame-deep); border-radius: var(--radius-card);
   color: var(--text-primary); transition: var(--transition-base);
+  white-space: pre-wrap; word-break: break-word;
   /* overflow-y: auto — полоса появляется ТОЛЬКО когда поле уперлось в max-height и
      текст переполняет его. Плавная (инерционная) прокрутка: smooth + momentum на iOS. */
   overflow-y: auto;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+}
+/* Плейсхолдер для contenteditable: показываем data-placeholder, пока поле пустое
+   (data-empty ставит EditableInput). Не участвует в выделении/каретке. */
+.composerInput[data-empty='true']::before {
+  content: attr(data-placeholder);
+  color: var(--text-ghost);
+  pointer-events: none;
 }
 /* Тонкий thumb, вписанный в скругление: прозрачная рамка + background-clip отодвигают
    видимую полосу (≈3px) от правого края, margin трека — от скругленных верх/низ углов.
