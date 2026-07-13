@@ -380,8 +380,12 @@ function isOverdue(task: TaskWithStatusOut): boolean {
 export function AdminTasks() {
   const { data } = useTasks()
   const items = data?.items ?? []
-  const active = items.filter((t) => !isOverdue(t))
-  const overdue = items.filter(isOverdue)
+  // Перекрёстные задачи из пар (pair_id != null) выносим в отдельный сворачиваемый
+  // раздел — иначе они засоряют общий список (по 2 на каждую пару).
+  const crossTasks = items.filter((t) => t.pair_id != null)
+  const mainTasks = items.filter((t) => t.pair_id == null)
+  const active = mainTasks.filter((t) => !isOverdue(t))
+  const overdue = mainTasks.filter(isOverdue)
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
@@ -389,6 +393,7 @@ export function AdminTasks() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTask, setEditTask] = useState<TaskWithStatusOut | null>(null)
   const [progressFor, setProgressFor] = useState<TaskWithStatusOut | null>(null)
+  const [crossOpen, setCrossOpen] = useState(false)
 
   function handleCreate(values: TaskFormValues) {
     if (values.type === 'pair' && values.pairs.length === 0) {
@@ -488,6 +493,31 @@ export function AdminTasks() {
               />
             ))}
           </div>
+        </>
+      )}
+
+      {crossTasks.length > 0 && (
+        <>
+          <button
+            type="button"
+            className={styles.sectionToggle}
+            onClick={() => setCrossOpen((v) => !v)}
+          >
+            {crossOpen ? '▾' : '▸'} Перекрёстные задачи из пар ({crossTasks.length})
+          </button>
+          {crossOpen && (
+            <div className={styles.list}>
+              {crossTasks.map((task) => (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
+                  onEdit={() => setEditTask(task)}
+                  onDelete={() => handleDelete(task.id)}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
 

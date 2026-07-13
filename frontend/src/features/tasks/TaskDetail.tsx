@@ -137,21 +137,86 @@ export function TaskDetail() {
       )}
 
       {/* Треки со сдачами: общая — все публичные, индивидуальная — только свой.
-          Для парного задания треков нет (сдачи — в перекрёстных задачах). */}
+          Для парного задания треков нет (сдачи — в перекрёстных задачах).
+          Проверяющему делим на «на проверке» и «принятые», чтобы новые сдачи было
+          сразу видно и они не тонули среди уже принятых. */}
       {task.type !== 'pair' && (
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>
-          {task.type === 'common' && !isAdmin ? 'Работы участников' : 'Сдачи'}
-        </h2>
-        {visibleTracks.length === 0 && (
-          <div className={styles.emptyNote}>Пока никто ничего не сдал.</div>
-        )}
-        {visibleTracks.map((track) => (
-          <TrackCard key={track.assignment_id} track={track} taskId={id} isAdmin={canReview} />
-        ))}
-      </section>
+        <TracksSection
+          title={task.type === 'common' && !isAdmin ? 'Работы участников' : 'Сдачи'}
+          tracks={visibleTracks}
+          taskId={id}
+          canReview={canReview}
+        />
       )}
     </div>
+  )
+}
+
+// Трек «требует внимания», пока не принят (есть сдача на проверке или возвращён).
+const PENDING_STATUSES = new Set(['submitted', 'returned'])
+
+function TracksSection({
+  title,
+  tracks,
+  taskId,
+  canReview,
+}: {
+  title: string
+  tracks: TaskTrackOut[]
+  taskId: number
+  canReview: boolean
+}) {
+  if (tracks.length === 0) {
+    return (
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>{title}</h2>
+        <div className={styles.emptyNote}>Пока никто ничего не сдал.</div>
+      </section>
+    )
+  }
+
+  const pending = tracks.filter((t) => PENDING_STATUSES.has(t.status))
+  const accepted = tracks.filter((t) => t.status === 'accepted')
+  const other = tracks.filter(
+    (t) => !PENDING_STATUSES.has(t.status) && t.status !== 'accepted',
+  )
+
+  return (
+    <>
+      {pending.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>На проверке ({pending.length})</h2>
+          {pending.map((track) => (
+            <TrackCard key={track.assignment_id} track={track} taskId={taskId} isAdmin={canReview} />
+          ))}
+        </section>
+      )}
+
+      {/* Треки без сдач (assigned) показываем проверяющему как «ожидают сдачи». */}
+      {canReview && other.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Ожидают сдачи ({other.length})</h2>
+          {other.map((track) => (
+            <TrackCard key={track.assignment_id} track={track} taskId={taskId} isAdmin={canReview} />
+          ))}
+        </section>
+      )}
+
+      {accepted.length > 0 && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>Принятые ({accepted.length})</h2>
+          {accepted.map((track) => (
+            <TrackCard
+              key={track.assignment_id}
+              track={track}
+              taskId={taskId}
+              isAdmin={canReview}
+              defaultCollapsed
+            />
+          ))}
+        </section>
+      )}
+    </>
   )
 }
 
@@ -159,14 +224,18 @@ function TrackCard({
   track,
   taskId,
   isAdmin,
+  defaultCollapsed = false,
 }: {
   track: TaskTrackOut
   taskId: number
   isAdmin: boolean
+  defaultCollapsed?: boolean
 }) {
   const users = useUsersMap()
   const review = useReview()
   const [comment, setComment] = useState('')
+  // Принятые сдачи по умолчанию свёрнуты — раскрываются по клику на заголовок.
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const submitter = users.get(track.user_id)
   const name = submitter?.display_name ?? `Участник #${track.user_id}`
 
@@ -198,7 +267,20 @@ function TrackCard({
 
   return (
     <div className={styles.track}>
-      <div className={styles.trackHead}>
+      <div
+        className={styles.trackHead}
+        onClick={() => setCollapsed((v) => !v)}
+        style={{ cursor: 'pointer' }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setCollapsed((v) => !v)
+          }
+        }}
+      >
+        <span className={styles.trackToggle} aria-hidden>{collapsed ? '▸' : '▾'}</span>
         <Avatar name={name} url={submitter?.avatar_url} size={32} />
         <span className={styles.trackName}>{name}</span>
         <div className={styles.trackChips}>
@@ -209,35 +291,39 @@ function TrackCard({
         </div>
       </div>
 
-      {track.submissions.length === 0 && (
-        <div className={styles.emptyNote}>Нет сдач.</div>
-      )}
-      {track.submissions.map((sub) => (
-        <SubmissionBlock key={sub.id} sub={sub} name={name} />
-      ))}
-
-      {isAdmin && track.status === 'accepted' && (
-        <div className={styles.emptyNote}>Задача принята.</div>
-      )}
-
-      {isAdmin && track.status !== 'accepted' && (
+      {!collapsed && (
         <>
-          <textarea
-            className={styles.composerInput}
-            placeholder="Комментарий при возврате на доработку (необязательно)…"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            rows={2}
-            style={{ minHeight: 60, marginTop: 'var(--space-3)' }}
-          />
-          <div className={styles.reviewActions}>
-            <Button type="button" onClick={accept} disabled={review.isPending}>
-              Принять
-            </Button>
-            <Button type="button" variant="outline" onClick={returnWithComment} disabled={review.isPending}>
-              Вернуть на доработку
-            </Button>
-          </div>
+          {track.submissions.length === 0 && (
+            <div className={styles.emptyNote}>Нет сдач.</div>
+          )}
+          {track.submissions.map((sub) => (
+            <SubmissionBlock key={sub.id} sub={sub} name={name} />
+          ))}
+
+          {isAdmin && track.status === 'accepted' && (
+            <div className={styles.emptyNote}>Задача принята.</div>
+          )}
+
+          {isAdmin && track.status !== 'accepted' && (
+            <>
+              <textarea
+                className={styles.composerInput}
+                placeholder="Комментарий при возврате на доработку (необязательно)…"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                rows={2}
+                style={{ minHeight: 60, marginTop: 'var(--space-3)' }}
+              />
+              <div className={styles.reviewActions}>
+                <Button type="button" onClick={accept} disabled={review.isPending}>
+                  Принять
+                </Button>
+                <Button type="button" variant="outline" onClick={returnWithComment} disabled={review.isPending}>
+                  Вернуть на доработку
+                </Button>
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
