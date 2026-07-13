@@ -20,6 +20,12 @@ const KEYBOARD_THRESHOLD = 120
 
 let installed = false
 let lastHeight = 0
+// Максимальная виденная высота visual viewport (высота БЕЗ клавиатуры). От неё, а не
+// от root.clientHeight, считаем «насколько сжало» — единственная кросс-платформенная
+// опора. На Android layout viewport (innerHeight/root.clientHeight) сам сжимается под
+// клавиатуру, поэтому сравнение с ним всегда давало ≈0 и data-kb НЕ ставился → нижний
+// таб-бар оставался поверх композера и прятал нижние строки длинного сообщения.
+let maxHeight = 0
 
 /** Синхронно вернуть окно/документ к нулевому скроллу — гасим нативный «scroll to field». */
 function pinScroll() {
@@ -94,9 +100,16 @@ function applyHeight() {
     root.style.setProperty('--app-height', `${rounded}px`)
   }
 
-  // Пометка «клавиатура открыта» на <html> — для CSS-хуков (скрыть нижнюю навигацию).
-  const layoutHeight = root.clientHeight
-  if (layoutHeight - height > KEYBOARD_THRESHOLD) root.setAttribute('data-kb', 'open')
+  // Растим «эталон без клавиатуры» вверх (поворот/ресайз окна расширяют вьюпорт), но
+  // клавиатура его НЕ уменьшает — иначе сжатая высота стала бы новым эталоном и порог
+  // никогда бы не сработал.
+  if (rounded > maxHeight) maxHeight = rounded
+
+  // Пометка «клавиатура открыта» на <html> — для CSS-хуков (скрыть нижнюю навигацию,
+  // снять её резерв, прижать композер к клавиатуре). Сравниваем с maxHeight (высота без
+  // клавиатуры), а НЕ с root.clientHeight: на Android layout viewport сам сжимается под
+  // клавиатуру, и разница с ним всегда ≈0 — флаг не ставился, таб-бар прятал композер.
+  if (maxHeight - rounded > KEYBOARD_THRESHOLD) root.setAttribute('data-kb', 'open')
   else root.removeAttribute('data-kb')
 }
 
@@ -117,7 +130,10 @@ export function setupViewport() {
     vv.addEventListener('scroll', pinScroll)
   }
   window.addEventListener('resize', onFrame)
-  window.addEventListener('orientationchange', onFrame)
+  // Поворот меняет высоту вьюпорта без клавиатуры — сбрасываем эталон, чтобы он
+  // переучился под новую ориентацию (иначе портретная высота осталась бы порогом
+  // в ландшафте и data-kb ложно «залипал» бы открытым).
+  window.addEventListener('orientationchange', () => { maxHeight = 0; onFrame() })
 
   // Любой скролл документа (iOS scroll-to-field при фокусе) — синхронно в ноль.
   // Синхронно и без rAF/таймаута: иначе слой успевает уехать вверх (эффект «мячика»).
