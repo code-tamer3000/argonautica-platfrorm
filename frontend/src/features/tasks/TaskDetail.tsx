@@ -24,12 +24,14 @@ import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
 import { Attachment } from '../chat/Attachment'
+import { PairPanel } from './PairPanel'
 import { TaskComposer } from './TaskComposer'
 import styles from './tasks.module.css'
 
 const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
+  pair: 'Парная',
 }
 
 const TRACK_STATUS_LABEL: Record<string, string> = {
@@ -60,9 +62,17 @@ export function TaskDetail() {
   const isAdmin = user?.role === 'admin'
   const bodyHtml = task.body ? DOMPurify.sanitize(marked.parse(task.body) as string) : ''
 
+  // Автор перекрёстной задачи (участник, выдавший её партнёру внутри пары) —
+  // он видит трек партнёра и вправе принять/вернуть, как админ по обычной задаче.
+  const isCrossAuthor = task.pair_id != null && task.created_by === user?.id
+  const canReview = isAdmin || isCrossAuthor
+
   const list = tracks ?? []
   // Индивидуальная задача участнику показывает только его трек; общая — все публичные.
-  const visibleTracks = isAdmin ? list : list.filter((t) => t.user_id === user?.id || task.type === 'common')
+  // Автор перекрёстной задачи видит трек партнёра (для проверки).
+  const visibleTracks = canReview
+    ? list
+    : list.filter((t) => t.user_id === user?.id || task.type === 'common')
   const myTrack = list.find((t) => t.user_id === user?.id) ?? null
 
   return (
@@ -102,8 +112,15 @@ export function TaskDetail() {
         </div>
       )}
 
-      {/* Участник: композер сдачи + свой статус (админ сам задачи не сдаёт). */}
-      {!isAdmin && (
+      {/* Парное задание: панель пары(-ей) вместо стандартной сдачи/треков.
+          Сама сдача/приёмка живёт в перекрёстных задачах (открываются по ссылке). */}
+      {task.type === 'pair' && (
+        <PairPanel taskId={id} pairs={task.pairs ?? []} isAdmin={isAdmin} />
+      )}
+
+      {/* Участник: композер сдачи + свой статус (админ и автор перекрёстной задачи
+          сами её не сдают — только проверяют). */}
+      {task.type !== 'pair' && !canReview && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Моя работа</h2>
           {myTrack && (
@@ -119,7 +136,9 @@ export function TaskDetail() {
         </section>
       )}
 
-      {/* Треки со сдачами: общая — все публичные, индивидуальная — только свой. */}
+      {/* Треки со сдачами: общая — все публичные, индивидуальная — только свой.
+          Для парного задания треков нет (сдачи — в перекрёстных задачах). */}
+      {task.type !== 'pair' && (
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>
           {task.type === 'common' && !isAdmin ? 'Работы участников' : 'Сдачи'}
@@ -128,9 +147,10 @@ export function TaskDetail() {
           <div className={styles.emptyNote}>Пока никто ничего не сдал.</div>
         )}
         {visibleTracks.map((track) => (
-          <TrackCard key={track.assignment_id} track={track} taskId={id} isAdmin={isAdmin} />
+          <TrackCard key={track.assignment_id} track={track} taskId={id} isAdmin={canReview} />
         ))}
       </section>
+      )}
     </div>
   )
 }

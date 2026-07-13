@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calendar import CalendarEvent
-from app.models.task import Task, TaskAssignment
+from app.models.task import Task, TaskAssignment, TaskPair, TaskPairMember
 from app.models.user import User
 from app.ws.pubsub import publish_user_event
 
@@ -35,12 +35,23 @@ async def assert_task_visible(
 ) -> None:
     """Проверить видимость задачи для юзера (анти-IDOR, п.1).
 
-    common → видна любому активному участнику; individual → admin ИЛИ у юзера есть
-    строка task_assignments для этой задачи, иначе 403.
+    common → видна любому активному участнику; admin → всё. Иначе:
+    - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
+      перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
+    - pair → юзер состоит в одной из пар этого задания (task_pair_members).
     """
     if task.type == "common":
         return
     if user.role == "admin":
+        return
+
+    if task.type == "pair":
+        if await _is_pair_task_member(session, task.id, user.id):
+            return
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+
+    # individual (в т.ч. перекрёстная задача внутри пары).
+    if task.created_by == user.id:
         return
     assignment = await session.scalar(
         select(TaskAssignment.id).where(
@@ -50,6 +61,124 @@ async def assert_task_visible(
     )
     if assignment is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+
+
+# --- пары (взаимное обучение) -----------------------------------------------
+
+
+async def _is_pair_task_member(
+    session: AsyncSession, task_id: int, user_id: int
+) -> bool:
+    """Состоит ли юзер в какой-либо (неудалённой) паре этого парного задания."""
+    row = await session.scalar(
+        select(TaskPairMember.id)
+        .join(TaskPair, TaskPair.id == TaskPairMember.pair_id)
+        .where(
+            TaskPairMember.task_id == task_id,
+            TaskPairMember.user_id == user_id,
+            TaskPair.deleted_at.is_(None),
+        )
+    )
+    return row is not None
+
+
+async def load_pair(session: AsyncSession, pair_id: int) -> TaskPair:
+    """Пара существует и не удалена, иначе 404."""
+    pair = await session.get(TaskPair, pair_id)
+    if pair is None or pair.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pair not found")
+    return pair
+
+
+async def pair_member_ids(session: AsyncSession, pair_id: int) -> list[int]:
+    """user_id обоих участников пары."""
+    rows = await session.execute(
+        select(TaskPairMember.user_id).where(TaskPairMember.pair_id == pair_id)
+    )
+    return list(rows.scalars().all())
+
+
+async def assert_pair_member(
+    session: AsyncSession, pair: TaskPair, user: User
+) -> None:
+    """Юзер — участник этой пары ИЛИ админ, иначе 403."""
+    if user.role == "admin":
+        return
+    if user.id not in await pair_member_ids(session, pair.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this pair")
+
+
+async def partner_id(
+    session: AsyncSession, pair: TaskPair, user_id: int
+) -> int | None:
+    """Второй участник пары для данного user_id (None, если сам не в паре)."""
+    ids = await pair_member_ids(session, pair.id)
+    others = [uid for uid in ids if uid != user_id]
+    return others[0] if others else None
+
+
+async def cross_task_of(
+    session: AsyncSession, pair_id: int, author_id: int
+) -> Task | None:
+    """Перекрёстная задача, выданная данным автором в этой паре (если уже создана)."""
+    task: Task | None = await session.scalar(
+        select(Task).where(
+            Task.pair_id == pair_id,
+            Task.created_by == author_id,
+            Task.deleted_at.is_(None),
+        )
+    )
+    return task
+
+
+async def recompute_pair_completion(session: AsyncSession, pair: TaskPair) -> None:
+    """Пересчитать статус родительского парного задания для пары.
+
+    Пара завершена, когда ОБЕ перекрёстные задачи (по одной от каждого участника)
+    приняты (accepted). Тогда назначения родительского pair-задания у обоих
+    участников переводим в 'accepted'; иначе — держим в 'assigned' (откат, если
+    приёмку сняли возвратом). Достаточно одной приёмки на каждую перекрёстную —
+    это отражено уже в статусе назначения перекрёстной задачи.
+    """
+    cross_tasks = list(
+        (
+            await session.execute(
+                select(Task).where(
+                    Task.pair_id == pair.id, Task.deleted_at.is_(None)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    members = await pair_member_ids(session, pair.id)
+    # Обе перекрёстные должны существовать и обе быть accepted.
+    accepted_cross = 0
+    for ct in cross_tasks:
+        st = await session.scalar(
+            select(TaskAssignment.status).where(TaskAssignment.task_id == ct.id)
+        )
+        if st == "accepted":
+            accepted_cross += 1
+    complete = len(cross_tasks) == 2 and accepted_cross == 2
+
+    new_status = "accepted" if complete else "assigned"
+    parent_assignments = list(
+        (
+            await session.execute(
+                select(TaskAssignment).where(
+                    TaskAssignment.task_id == pair.task_id,
+                    TaskAssignment.user_id.in_(members),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for a in parent_assignments:
+        if a.status != new_status:
+            a.status = new_status
+    await session.flush()
 
 
 async def get_or_create_assignment(
@@ -166,16 +295,27 @@ async def participant_count(session: AsyncSession) -> int:
 async def task_recipients(session: AsyncSession, task: Task) -> list[int]:
     """Кому доставлять WS-события задачи.
 
-    common → все юзеры платформы; individual → адресаты (user_id назначений) + админы.
+    common → все юзеры платформы; individual → адресаты + автор (для перекрёстной
+    задачи это выдавший участник, у него нет назначения) + админы; pair → оба
+    участника всех пар задания + админы.
     """
     if task.type == "common":
         rows = await session.execute(select(User.id))
         return list(rows.scalars().all())
 
+    if task.type == "pair":
+        member_rows = await session.execute(
+            select(TaskPairMember.user_id).where(TaskPairMember.task_id == task.id)
+        )
+        ids = set(member_rows.scalars().all())
+        ids.update(await _admin_ids(session))
+        return list(ids)
+
     assignee_rows = await session.execute(
         select(TaskAssignment.user_id).where(TaskAssignment.task_id == task.id)
     )
     ids = set(assignee_rows.scalars().all())
+    ids.add(task.created_by)  # автор перекрёстной задачи (у него нет назначения)
     ids.update(await _admin_ids(session))
     return list(ids)
 
@@ -197,10 +337,11 @@ async def fan_out_task_event(
 async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]:
     """(done, total) прогресса юзера.
 
-    total (Y) = число общих неудалённых задач + число индивидуальных задач юзера
-    (неудалённых). done (X) = сколько из них зачтено (у юзера есть назначение со
-    статусом 'accepted'). Для общих задача в total считается всегда, а в done —
-    только если юзер её сдал и она принята.
+    total (Y) = число общих неудалённых задач + число персональных задач юзера
+    (неудалённых): individual (в т.ч. перекрёстные внутри пар) + pair (родительское
+    парное задание — у юзера есть назначение). done (X) = сколько из них зачтено
+    (назначение в статусе 'accepted'). Для общих задача в total считается всегда, а в
+    done — только если юзер её сдал и она принята.
     """
     common_total = (
         await session.scalar(
@@ -215,7 +356,7 @@ async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]
             .select_from(TaskAssignment)
             .join(Task, Task.id == TaskAssignment.task_id)
             .where(
-                Task.type == "individual",
+                Task.type.in_(("individual", "pair")),
                 Task.deleted_at.is_(None),
                 TaskAssignment.user_id == user.id,
             )

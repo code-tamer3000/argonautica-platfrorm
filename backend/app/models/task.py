@@ -26,12 +26,18 @@ from app.db.base import Base
 
 
 class Task(Base):
-    """Задача автора. `type` различает общую и индивидуальную (поведение — в коде)."""
+    """Задача автора. `type` различает общую/индивидуальную/парную (поведение — в коде).
+
+    `pair` — родительское парное задание (взаимное обучение): админ распределяет
+    участников по парам (task_pairs); у каждого участника пары — своё назначение,
+    закрывающееся, когда обе перекрёстные задачи пары приняты. Перекрёстная задача —
+    обычная `individual` с `created_by`=участник и `pair_id`, указывающим на пару.
+    """
 
     __tablename__ = "tasks"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('common', 'individual')", name="task_type_valid"
+            "type IN ('common', 'individual', 'pair')", name="task_type_valid"
         ),
     )
 
@@ -43,6 +49,11 @@ class Task(Base):
     kb_item_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("kb_items.id")
     )
+    # Для перекрёстной задачи (individual внутри пары) — пара, к которой она относится.
+    # NULL у всех обычных задач. Связывает выданную задачу с парой (видимость, завершение).
+    pair_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("task_pairs.id")
+    )
     deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
@@ -51,6 +62,55 @@ class Task(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # мягкое удаление
+
+
+class TaskPair(Base):
+    """Пара внутри парного задания (task.type='pair'). Ровно 2 участника (см.
+    TaskPairMember). Встреча — одна на пару, информационная (дата+время), без
+    уведомлений; управляет ей один участник (meeting_organizer_id, выбран случайно).
+    Мягкое удаление (deleted_at) — админ вправе расформировать пару.
+    """
+
+    __tablename__ = "task_pairs"
+    __table_args__ = (Index("ix_task_pairs_task", "task_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), nullable=False
+    )
+    # Кто управляет встречей (один из двух участников, выбран случайно при создании).
+    meeting_organizer_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    meeting_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaskPairMember(Base):
+    """Членство участника в паре. UNIQUE(task_id, user_id) гарантирует: один человек —
+    максимум в одной паре в пределах одного парного задания (снимает симметрию a/b).
+    """
+
+    __tablename__ = "task_pair_members"
+    __table_args__ = (
+        UniqueConstraint("task_id", "user_id", name="uq_task_pair_member"),
+        Index("ix_task_pair_members_pair", "pair_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    pair_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("task_pairs.id"), nullable=False
+    )
+    # Денормализованный task_id — нужен для UNIQUE(task_id, user_id) на уровне БД.
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
 
 
 class TaskMedia(Base):

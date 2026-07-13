@@ -3,7 +3,7 @@
 > Source: backend/app/{models/task.py, api/tasks.py, services/tasks.py} + docs/archive/PROGRESS.md st.22, restructured 2026-07-06.
 > Endpoints: `/api/tasks`. Tables: `tasks`, `task_media`, `task_assignments`, `task_submissions`, `task_submission_media`, `task_comments` (see [DATA_MODEL.md](DATA_MODEL.md)).
 
-Author assigns work; participants submit; admin reviews. A task is either **common** (`type='common'` — visible to every active participant, anyone may submit) or **individual** (`type='individual'` — addressed to specific users via `task_assignments`).
+Author assigns work; participants submit; admin reviews. A task is **common** (`type='common'` — visible to every active participant, anyone may submit), **individual** (`type='individual'` — addressed to specific users via `task_assignments`), or **pair** (`type='pair'` — peer-learning; see "Pair tasks" below).
 
 ## Assignments & lifecycle
 
@@ -37,9 +37,40 @@ Author assigns work; participants submit; admin reviews. A task is either **comm
 
 - `tasks.deadline_at` is synced into `calendar_events` (`services/tasks.py`) so deadlines show on the calendar. Deadline events are **enriched** per viewer — see [CALENDAR.md](CALENDAR.md).
 
+## Pair tasks (взаимное обучение)
+
+`type='pair'` — a parent task where the admin splits users into **pairs** (`task_pairs` +
+`task_pair_members`, tables in [DATA_MODEL.md](DATA_MODEL.md)). Admins may be in pairs too.
+Endpoints live under `/api/tasks/{task_id}/pairs/...`.
+
+- **Membership.** `task_pair_members` has `UNIQUE(task_id, user_id)` → one user is in at
+  most one pair per pair-task. A pair is exactly two members. The parent pair-task gets a
+  `task_assignments` row per member (so it flows through the normal status/badge/progress
+  machinery); the pair completes for **both** members (assignment → `accepted`) when both
+  cross-tasks are accepted — see `recompute_pair_completion` in `services/tasks.py`.
+- **Meeting.** Informational only (date+time, `task_pairs.meeting_at`), one per pair, no
+  notifications. Managed by one member picked **randomly** at creation
+  (`meeting_organizer_id`) via `PATCH .../meeting` (organizer-only, 403 otherwise); the
+  other member sees "Свяжитесь с …". `meeting_at=null` cancels; editing the date reschedules.
+- **Cross-task.** Each member gives their partner one task via `POST .../cross-task`: a
+  normal `individual` task with `created_by`=the giving participant and `pair_id`=the pair;
+  recipient is fixed (the partner). Exactly one per giver (repeat → 409). The giver may
+  `PATCH .../cross-task/{id}` until the first submission (then 409). Submission/review reuse
+  the standard flow.
+- **Review authority.** A cross-task is accepted/returned by its **author** (the participant
+  who gave it) **or** an admin — one is enough. `review_assignment` allows `created_by` of a
+  `pair_id` task (not just admins); accepting/returning recomputes pair completion.
+- **Visibility (anti-IDOR).** A participant sees only their own pair (partner, meeting, both
+  cross-tasks); admin sees all pairs. `assert_task_visible` gates `pair` by membership and
+  lets a cross-task's author see their own given task. Users in no pair don't get the task at all.
+- **Admin edits.** Replace a member via `PATCH .../pairs/{id}` — allowed **only** before any
+  cross-task exists in that pair (else 409). Delete a pair via `DELETE .../pairs/{id}` (hidden
+  action): soft-deletes the pair, soft-deletes its cross-tasks (+ clears their deadline events),
+  and drops the members' parent assignments.
+
 ## Realtime
 
-WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)).
+WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events.
 
 ## Frontend note
 
