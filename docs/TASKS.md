@@ -48,8 +48,9 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
   `task_assignments` row per member (so it flows through the normal status/badge/progress
   machinery); the pair completes for **both** members (assignment → `accepted`) when both
   cross-tasks are accepted — see `recompute_pair_completion` in `services/tasks.py`.
-- **Meeting.** No in-app scheduling. Both members just see "Спишитесь с @username в личных
-  сообщениях для назначения встречи." (partner's username; admin sees both members'). The
+- **Meeting.** No in-app scheduling. A member sees "Спишитесь с @partner в личных
+  сообщениях для назначения встречи." (2nd person); an admin viewing a pair they're not in
+  sees "@X и @Y должны списаться …" (3rd person, both members named). The
   backend still carries `task_pairs.meeting_at` / `meeting_organizer_id` and the
   `PATCH .../meeting` endpoint (expand/contract — kept for compatibility), but no UI surfaces
   them anymore. Applies to existing pair-tasks too (frontend-only change).

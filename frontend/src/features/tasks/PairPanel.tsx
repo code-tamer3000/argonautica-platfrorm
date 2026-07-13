@@ -135,18 +135,27 @@ function MeetingBlock({
   usernameOf: (uid: number) => string
 }) {
   // Назначение встречи из интерфейса убрано: участники договариваются сами в ЛС.
-  // Для участника показываем username партнёра, для админа — обоих участников пары.
-  const partners = partner
-    ? [partner]
-    : pair.members.filter((m) => !pair.viewer_user_id || m.user_id !== pair.viewer_user_id)
+  // Участнику (есть partner) — от первого лица «Спишитесь с @partner». Админу
+  // (пары, где он не состоит) — от третьего лица: «@X и @Y должны списаться».
+  if (partner) {
+    return (
+      <div className={styles.myStatusRow}>
+        <span className={styles.myStatusLabel}>Встреча:</span>
+        <span>
+          Спишитесь с @{usernameOf(partner.user_id)} в личных сообщениях для
+          назначения встречи.
+        </span>
+      </div>
+    )
+  }
 
-  const names = partners.map((m) => `@${usernameOf(m.user_id)}`).join(' и ')
+  const names = pair.members.map((m) => `@${usernameOf(m.user_id)}`).join(' и ')
 
   return (
     <div className={styles.myStatusRow}>
       <span className={styles.myStatusLabel}>Встреча:</span>
       <span>
-        Спишитесь с {names} в личных сообщениях для назначения встречи.
+        {names} должны списаться в личных сообщениях для назначения встречи.
       </span>
     </div>
   )
