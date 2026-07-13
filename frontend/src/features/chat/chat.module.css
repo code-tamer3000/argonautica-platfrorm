@@ -984,3 +984,69 @@
   background: rgba(19, 78, 69, 0.14);
 }
 .journalCheck { color: var(--accent); font-weight: 700; }
+
+/* --- Меню скрепки (Файл / Ссылка) --- */
+.attachWrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+.attachBackdrop { position: fixed; inset: 0; z-index: 29; }
+.attachMenu {
+  position: absolute; bottom: calc(100% + var(--space-2)); left: 0; z-index: 30;
+  min-width: 240px;
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); padding: var(--space-2); box-shadow: var(--glow-gold);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.attachMenuItem {
+  display: flex; align-items: center; gap: var(--space-2);
+  width: 100%; padding: var(--space-2) var(--space-3);
+  background: transparent; border: none; border-radius: var(--radius-card);
+  color: var(--text-primary); cursor: pointer; text-align: left;
+  font-family: var(--font-t4); font-size: var(--text-ui);
+  transition: background 0.14s ease;
+}
+.attachMenuItem:hover { background: rgba(194, 154, 72, 0.09); }
+
+/* --- Пикер ссылки (материал/задача) --- */
+.refTabs { display: flex; gap: var(--space-2); margin-bottom: var(--space-2); }
+.refTab {
+  flex: 1; padding: var(--space-2) var(--space-3);
+  background: transparent; border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-pill); color: var(--text-secondary);
+  cursor: pointer; font-family: var(--font-t4); font-size: var(--text-ui);
+  transition: var(--transition-base);
+}
+.refTab:hover { border-color: var(--divider-gold); color: var(--text-primary); }
+.refTabActive {
+  color: var(--text-primary); border-color: var(--accent);
+  background: rgba(19, 78, 69, 0.14);
+}
+.refList {
+  max-height: 340px; overflow-y: auto; margin-top: var(--space-2);
+  display: flex; flex-direction: column; gap: var(--space-1); padding-right: 2px;
+}
+.refRow {
+  display: flex; align-items: center; gap: var(--space-3);
+  width: 100%; padding: var(--space-2) var(--space-3);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-card);
+  cursor: pointer; text-align: left; color: var(--text-primary);
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+.refRow:hover { background: rgba(194, 154, 72, 0.07); }
+.refRowIcon { flex: 0 0 auto; font-size: 16px; }
+.refRowTitle {
+  flex: 1; min-width: 0; font-size: var(--text-ui);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* --- Кнопка-ссылка в сообщении --- */
+.refLink {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  max-width: 100%; margin-bottom: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: rgba(19, 78, 69, 0.12); border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-card); color: var(--text-primary); cursor: pointer;
+  font-family: var(--font-t4); font-size: var(--text-label-md);
+  transition: var(--transition-base);
+}
+.refLink:hover:not(:disabled) { border-color: var(--accent); background: rgba(19, 78, 69, 0.2); }
+.refLinkText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.refLinkDisabled { opacity: 0.55; cursor: default; }

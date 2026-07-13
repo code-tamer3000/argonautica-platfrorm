@@ -42,6 +42,15 @@
 
 - Sticker message: `content = NULL`, `sticker_id` set. Packs are admin-managed; participants read `GET /api/stickerpacks` (images presigned). See sticker tables in [DATA_MODEL.md](DATA_MODEL.md). Stickers are never deleted (FK from `messages.sticker_id`).
 
+## Refs (link to a KB item / task)
+
+- A message may carry **one** reference to a **KB item** or a **task** (`messages.ref_kind ∈ {'kb','task'}` + `ref_id`, both or neither — CHECK in [DATA_MODEL.md](DATA_MODEL.md)), **alongside** any media/text/sticker. No FK on the target: it's resolved lazily, so a deleted/unpublished target degrades to «недоступно» rather than breaking the message.
+- **Send** (`SendMessageRequest.ref_kind`/`ref_id`) checks the target is **visible to the sender** (anti-IDOR): KB → `published` or admin; task → `assert_task_visible` (common→all; individual→assignee/admin; pair→member). Not visible/existent → 404 (a draft's existence isn't revealed). A ref satisfies "must carry something" on its own.
+- **Read** — `MessageOut.ref` (`{kind, id, title, url, available}`) is resolved **per viewer** (`resolve_message_refs`): a viewer without access to the target gets `available=false` and a placeholder title (no leak). `url` is `/kb/{id}` or `/tasks/{id}`; the client only navigates, target screens re-check access server-side.
+- **WS `message.new`/`message.edited`** carry a **conservatively-resolved** ref (`resolve_ref_for_broadcast`): the real title is exposed only for a universally-visible target (published KB / common task), else a placeholder with `available=false` — the payload is one body for all subscribers, so it must not reveal a draft/individual title. Authorized viewers get the correct title on the next feed load.
+- **Repost into news** copies `ref_kind`/`ref_id` alongside media.
+- Editing a message changes only text; the ref is fixed at send time (like attachments).
+
 ## Repost into news
 
 - `POST /api/rooms/{id}/messages/{mid}/repost` (admin only) — copies text/sticker/attachments into the news channel, preserving the original author via `forwarded_from_sender_id`. News channel details in [ROOMS.md](ROOMS.md).

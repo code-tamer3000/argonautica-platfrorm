@@ -257,6 +257,10 @@
   color: var(--text-primary);
   margin-bottom: var(--space-4);
 }
+/* Заголовок «Активные» — зелёный (морская ярь), чтобы выделить живые задачи. */
+.sectionTitleActive {
+  color: var(--color-more-yar);
+}
 
 /* Строка «мой статус» над композером. */
 .myStatusRow {

@@ -22,7 +22,7 @@ import {
   STORE_OUTBOX_BLOBS,
 } from './idb'
 import { runPendingUpload, type PendingUpload } from './mediaUpload'
-import type { AttachmentOut, MediaAssetOut, MediaKind, MessageOut } from './types'
+import type { AttachmentOut, MediaAssetOut, MediaKind, MessageOut, MessageRefOut } from './types'
 import type { SendBody } from '../api/messages'
 
 // Вложение, которое ещё НЕ залито в MinIO (сообщение поставлено в очередь офлайн).
@@ -57,6 +57,9 @@ export interface OutboxItem {
   // прикреплён без сети). Пусто у обычных сообщений, где ассеты уже в MinIO. Воркер
   // резолвит их в реальные asset_id и наполняет body.attachment_ids (см. drain).
   pendingUploads?: PendingUploadRef[]
+  // Ссылка (материал/задача) для оптимистичного показа кнопки «Перейти к…» сразу.
+  // title берём из пикера; сервер перерезолвит `ref` (title/available) на чтении.
+  optimisticRef?: MessageRefOut
   tempId: number
   attempts: number
 }
@@ -200,6 +203,7 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
     edited_at: null,
     attachment_ids: item.body.attachment_ids ?? [],
     attachments: item.attachments,
+    ref: item.optimisticRef ?? null,
     _outbox: { clientId: item.clientId, status: 'pending' },
   }
 }
@@ -216,6 +220,7 @@ export function enqueue(
   body: SendBody,
   senderId: number,
   locals: LocalAttachment[] = [],
+  optimisticRef?: MessageRefOut,
 ): string {
   const cid = clientId()
   const attachments: AttachmentOut[] = []
@@ -236,6 +241,7 @@ export function enqueue(
     createdAt: new Date().toISOString(),
     attachments,
     blobAssetIds,
+    optimisticRef,
     tempId: nextTempId(),
     attempts: 0,
   }
@@ -255,6 +261,7 @@ export function enqueueMedia(
   body: SendBody,
   senderId: number,
   uploads: PendingUpload[],
+  optimisticRef?: MessageRefOut,
 ): string {
   const cid = clientId()
   const attachments: AttachmentOut[] = []
@@ -287,6 +294,7 @@ export function enqueueMedia(
     attachments,
     blobAssetIds: [],
     pendingUploads,
+    optimisticRef,
     tempId: nextTempId(),
     attempts: 0,
   }

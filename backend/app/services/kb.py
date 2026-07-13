@@ -8,8 +8,18 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.kb import KbItem, KbItemMedia
+from app.models.kb import KbCategory, KbItem, KbItemMedia
 from app.models.user import User
+
+
+async def assert_category_exists(
+    session: AsyncSession, category_id: int | None
+) -> None:
+    """Категория (если задана) должна существовать, иначе 404. NULL — валиден."""
+    if category_id is None:
+        return
+    if await session.get(KbCategory, category_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "KB category not found")
 
 
 async def load_kb_item(session: AsyncSession, item_id: int) -> KbItem:

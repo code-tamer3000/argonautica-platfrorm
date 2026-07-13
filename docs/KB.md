@@ -3,7 +3,23 @@
 > Source: docs/archive/{PLATFORM_SPEC.md §4.9, DATA_MODEL.md, DECISIONS.md, PROGRESS.md st.8/19}, restructured 2026-07-06.
 > Endpoints: `/api/kb`. Tables: `kb_items`, `kb_item_media`, `kb_comments`, `kb_categories` (see [DATA_MODEL.md](DATA_MODEL.md)). Service: `services/kb.py`.
 
-The second half of the product: the author's materials (markdown + files/video), read by participants. **Categories are out-of-MVP** — items are flat (`category_id = NULL`).
+The second half of the product: the author's materials (markdown + files/video), read by participants.
+
+## Categories (flat)
+
+One level only — an item has at most one category (`kb_items.category_id`, nullable
+FK → `kb_categories`; `NULL` = «Без категории» section). Admin-only CRUD; any
+participant sees the category list to group the item list.
+
+- `GET /categories` — list (`sort_order`, then `id`), visible to any participant.
+- `POST /categories` / `PATCH /categories/{id}` / `DELETE /categories/{id}` — admin only.
+- Deleting a category is non-destructive: it first sets `category_id = NULL` on its
+  items (avoids the FK), then removes the category. Items are never deleted with it.
+- Assigning: `category_id` is a whitelisted field on `POST /items` and `PATCH /items/{id}`;
+  a non-existent id → `404` (`assert_category_exists`). Set to `NULL` to unassign.
+- Frontend: `KbList` groups cards by category (empty categories hidden, «Без категории»
+  last; headings suppressed when everything is uncategorized). Admin panel has a
+  «Категории» manager (add/rename/delete) and a category `<select>` on the item form.
 
 ## Authoring (admin only)
 

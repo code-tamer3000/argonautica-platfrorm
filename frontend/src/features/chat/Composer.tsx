@@ -8,17 +8,18 @@ import {
 } from '../../api/messages'
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
-import { IconAttach, IconChevronDown, IconSend, IconSticker } from '../../components/icons'
+import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
 import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
 import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
-import type { MessageOut } from '../../lib/types'
+import type { MessageOut, MessageRefOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
 import { enqueue as outboxEnqueue, enqueueMedia } from '../../lib/outbox'
 import { clearDraft, saveDraft, loadDraft } from '../../lib/drafts'
 import { useAuth } from '../auth/AuthContext'
+import { RefPicker, type PickedRef } from './RefPicker'
 import { StickerPicker } from './StickerPicker'
 import { useMentionAutocomplete } from './useMentionAutocomplete'
 import { VoiceComposer } from './VoiceComposer'
@@ -56,6 +57,13 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   // офлайн так же, как текст. Дневник/репост требуют залитых ассетов → там заливаем
   // синхронно при отправке (см. submit).
   const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
+  // Одна прикреплённая ссылка на материал/задачу (title — для чипа/оптимистичного показа).
+  const [pendingRef, setPendingRef] = useState<PickedRef | null>(null)
+  // Меню скрепки (Файл / Материал / Задача) и открытый пикер ссылки.
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const [refPickerOpen, setRefPickerOpen] = useState(false)
+  // С какого таба открыть пикер (Материал/Задача из меню скрепки).
+  const [refPickerTab, setRefPickerTab] = useState<'kb' | 'task'>('kb')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
   // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
@@ -103,6 +111,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       prevThreadRootId.current = threadRootId
       setText('')
       setPendingFiles([])
+      setPendingRef(null)
     }
   }, [threadRootId])
 
@@ -200,6 +209,24 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     enqueueTopLevel({}, [pending])
   }
 
+  // Ссылка в тело запроса (ref_kind/ref_id). Пусто, если ссылки нет.
+  function refBody(ref: PickedRef | null): Partial<SendBody> {
+    return ref ? { ref_kind: ref.kind, ref_id: ref.id } : {}
+  }
+
+  // Оптимистичный MessageRefOut (для мгновенного показа кнопки в бабле). title —
+  // из пикера; available:true оптимистично (сервер перерезолвит на чтении).
+  function optimisticRefOf(ref: PickedRef | null): MessageRefOut | undefined {
+    if (!ref) return undefined
+    return {
+      kind: ref.kind,
+      id: ref.id,
+      title: ref.title,
+      url: ref.kind === 'kb' ? `/kb/${ref.id}` : `/tasks/${ref.id}`,
+      available: true,
+    }
+  }
+
   // Синхронно залить прикреплённые описатели и вернуть их asset_id. Используется на
   // путях, которые НЕ идут через outbox (дневник/репост/ответ в тред): им нужны
   // готовые ассеты, поэтому там заливка требует сети (бросит при офлайне).
@@ -215,13 +242,14 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   // Верхнеуровневая отправка (обычное сообщение/голос): текст+стикер сразу, а сырые
   // вложения — в outbox через enqueueMedia (заливка в фоне из очереди, переживает
   // офлайн/перезагрузку). Без вложений — обычный enqueue. Черновик комнаты очищаем.
-  function enqueueTopLevel(body: SendBody, uploads: PendingUpload[]) {
+  function enqueueTopLevel(body: SendBody, uploads: PendingUpload[], ref: PickedRef | null = null) {
     if (!user) {
       send.mutate(body) // без пользователя (не должно случаться) — прямой путь
       return
     }
-    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads)
-    else outboxEnqueue(roomId, body, user.id)
+    const optRef = optimisticRefOf(ref)
+    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads, optRef)
+    else outboxEnqueue(roomId, body, user.id, [], optRef)
     void clearDraft(roomId)
   }
 
@@ -235,11 +263,13 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     // Ответ в тред: прямой mutate (тред-реплики не живут в оптимистичной ленте
     // комнаты). Вложения тут заливаем синхронно — офлайн-outbox сюда не заведён.
     if (inThread && threadRootId != null) {
-      if (!content && pendingFiles.length === 0) return
+      if (!content && pendingFiles.length === 0 && !pendingRef) return
       const uploads = pendingFiles
+      const ref = pendingRef
       setText('')
       setPendingFiles([])
-      const body: SendBody = { reply_to_message_id: threadRootId }
+      setPendingRef(null)
+      const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(ref) }
       if (content) body.content = content
       try {
         if (uploads.length) body.attachment_ids = await uploadAll(uploads)
@@ -258,11 +288,13 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         toast(`Введите: ${journalMeta.label}`, 'error')
         return
       }
-      if (!content && pendingFiles.length === 0) return
+      if (!content && pendingFiles.length === 0 && !pendingRef) return
       const uploads = pendingFiles
+      const ref = pendingRef
       setText('')
       setPendingFiles([])
-      const body: SendBody = { content: buildJournalContent(journalMeta, content) }
+      setPendingRef(null)
+      const body: SendBody = { content: buildJournalContent(journalMeta, content), ...refBody(ref) }
       try {
         if (uploads.length) body.attachment_ids = await uploadAll(uploads)
       } catch (err) {
@@ -287,9 +319,11 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       setPendingRepost(null)
       setReposting(false)
       const uploads = pendingFiles
+      const ref = pendingRef
       setText('')
       setPendingFiles([])
-      const body: SendBody = {}
+      setPendingRef(null)
+      const body: SendBody = { ...refBody(ref) }
       if (content) body.content = content
       try {
         if (uploads.length) body.attachment_ids = await uploadAll(uploads)
@@ -297,18 +331,20 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
         return
       }
-      if (body.content || body.attachment_ids?.length) enqueueTopLevel(body, [])
+      if (body.content || body.attachment_ids?.length || ref) enqueueTopLevel(body, [], ref)
       toast('Отправлено в новости')
       return
     }
 
-    if (!content && pendingFiles.length === 0) return
+    if (!content && pendingFiles.length === 0 && !pendingRef) return
     const uploads = pendingFiles
+    const ref = pendingRef
     setText('')
     setPendingFiles([])
-    const body: SendBody = {}
+    setPendingRef(null)
+    const body: SendBody = { ...refBody(ref) }
     if (content) body.content = content
-    enqueueTopLevel(body, uploads)
+    enqueueTopLevel(body, uploads, ref)
   }
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -341,7 +377,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     }
   }
 
-  const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost
+  const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef
 
   const repostAuthorId = repost
     ? repost.message.forwarded_from_sender_id ?? repost.message.sender_id
@@ -427,7 +463,33 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         </div>
       )}
 
+      {pendingRef && (
+        <div className={styles.pendingAtt}>
+          <span className={styles.pendingChip}>
+            {pendingRef.kind === 'kb' ? <IconBook size={13} /> : <IconTasks size={13} />}
+            <span className={styles.pendingChipLabel}>{pendingRef.title}</span>
+            <button
+              className={styles.pendingChipX}
+              onClick={() => setPendingRef(null)}
+              aria-label="Убрать ссылку"
+            >
+              ✕
+            </button>
+          </span>
+        </div>
+      )}
+
       {pickerOpen && <StickerPicker onPick={handleSticker} />}
+      {refPickerOpen && (
+        <RefPicker
+          initialTab={refPickerTab}
+          onClose={() => setRefPickerOpen(false)}
+          onPick={(ref) => {
+            setPendingRef(ref)
+            setRefPickerOpen(false)
+          }}
+        />
+      )}
       {mentions.popup}
 
       <input
@@ -444,15 +506,59 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       <div className={styles.composerRow}>
         {!voiceActive && (
           <>
-            <button
-              className={styles.iconBtn}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              title="Прикрепить файл"
-              aria-label="Прикрепить файл"
-            >
-              {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
-            </button>
+            <div className={styles.attachWrap}>
+              {attachMenuOpen && (
+                <>
+                  {/* Клик вне меню — закрыть. */}
+                  <div
+                    className={styles.attachBackdrop}
+                    onClick={() => setAttachMenuOpen(false)}
+                  />
+                  <div className={styles.attachMenu} role="menu">
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => {
+                        setAttachMenuOpen(false)
+                        fileInputRef.current?.click()
+                      }}
+                    >
+                      <IconFile size={18} /> Файл
+                    </button>
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => {
+                        setAttachMenuOpen(false)
+                        setRefPickerTab('kb')
+                        setRefPickerOpen(true)
+                      }}
+                    >
+                      <IconBook size={18} /> Материал
+                    </button>
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => {
+                        setAttachMenuOpen(false)
+                        setRefPickerTab('task')
+                        setRefPickerOpen(true)
+                      }}
+                    >
+                      <IconTasks size={18} /> Задача
+                    </button>
+                  </div>
+                </>
+              )}
+              <button
+                className={styles.iconBtn}
+                onClick={() => setAttachMenuOpen((v) => !v)}
+                disabled={uploading}
+                title="Прикрепить"
+                aria-label="Прикрепить"
+                aria-haspopup="menu"
+                aria-expanded={attachMenuOpen}
+              >
+                {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
+              </button>
+            </div>
             <button
               className={styles.iconBtn}
               onClick={() => setPickerOpen(v => !v)}

@@ -340,3 +340,132 @@ async def test_author_and_admin_can_delete_but_not_others(
     assert (
         await client.delete(f"/api/kb/comments/{cid}", headers=admin_headers)
     ).status_code == 404
+
+
+# ── Категории (плоские) ─────────────────────────────────────────────────────
+
+
+async def test_category_crud_admin_only(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    member = await make_user()
+    member_headers = await _headers(client, member)
+
+    # Создать может только admin.
+    created = await client.post(
+        "/api/kb/categories", headers=admin_headers, json={"title": "Теория"}
+    )
+    assert created.status_code == 201, created.text
+    cat = created.json()
+    assert cat["title"] == "Теория"
+    assert cat["sort_order"] == 0
+
+    assert (
+        await client.post(
+            "/api/kb/categories", headers=member_headers, json={"title": "x"}
+        )
+    ).status_code == 403
+
+    # Список видит любой участник.
+    listed = await client.get("/api/kb/categories", headers=member_headers)
+    assert listed.status_code == 200
+    assert cat["id"] in {c["id"] for c in listed.json()}
+
+    # Патч — admin.
+    patched = await client.patch(
+        f"/api/kb/categories/{cat['id']}",
+        headers=admin_headers,
+        json={"title": "Практика", "sort_order": 5},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["title"] == "Практика"
+    assert patched.json()["sort_order"] == 5
+    assert (
+        await client.patch(
+            f"/api/kb/categories/{cat['id']}",
+            headers=member_headers,
+            json={"title": "z"},
+        )
+    ).status_code == 403
+
+
+async def test_item_assigned_to_category(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+
+    cat = (
+        await client.post(
+            "/api/kb/categories", headers=admin_headers, json={"title": "Раздел"}
+        )
+    ).json()
+
+    # Назначение при создании.
+    item = await _create_item(
+        client, admin_headers, title="A", category_id=cat["id"]
+    )
+    assert item["category_id"] == cat["id"]
+
+    # Смена категории на NULL через PATCH.
+    patched = await client.patch(
+        f"/api/kb/items/{item['id']}",
+        headers=admin_headers,
+        json={"category_id": None},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["category_id"] is None
+
+
+async def test_item_with_unknown_category_404(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+
+    resp = await client.post(
+        "/api/kb/items",
+        headers=admin_headers,
+        json={"title": "A", "category_id": 999999},
+    )
+    assert resp.status_code == 404
+
+    item = await _create_item(client, admin_headers, title="B")
+    patched = await client.patch(
+        f"/api/kb/items/{item['id']}",
+        headers=admin_headers,
+        json={"category_id": 999999},
+    )
+    assert patched.status_code == 404
+
+
+async def test_delete_category_nulls_items(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+
+    cat = (
+        await client.post(
+            "/api/kb/categories", headers=admin_headers, json={"title": "Tmp"}
+        )
+    ).json()
+    item = await _create_item(
+        client, admin_headers, title="A", category_id=cat["id"]
+    )
+
+    deleted = await client.delete(
+        f"/api/kb/categories/{cat['id']}", headers=admin_headers
+    )
+    assert deleted.status_code == 204
+
+    # Материал остался, но без категории.
+    one = await client.get(f"/api/kb/items/{item['id']}", headers=admin_headers)
+    assert one.status_code == 200
+    assert one.json()["category_id"] is None

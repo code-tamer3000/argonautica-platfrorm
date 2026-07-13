@@ -528,7 +528,11 @@ export function AdminTasks() {
       )}
 
       {createOpen && (
-        <Modal title="Создать задачу" onClose={() => setCreateOpen(false)}>
+        <Modal
+          title="Создать задачу"
+          onClose={() => setCreateOpen(false)}
+          closeOnBackdrop={false}
+        >
           <TaskForm onSubmit={handleCreate} />
         </Modal>
       )}

@@ -1,36 +1,45 @@
 """База знаний (SPEC §4.9): авторский CRUD материалов + чтение опубликованного.
 
 Материалы создаёт/правит только admin; участники читают опубликованное. Категории —
-вне MVP (DECISIONS.md), материалы плоские. Файлы/видео грузятся обычным media-flow
-(`/api/media/...`) и линкуются к материалу. Авторизация на КАЖДОМ запросе (CLAUDE.md п.1).
+плоские (один уровень): CRUD только admin, любой участник видит список категорий для
+группировки материалов. Файлы/видео грузятся обычным media-flow (`/api/media/...`)
+и линкуются к материалу. Авторизация на КАЖДОМ запросе (CLAUDE.md п.1).
 """
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin
 from app.db.session import get_session
-from app.models.kb import KbComment, KbItem, KbItemMedia
+from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.user import User
 from app.schemas.kb import (
     AttachMediaRequest,
+    KbCategoryCreate,
+    KbCategoryOut,
+    KbCategoryUpdate,
     KbCommentCreate,
     KbCommentOut,
     KbItemCreate,
     KbItemOut,
     KbItemUpdate,
 )
-from app.services.kb import assert_kb_item_visible, attached_media_ids, load_kb_item
+from app.services.kb import (
+    assert_category_exists,
+    assert_kb_item_visible,
+    attached_media_ids,
+    load_kb_item,
+)
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
 # Поля, которые admin вправе править через PATCH.
-_PATCHABLE_FIELDS = {"title", "body", "published", "sort_order"}
+_PATCHABLE_FIELDS = {"title", "body", "published", "category_id", "sort_order"}
 
 
 def _to_out(item: KbItem, media_ids: list[int]) -> KbItemOut:
@@ -50,6 +59,73 @@ async def _assert_assets_exist(session: AsyncSession, asset_ids: list[int]) -> N
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
 
 
+# --- категории (плоские) ----------------------------------------------------
+
+
+@router.get("/categories", response_model=list[KbCategoryOut])
+async def list_categories(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[KbCategory]:
+    """Список категорий для группировки. Виден любому участнику."""
+    rows = await session.execute(
+        select(KbCategory).order_by(KbCategory.sort_order, KbCategory.id)
+    )
+    return list(rows.scalars().all())
+
+
+@router.post("/categories", response_model=KbCategoryOut, status_code=201)
+async def create_category(
+    body: KbCategoryCreate,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> KbCategory:
+    """Создать категорию (admin)."""
+    category = KbCategory(title=body.title, sort_order=body.sort_order)
+    session.add(category)
+    await session.flush()
+    await session.refresh(category)
+    return category
+
+
+@router.patch("/categories/{category_id}", response_model=KbCategoryOut)
+async def update_category(
+    category_id: int,
+    body: KbCategoryUpdate,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> KbCategory:
+    """Частичное обновление категории (admin)."""
+    category = await session.get(KbCategory, category_id)
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "KB category not found")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(category, field, value)
+    await session.flush()
+    return category
+
+
+@router.delete("/categories/{category_id}", status_code=204)
+async def delete_category(
+    category_id: int,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Удалить категорию (admin). Материалы не удаляются — их `category_id` → NULL."""
+    category = await session.get(KbCategory, category_id)
+    if category is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "KB category not found")
+    # Отвязываем материалы, иначе FK не даст удалить категорию.
+    await session.execute(
+        update(KbItem)
+        .where(KbItem.category_id == category_id)
+        .values(category_id=None)
+    )
+    await session.delete(category)
+    await session.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 # --- авторские эндпоинты (только admin) ------------------------------------
 
 
@@ -61,11 +137,13 @@ async def create_item(
 ) -> KbItemOut:
     """Создать материал (по умолчанию черновик). Опционально привязать медиа."""
     await _assert_assets_exist(session, body.media_asset_ids)
+    await assert_category_exists(session, body.category_id)
 
     item = KbItem(
         title=body.title,
         body=body.body,
         published=body.published,
+        category_id=body.category_id,
         created_by=current_admin.id,
     )
     session.add(item)
@@ -91,6 +169,8 @@ async def update_item(
     item = await load_kb_item(session, item_id)
 
     changes = body.model_dump(exclude_unset=True)
+    if "category_id" in changes:
+        await assert_category_exists(session, changes["category_id"])
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:
             setattr(item, field, value)

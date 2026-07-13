@@ -13,6 +13,7 @@ React 18 + TypeScript + Vite. TanStack Query v5 (server state), Zustand (UI stat
 - `api/` — TanStack Query hooks per domain (messages, rooms, users, media, pins, threads, stickers, kb, calendar, profile, admin, dynamics, notifications, faq, feedback, cabin, tasks) + `cache.ts` mutators.
 - `features/` — screens by domain: `auth`, `app` (AppShell, NotificationBell, nav badges), `chat`, `kb`, `calendar`, `profile`, `admin`, `cabin`, `support`, `tasks`.
 - `components/` — shared UI (Avatar, Button, Spinner, Overlay=Modal/Drawer/Lightbox, Toasts, icons, VideoPlayer, MediaComposer).
+- **Chat composer paperclip → menu** (not a direct file dialog): «Файл» (upload as before) or «Ссылка на материал / задачу» → `features/chat/RefPicker.tsx` (tabs Материалы/Задачи, title search over `useKbItems`/`useTasks`, which the server already scopes to visible items). One picked ref → a chip above the input (beside media chips) and `ref_kind`/`ref_id` on `SendBody`; the optimistic bubble shows the ref immediately (`OutboxItem.optimisticRef`). `MessageItem` renders `msg.ref` as a «Перейти к материалу/задаче» button before the text (disabled when `available=false`). Media and a ref can ride the same message. See [MESSAGES.md](MESSAGES.md).
 - `hooks/` — `useRealtime` (routes WS events into the Query cache), `useIsMobile`.
 - `stores/` — Zustand: `ui` (activeRoomId, typing 4s TTL, online, dmPeers), `toast`, `theme` (dark/light, see below).
 - `styles/` — `tokens.css` + `global.css`.

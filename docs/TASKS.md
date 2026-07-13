@@ -48,10 +48,12 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
   `task_assignments` row per member (so it flows through the normal status/badge/progress
   machinery); the pair completes for **both** members (assignment → `accepted`) when both
   cross-tasks are accepted — see `recompute_pair_completion` in `services/tasks.py`.
-- **Meeting.** Informational only (date+time, `task_pairs.meeting_at`), one per pair, no
-  notifications. Managed by one member picked **randomly** at creation
-  (`meeting_organizer_id`) via `PATCH .../meeting` (organizer-only, 403 otherwise); the
-  other member sees "Свяжитесь с …". `meeting_at=null` cancels; editing the date reschedules.
+- **Meeting.** No in-app scheduling. A member sees "Спишитесь с @partner в личных
+  сообщениях для назначения встречи." (2nd person); an admin viewing a pair they're not in
+  sees "@X и @Y должны списаться …" (3rd person, both members named). The
+  backend still carries `task_pairs.meeting_at` / `meeting_organizer_id` and the
+  `PATCH .../meeting` endpoint (expand/contract — kept for compatibility), but no UI surfaces
+  them anymore. Applies to existing pair-tasks too (frontend-only change).
 - **Cross-task.** Each member gives their partner one task via `POST .../cross-task`: a
   normal `individual` task with `created_by`=the giving participant and `pair_id`=the pair;
   recipient is fixed (the partner). Exactly one per giver (repeat → 409). The giver may
