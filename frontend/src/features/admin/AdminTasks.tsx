@@ -464,7 +464,7 @@ export function AdminTasks() {
 
       {active.length > 0 && (
         <>
-          <h2 className={styles.sectionTitle}>Активные</h2>
+          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>Активные</h2>
           <div className={styles.list}>
             {active.map((task) => (
               <TaskRow

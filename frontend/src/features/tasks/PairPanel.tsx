@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom'
 import {
   useCreateCrossTask,
   useDeletePair,
-  useUpdateMeeting,
   type PairOut,
   type PairMemberOut,
 } from '../../api/tasks'
@@ -11,17 +10,10 @@ import { useUsersMap } from '../../api/users'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
-import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import styles from './tasks.module.css'
 
-// datetime-local ↔ ISO (как в админской форме задач).
-function isoToLocalInput(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
+// datetime-local → ISO (для дедлайна в форме выдачи задачи).
 function localInputToIso(value: string): string | null {
   return value ? new Date(value).toISOString() : null
 }
@@ -69,6 +61,8 @@ function PairCard({
   const users = useUsersMap()
   const nameOf = (uid: number) =>
     users.get(uid)?.display_name ?? `Участник #${uid}`
+  const usernameOf = (uid: number) =>
+    users.get(uid)?.username ?? `id${uid}`
 
   const viewer = pair.viewer_user_id
   const me: PairMemberOut | undefined = viewer
@@ -90,7 +84,7 @@ function PairCard({
         {isAdmin && <AdminPairActions taskId={taskId} pair={pair} />}
       </div>
 
-      <MeetingBlock taskId={taskId} pair={pair} partner={partner} nameOf={nameOf} />
+      <MeetingBlock pair={pair} partner={partner} usernameOf={usernameOf} />
 
       {/* Участник: выдать задачу партнёру / ссылка на выданную. */}
       {viewer && me && partner && (
@@ -132,113 +126,28 @@ function PairCard({
 }
 
 function MeetingBlock({
-  taskId,
   pair,
   partner,
-  nameOf,
+  usernameOf,
 }: {
-  taskId: number
   pair: PairOut
   partner: PairMemberOut | undefined
-  nameOf: (uid: number) => string
+  usernameOf: (uid: number) => string
 }) {
-  const update = useUpdateMeeting(taskId)
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(isoToLocalInput(pair.meeting_at))
-  const partnerName = partner ? nameOf(partner.user_id) : 'партнёром'
+  // Назначение встречи из интерфейса убрано: участники договариваются сами в ЛС.
+  // Для участника показываем username партнёра, для админа — обоих участников пары.
+  const partners = partner
+    ? [partner]
+    : pair.members.filter((m) => !pair.viewer_user_id || m.user_id !== pair.viewer_user_id)
 
-  function save(meetingAt: string | null) {
-    update.mutate(
-      { pairId: pair.pair_id, meetingAt },
-      {
-        onSuccess: () => {
-          toast(meetingAt ? 'Встреча назначена' : 'Встреча отменена')
-          setEditing(false)
-        },
-        onError: (err) => toast(errMsg(err), 'error'),
-      },
-    )
-  }
+  const names = partners.map((m) => `@${usernameOf(m.user_id)}`).join(' и ')
 
-  // Второй участник (не организатор) — только видит.
-  if (!pair.can_manage_meeting) {
-    return (
-      <div className={styles.myStatusRow}>
-        <span className={styles.myStatusLabel}>Встреча:</span>
-        <span>
-          {pair.meeting_at
-            ? dateTimeMsk(pair.meeting_at)
-            : `Свяжитесь с ${partnerName}, чтобы назначить встречу`}
-        </span>
-      </div>
-    )
-  }
-
-  // Организатор, режим редактирования (выбор даты).
-  if (editing) {
-    return (
-      <div className={styles.myStatusRow}>
-        <span className={styles.myStatusLabel}>Встреча:</span>
-        <input
-          type="datetime-local"
-          className={styles.composerInput}
-          style={{ maxWidth: 220 }}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        <Button
-          type="button"
-          disabled={update.isPending || !value}
-          onClick={() => save(localInputToIso(value))}
-        >
-          Сохранить
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={update.isPending}
-          onClick={() => {
-            setValue(isoToLocalInput(pair.meeting_at))
-            setEditing(false)
-          }}
-        >
-          Отмена
-        </Button>
-      </div>
-    )
-  }
-
-  // Организатор, встреча уже назначена — дата + перенести/отменить.
-  if (pair.meeting_at) {
-    return (
-      <div className={styles.myStatusRow}>
-        <span className={styles.myStatusLabel}>Встреча с {partnerName}:</span>
-        <span>{dateTimeMsk(pair.meeting_at)}</span>
-        <Button type="button" variant="outline" onClick={() => setEditing(true)}>
-          Перенести
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={update.isPending}
-          onClick={() => {
-            setValue('')
-            save(null)
-          }}
-        >
-          Отменить
-        </Button>
-      </div>
-    )
-  }
-
-  // Организатор, встреча не назначена — кнопка с подписью.
   return (
     <div className={styles.myStatusRow}>
       <span className={styles.myStatusLabel}>Встреча:</span>
-      <Button type="button" onClick={() => setEditing(true)}>
-        Назначить встречу с {partnerName}
-      </Button>
+      <span>
+        Спишитесь с {names} в личных сообщениях для назначения встречи.
+      </span>
     </div>
   )
 }

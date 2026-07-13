@@ -2,6 +2,8 @@
 .pageHeader { display: flex; align-items: center; justify-content: space-between; }
 .pageHeader h1 { font-family: var(--font-t1); color: var(--text-primary); }
 .sectionTitle { font-family: var(--font-t2); font-size: var(--text-h3); color: var(--text-primary); margin: var(--space-4) 0 var(--space-2); }
+/* Заголовок «Активные» в задачах — зелёный (морская ярь), чтобы выделить живые задачи. */
+.sectionTitleActive { color: var(--color-more-yar); }
 .sectionToggle { display: flex; align-items: center; gap: var(--space-2); background: none; border: none; cursor: pointer; padding: 0; margin: var(--space-4) 0 var(--space-2); font-family: var(--font-t2); font-size: var(--text-h3); color: var(--text-primary); text-align: left; }
 .sectionToggle:hover { color: var(--accent); }
 .list { display: flex; flex-direction: column; gap: var(--space-3); }
