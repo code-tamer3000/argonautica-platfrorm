@@ -6,6 +6,7 @@
 берём из MinIO, клиенту не доверяем (§6.4). Чтение — presigned-GET после проверки прав.
 """
 import json
+from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.core.config import settings
+from app.core.metrics import log_media_metric, record_step
 from app.core.redis import redis_client
 from app.db.session import get_session
 from app.models.media import MediaAsset
@@ -157,7 +159,12 @@ async def confirm_upload(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your upload")
 
     bucket = settings.minio_bucket_media
+    # Тайминг: клиент ждёт confirm целиком, а внутри — сетевой head_object и (для
+    # картинок) синхронная генерация превью. Меряем шаги отдельно, чтобы видеть,
+    # что из них — узкое место «долгой отправки» (docs/FILES.md «Сбор метрик»).
+    _t_stat = perf_counter()
     size = await run_in_threadpool(stat_object, bucket, body.storage_key)
+    stat_ms = (perf_counter() - _t_stat) * 1000
     if size is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Object not found in storage")
     if size > intent["max_size"]:
@@ -185,10 +192,13 @@ async def confirm_upload(
     #    сервер лишь проверяет намерение и подхватывает его ключ (тянуть видео на
     #    бэкенд ради одного кадра дорого и против принципа «байты мимо FastAPI»).
     thumb_key: str | None = None
+    thumb_ms = 0.0
     if asset.kind == "image":
+        _t_thumb = perf_counter()
         thumb_key = await run_in_threadpool(
             generate_image_thumbnail, bucket, body.storage_key, intent["mime_type"]
         )
+        thumb_ms = (perf_counter() - _t_thumb) * 1000
     elif asset.kind == "video" and body.thumb_storage_key:
         thumb_key = await _consume_client_thumbnail(
             current_user.id, bucket, body.thumb_storage_key
@@ -198,6 +208,23 @@ async def confirm_upload(
         await session.flush()
 
     await redis_client.delete(_intent_key(body.storage_key))
+
+    # Серверная разбивка confirm (best-effort, не роняет ответ): сколько заняли
+    # head_object и генерация превью. Копим в те же агрегаты, source="server".
+    log_media_metric(
+        {
+            "op": "upload",
+            "kind": asset.kind,
+            "source": "server",
+            "size": size,
+            "steps": {"stat_ms": round(stat_ms), "thumbnail_ms": round(thumb_ms)},
+            "user_id": current_user.id,
+        }
+    )
+    await record_step("upload", asset.kind, "server", "stat", stat_ms)
+    if asset.kind == "image":
+        await record_step("upload", asset.kind, "server", "thumbnail", thumb_ms)
+
     return asset
 
 

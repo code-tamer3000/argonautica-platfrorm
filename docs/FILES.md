@@ -30,6 +30,43 @@ Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_ass
 - Feeds load the thumbnail; the original loads on click (lightbox). Images render as a native `<img loading="lazy">` (no blob-progress fetch, no spinner); the box reserves `aspect-ratio` from `width`/`height` up front so there's no layout shift — only the box background shows until the image decodes. Legacy rows without dimensions get no reserved box (see backfill below).
 - Caching: presigned-GET TTL 24h + nginx `Cache-Control: private, max-age=86400, immutable` on media; objects are immutable (key = uuid). Text responses gzipped; media not (already compressed).
 
+## Сбор метрик (измерительный слой)
+
+Инструмент, чтобы найти, **где** теряется время при отправке/загрузке медиа с телефона,
+до того как чинить. Включается флагом `MEDIA_METRICS_ENABLED` (по умолчанию `true`;
+агрегаты живут `MEDIA_METRICS_TTL_SECONDS`, дефолт сутки). Три источника таймингов:
+
+- **Клиент** (`frontend/src/lib/metrics.ts`) — реальные шаги с устройства пользователя:
+  upload = `presign → put (в MinIO) → poster → confirm`; download = время загрузки
+  превью картинки (`load`) и presign-GET round-trip БЗ (`presign`). Тип сети берётся из
+  `navigator.connection.effectiveType`. Трейсы копятся и уходят пачкой на
+  `POST /api/metrics/media` (`keepalive`, дослать на `pagehide`) — сбор best-effort,
+  на саму отправку/загрузку не влияет.
+- **Бэкенд** (`app/api/media.py::confirm_upload`) — разбивка confirm: `stat` (head_object)
+  и `thumbnail` (генерация превью картинки) отдельными шагами (`source=server`).
+- **nginx** (`log_format media_perf`) — время отдачи MinIO: `req_time`, `upstream_time`,
+  `bytes` в `/var/log/nginx/media_perf.log` на media-локациях.
+
+Приём метрик открыт любому активному юзеру (шлёт только со своих операций); свод
+`GET /api/metrics/media` — только админу: `{enabled, steps:{"<source>:<op>:<kind>:<step>":
+{count, avg_ms, p50, p90, p99}}}`. Перцентили — метки бакетов гистограммы в Redis
+(`metrics:media:*`), грубые, но достаточные, чтобы увидеть хвост. Значения клиентские —
+только наблюдение, ни на какие решения сервера не влияют.
+
+**Runbook (на реальном сервере):**
+1. Задеплоить бэкенд+фронт обычным blue-green; при желании применить nginx-шаблон
+   (`nginx -s reload`) — иначе просто не будет `media_perf.log`, остальное работает.
+2. Попользоваться с телефона 10–15 мин (отправить/открыть фото и видео).
+3. Сырые события: `docker logs <backend> 2>&1 | grep '"metric"' | tail -50`
+   (клиентские трейсы + серверная разбивка confirm).
+4. Свод перцентилей: открыть `GET /api/metrics/media` под админом (или `curl` с токеном).
+5. nginx-отдача: `docker logs <nginx> 2>&1 | grep media_perf | tail -50` (или файл лога).
+
+Формат строк лога (JSON с полем `"metric": "media"`, и `media_perf ...` у nginx)
+стабилен — на него завязан этот грепанье (grep по `"metric"` ловит все события; сам
+JSON печатается с пробелами после двоеточий). По собранным цифрам — отдельная задача с фиксами (напр. асинхронная
+генерация превью после ответа, `proxy_buffering off` на GET-медиа, tune presign).
+
 ## Backfill (one-off)
 
 Older images uploaded before thumbnails have `thumb_key = NULL`. `backend/scripts/backfill_thumbnails.py` regenerates them (idempotent, batched, images only; videos are client-posters). Runbook in the archived OPERATIONS §4.

@@ -1,5 +1,6 @@
 // 3-шаговая presigned-загрузка: uploads → PUT в MinIO → assets.
 import { http } from './apiClient'
+import { MediaTracer } from './metrics'
 import type { MediaAssetOut, MediaKind, UploadTicket } from './types'
 
 function kindFor(type: string): MediaKind {
@@ -266,23 +267,38 @@ export async function runPendingUpload(
   pu: PendingUpload,
   onProgress?: UploadProgress,
 ): Promise<MediaAssetOut> {
-  const ticket = await http.post<UploadTicket>('/api/media/uploads', {
-    content_type: pu.contentType,
-    size: pu.blob.size,
-    kind: pu.kind,
-  })
+  // Измерительный слой: засекаем каждый сетевой шаг, чтобы видеть, где на мобиле
+  // теряется время (presign выдаёт бэкенд, PUT льёт в MinIO, confirm ждёт head_object
+  // + генерацию превью). Сбор best-effort — не влияет на саму загрузку (см. metrics.ts).
+  const tr = new MediaTracer('upload', pu.kind, pu.blob.size)
+  const ticket = await tr.step('presign', () =>
+    http.post<UploadTicket>('/api/media/uploads', {
+      content_type: pu.contentType,
+      size: pu.blob.size,
+      kind: pu.kind,
+    }),
+  )
   // Прямой PUT клиент → MinIO (минуя бэкенд). ContentType PUT'а должен совпадать с
   // подписанным (иначе MinIO вернёт SignatureDoesNotMatch).
-  await putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress)
+  await tr.step('put', () =>
+    putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress),
+  )
   let thumbStorageKey: string | undefined
-  if (pu.posterBlob) thumbStorageKey = (await uploadPoster(pu.posterBlob)) ?? undefined
-  return http.post<MediaAssetOut>('/api/media/assets', {
-    storage_key: ticket.storage_key,
-    width: pu.width,
-    height: pu.height,
-    duration: pu.duration,
-    thumb_storage_key: thumbStorageKey,
-  })
+  if (pu.posterBlob) {
+    thumbStorageKey =
+      (await tr.step('poster', () => uploadPoster(pu.posterBlob as Blob))) ?? undefined
+  }
+  const asset = await tr.step('confirm', () =>
+    http.post<MediaAssetOut>('/api/media/assets', {
+      storage_key: ticket.storage_key,
+      width: pu.width,
+      height: pu.height,
+      duration: pu.duration,
+      thumb_storage_key: thumbStorageKey,
+    }),
+  )
+  tr.done()
+  return asset
 }
 
 export function guessMediaKind(url: string): MediaKind {
