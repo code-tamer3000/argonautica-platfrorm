@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     def push_enabled(self) -> bool:
         return bool(self.vapid_public_key and self.vapid_private_key)
 
+    # --- Метрики производительности медиа (docs/FILES.md «Сбор метрик») ---
+    # Измерительный слой: клиент шлёт тайминги шагов upload/download на
+    # POST /api/metrics/media, бэкенд пишет их JSON-строкой в лог и копит агрегаты
+    # (перцентили) в Redis. Выключатель — на случай, когда сбор больше не нужен:
+    # при False приём метрик отвечает 204 и ничего не пишет. Инструментация
+    # confirm_upload (head_object/thumbnail) на флаг не смотрит — она дешёвая.
+    media_metrics_enabled: bool = True
+    # TTL агрегатов метрик в Redis (сутки): скользящее окно наблюдения.
+    media_metrics_ttl_seconds: int = 86_400
+
     @model_validator(mode="after")
     def _default_public_endpoint(self) -> "Settings":
         # Браузеру нужен публичный адрес MinIO (напр. localhost:9000), а не

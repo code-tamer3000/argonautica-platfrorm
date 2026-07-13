@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMediaUrl } from '../../api/media'
 import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
@@ -6,6 +6,7 @@ import { Spinner } from '../../components/Spinner'
 import { VideoPlayer } from '../../components/VideoPlayer'
 import { VoicePlayer } from '../../components/VoicePlayer'
 import { downloadFile, fileNameFromUrl, guessMediaKind } from '../../lib/mediaUpload'
+import { reportMetric } from '../../lib/metrics'
 import type { AttachmentOut, MediaKind } from '../../lib/types'
 import styles from './chat.module.css'
 
@@ -109,6 +110,26 @@ function ImageAttachment({
   const feedUrl = thumbUrl ?? url // нет превью (видео старые/битые) — грузим оригинал
   const ratio = width && height ? width / height : undefined
 
+  // Измерительный слой: сколько реально грузится картинка ленты на устройстве.
+  // `loading="lazy"` → байты начинают тянуться, когда картинка подходит к вьюпорту,
+  // поэтому засекаем не от монтирования, а от первого события загрузки (load start
+  // недоступен для <img>, поэтому меряем от установки src-элемента до onLoad —
+  // грубая, но сопоставимая по всем картинкам оценка «время до появления»).
+  const startRef = useRef<number | null>(null)
+  if (startRef.current === null) startRef.current = performance.now()
+  const reported = useRef(false)
+  const onImgLoad = () => {
+    if (reported.current || startRef.current === null) return
+    reported.current = true
+    reportMetric({
+      op: 'download',
+      kind: 'image',
+      // Превью грузим в ленте — по нему и меряем «долго грузит фото».
+      total_ms: performance.now() - startRef.current,
+      steps: { load_ms: performance.now() - startRef.current },
+    })
+  }
+
   return (
     <div className={styles.attImageWrap} style={ratio ? { aspectRatio: String(ratio) } : undefined}>
       <img
@@ -117,6 +138,7 @@ function ImageAttachment({
         alt=""
         loading="lazy"
         onClick={() => setOpen(true)}
+        onLoad={onImgLoad}
       />
       {open && <Lightbox url={url} kind="image" onClose={() => setOpen(false)} />}
     </div>

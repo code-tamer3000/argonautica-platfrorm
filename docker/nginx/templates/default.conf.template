@@ -8,6 +8,16 @@ map $http_upgrade $connection_upgrade {
     ''      close;
 }
 
+# Лог отдачи MinIO (измерительный слой, docs/FILES.md «Сбор метрик»). Показывает,
+# где время на серверной стороне доставки медиа: $request_time — полный запрос;
+# $upstream_response_time — сколько отвечал MinIO; $body_bytes_sent — сколько байт
+# ушло. Грепать: `docker logs <nginx> | grep media_perf`. Формат стабилен — на него
+# завязан разбор в docs/FILES.md.
+log_format media_perf 'media_perf method=$request_method status=$status '
+                      'bytes=$body_bytes_sent req_time=$request_time '
+                      'upstream_time=$upstream_response_time '
+                      'uri=$uri';
+
 # Активный backend (blue/green). Файл переписывает docker/deploy.sh + `nginx -s reload`.
 include /etc/nginx/active_backend.conf;
 
@@ -69,6 +79,8 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Тайминги отдачи MinIO (измерительный слой) — см. log_format media_perf выше.
+        access_log /var/log/nginx/media_perf.log media_perf;
         # Объекты неизменяемы (ключ = uuid), а presigned-ссылка живёт сутки — можно
         # кэшировать в браузере и не перекачивать при перерисовке/скролле назад.
         add_header Cache-Control "private, max-age=86400, immutable" always;
@@ -120,6 +132,8 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # Тайминги отдачи MinIO (измерительный слой) — см. log_format media_perf выше.
+        access_log /var/log/nginx/media_perf.log media_perf;
         # Объекты неизменяемы (ключ = uuid), presigned-ссылка живёт сутки — кэшируем
         # в браузере, чтобы медиа не перекачивалось при каждой перерисовке ленты.
         add_header Cache-Control "private, max-age=86400, immutable" always;
