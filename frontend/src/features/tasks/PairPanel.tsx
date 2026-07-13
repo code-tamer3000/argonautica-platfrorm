@@ -186,7 +186,11 @@ function GiveTaskBlock({
         </Button>
       </div>
       {open && (
-        <Modal title={`Задача для ${partnerName}`} onClose={() => setOpen(false)}>
+        <Modal
+          title={`Задача для ${partnerName}`}
+          onClose={() => setOpen(false)}
+          closeOnBackdrop={false}
+        >
           <GiveTaskForm
             partnerName={partnerName}
             pending={create.isPending}

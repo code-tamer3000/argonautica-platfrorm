@@ -9,10 +9,23 @@ function useEscape(onClose: () => void) {
   }, [onClose])
 }
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({
+  title,
+  onClose,
+  children,
+  closeOnBackdrop = true,
+}: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+  // По умолчанию клик по фону закрывает окно. Для форм с вводом (создание/выдача
+  // задачи) выключаем это, чтобы случайный клик мимо не стирал набранный текст —
+  // закрыть можно крестиком или Escape.
+  closeOnBackdrop?: boolean
+}) {
   useEscape(onClose)
   return (
-    <div className={styles.backdrop} onClick={onClose}>
+    <div className={styles.backdrop} onClick={closeOnBackdrop ? onClose : undefined}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.head}>
           <span className={styles.title}>{title}</span>
