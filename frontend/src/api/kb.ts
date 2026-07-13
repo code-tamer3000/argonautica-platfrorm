@@ -1,10 +1,50 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { KbCommentOut, KbItemOut } from '../lib/types'
+import type { KbCategoryOut, KbCommentOut, KbItemOut } from '../lib/types'
 
 export const kbItemsKey = ['kb', 'items'] as const
 export const kbItemKey = (id: number) => ['kb', 'items', id] as const
+export const kbCategoriesKey = ['kb', 'categories'] as const
 export const kbCommentsKey = (itemId: number) => ['kb', 'items', itemId, 'comments'] as const
+
+// --- Категории (плоские) ---
+
+export function useKbCategories() {
+  return useQuery({
+    queryKey: kbCategoriesKey,
+    queryFn: () => http.get<KbCategoryOut[]>('/api/kb/categories'),
+  })
+}
+
+export function useCreateKbCategory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { title: string; sort_order?: number }) =>
+      http.post<KbCategoryOut>('/api/kb/categories', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: kbCategoriesKey }),
+  })
+}
+
+export function useUpdateKbCategory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: number; title?: string; sort_order?: number }) =>
+      http.patch<KbCategoryOut>(`/api/kb/categories/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: kbCategoriesKey }),
+  })
+}
+
+export function useDeleteKbCategory() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => http.del<null>(`/api/kb/categories/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: kbCategoriesKey })
+      // Удаление категории обнуляет category_id материалов — перечитать список.
+      qc.invalidateQueries({ queryKey: kbItemsKey })
+    },
+  })
+}
 
 export function useKbItems() {
   return useQuery({
@@ -26,6 +66,7 @@ export interface KbItemCreateBody {
   title: string
   body?: string | null
   published?: boolean
+  category_id?: number | null
   media_asset_ids?: number[]
 }
 
@@ -33,6 +74,7 @@ export interface KbItemUpdateBody {
   title?: string
   body?: string | null
   published?: boolean
+  category_id?: number | null
   sort_order?: number
 }
 

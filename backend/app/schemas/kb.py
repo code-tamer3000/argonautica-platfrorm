@@ -1,12 +1,37 @@
-"""Pydantic-схемы базы знаний (материалы).
+"""Pydantic-схемы базы знаний (материалы + категории).
 
-Категории — вне MVP (DECISIONS.md), материалы плоские (`category_id` = NULL).
-Файлы/видео загружаются обычным media-flow (`/api/media/...`) и линкуются к
+Категории — плоские (один уровень): у материала одна категория или её нет
+(`category_id` = NULL → секция «Без категории»). Создаёт/правит категории только
+admin. Файлы/видео загружаются обычным media-flow (`/api/media/...`) и линкуются к
 материалу по `media_asset_id`.
 """
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class KbCategoryCreate(BaseModel):
+    """Создание категории (admin)."""
+
+    title: str = Field(min_length=1, max_length=200)
+    sort_order: int = 0
+
+
+class KbCategoryUpdate(BaseModel):
+    """Частичное обновление категории: применяем только переданные поля."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    sort_order: int | None = None
+
+
+class KbCategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    sort_order: int
 
 
 class KbItemCreate(BaseModel):
@@ -15,6 +40,7 @@ class KbItemCreate(BaseModel):
     title: str
     body: str | None = None  # markdown
     published: bool = False
+    category_id: int | None = None
     media_asset_ids: list[int] = []
 
 
@@ -26,6 +52,7 @@ class KbItemUpdate(BaseModel):
     title: str | None = None
     body: str | None = None
     published: bool | None = None
+    category_id: int | None = None
     sort_order: int | None = None
 
 

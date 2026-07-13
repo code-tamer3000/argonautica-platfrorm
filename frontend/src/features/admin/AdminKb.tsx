@@ -2,9 +2,13 @@ import { useRef, useState } from 'react'
 import {
   useKbItems,
   useKbItem,
+  useKbCategories,
   useCreateKbItem,
   useUpdateKbItem,
   useDeleteKbItem,
+  useCreateKbCategory,
+  useUpdateKbCategory,
+  useDeleteKbCategory,
   useAttachKbMedia,
   useDetachKbMedia,
 } from '../../api/kb'
@@ -20,6 +24,7 @@ interface KbFormValues {
   title: string
   body: string
   published: boolean
+  category_id: number | null
   media_asset_ids: number[]
 }
 
@@ -35,6 +40,8 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
   const [published, setPublished] = useState(initial?.published ?? false)
+  const [categoryId, setCategoryId] = useState<number | null>(initial?.category_id ?? null)
+  const { data: categories = [] } = useKbCategories()
   // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
@@ -51,7 +58,7 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ title, body, published, media_asset_ids: stagedMedia })
+    onSubmit({ title, body, published, category_id: categoryId, media_asset_ids: stagedMedia })
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -120,6 +127,21 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
           onChange={(e) => setBody(e.target.value)}
         />
       </label>
+      <label className={styles.label}>
+        Категория
+        <select
+          className={styles.input}
+          value={categoryId ?? ''}
+          onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Без категории</option>
+          {categories.map((cat) => (
+            <option key={cat.id} value={cat.id}>
+              {cat.title}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className={styles.checkLabel}>
         <input
           type="checkbox"
@@ -175,6 +197,80 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   )
 }
 
+/** Управление плоскими категориями KB: создать, переименовать, удалить. */
+function CategoryManager({ onClose }: { onClose: () => void }) {
+  const { data: categories = [] } = useKbCategories()
+  const createCat = useCreateKbCategory()
+  const updateCat = useUpdateKbCategory()
+  const deleteCat = useDeleteKbCategory()
+  const [newTitle, setNewTitle] = useState('')
+
+  function onError(err: unknown) {
+    toast(err instanceof Error ? err.message : 'Ошибка', 'error')
+  }
+
+  function handleAdd(e: React.FormEvent) {
+    e.preventDefault()
+    const title = newTitle.trim()
+    if (!title) return
+    createCat.mutate(
+      { title },
+      { onSuccess: () => setNewTitle(''), onError },
+    )
+  }
+
+  function rename(id: number, current: string) {
+    const title = window.prompt('Новое название категории', current)?.trim()
+    if (!title || title === current) return
+    updateCat.mutate({ id, title }, { onError })
+  }
+
+  function remove(id: number) {
+    if (!window.confirm('Удалить категорию? Материалы останутся без категории.')) return
+    deleteCat.mutate(id, { onSuccess: () => toast('Категория удалена'), onError })
+  }
+
+  return (
+    <Modal title="Категории" onClose={onClose}>
+      <form onSubmit={handleAdd} className={styles.form}>
+        <label className={styles.label}>
+          Новая категория
+          <input
+            className={styles.input}
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Название"
+          />
+        </label>
+        <div className={styles.formActions}>
+          <Button type="submit" disabled={!newTitle.trim()}>
+            Добавить
+          </Button>
+        </div>
+      </form>
+
+      <div className={styles.list}>
+        {categories.length === 0 && <p className="muted">Категорий пока нет</p>}
+        {categories.map((cat) => (
+          <div className={styles.listItem} key={cat.id}>
+            <div className={styles.listItemMain}>
+              <span className={styles.listTitle}>{cat.title}</span>
+            </div>
+            <div className={styles.listActions}>
+              <Button variant="outline" onClick={() => rename(cat.id, cat.title)}>
+                Переименовать
+              </Button>
+              <Button variant="outline" onClick={() => remove(cat.id)}>
+                Удалить
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Modal>
+  )
+}
+
 export function AdminKb() {
   const { data: items = [] } = useKbItems()
   const createItem = useCreateKbItem()
@@ -183,6 +279,7 @@ export function AdminKb() {
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editItem, setEditItem] = useState<KbItemOut | null>(null)
+  const [categoriesOpen, setCategoriesOpen] = useState(false)
 
   function openEdit(item: KbItemOut) {
     setEditItem(item)
@@ -194,6 +291,7 @@ export function AdminKb() {
         title: values.title,
         body: values.body || null,
         published: values.published,
+        category_id: values.category_id,
         media_asset_ids: values.media_asset_ids,
       },
       {
@@ -215,6 +313,7 @@ export function AdminKb() {
         title: values.title,
         body: values.body || null,
         published: values.published,
+        category_id: values.category_id,
       },
       {
         onSuccess: () => {
@@ -251,7 +350,12 @@ export function AdminKb() {
     <div className={styles.page}>
       <div className={styles.pageHeader}>
         <h1>База знаний</h1>
-        <Button onClick={() => setCreateOpen(true)}>Создать</Button>
+        <div className={styles.listActions}>
+          <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
+            Категории
+          </Button>
+          <Button onClick={() => setCreateOpen(true)}>Создать</Button>
+        </div>
       </div>
 
       <div className={styles.list}>
@@ -291,6 +395,8 @@ export function AdminKb() {
           <KbForm initial={editItem} onSubmit={handleEdit} item={editItem} />
         </Modal>
       )}
+
+      {categoriesOpen && <CategoryManager onClose={() => setCategoriesOpen(false)} />}
     </div>
   )
 }

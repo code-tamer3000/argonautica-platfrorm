@@ -178,6 +178,12 @@ export interface ServerMetricsOut {
   db_pool: { size: number | null; checked_out: number | null }
 }
 
+export interface KbCategoryOut {
+  id: number
+  title: string
+  sort_order: number
+}
+
 export interface KbItemOut {
   id: number
   category_id: number | null
