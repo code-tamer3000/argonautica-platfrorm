@@ -15,6 +15,7 @@ from app.api.feedback import router as feedback_router
 from app.api.kb import router as kb_router
 from app.api.media import router as media_router
 from app.api.messages import router as messages_router
+from app.api.metrics import router as metrics_router
 from app.api.notifications import router as notifications_router
 from app.api.push import router as push_router
 from app.api.rooms import router as rooms_router
@@ -54,6 +55,7 @@ app.include_router(admin_router)
 app.include_router(rooms_router)
 app.include_router(messages_router)
 app.include_router(media_router)
+app.include_router(metrics_router)
 app.include_router(kb_router)
 app.include_router(users_router)
 app.include_router(stickers_router)
