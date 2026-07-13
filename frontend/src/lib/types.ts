@@ -5,6 +5,20 @@ export type RoomType = 'dm' | 'group' | 'channel'
 export type RoomRole = 'owner' | 'member'
 export type MediaKind = 'image' | 'video' | 'file' | 'audio'
 
+// Ссылка-референс из сообщения на материал КБ или задачу.
+export type RefKind = 'kb' | 'task'
+
+export interface MessageRefOut {
+  kind: RefKind
+  id: number
+  // Заголовок цели для зрителя; при available=false — заглушка «Недоступно».
+  title: string
+  // Относительный путь для перехода: /kb/:id или /tasks/:id.
+  url: string
+  // Есть ли у зрителя доступ к цели (иначе кнопка неактивна).
+  available: boolean
+}
+
 export interface TokenPair {
   access_token: string
   refresh_token: string
@@ -73,6 +87,9 @@ export interface MessageOut {
   // Вложения с готовыми presigned-URL и превью — приходят прямо в ленте, без
   // отдельного запроса на каждый ассет. Пусто у старых сообщений в кэше.
   attachments: AttachmentOut[]
+  // Ссылка на материал КБ / задачу (одна на сообщение). null = ссылки нет.
+  // title/available резолвит сервер для текущего зрителя.
+  ref?: MessageRefOut | null
   // --- клиентские поля (только для оптимистичных сообщений из outbox) ---
   // Присутствует лишь у ещё не подтверждённых сервером сообщений: id при этом
   // отрицательный (временный), а _outbox описывает статус доставки. У реальных

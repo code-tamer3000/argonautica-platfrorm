@@ -77,6 +77,8 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | thread_root_id | BIGINT | FK messages, NULL | NULL = top level; set = reply, points at root |
 | sticker_id | BIGINT | FK stickers, NULL | if message is a sticker |
 | forwarded_from_sender_id | BIGINT | FK users, NULL | repost into news: original author. See [MESSAGES.md](MESSAGES.md) |
+| ref_kind | TEXT | NULL, CHECK | ссылка на материал/задачу: `'kb'` \| `'task'`. No FK (target resolved lazily). See [MESSAGES.md](MESSAGES.md) |
+| ref_id | BIGINT | NULL | kb_item / task id; paired with `ref_kind` |
 | reply_count | INT | NOT NULL, default 0 | denormalized on root |
 | last_reply_at | TIMESTAMPTZ | NULL | denormalized on root |
 | created_at | TIMESTAMPTZ | NOT NULL | |
@@ -84,6 +86,7 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
 
 **Index:** (`room_id`, `thread_root_id`, `created_at`).
+**CHECK:** `ck_messages_ref_pair` — `(ref_kind IS NULL) = (ref_id IS NULL)` (both or neither); `ck_messages_ref_kind` — `ref_kind IN ('kb','task')`.
 
 ## message_attachments
 | Field | Type | Constraints | Notes |

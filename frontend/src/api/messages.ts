@@ -6,7 +6,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { JournalSection, MessageOut, ReadStateOut } from '../lib/types'
+import type { JournalSection, MessageOut, ReadStateOut, RefKind } from '../lib/types'
 import { roomsKey } from './rooms'
 import { appendMessage } from './cache'
 
@@ -35,6 +35,9 @@ export interface SendBody {
   sticker_id?: number
   attachment_ids?: number[]
   reply_to_message_id?: number
+  // Ссылка на материал КБ / задачу (одна на сообщение). Оба поля вместе.
+  ref_kind?: RefKind
+  ref_id?: number
 }
 
 export function useSendMessage(roomId: number) {
