@@ -46,10 +46,15 @@ server {
 
     # MinIO по префиксу бакета (path-style S3): один хост по IP, медиа-поддомена нет.
     # Presigned-URL path-style = https://<host>:8443/<bucket>/<key>; SigV4 подписывает
-    # host+path, поэтому Host сохраняем и путь не переписываем — подпись сходится.
+    # host+path, поэтому путь не переписываем.
+    #   ВАЖНО: стенд слушает НЕСТАНДАРТНЫЙ порт :8443, и backend подписывает URL с
+    #   портом → в подпись входит host="<ip>:8443". Значит MinIO должен увидеть тот же
+    #   Host С ПОРТОМ, иначе SignatureDoesNotMatch. $host порт ОТБРАСЫВАЕТ, поэтому тут
+    #   именно $http_host (полный Host из запроса, с :8443). На проде порт стандартный
+    #   443 — там $host и подписанный host совпадают, эта тонкость не всплывает.
     location ~ ^/(chat-media|kb-media)/ {
         proxy_pass http://minio:9000;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
