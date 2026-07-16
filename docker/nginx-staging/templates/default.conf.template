@@ -1,7 +1,8 @@
 # nginx тестового стенда (staging). Отдельный шаблон — прод-конфиг не трогаем.
 # Отличия от прода:
 #   - один backend (без blue-green и include active_backend.conf) — proxy_pass прямо;
-#   - один server на 443, server_name _ → доступ по IP (домена нет), self-signed TLS.
+#   - один server на 443, server_name = ${DOMAIN} (поддомен staging.*), боевой LE-серт.
+#     Наружу торчит на :8443 (прод держит :443 на том же IP). Доступ по IP закрыт.
 # Стенд открыт (без Basic Auth) — это внутренний тестовый превью, не прод.
 # envsubst официального nginx-образа подставляет ${DOMAIN} (nginx-переменные $host и т.п.
 # не трогаются). Наружу маппится 8443:443 (см. docker-compose.staging.yml).
@@ -16,10 +17,13 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
-    server_name _;
+    # Стенд отвечает ТОЛЬКО на свой поддомен (staging.argonautica-systems.ru) —
+    # доступ по IP закрыт. Прод на этом же IP держит :443; стенд — :8443.
+    server_name ${DOMAIN};
 
-    # Self-signed серт под ${DOMAIN} (= IP стенда). Генерится при bootstrap
-    # (docker/nginx-staging/make-self-signed.sh), в git не коммитится.
+    # TLS-серт под ${DOMAIN}. На поддомене — боевой Let's Encrypt (выпущен webroot'ом
+    # через :80 прода; см. docs/DEPLOY.md → staging). В git не коммитится (только .example
+    # bootstrap self-signed через docker/nginx-staging/make-self-signed.sh для IP-режима).
     ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
     ssl_certificate_key /etc/nginx/certs/${DOMAIN}.key;
 
@@ -46,10 +50,15 @@ server {
 
     # MinIO по префиксу бакета (path-style S3): один хост по IP, медиа-поддомена нет.
     # Presigned-URL path-style = https://<host>:8443/<bucket>/<key>; SigV4 подписывает
-    # host+path, поэтому Host сохраняем и путь не переписываем — подпись сходится.
+    # host+path, поэтому путь не переписываем.
+    #   ВАЖНО: стенд слушает НЕСТАНДАРТНЫЙ порт :8443, и backend подписывает URL с
+    #   портом → в подпись входит host="<ip>:8443". Значит MinIO должен увидеть тот же
+    #   Host С ПОРТОМ, иначе SignatureDoesNotMatch. $host порт ОТБРАСЫВАЕТ, поэтому тут
+    #   именно $http_host (полный Host из запроса, с :8443). На проде порт стандартный
+    #   443 — там $host и подписанный host совпадают, эта тонкость не всплывает.
     location ~ ^/(chat-media|kb-media)/ {
         proxy_pass http://minio:9000;
-        proxy_set_header Host $host;
+        proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

@@ -25,11 +25,13 @@
 | Branch | Environment | Server | Trigger |
 |---|---|---|---|
 | `main` | Production | `193.233.245.210` (`platform.argonautica-systems.ru`) | merge → GitHub Actions (`deploy-prod.yml`) → rsync + `docker/deploy.sh` |
-| `develop` | Staging | same host, `/opt/platform-staging`, port **8443**, isolated compose project | push → `Deploy → staging` → `deploy-staging.sh` |
+| `develop` | Staging | same host, `/opt/platform-staging`, **`https://staging.argonautica-systems.ru:8443`**, isolated compose project | push → `Deploy → staging` → `deploy-staging.sh` |
 | PR (any) | — | — | CI: ruff + mypy + pytest (`ci.yml`) |
 
 - Staging is isolated (separate compose project, own network/volumes/`.env`/`JWT_SECRET`), no blue-green, **no `bot` service** (a second long-poller on the prod token would break the prod bot — see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)).
-- Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx restarts (`deploy-staging.sh` restarts it automatically).
+- **Domain & TLS:** staging answers only on `staging.argonautica-systems.ru` (nginx `server_name = ${DOMAIN}`; access by raw IP is closed). A-record → `193.233.245.210` (same host as prod; prod stays on `:443`, staging on `:8443` — one IP serves both, no conflict). Real **Let's Encrypt** cert, issued/renewed via **webroot through prod's `:80`** (prod nginx already serves `/.well-known/acme-challenge/` from the shared `docker_certbot_webroot` volume). The **host** certbot (v0.40) is broken, so issuance/renewal run in the `certbot/certbot` **container** against an isolated `/opt/platform-staging/letsencrypt`. Renewal + delivery: `docker/nginx-staging/renew-cert.sh` (installed on the server as `/opt/platform-staging/renew-staging-cert.sh`, cron twice-daily) renews, copies the cert into `docker/nginx-staging/certs/${DOMAIN}.crt/.key`, and **recreates** staging nginx.
+- **`MINIO_PUBLIC_ENDPOINT` must carry the `:8443` port** (`https://staging.argonautica-systems.ru:8443`). The backend signs presigned MinIO URLs with the port, so the nginx MinIO location proxies `Host $http_host` (not `$host`, which drops the port) — otherwise MinIO returns `SignatureDoesNotMatch` and **all uploads fail**. (Prod is on standard `:443`, where this is moot.)
+- Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx is recreated. `deploy-staging.sh` runs `up -d --force-recreate nginx` for exactly this — and `--force-recreate` (not `restart`) is also required so envsubst re-renders the template after a config change.
 
 ## Local dev vs prod
 
