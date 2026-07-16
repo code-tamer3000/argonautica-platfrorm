@@ -10,10 +10,12 @@
 """
 import logging
 import re
+from collections.abc import Awaitable, Callable
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import after_commit
 from app.models.message import Message
 from app.models.notification import Notification
 from app.models.room import Room, RoomMember
@@ -133,6 +135,29 @@ async def _recipients(
     return "", []
 
 
+def _push_hook(
+    user_id: int, payload: dict[str, object]
+) -> Callable[[], Awaitable[None]]:
+    """Обёртка: enqueue_push синхронный, а after_commit ждёт корутину-фабрику."""
+
+    async def hook() -> None:
+        push_service.enqueue_push(user_id, payload)
+
+    return hook
+
+
+def _notif_hook(
+    user_id: int, event: dict[str, object]
+) -> Callable[[], Awaitable[None]]:
+    """Фабрика хука WS-уведомления. Явная (не лямбда) — иначе mypy не выводит тип
+    и корректно связывает значение в цикле, без ловушки позднего замыкания."""
+
+    async def hook() -> None:
+        await publish_user_event(user_id, event)
+
+    return hook
+
+
 async def on_new_message(
     session: AsyncSession, message: Message, room: Room, sender: User
 ) -> None:
@@ -187,21 +212,24 @@ async def on_new_message(
                 created_at=row.created_at,
                 read_at=row.read_at,
             )
-            await publish_user_event(
-                row.user_id, ws_schemas.notification_new_event(out)
-            )
+            # Сайд-эффекты откладываем до commit: WS/push про уведомление не
+            # должны уходить, если сообщение в итоге не закоммитится (откат).
+            # Дефолт-аргументы лямбд связывают значения текущей итерации.
+            notif_event = ws_schemas.notification_new_event(out)
+            after_commit(session, _notif_hook(row.user_id, notif_event))
             if push_allowed(settings_by_uid.get(row.user_id), row.kind):
                 # Клик по push ведёт в приложение: новости — на /news (канал
                 # авто-открывается), остальные комнаты открываются через ленту на /.
                 url = "/news" if row.kind == "news" else "/"
-                push_service.enqueue_push(
-                    row.user_id,
-                    push_service.build_payload(
-                        title=sender.display_name,
-                        body=preview,
-                        url=url,
-                        tag=f"room-{message.room_id}",
-                    ),
+                payload = push_service.build_payload(
+                    title=sender.display_name,
+                    body=preview,
+                    url=url,
+                    tag=f"room-{message.room_id}",
+                )
+                after_commit(
+                    session,
+                    _push_hook(row.user_id, payload),
                 )
     except Exception:
         logger.exception("Failed to create notifications for message %s", message.id)
@@ -239,14 +267,13 @@ async def broadcast_admin(
             created_at=row.created_at,
             read_at=row.read_at,
         )
-        await publish_user_event(uid, ws_schemas.notification_new_event(out))
+        notif_event = ws_schemas.notification_new_event(out)
+        after_commit(session, _notif_hook(uid, notif_event))
         if push_allowed(user_settings, "admin"):
-            push_service.enqueue_push(
-                uid,
-                push_service.build_payload(
-                    title=title, body=preview, url="/", tag=f"admin-{row.id}"
-                ),
+            payload = push_service.build_payload(
+                title=title, body=preview, url="/", tag=f"admin-{row.id}"
             )
+            after_commit(session, _push_hook(uid, payload))
     return len(users)
 
 
@@ -275,19 +302,18 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
             created_at=row.created_at,
             read_at=row.read_at,
         )
-        await publish_user_event(user_id, ws_schemas.notification_new_event(out))
+        notif_event = ws_schemas.notification_new_event(out)
+        after_commit(session, _notif_hook(user_id, notif_event))
         user_settings = await session.scalar(
             select(User.settings).where(User.id == user_id)
         )
         if push_allowed(user_settings, "cabin_granted"):
-            push_service.enqueue_push(
-                user_id,
-                push_service.build_payload(
-                    title="Открыт доступ к разделу «Каюта»",
-                    body="Нажмите, чтобы перейти",
-                    url="/cabin",
-                    tag="cabin-granted",
-                ),
+            payload = push_service.build_payload(
+                title="Открыт доступ к разделу «Каюта»",
+                body="Нажмите, чтобы перейти",
+                url="/cabin",
+                tag="cabin-granted",
             )
+            after_commit(session, _push_hook(user_id, payload))
     except Exception:
         logger.exception("Failed to create cabin_granted notification for user %s", user_id)

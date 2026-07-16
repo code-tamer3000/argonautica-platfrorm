@@ -1,11 +1,13 @@
 """Тесты сообщений и тредов: плоскость, denorm reply_count, лента, доступ,
 мягкое удаление, статусы прочтения и ленивое членство в каналах."""
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.session import SessionLocal
 from app.models.media import MediaAsset
-from app.models.message import MessageAttachment
+from app.models.message import Message, MessageAttachment
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
@@ -593,3 +595,96 @@ async def test_non_admin_cannot_repost(
         f"/api/rooms/{room.id}/messages/{msg['id']}/repost", headers=headers
     )
     assert resp.status_code == 403
+
+
+# --- Регресс: publish-before-commit («отправлено, но потерялось») ------------
+# Раньше WS-событие message_new публиковалось ДО commit транзакции. Если commit
+# падал (blue-green, обрыв Postgres), подписчики уже видели сообщение, а в БД
+# его не было. Теперь публикация отложена на after-commit: при откате её быть
+# не должно.
+
+
+async def test_failed_commit_does_not_publish_message(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    published: list[tuple[int, dict[str, object]]] = []
+
+    async def _spy(room_id: int, event: dict[str, object]) -> None:
+        published.append((room_id, event))
+
+    # Считаем, сколько сообщений в комнате ДО попытки (для проверки отсутствия строки).
+    before = (
+        await session.execute(
+            select(func.count()).select_from(Message).where(Message.room_id == room.id)
+        )
+    ).scalar_one()
+
+    # Ломаем commit — как отказ Postgres на финальной фиксации запроса.
+    from sqlalchemy.ext.asyncio import AsyncSession as _AS
+
+    async def _boom(self: _AS) -> None:
+        raise RuntimeError("commit failed (simulated)")
+
+    monkeypatch.setattr("app.api.messages.publish_room_event", _spy)
+    monkeypatch.setattr(_AS, "commit", _boom)
+
+    # commit падает → запрос не завершается успехом. ASGITransport пробрасывает
+    # серверное исключение в тест — это и есть «запрос упал на фиксации».
+    with pytest.raises(RuntimeError, match="commit failed"):
+        await client.post(
+            f"/api/rooms/{room.id}/messages",
+            headers=headers,
+            json={"content": "lost?"},
+        )
+
+    # Ключевое: раз транзакция не закоммитилась — НИКТО не должен был получить событие.
+    assert published == [], "message_new опубликован несмотря на откат транзакции"
+
+    # И строки в БД тоже нет (новая чистая сессия — прежняя откачена).
+    async with SessionLocal() as fresh:
+        after = (
+            await fresh.execute(
+                select(func.count())
+                .select_from(Message)
+                .where(Message.room_id == room.id)
+            )
+        ).scalar_one()
+    assert after == before
+
+
+async def test_successful_send_publishes_after_commit(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    published: list[tuple[int, dict[str, object]]] = []
+
+    async def _spy(room_id: int, event: dict[str, object]) -> None:
+        published.append((room_id, event))
+
+    monkeypatch.setattr("app.api.messages.publish_room_event", _spy)
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages", headers=headers, json={"content": "hi"}
+    )
+    assert resp.status_code == 201, resp.text
+    # Успешный путь: событие ушло ровно один раз, в нужную комнату.
+    assert len(published) == 1
+    assert published[0][0] == room.id
