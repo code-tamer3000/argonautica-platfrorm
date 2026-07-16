@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useEditMessage } from '../../api/messages'
 import { useStickerMap } from '../../api/stickers'
@@ -33,7 +33,11 @@ interface Props {
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
 }
 
-export function MessageItem({
+// memo: лента перерисовывается на каждое realtime-событие комнаты (typing/presence/
+// новое сообщение) и на скролл. MessageItem тяжёлый (markdown, вложения, стикеры),
+// поэтому мемоизируем — перерисовываем только те строки, чьи пропсы изменились.
+// Требует стабильных колбэков от родителя (см. ChatPane useCallback).
+function MessageItemInner({
   msg,
   continuation,
   author,
@@ -249,3 +253,8 @@ export function MessageItem({
     </div>
   )
 }
+
+// Shallow-сравнение пропсов достаточно: msg/author/forwardedFrom — ссылки из
+// мемоизированных структур (useMessages flat, useUsersMap), колбэки стабильны
+// (useCallback у родителя), остальное — примитивы.
+export const MessageItem = memo(MessageItemInner)

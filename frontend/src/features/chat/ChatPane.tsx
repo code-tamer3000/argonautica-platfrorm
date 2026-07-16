@@ -67,12 +67,14 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
 
   // Репост: «зажимаем» сообщение и уводим админа в новостной канал — там композер
   // покажет прикреплённый репост и даст дописать комментарий перед отправкой.
-  const handleRepost = (msg: MessageOut) => {
+  // useCallback: стабильная ссылка нужна мемоизированному MessageItem (иначе
+  // memo пробивается на каждом ре-рендере ленты).
+  const handleRepost = useCallback((msg: MessageOut) => {
     const news = rooms?.find((r) => r.is_news)
     if (!news) { toast('Новостной канал недоступен', 'error'); return }
     setPendingRepost({ roomId, message: msg })
     onOpenRoom?.(news.id)
-  }
+  }, [rooms, roomId, setPendingRepost, onOpenRoom])
 
   // Контекстное меню сообщения (общий хук для ленты и треда).
   const msgMenu = useMessageMenu({
@@ -150,6 +152,23 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     // Ждём кадр: размонтирование InlineThread успевает применить новую высоту ленты.
     requestAnimationFrame(() => messageListRef.current?.scrollToMessage(rootId))
   }, [threadRootId])
+
+  // Стабильные колбэки для мемоизированного MessageList/MessageItem. Без них каждый
+  // ре-рендер ChatPane (typing/presence/новое сообщение) пробивал бы memo и
+  // перерисовывал всю ленту с медиа.
+  const loadMore = useCallback(() => void query.fetchNextPage(), [query])
+  const clearEdit = useCallback(() => setEditingId(null), [])
+  const toggleThread = useCallback(
+    (rootId: number) => {
+      if (threadRootId === rootId) closeThread()
+      else setThreadRootId(rootId)
+    },
+    [threadRootId, closeThread],
+  )
+  const onAtBottomChange = useCallback(
+    (bottom: boolean) => { if (bottom) tryMarkRead() },
+    [tryMarkRead],
+  )
 
   if (!room) {
     return (
@@ -236,7 +255,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         roomId={roomId}
         messages={messages}
         hasMore={!!query.hasNextPage}
-        loadMore={() => void query.fetchNextPage()}
+        loadMore={loadMore}
         loading={query.isFetchingNextPage}
         users={users}
         editingId={editingId}
@@ -249,11 +268,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         // там ведут ежедневные записи с оформлением. Новостной канал (тоже channel) и
         // личные чаты/группы — простой текст.
         markdown={room.type === 'channel' && !room.is_news}
-        onClearEdit={() => setEditingId(null)}
-        onToggleThread={(rootId) => (threadRootId === rootId ? closeThread() : setThreadRootId(rootId))}
+        onClearEdit={clearEdit}
+        onToggleThread={toggleThread}
         onRepost={handleRepost}
         onOpenMenu={msgMenu.openMenu}
-        onAtBottomChange={(bottom) => { if (bottom) tryMarkRead() }}
+        onAtBottomChange={onAtBottomChange}
       />
       <TypingIndicator roomId={roomId} users={users} />
       {room.is_personal && room.created_by === user?.id && (
