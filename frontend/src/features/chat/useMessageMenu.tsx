@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useDeleteMessage } from '../../api/messages'
 import { usePin } from '../../api/pins'
 import {
@@ -59,10 +59,18 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
     return items
   }
 
+  // Стабильные ссылки: openMenu уходит в мемоизированный MessageItem как onOpenMenu —
+  // нестабильная ссылка пробивала бы memo на каждом ре-рендере ленты.
+  const openMenu = useCallback(
+    (msg: MessageOut, anchor: DOMRect) => setMenu({ msg, anchor }),
+    [],
+  )
+  const closeMenu = useCallback(() => setMenu(null), [])
+
   return {
     menu,
-    openMenu: (msg: MessageOut, anchor: DOMRect) => setMenu({ msg, anchor }),
-    closeMenu: () => setMenu(null),
+    openMenu,
+    closeMenu,
     buildItems,
   }
 }
