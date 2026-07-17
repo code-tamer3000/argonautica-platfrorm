@@ -123,6 +123,8 @@ type Mutator = (item: OutboxItem) => void
 type Resolver = (item: OutboxItem, real: MessageOut) => void
 type Remover = (roomId: number, tempId: number) => void
 type StatusMark = (roomId: number, tempId: number, status: 'pending' | 'failed') => void
+// Доля 0..1 заливки вложений сообщения в MinIO (общая по всем вложениям item'а).
+type ProgressMark = (roomId: number, tempId: number, fraction: number) => void
 
 // Колбэки в кэш Query внедряются из useRealtime (там есть qc). Держим их модульно,
 // чтобы воркер мог работать вне React-дерева.
@@ -130,6 +132,7 @@ let onEnqueue: Mutator | null = null
 let onResolve: Resolver | null = null
 let onDrop: Remover | null = null
 let onStatus: StatusMark | null = null
+let onProgress: ProgressMark | null = null
 
 let seq = 0
 // Уникальный, но убывающий во времени temp-id: минус (время + счётчик).
@@ -179,11 +182,13 @@ export function configureOutbox(cbs: {
   resolve: Resolver
   drop: Remover
   status: StatusMark
+  progress: ProgressMark
 }): void {
   onEnqueue = cbs.enqueue
   onResolve = cbs.resolve
   onDrop = cbs.drop
   onStatus = cbs.status
+  onProgress = cbs.progress
 }
 
 // Собрать оптимистичный MessageOut из поставленного в очередь item'а.
@@ -389,6 +394,10 @@ const BACKOFF = [1000, 2000, 5000, 10_000, 15_000]
 // чтобы повтор после сбоя на следующем шаге не заливал уже загруженное дважды. Бросает
 // при офлайне/ошибке — drain поймает и отправит item на backoff/ретрай.
 async function resolvePendingUploads(item: OutboxItem): Promise<void> {
+  // Общее число вложений к заливке (для честной доли по нескольким файлам). Считаем
+  // один раз до цикла — pendingUploads по ходу укорачивается (shift).
+  const total = item.pendingUploads?.length ?? 0
+  let done = 0
   while (item.pendingUploads && item.pendingUploads.length > 0) {
     const ref = item.pendingUploads[0]
     const blob = await idbGet<Blob>(STORE_OUTBOX_BLOBS, blobKey(item.clientId, ref.tempAssetId))
@@ -396,6 +405,7 @@ async function resolvePendingUploads(item: OutboxItem): Promise<void> {
       // Байты пропали (например, приватный режим/чистка стораджа) — отбрасываем это
       // вложение, но сообщение не блокируем: отправим с тем, что осталось.
       item.pendingUploads.shift()
+      done += 1
       continue
     }
     const posterBlob = ref.hasPoster
@@ -410,9 +420,13 @@ async function resolvePendingUploads(item: OutboxItem): Promise<void> {
       duration: ref.duration,
       posterBlob: posterBlob ?? undefined,
     }
-    const asset = await runPendingUpload(pending)
+    // Прогресс заливки текущего файла → общая доля по сообщению (уже залитые + текущий).
+    const asset = await runPendingUpload(pending, (f) => {
+      if (total > 0) onProgress?.(item.roomId, item.tempId, (done + f) / total)
+    })
     item.body.attachment_ids = [...(item.body.attachment_ids ?? []), asset.id]
     item.pendingUploads.shift()
+    done += 1
     // Байты больше не нужны — ассет уже в MinIO.
     void idbDelete(STORE_OUTBOX_BLOBS, blobKey(item.clientId, ref.tempAssetId))
     void idbDelete(STORE_OUTBOX_BLOBS, posterKey(item.clientId, ref.tempAssetId))

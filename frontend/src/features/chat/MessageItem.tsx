@@ -177,6 +177,23 @@ function MessageItemInner({
               </div>
             )}
 
+            {/* Полоса заливки вложений в MinIO, пока сообщение ещё pending. Показываем
+                только когда прогресс реально идёт (не failed, доля задана) — иначе для
+                мелких/мгновенных файлов не мигаем полосой. */}
+            {outbox && !isFailed && outbox.uploadProgress != null && (
+              <div className={styles.uploadProgress} aria-hidden="true">
+                <div className={styles.uploadBar}>
+                  <div
+                    className={styles.uploadBarFill}
+                    style={{ width: `${Math.round(outbox.uploadProgress * 100)}%` }}
+                  />
+                </div>
+                <span className={styles.uploadPct}>
+                  {Math.round(outbox.uploadProgress * 100)}%
+                </span>
+              </div>
+            )}
+
             {msg.sticker_id != null && (
               sticker?.image_url
                 ? <img className={styles.sticker} src={sticker.image_url} alt={sticker.keyword ?? ''} />
