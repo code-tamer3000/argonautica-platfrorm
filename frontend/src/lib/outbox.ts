@@ -434,12 +434,16 @@ async function drain(): Promise<void> {
           await resolvePendingUploads(item)
         }
         const real = await http.post<MessageOut>(`/api/rooms/${item.roomId}/messages`, item.body)
-        // Успех: убрать из очереди/IndexedDB, освободить кэш байтов и заменить temp
-        // реальным сообщением (у него уже presigned-URL с сервера).
+        // Успех: убрать из очереди/IndexedDB и заменить temp реальным сообщением
+        // (у него уже presigned-URL с сервера).
         queue.shift()
         void idbDelete(STORE_OUTBOX, item.clientId)
-        releaseBlobs(item)
+        // ПОРЯДОК ВАЖЕН: сперва подменяем temp на real (presigned-URL), и только ПОТОМ
+        // ревокаем blob:-URL оптимистичного превью. Иначе между revokeObjectURL и
+        // перерисовкой на real остаётся кадр, где temp ещё показан, но его blob-URL уже
+        // мёртв → вложение «пропадает» до обновления страницы (видео/фото исчезает).
         onResolve?.(item, real)
+        releaseBlobs(item)
       } catch (err) {
         item.attempts += 1
         void idbSet(STORE_OUTBOX, item.clientId, item)

@@ -1,5 +1,6 @@
 // 3-шаговая presigned-загрузка: uploads → PUT в MinIO → assets.
 import { http } from './apiClient'
+import { compressImage, shouldCompressImage } from './imageCompress'
 import { MediaTracer, reportMetric } from './metrics'
 import type { MediaAssetOut, MediaKind, UploadTicket } from './types'
 import {
@@ -142,6 +143,17 @@ async function uploadPoster(blob: Blob): Promise<string | null> {
 export type UploadProgress = (fraction: number) => void
 
 /**
+ * Прогресс ЛОКАЛЬНОЙ подготовки файла (до заливки) — сейчас это сжатие видео, самый
+ * долгий шаг подготовки (идёт со скоростью воспроизведения). `phase` оставляет место
+ * под будущие фазы (напр. сжатие фото), UI показывает подпись по фазе + процент.
+ */
+export interface PrepareProgressEvent {
+  phase: 'compress'
+  fraction: number
+}
+export type PrepareProgress = (e: PrepareProgressEvent) => void
+
+/**
  * PUT файла в MinIO с отслеживанием прогресса. fetch не отдаёт upload-прогресс,
  * поэтому используем XMLHttpRequest (upload.onprogress).
  */
@@ -164,6 +176,16 @@ function putWithProgress(
       if (xhr.status >= 200 && xhr.status < 300) {
         onProgress?.(1)
         resolve()
+      } else if (xhr.status === 403 || xhr.status === 400) {
+        // Протухшая подпись presigned-PUT: заливка шла дольше её срока жизни (час) —
+        // на очень медленном канале с очень большим файлом. MinIO рвёт с 403/400
+        // AccessDenied. Даём понятную причину, а не голый код: файл велик для канала.
+        reject(
+          new Error(
+            'Загрузка длилась слишком долго и прервалась. Попробуйте файл поменьше ' +
+              'или более быструю сеть.',
+          ),
+        )
       } else {
         reject(new Error(`Не удалось загрузить файл в хранилище (код ${xhr.status})`))
       }
@@ -187,8 +209,9 @@ export interface UploadResult {
 export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
+  onPrepare?: PrepareProgress,
 ): Promise<UploadResult> {
-  const pending = await preparePendingUpload(file)
+  const pending = await preparePendingUpload(file, onPrepare)
   const asset = await runPendingUpload(pending, onProgress)
   return { asset, blob: file }
 }
@@ -247,13 +270,16 @@ export interface PendingUpload {
  */
 async function maybeCompressVideo(
   file: File,
+  onProgress?: PrepareProgress,
 ): Promise<{ blob: Blob; contentType: string }> {
   const original = { blob: file as Blob, contentType: file.type }
   if (file.size < VIDEO_COMPRESS_THRESHOLD_BYTES || !canTranscodeVideo()) return original
   const t0 = performance.now()
   let result: Awaited<ReturnType<typeof transcodeVideo>> = null
   try {
-    result = await transcodeVideo(file)
+    result = await transcodeVideo(file, undefined, (f) =>
+      onProgress?.({ phase: 'compress', fraction: f }),
+    )
   } catch {
     result = null // сжатие best-effort: любой сбой → льём оригинал
   }
@@ -284,13 +310,71 @@ async function maybeCompressVideo(
   return { blob: result.blob, contentType: result.mimeType }
 }
 
-/** Файл из проводника → описатель отложенной заливки (размеры/постер сняты локально). */
-export async function preparePendingUpload(file: File): Promise<PendingUpload> {
+/**
+ * Крупное фото сжать на клиенте ПЕРЕД заливкой (≤2048px, WebP) — бьёт сразу по двум
+ * болям с прода: медленный аплинк (меньше байт в PUT) И медленная отдача оригинала по
+ * клику (тот же объект легче качать). См. imageCompress.ts. Возвращает {blob,contentType}:
+ * сжатый — если получилось, иначе оригинал. Мелкое фото (< порога), svg/gif и
+ * неподдерживающие платформы идут как есть. Замер до/после уходит метрикой
+ * (op=upload, kind=image, step=compress) — виден эффект, как у видео.
+ */
+async function maybeCompressImage(
+  file: File,
+): Promise<{ blob: Blob; contentType: string }> {
+  const original = { blob: file as Blob, contentType: contentTypeFor(file) }
+  if (!shouldCompressImage(file)) return original
+  const t0 = performance.now()
+  let result: Awaited<ReturnType<typeof compressImage>> = null
+  try {
+    result = await compressImage(file)
+  } catch {
+    result = null // сжатие best-effort: любой сбой → льём оригинал
+  }
+  const elapsed = performance.now() - t0
+  const outBytes = result?.blob.size ?? file.size
+  // Метрика длительности сжатия (мс-гистограмма на бэкенде). size — исходный вес, чтобы
+  // перцентиль compress соотносился с ним; эффект по размеру виден по падению `size` в
+  // client:upload:image:put (там size = размер заливаемого blob). Зеркало видео-метрики.
+  reportMetric({
+    op: 'upload',
+    kind: 'image',
+    size: file.size,
+    total_ms: elapsed,
+    steps: { compress_ms: elapsed },
+  })
+  if (import.meta.env.DEV) {
+    const pct = Math.round((1 - outBytes / file.size) * 100)
+    console.info(
+      `[image] compress ${(file.size / 1e6).toFixed(1)}→${(outBytes / 1e6).toFixed(1)} MB ` +
+        `(-${pct}%) in ${Math.round(elapsed)}ms${result ? '' : ' (fallback: original)'}`,
+    )
+  }
+  if (!result) return original
+  return { blob: result.blob, contentType: result.mimeType }
+}
+
+/**
+ * Файл из проводника → описатель отложенной заливки (размеры/постер сняты локально).
+ * `onProgress` даёт долю самого долгого шага подготовки (сжатие видео) — вызывающий
+ * рисует «Сжатие NN%» вместо неопределённого спиннера.
+ */
+export async function preparePendingUpload(
+  file: File,
+  onProgress?: PrepareProgress,
+): Promise<PendingUpload> {
   const kind = kindFor(contentTypeFor(file))
-  // Видео сжимаем ДО снятия размеров/постера — они должны описывать реально
-  // заливаемый blob (у сжатого другое разрешение и, возможно, другой контейнер).
-  const { blob, contentType } =
-    kind === 'video' ? await maybeCompressVideo(file) : { blob: file as Blob, contentType: contentTypeFor(file) }
+  // Видео/фото сжимаем ДО снятия размеров/постера — они должны описывать реально
+  // заливаемый blob (у сжатого другое разрешение и, возможно, другой контейнер/формат).
+  let blob: Blob
+  let contentType: string
+  if (kind === 'video') {
+    ;({ blob, contentType } = await maybeCompressVideo(file, onProgress))
+  } else if (kind === 'image') {
+    ;({ blob, contentType } = await maybeCompressImage(file))
+  } else {
+    blob = file
+    contentType = contentTypeFor(file)
+  }
   const dims = await mediaDims(blob)
   let posterBlob: Blob | undefined
   if (kind === 'video') {

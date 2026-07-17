@@ -95,6 +95,30 @@ async def test_request_upload_validation(
     assert md.json()["storage_key"].endswith(".md")
 
 
+async def test_upload_ticket_ttl_survives_slow_mobile_upload(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """presigned-PUT должен жить достаточно долго для медленного мобильного аплинка.
+
+    Регрессия: TTL был 15 мин, и крупное видео на канале ~3–6 Mbps не успевало
+    залиться — подпись протухала во время PUT, MinIO рвал с 400/403, отправитель
+    терял файл (метрики прода: PUT на 164с/614с/2351с → 400). TTL подняли до часа;
+    тот же час живёт Redis-намерение (иначе confirm упрётся в «expired upload»),
+    поэтому `expires_in` тикета — прокси для обоих. Порог 30 мин: заведомо больше
+    старых 15 мин (тест падал бы до фикса), с запасом ниже часа.
+    """
+    user = await make_user()
+    headers = await _headers(client, user)
+
+    ticket = await client.post(
+        "/api/media/uploads",
+        headers=headers,
+        json={"content_type": "video/mp4", "size": 50_000_000, "kind": "video"},
+    )
+    assert ticket.status_code == 200, ticket.text
+    assert ticket.json()["expires_in"] >= 30 * 60
+
+
 async def test_confirm_requires_intent_and_owner(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

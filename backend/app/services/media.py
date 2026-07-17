@@ -33,8 +33,13 @@ from app.services.rooms import assert_room_access, load_room
 
 logger = logging.getLogger(__name__)
 
-# Presigned-URL для ЗАГРУЗКИ (PUT) — короткоживущие: клиент льёт файл сразу.
-PRESIGN_EXPIRES = 900  # 15 минут
+# Presigned-URL для ЗАГРУЗКИ (PUT). Час, а не минуты: на медленном мобильном аплинке
+# (~3–6 Mbps) крупное видео льётся дольше 15 мин, и подпись протухала ПРЯМО ВО ВРЕМЯ
+# заливки — MinIO отвечал 400, отправитель терял и файл, и время (метрики прода: PUT
+# на 164с/614с/2351с → 400). Тем же числом живёт Redis-намерение (иначе confirm после
+# долгой заливки упрётся в «Unknown or expired upload»), поэтому значение общее. Час
+# укладывается в лимит SigV4 (до 7 дней) и не даёт намерениям копиться в Redis.
+PRESIGN_EXPIRES = 3600  # 60 минут
 _PRESIGN_EXPIRES = PRESIGN_EXPIRES
 # Presigned-URL для ЧТЕНИЯ (GET) — длинные: одинаковая подпись в пределах жизни ссылки
 # = стабильный URL = браузер реально кэширует байты (Cache-Control на nginx). Для ~20

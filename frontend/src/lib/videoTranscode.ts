@@ -137,16 +137,22 @@ export function canTranscodeVideo(): boolean {
   return typeof (canvas as unknown as { captureStream?: unknown }).captureStream === 'function'
 }
 
+/** Прогресс перекодирования: доля 0..1. Дёргается по ходу проигрывания исходника. */
+export type TranscodeProgress = (fraction: number) => void
+
 /**
  * Перекодировать видеофайл в ≤720p с капнутым битрейтом, сохранив аудиодорожку.
  * Возвращает сжатый blob или null, если сжать не удалось (тогда вызывающий льёт
  * оригинал). НИКОГДА не бросает — любая ошибка сворачивается в null.
  *
  * `signal` — необязательная отмена (напр. юзер убрал вложение); при abort резолвится null.
+ * `onProgress` — доля 0..1 по ходу перекодирования (оно идёт со скоростью
+ * воспроизведения, поэтому `currentTime/duration` — честный прогресс, а не спиннер).
  */
 export async function transcodeVideo(
   file: File,
   signal?: AbortSignal,
+  onProgress?: TranscodeProgress,
 ): Promise<TranscodeResult | null> {
   const mimeType = pickMime()
   if (mimeType === null || !canTranscodeVideo()) return null
@@ -259,14 +265,22 @@ export async function transcodeVideo(
         succeed({ blob, mimeType, width, height })
       }
 
-      // Рисуем каждый выданный кадр исходника на уменьшенный canvas.
+      // Рисуем каждый выданный кадр исходника на уменьшенный canvas и заодно
+      // отдаём прогресс: перекодирование идёт со скоростью воспроизведения, поэтому
+      // currentTime/duration — честная доля. Клампим в 0..0.99, чтобы 100% отдать
+      // только по факту готового blob (onended → succeed), а не на последнем кадре.
+      const total = video.duration || 0
       loop = frameLoopFor(video)(() => {
         ctx.drawImage(video, 0, 0, width, height)
+        if (onProgress && total > 0) {
+          onProgress(Math.min(0.99, video.currentTime / total))
+        }
       })
 
       // Конец воспроизведения → останавливаем запись (onstop соберёт blob).
       video.onended = () => {
         loop?.stop()
+        onProgress?.(1)
         try {
           if (recorder && recorder.state !== 'inactive') recorder.stop()
         } catch {

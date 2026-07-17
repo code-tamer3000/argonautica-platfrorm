@@ -414,6 +414,14 @@
 }
 @keyframes arg-spin { to { transform: rotate(360deg); } }
 
+/* Процент сжатия видео на кнопке-скрепке (вместо неопределённого спиннера). Моноширинно
+   и по центру, чтобы цифры не прыгали при смене (18px — габарит IconAttach). */
+.prepPct {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1;
+}
+
 .empty {
   flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
   color: var(--text-muted); padding: var(--space-8);
