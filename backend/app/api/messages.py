@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.core.config import settings
-from app.db.session import get_session
+from app.db.session import after_commit, get_session
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.sticker import Sticker
@@ -236,7 +236,10 @@ async def send_message(
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
         )
-    await publish_room_event(room_id, ws_schemas.message_new_event(ws_out))
+    # Сайд-эффекты — только после успешного commit (иначе «отправлено, но
+    # потерялось»: событие ушло в WS, а транзакция откатилась). См. after_commit.
+    event = ws_schemas.message_new_event(ws_out)
+    after_commit(session, lambda: publish_room_event(room_id, event))
     # Уведомления получателям (личка / ответ на сообщение / пост в новостях).
     await on_new_message(session, message, room, current_user)
     return out
@@ -319,7 +322,9 @@ async def repost_to_news(
         ws_out.ref = await resolve_ref_for_broadcast(
             session, repost.ref_kind, repost.ref_id
         )
-    await publish_room_event(news.id, ws_schemas.message_new_event(ws_out))
+    news_id = news.id
+    event = ws_schemas.message_new_event(ws_out)
+    after_commit(session, lambda: publish_room_event(news_id, event))
     # Репост — новый верхнеуровневый пост в новостях: уведомить всех участников.
     await on_new_message(session, repost, news, current_user)
     return out
@@ -454,7 +459,8 @@ async def edit_message(
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
         )
-    await publish_room_event(room_id, ws_schemas.message_edited_event(ws_out))
+    event = ws_schemas.message_edited_event(ws_out)
+    after_commit(session, lambda: publish_room_event(room_id, event))
     return out
 
 
@@ -494,12 +500,10 @@ async def delete_message(
         await session.delete(pin)
     await session.flush()
     if pin is not None:
-        await publish_room_event(
-            room_id, ws_schemas.pin_removed_event(room_id, message_id)
-        )
-    await publish_room_event(
-        room_id, ws_schemas.message_deleted_event(room_id, message_id)
-    )
+        pin_event = ws_schemas.pin_removed_event(room_id, message_id)
+        after_commit(session, lambda: publish_room_event(room_id, pin_event))
+    del_event = ws_schemas.message_deleted_event(room_id, message_id)
+    after_commit(session, lambda: publish_room_event(room_id, del_event))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -548,12 +552,10 @@ async def mark_read(
         session, room_id, current_user, membership.last_read_message_id
     )
     # Read-receipt: подписчики комнаты узнают, до какого места дочитал юзер.
-    await publish_room_event(
-        room_id,
-        ws_schemas.read_event(
-            room_id, current_user.id, membership.last_read_message_id
-        ),
+    read_event = ws_schemas.read_event(
+        room_id, current_user.id, membership.last_read_message_id
     )
+    after_commit(session, lambda: publish_room_event(room_id, read_event))
     return ReadStateOut(
         room_id=room_id,
         last_read_message_id=membership.last_read_message_id,
@@ -600,10 +602,8 @@ async def pin_message(
         await session.flush()
         await session.refresh(pin)
         response.status_code = status.HTTP_201_CREATED
-        await publish_room_event(
-            room_id,
-            ws_schemas.pin_added_event(room_id, message_id, current_user.id),
-        )
+        pin_event = ws_schemas.pin_added_event(room_id, message_id, current_user.id)
+        after_commit(session, lambda: publish_room_event(room_id, pin_event))
 
     attachments = await resolve_attachments(session, [message.id])
     refs = await _refs_map(session, [message], current_user)
@@ -631,9 +631,8 @@ async def unpin_message(
 
     await session.delete(pin)
     await session.flush()
-    await publish_room_event(
-        room_id, ws_schemas.pin_removed_event(room_id, message_id)
-    )
+    unpin_event = ws_schemas.pin_removed_event(room_id, message_id)
+    after_commit(session, lambda: publish_room_event(room_id, unpin_event))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
