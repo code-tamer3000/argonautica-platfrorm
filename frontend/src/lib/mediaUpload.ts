@@ -143,6 +143,17 @@ async function uploadPoster(blob: Blob): Promise<string | null> {
 export type UploadProgress = (fraction: number) => void
 
 /**
+ * Прогресс ЛОКАЛЬНОЙ подготовки файла (до заливки) — сейчас это сжатие видео, самый
+ * долгий шаг подготовки (идёт со скоростью воспроизведения). `phase` оставляет место
+ * под будущие фазы (напр. сжатие фото), UI показывает подпись по фазе + процент.
+ */
+export interface PrepareProgressEvent {
+  phase: 'compress'
+  fraction: number
+}
+export type PrepareProgress = (e: PrepareProgressEvent) => void
+
+/**
  * PUT файла в MinIO с отслеживанием прогресса. fetch не отдаёт upload-прогресс,
  * поэтому используем XMLHttpRequest (upload.onprogress).
  */
@@ -198,8 +209,9 @@ export interface UploadResult {
 export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
+  onPrepare?: PrepareProgress,
 ): Promise<UploadResult> {
-  const pending = await preparePendingUpload(file)
+  const pending = await preparePendingUpload(file, onPrepare)
   const asset = await runPendingUpload(pending, onProgress)
   return { asset, blob: file }
 }
@@ -258,13 +270,16 @@ export interface PendingUpload {
  */
 async function maybeCompressVideo(
   file: File,
+  onProgress?: PrepareProgress,
 ): Promise<{ blob: Blob; contentType: string }> {
   const original = { blob: file as Blob, contentType: file.type }
   if (file.size < VIDEO_COMPRESS_THRESHOLD_BYTES || !canTranscodeVideo()) return original
   const t0 = performance.now()
   let result: Awaited<ReturnType<typeof transcodeVideo>> = null
   try {
-    result = await transcodeVideo(file)
+    result = await transcodeVideo(file, undefined, (f) =>
+      onProgress?.({ phase: 'compress', fraction: f }),
+    )
   } catch {
     result = null // сжатие best-effort: любой сбой → льём оригинал
   }
@@ -338,15 +353,22 @@ async function maybeCompressImage(
   return { blob: result.blob, contentType: result.mimeType }
 }
 
-/** Файл из проводника → описатель отложенной заливки (размеры/постер сняты локально). */
-export async function preparePendingUpload(file: File): Promise<PendingUpload> {
+/**
+ * Файл из проводника → описатель отложенной заливки (размеры/постер сняты локально).
+ * `onProgress` даёт долю самого долгого шага подготовки (сжатие видео) — вызывающий
+ * рисует «Сжатие NN%» вместо неопределённого спиннера.
+ */
+export async function preparePendingUpload(
+  file: File,
+  onProgress?: PrepareProgress,
+): Promise<PendingUpload> {
   const kind = kindFor(contentTypeFor(file))
   // Видео/фото сжимаем ДО снятия размеров/постера — они должны описывать реально
   // заливаемый blob (у сжатого другое разрешение и, возможно, другой контейнер/формат).
   let blob: Blob
   let contentType: string
   if (kind === 'video') {
-    ;({ blob, contentType } = await maybeCompressVideo(file))
+    ;({ blob, contentType } = await maybeCompressVideo(file, onProgress))
   } else if (kind === 'image') {
     ;({ blob, contentType } = await maybeCompressImage(file))
   } else {
