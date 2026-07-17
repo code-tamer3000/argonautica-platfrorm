@@ -35,6 +35,24 @@ server {
     }
 }
 
+# --- Catch-all на :443: любой хост, КРОМЕ ${DOMAIN}/${MEDIA_DOMAIN}, отбиваем. ---
+# Без этого nginx отдавал бы ПЕРВЫЙ :443 server как default для несовпадающих Host,
+# из-за чего staging.<домен>:443 (стенд живёт на :8443) попадал на ПРОД — по факту
+# любой чужой Host на :443 видел прод-приложение. default_server перехватывает такие
+# соединения; return 444 рвёт без ответа. TLS-серт нужен лишь для терминирования
+# handshake (до контента дело не доходит) — берём прод-серт под ${DOMAIN}.
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    http2 on;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/certs/${DOMAIN}.key;
+
+    return 444;
+}
+
 # --- Приложение: API + WebSocket + статика SPA ---
 server {
     listen 443 ssl;
