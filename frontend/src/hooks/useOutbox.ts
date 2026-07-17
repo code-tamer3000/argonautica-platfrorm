@@ -1,6 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
-import { insertOptimistic, markOptimistic, resolveOptimistic, removeMessage } from '../api/cache'
+import {
+  insertOptimistic,
+  markOptimistic,
+  markUploadProgress,
+  resolveOptimistic,
+  removeMessage,
+} from '../api/cache'
 import {
   configureOutbox,
   flush,
@@ -26,6 +32,8 @@ export function useOutbox(): void {
       resolve: (item, real) => resolveOptimistic(qc, item.roomId, item.tempId, real),
       drop: (roomId, tempId) => removeMessage(qc, roomId, tempId),
       status: (roomId, tempId, status) => markOptimistic(qc, roomId, tempId, status),
+      progress: (roomId, tempId, fraction) =>
+        markUploadProgress(qc, roomId, tempId, fraction),
     })
 
     // Поднять очередь прошлой сессии и показать её сообщения оптимистично.
