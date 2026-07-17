@@ -103,6 +103,10 @@ export interface MessageOut {
 export interface OutboxDelivery {
   clientId: string
   status: 'pending' | 'failed'
+  // Доля 0..1 заливки вложений в MinIO, пока сообщение ещё pending. undefined —
+  // заливки нет/не началась (текстовое сообщение, или байты ещё не пошли). Показывается
+  // как полоса на оптимистичном пузыре; на реальном сообщении с сервера поля нет.
+  uploadProgress?: number
 }
 
 export interface AttachmentOut {

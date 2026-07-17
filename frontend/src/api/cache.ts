@@ -67,6 +67,30 @@ export function markOptimistic(
   )
 }
 
+// Обновить долю заливки вложений оптимистичного сообщения (0..1). Пишем в _outbox,
+// пузырь рисует полосу. Дёргается воркером outbox по ходу PUT в MinIO.
+export function markUploadProgress(
+  qc: QueryClient,
+  roomId: number,
+  tempId: number,
+  fraction: number,
+): void {
+  qc.setQueryData<MessagesData>(messagesKey(roomId), (old) =>
+    old
+      ? {
+          ...old,
+          pages: old.pages.map((p) =>
+            p.map((m) =>
+              m.id === tempId && m._outbox
+                ? { ...m, _outbox: { ...m._outbox, uploadProgress: fraction } }
+                : m,
+            ),
+          ),
+        }
+      : old,
+  )
+}
+
 // Заменить temp-сообщение реальным: убрать temp по tempId, добавить настоящее
 // (дедуп на случай, если WS уже успел доставить message.new).
 export function resolveOptimistic(

@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { useImageDownload } from '../hooks/useImageDownload'
 import styles from './overlay.module.css'
 
 function useEscape(onClose: () => void) {
@@ -57,9 +58,34 @@ export function Lightbox({ url, kind, onClose }: { url: string; kind: 'image' | 
   return (
     <div className={styles.lightbox} onClick={onClose}>
       {kind === 'image' ? (
-        <img className={styles.lightboxMedia} src={url} alt="" onClick={(e) => e.stopPropagation()} />
+        <LightboxImage url={url} />
       ) : (
+        // Видео стримится нативно (range-запросы), браузер сам рисует буферизацию —
+        // «процент скачивания» для стрима некорректен, поэтому оставляем как есть.
         <video className={styles.lightboxMedia} src={url} controls autoPlay onClick={(e) => e.stopPropagation()} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Картинка в лайтбоксе с прогрессом скачивания оригинала: нативный <img> процента не
+ * даёт, поэтому тянем через fetch+stream (useImageDownload) и рисуем полосу поверх, пока
+ * грузится. Best-effort — при недоступности потока откатывается на прямой src.
+ */
+function LightboxImage({ url }: { url: string }) {
+  const { src, progress, loading } = useImageDownload(url)
+  const pct = progress != null ? Math.round(progress * 100) : null
+  return (
+    <div className={styles.lightboxImageWrap} onClick={(e) => e.stopPropagation()}>
+      <img className={styles.lightboxMedia} src={src} alt="" />
+      {loading && pct != null && (
+        <div className={styles.lightboxProgress} aria-hidden="true">
+          <div className={styles.lightboxBar}>
+            <div className={styles.lightboxBarFill} style={{ width: `${pct}%` }} />
+          </div>
+          <span className={styles.lightboxPct}>{pct}%</span>
+        </div>
       )}
     </div>
   )
