@@ -38,19 +38,17 @@
 - One codebase; only `.env` differs per environment. Names are fixed in `backend/app/core/config.py`; values are per-env. Dev compose (`docker/docker-compose.yml`) exposes ports and runs backend/frontend on the host (see CLAUDE.md commands).
 - Key nuance: `MINIO_ENDPOINT` (internal, server-side calls) and `MINIO_PUBLIC_ENDPOINT` (browser-facing, used to sign presigned URLs) are **different addresses** in prod.
 
-## Video transcode worker (apply to prod manually)
+## Video transcode worker
 
-Server-side video transcoding (see [FILES.md](FILES.md) "Video transcode") needs a **worker process** running the same backend image (ffmpeg is already in `backend/Dockerfile`). Dev has it as the `transcode-worker` service in `docker/docker-compose.yml`. **Prod is applied manually by the user** — add a service to `docker/docker-compose.prod.yml` reusing the `&backend` anchor (shares image/env/deps, no host ports, not part of blue-green):
+Server-side video transcoding (see [FILES.md](FILES.md) "Video transcode") needs a **worker process** running the same backend image (ffmpeg is already in `backend/Dockerfile`). It is a `transcode-worker` service in all three composes (dev, staging, prod), reusing the `&backend` anchor — same image/env/deps, no host ports, healthcheck disabled (not an HTTP server).
 
-```yaml
-  transcode-worker:
-    <<: *backend
-    command: ["python", "-m", "app.worker.transcode"]
-    healthcheck:
-      disable: true   # not an HTTP server, like the bot service
+**`deploy.sh` does not touch it** (it is a singleton pulling from the Redis queue, outside blue-green), so after a deploy that changes the backend image it keeps running the *old* image until restarted by hand:
+
+```bash
+cd /opt/platform && docker compose -f docker/docker-compose.prod.yml --env-file .env up -d --no-deps transcode-worker
 ```
 
-Notes: one worker is enough (it processes one job at a time by design; scale with `--scale transcode-worker=N` only if the queue backs up). No migration or nginx change is tied to it — the columns ship via the normal expand migration. If ffmpeg is ever missing from the image, transcoding jobs fail and videos fall back to serving the original (never lost).
+Notes: one worker is enough (it processes one job at a time by design; scale with `--scale transcode-worker=N` only if the queue backs up). If the worker is missing entirely, uploads still succeed — videos just queue forever and the original is served, **silently, with no error surfaced**. If ffmpeg is missing from the image, jobs fail and videos fall back to the original (never lost).
 
 ## HTTP/3 (QUIC) + host network tuning
 
@@ -85,18 +83,41 @@ that tells the browser to re-connect over UDP. Two rules that will bite:
 **Firewall:** nothing to open by hand. The host has `ufw` inactive and `iptables` `INPUT ACCEPT`
 with no UDP rules; publishing the port in compose is what installs Docker's DNAT.
 
-**Prod is applied manually by the user** — `docker/docker-compose.prod.yml` is off-limits to
-agent tasks, and without the UDP publish h3 stays dark (clients silently keep using h2):
+Both composes publish the UDP port (`"443:443/udp"` on prod, `"8443:443/udp"` on staging).
+Note staging advertises `h3=":8443"`, not `:443` — `Alt-Svc` names the port the *client* dials.
 
-```yaml
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"   # HTTP/3
+**`deploy.sh` alone cannot apply an nginx change.** It only runs `nginx -s reload`, which:
+- **cannot change published ports** — that needs the container recreated;
+- **does not re-render the template** — `envsubst` runs only in the image entrypoint at
+  container *start*, so a reload re-reads the previously rendered `conf.d/`, not your edit.
+
+So after any change to `docker/nginx/templates/` or the nginx ports, recreate the container
+(a couple of seconds of downtime — do it deliberately, not as part of a routine deploy):
+
+```bash
+cd /opt/platform && docker compose -f docker/docker-compose.prod.yml --env-file .env up -d --no-deps --force-recreate nginx
 ```
 
-Staging already carries `"8443:443/udp"`. Note staging advertises `h3=":8443"`, not `:443` —
-`Alt-Svc` names the port the *client* dials, and staging is published on `:8443`.
+Always `nginx -t` the candidate **before** recreating — a running nginx holds its old config,
+so a broken template on disk is harmless until restart, but a restart with one takes prod down.
+Validate in a throwaway container, without touching the running nginx:
+
+```bash
+# upload the candidate to /tmp/h3check/templates/ first
+docker run --rm --network docker_default \
+  -e DOMAIN=... -e MEDIA_DOMAIN=... \
+  -v /tmp/h3check/templates:/etc/nginx/templates:ro \
+  -v /opt/platform/docker/nginx/active_backend.conf:/etc/nginx/active_backend.conf:ro \
+  -v /opt/platform/docker/nginx/certs:/etc/nginx/certs:ro \
+  --entrypoint /bin/sh nginx:1.27 -c \
+  "/docker-entrypoint.d/20-envsubst-on-templates.sh >/dev/null 2>&1; nginx -t"
+```
+
+The `--network docker_default` matters: without it `nginx -t` fails on
+`host not found in upstream "backend"`, which is a DNS artifact, not a config error.
+On prod `DOMAIN == MEDIA_DOMAIN`, so `conflicting server name ... ignored` warnings are
+expected — the separate media vhost is shadowed there (media is served path-style by the app
+vhost) and exists for the split-domain setup.
 
 Verify (system `curl` on the host has no HTTP/3 support; use an image that does):
 

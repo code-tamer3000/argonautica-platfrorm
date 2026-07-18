@@ -82,6 +82,18 @@ services:
     healthcheck:
       disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
 
+  # Серверный транскод видео (docs/FILES.md «Video transcode»). Тот же образ и env,
+  # что backend, но вместо uvicorn — воркер очереди. Не участвует в blue-green
+  # (singleton, тянет задачи из Redis-очереди), поэтому deploy.sh его не трогает —
+  # после смены образа поднимать вручную: `up -d --no-deps transcode-worker`.
+  # Без него загруженные видео копятся в очереди и НИКОГДА не транскодятся
+  # (пользователю отдаётся оригинал — молча, без ошибки).
+  transcode-worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker.transcode"]
+    healthcheck:
+      disable: true   # не HTTP-сервер — стандартный healthcheck неприменим
+
   frontend:
     build:
       context: ../frontend
@@ -96,6 +108,10 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      # HTTP/3 (QUIC) — тот же порт, но UDP. Docker сам заводит DNAT; host-firewall
+      # (iptables INPUT ACCEPT) UDP не режет. ВАЖНО: смена портов НЕ применяется
+      # через `nginx -s reload` в deploy.sh — нужен recreate контейнера nginx.
+      - "443:443/udp"
     environment:
       DOMAIN: ${DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN}
