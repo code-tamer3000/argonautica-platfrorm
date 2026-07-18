@@ -17,6 +17,13 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
+    # HTTP/3 (QUIC) поверх UDP 443 (снаружи :8443/udp, см. compose). Аддитивно к
+    # h2/h1 — клиент апгрейдится по Alt-Svc ниже. reuseport: единственный server
+    # на этой паре адрес:порт, поэтому здесь.
+    listen 443 quic reuseport;
+    listen [::]:443 quic reuseport;
+    # TLSv1.3 обязателен для h3; TLSv1.2 оставляем для h2/h1-клиентов.
+    ssl_protocols TLSv1.2 TLSv1.3;
     # Стенд отвечает ТОЛЬКО на свой поддомен (staging.argonautica-systems.ru) —
     # доступ по IP закрыт. Прод на этом же IP держит :443; стенд — :8443.
     server_name ${DOMAIN};
@@ -30,6 +37,10 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
+    # Анонс HTTP/3: клиент повторно подключится по UDP. Порт :8443 — тот, на
+    # который клиент реально ходит снаружи (стенд маппит 8443:443). ma=86400 — сутки.
+    # Медиа тут тот же origin (path-style), поэтому server-уровня достаточно.
+    add_header Alt-Svc 'h3=":8443"; ma=86400' always;
 
     # Сжатие текстовых ответов (SPA-бандл, JSON API). Медиа не жмём — уже сжато.
     gzip on;

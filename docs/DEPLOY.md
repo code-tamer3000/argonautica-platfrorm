@@ -52,6 +52,59 @@ Server-side video transcoding (see [FILES.md](FILES.md) "Video transcode") needs
 
 Notes: one worker is enough (it processes one job at a time by design; scale with `--scale transcode-worker=N` only if the queue backs up). No migration or nginx change is tied to it — the columns ship via the normal expand migration. If ffmpeg is ever missing from the image, transcoding jobs fail and videos fall back to serving the original (never lost).
 
+## HTTP/3 (QUIC) + host network tuning
+
+Aimed at the slow/far last mile (mobile, Москва↔ЕС): QUIC removes head-of-line blocking and
+cuts handshake round-trips, which matters most for **media** — the measured bottleneck
+(see [FILES.md](FILES.md), and note it is the *uplink*, not the backend).
+
+**Host sysctl** (applied, `/etc/sysctl.d/90-argonautica-net.conf` — a drop-in; `/etc/sysctl.conf`
+is left alone):
+
+```
+net.core.default_qdisc = fq          # was fq_codel; fq pairs with BBR's pacing
+net.ipv4.tcp_congestion_control = bbr # was already on, set in /etc/sysctl.conf:70
+net.core.rmem_max = 16777216         # was 212992 — far too small for QUIC
+net.core.wmem_max = 16777216         # QUIC's UDP path has no kernel autotuning like TCP
+```
+
+Apply with `sysctl --system`. The big UDP buffers are the part that actually matters for h3:
+unlike TCP, QUIC gets no kernel receive-buffer autotuning, so the 208 KB default caps throughput.
+
+**nginx** (`docker/nginx/templates/`, `docker/nginx-staging/templates/`): each `:443` server
+block gains `listen 443 quic` next to `listen 443 ssl` (h3 is *additive* — h2/h1 keep working),
+plus `ssl_protocols TLSv1.2 TLSv1.3` (TLSv1.3 is mandatory for QUIC) and an `Alt-Svc` header
+that tells the browser to re-connect over UDP. Two rules that will bite:
+
+- **`reuseport` exactly once per address:port** in the whole config. Prod has three `:443`
+  blocks, so it lives only in the catch-all `default_server`; the others declare bare `quic`.
+- **`Alt-Svc` must sit where it is actually emitted.** nginx drops inherited `add_header`s in
+  any location that defines its own — so the media `location /` (which sets `Cache-Control`)
+  needs its own `Alt-Svc`, or that origin never advertises h3.
+
+**Firewall:** nothing to open by hand. The host has `ufw` inactive and `iptables` `INPUT ACCEPT`
+with no UDP rules; publishing the port in compose is what installs Docker's DNAT.
+
+**Prod is applied manually by the user** — `docker/docker-compose.prod.yml` is off-limits to
+agent tasks, and without the UDP publish h3 stays dark (clients silently keep using h2):
+
+```yaml
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+```
+
+Staging already carries `"8443:443/udp"`. Note staging advertises `h3=":8443"`, not `:443` —
+`Alt-Svc` names the port the *client* dials, and staging is published on `:8443`.
+
+Verify (system `curl` on the host has no HTTP/3 support; use an image that does):
+
+```bash
+curl -sSI --http2 https://<host>/ | grep -i alt-svc
+docker run --rm ymuski/curl-http3 curl -sSI --http3-only https://<host>/   # expect: HTTP/3 200
+```
+
 ## Backups
 
 `docker/backup.sh` (cron, daily) — `pg_dump | gzip` → MinIO bucket `backups`, 30-day retention. Runbook in archived DEPLOY §6.
