@@ -35,7 +35,25 @@ _TARGET_MAX_HEIGHT = 720
 
 
 class TranscodeError(Exception):
-    """Транскод не удался (ffmpeg/ffprobe упали, таймаут, гардрейл). Джоба ретраится."""
+    """Транскод не удался (ffmpeg/ffprobe упали, таймаут). Джоба ретраится."""
+
+
+class TranscodeRejected(TranscodeError):
+    """Исходник не подходит В ПРИНЦИПЕ (длиннее/больше лимита) — ретраить бессмысленно.
+
+    Отдельный тип, потому что ретрай такого отказа гарантированно упрётся в тот же
+    гардрейл, но КАЖДЫЙ раз заново скачивает оригинал из MinIO (на 700 МБ это 2 ГБ
+    лишнего трафика и время воркера впустую). Воркер помечает такую джобу failed
+    сразу, без повторов. Наследуемся от TranscodeError, чтобы существующие
+    `except TranscodeError` продолжали ловить оба случая.
+
+    `reason` — человекочитаемая причина для UI (в отличие от текста исключения,
+    который уходит в логи).
+    """
+
+    def __init__(self, message: str, reason: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -222,8 +240,10 @@ def transcode_asset(bucket: str, storage_key: str) -> TranscodeResult:
             src_path = tmp.name
         size = _download(bucket, storage_key, src_path)
         if size > settings.transcode_max_source_bytes:
-            raise TranscodeError(
-                f"source too large: {size} > {settings.transcode_max_source_bytes}"
+            limit_gb = settings.transcode_max_source_bytes / 1024 / 1024 / 1024
+            raise TranscodeRejected(
+                f"source too large: {size} > {settings.transcode_max_source_bytes}",
+                reason=f"Видео больше {limit_gb:.0f} ГБ",
             )
 
         probe = _ffprobe(src_path)
@@ -231,9 +251,11 @@ def transcode_asset(bucket: str, storage_key: str) -> TranscodeResult:
             probe.duration is not None
             and probe.duration > settings.transcode_max_duration_seconds
         ):
-            raise TranscodeError(
+            limit_h = settings.transcode_max_duration_seconds / 3600
+            raise TranscodeRejected(
                 f"source too long: {probe.duration}s > "
-                f"{settings.transcode_max_duration_seconds}s"
+                f"{settings.transcode_max_duration_seconds}s",
+                reason=f"Видео длиннее {limit_h:.0f} ч",
             )
 
         client = _server_client()

@@ -267,6 +267,44 @@ async def test_corrupt_video_fails_after_retries(
     assert url_out["transcode_status"] == "failed"
 
 
+@pytest.mark.asyncio
+async def test_too_long_video_fails_without_retries(
+    client: AsyncClient, make_user: MakeUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Отказ по гардрейлу длительности терминален СРАЗУ, без ретраев.
+
+    Регрессия: раньше гардрейл кидал обычный TranscodeError, поэтому джоба уходила
+    на 3 попытки, КАЖДАЯ из которых заново скачивала оригинал из MinIO (на 700 МБ —
+    2 ГБ лишнего трафика), чтобы гарантированно упереться в тот же лимит.
+    """
+    from app.core.config import settings
+    from app.db.session import SessionLocal
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    asset = await _upload_video(
+        client, headers, (ASSETS / "needs_transcode.mp4").read_bytes()
+    )
+    asset_id = asset["id"]
+
+    # Лимит заведомо ниже длительности фикстуры → гарантированный отказ.
+    monkeypatch.setattr(settings, "transcode_max_duration_seconds", 0.5)
+
+    # ОДНОЙ попытки достаточно: статус сразу 'failed', а не 'processing'.
+    processed = await process_one_job()
+    assert processed == asset_id
+    async with SessionLocal() as session:
+        row = await session.get(MediaAsset, asset_id)
+        assert row is not None
+        assert row.transcode_status == "failed"
+        assert row.variant_key is None
+        # Оригинал не тронут и остаётся отдаваемым.
+        assert serving_key(row) == row.storage_key
+
+    # Очередь пуста — джобу не вернули на второй круг.
+    assert await process_one_job() is None
+
+
 # --- вспомогательное ждём WS-событие ----------------------------------------
 
 

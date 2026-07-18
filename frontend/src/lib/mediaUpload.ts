@@ -28,7 +28,9 @@ function contentTypeFor(file: File): string {
  * позволят плееру зарезервировать коробку с верным aspect-ratio ещё до подписи GET
  * (без чёрного прямоугольника и скачка рамок при рендере видео).
  */
-function mediaDims(file: Blob): Promise<{ width?: number; height?: number }> {
+function mediaDims(
+  file: Blob,
+): Promise<{ width?: number; height?: number; duration?: number }> {
   if (file.type.startsWith('image/')) {
     return new Promise((resolve) => {
       const img = new Image()
@@ -49,7 +51,15 @@ function mediaDims(file: Blob): Promise<{ width?: number; height?: number }> {
       const video = document.createElement('video')
       const url = URL.createObjectURL(file)
       video.onloadedmetadata = () => {
-        resolve({ width: video.videoWidth, height: video.videoHeight })
+        // duration берём здесь же: метаданные уже загружены, лишней работы нет.
+        // У некоторых записей с телефона длительность приходит Infinity/NaN —
+        // такие пропускаем (undefined), гардрейл отработает на сервере.
+        const d = video.duration
+        resolve({
+          width: video.videoWidth,
+          height: video.videoHeight,
+          duration: Number.isFinite(d) && d > 0 ? d : undefined,
+        })
         URL.revokeObjectURL(url)
       }
       video.onerror = () => {
@@ -316,6 +326,40 @@ async function maybeCompressImage(
  * Постер видео снимаем локально (мгновенное превью в processing-состоянии); сервер
  * потом сгенерит свой как фолбэк/для консистентности.
  */
+// Потолки видео. ДОЛЖНЫ совпадать с backend/app/core/config.py
+// (transcode_max_duration_seconds / transcode_max_source_bytes) — сервер остаётся
+// источником правды и проверяет их повторно; здесь проверяем лишь для того, чтобы
+// не гонять гигабайты по сети ради заведомо отказного файла.
+const VIDEO_MAX_DURATION_S = 10800 // 3 часа
+const VIDEO_MAX_BYTES = 4 * 1024 * 1024 * 1024 // 4 ГБ
+
+/** Ошибка «файл заведомо не пройдёт» — показывается пользователю как есть. */
+export class MediaRejectedError extends Error {}
+
+/**
+ * Отсечь видео, которое сервер всё равно отвергнет — ДО заливки.
+ *
+ * Смысл только в этом: длительность видна из метаданных мгновенно, а раньше отказ
+ * прилетал от воркера уже ПОСЛЕ полной загрузки оригинала (на плохом канале это
+ * десятки минут впустую, а затем «обработка не удалась» без объяснения).
+ */
+function assertVideoWithinLimits(blob: Blob, duration: number | undefined): void {
+  if (duration !== undefined && duration > VIDEO_MAX_DURATION_S) {
+    const h = Math.floor(duration / 3600)
+    const m = Math.round((duration % 3600) / 60)
+    throw new MediaRejectedError(
+      `Видео длиннее ${VIDEO_MAX_DURATION_S / 3600} ч (у этого — ${h} ч ${m} мин). ` +
+        'Разрежьте его на части.',
+    )
+  }
+  if (blob.size > VIDEO_MAX_BYTES) {
+    const gb = (blob.size / 1024 / 1024 / 1024).toFixed(1)
+    throw new MediaRejectedError(
+      `Видео больше ${VIDEO_MAX_BYTES / 1024 / 1024 / 1024} ГБ (у этого — ${gb} ГБ).`,
+    )
+  }
+}
+
 export async function preparePendingUpload(file: File): Promise<PendingUpload> {
   const kind = kindFor(contentTypeFor(file))
   let blob: Blob
@@ -328,6 +372,7 @@ export async function preparePendingUpload(file: File): Promise<PendingUpload> {
     contentType = contentTypeFor(file)
   }
   const dims = await mediaDims(blob)
+  if (kind === 'video') assertVideoWithinLimits(blob, dims.duration)
   let posterBlob: Blob | undefined
   if (kind === 'video') {
     posterBlob = (await capturePoster(blob)) ?? undefined
