@@ -76,6 +76,15 @@ services:
   backend:
     <<: *backend
 
+  # Серверный транскод видео (docs/FILES.md «Video transcode»). Тот же образ и env,
+  # что у backend, но вместо uvicorn — воркер очереди. Без него загруженные видео
+  # копятся в Redis-очереди и НИКОГДА не транскодятся (отдаётся оригинал).
+  transcode-worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker.transcode"]
+    healthcheck:
+      disable: true   # не HTTP-сервер — healthcheck из Dockerfile тут неприменим
+
   frontend:
     build:
       context: ../frontend
