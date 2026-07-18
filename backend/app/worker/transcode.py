@@ -20,7 +20,7 @@ from app.db.session import SessionLocal
 from app.models.media import MediaAsset
 from app.services import transcode_queue as q
 from app.services.media import build_attachment_out, message_targets_for_asset
-from app.services.transcode import TranscodeError, transcode_asset
+from app.services.transcode import TranscodeError, TranscodeRejected, transcode_asset
 from app.ws.pubsub import publish_room_event
 from app.ws.schemas import attachment_updated_event
 
@@ -73,12 +73,19 @@ async def process_one_job() -> int | None:
         result = await run_in_threadpool(
             transcode_asset, asset.bucket, asset.storage_key
         )
-    except TranscodeError:
+    except TranscodeError as exc:
+        # Отказ по гардрейлу (слишком длинное/большое) детерминирован — повтор упрётся
+        # в тот же лимит, заново скачав оригинал. Закрываем сразу, без ретраев.
+        rejected = isinstance(exc, TranscodeRejected)
         logger.warning(
-            "transcode attempt %s/%s failed for asset %s",
-            attempt, settings.transcode_max_attempts, asset_id, exc_info=True,
+            "transcode attempt %s/%s failed for asset %s%s",
+            attempt,
+            settings.transcode_max_attempts,
+            asset_id,
+            " (rejected, no retry)" if rejected else "",
+            exc_info=True,
         )
-        if attempt >= settings.transcode_max_attempts:
+        if rejected or attempt >= settings.transcode_max_attempts:
             # Терминальный провал: помечаем failed, ack. Оригинал остаётся отдаваемым.
             async with SessionLocal() as session:
                 asset = await session.get(MediaAsset, asset_id)

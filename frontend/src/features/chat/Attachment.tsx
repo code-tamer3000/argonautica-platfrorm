@@ -209,7 +209,11 @@ function VideoFailed({ url }: { url: string }) {
       <button className={styles.attFile} onClick={handleDownload} disabled={busy}>
         <IconAttach size={16} /> {busy ? 'Скачивание…' : `Скачать ${name}`}
       </button>
-      <span className={styles.attVideoFailedHint}>Обработка видео не удалась</span>
+      {/* Оригинал цел и качается — говорим это прямо, иначе «не удалась» читается
+          как «файл потерян». Причину отказа знает только лог воркера. */}
+      <span className={styles.attVideoFailedHint}>
+        Видео не удалось подготовить к просмотру — оригинал можно скачать
+      </span>
     </div>
   )
 }
