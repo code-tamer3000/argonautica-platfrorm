@@ -19,7 +19,25 @@ log_format media_perf 'media_perf method=$request_method status=$status '
                       'uri=$uri';
 
 # Активный backend (blue/green). Файл переписывает docker/deploy.sh + `nginx -s reload`.
+# Апстрим-блок backend с `keepalive 32` — там же (переживает переключение цвета).
 include /etc/nginx/active_backend.conf;
+
+# Апстрим MinIO с пулом keepalive-соединений: presigned PUT/GET проксируются на
+# MinIO постоянно, держим соединения открытыми (не TCP-handshake на каждый чанк).
+upstream minio {
+    server minio:9000;
+    keepalive 32;
+}
+
+# Держим клиентские keepalive-соединения открытыми (мобильные клиенты на слабой
+# сети переиспользуют одно соединение под серию запросов ленты/медиа).
+keepalive_timeout 65;
+
+# TLS session resumption на уровне http → наследуется всеми :443 server-блоками.
+# Повторный TLS-хендшейк по session-id из общего кэша минует полный round-trip —
+# ощутимо на дальнем/слабом канале (Москва↔ЕС), где RTT дорогой.
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 1h;
 
 # --- HTTP → HTTPS + ACME-challenge (Let's Encrypt в проде) ---
 server {
@@ -80,6 +98,10 @@ server {
 
     location /api/ {
         proxy_pass http://backend;
+        # keepalive-пул апстрима работает только по HTTP/1.1 с очищенным
+        # заголовком Connection (иначе nginx закрывает соединение после ответа).
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -92,7 +114,10 @@ server {
     # поэтому Host сохраняем, путь не переписываем — подпись сходится. Префиксы
     # должны совпадать с MINIO_BUCKET_MEDIA / MINIO_BUCKET_KB (chat-media / kb-media).
     location ~ ^/(chat-media|kb-media)/ {
-        proxy_pass http://minio:9000;
+        proxy_pass http://minio;
+        # keepalive-пул апстрима minio: HTTP/1.1 + пустой Connection.
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -103,10 +128,16 @@ server {
         # кэшировать в браузере и не перекачивать при перерисовке/скролле назад.
         add_header Cache-Control "private, max-age=86400, immutable" always;
         # 0 = без лимита на уровне nginx; реальный потолок держит бэкенд
-        # (media_max_upload_bytes) до выдачи presigned-PUT. Тело не буферизуем —
-        # стримим прямо в MinIO, диск nginx не забивается.
+        # (media_max_upload_bytes) до выдачи presigned-PUT. Тело запроса не
+        # буферизуем — стримим PUT прямо в MinIO, диск nginx не забивается.
         client_max_body_size 0;
         proxy_request_buffering off;
+        # Буферизация ОТВЕТА (GET-скачивание): nginx вычитывает у MinIO быстрыми
+        # порциями в буфер и отдаёт клиенту в его темпе — на медленном/дальнем
+        # канале апстрим не держится открытым весь долгий download.
+        proxy_buffering on;
+        proxy_buffers 16 64k;
+        proxy_busy_buffers_size 128k;
     }
 
     # WebSocket. При blue-green переключении сокеты рвутся — клиент реконнектится.
@@ -145,7 +176,10 @@ server {
     # SigV4 завязан на Host: boto3 подписывает presigned-URL под MINIO_PUBLIC_ENDPOINT
     # (= https://${MEDIA_DOMAIN}); nginx ОБЯЗАН сохранить Host, иначе подпись не сойдётся.
     location / {
-        proxy_pass http://minio:9000;
+        proxy_pass http://minio;
+        # keepalive-пул апстрима minio: HTTP/1.1 + пустой Connection.
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -155,9 +189,13 @@ server {
         # Объекты неизменяемы (ключ = uuid), presigned-ссылка живёт сутки — кэшируем
         # в браузере, чтобы медиа не перекачивалось при каждой перерисовке ленты.
         add_header Cache-Control "private, max-age=86400, immutable" always;
-        # Прямые загрузки (видео) — не буферизуем тело. Лимит держит бэкенд до
-        # выдачи presigned-PUT, поэтому здесь nginx-потолок снят (0 = без лимита).
+        # Прямые загрузки (видео) — тело запроса не буферизуем. Лимит держит бэкенд
+        # до выдачи presigned-PUT, поэтому здесь nginx-потолок снят (0 = без лимита).
         client_max_body_size 0;
         proxy_request_buffering off;
+        # Буферизация ОТВЕТА (GET-скачивание медиа) — см. коммент в path-style блоке.
+        proxy_buffering on;
+        proxy_buffers 16 64k;
+        proxy_busy_buffers_size 128k;
     }
 }
