@@ -16,8 +16,8 @@ export function ObserverBlocked() {
       </span>
       <h2 className={styles.observerBlockedTitle}>Режим наблюдателя</h2>
       <p className={styles.observerBlockedText}>
-        Этот раздел недоступен. Вам открыты материалы платформы: База знаний,
-        Новости и Генные замки.
+        Этот раздел недоступен. Вам открыты материалы платформы: База знаний
+        и Генные замки.
       </p>
       <NavLink to="/kb" className={styles.observerBlockedLink}>
         Перейти к Базе знаний

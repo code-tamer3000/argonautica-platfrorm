@@ -118,6 +118,11 @@ async def get_personal_channel(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> Room:
     """Вернуть личный канал текущего пользователя."""
+    # Наблюдателю чат недоступен целиком (в т.ч. свой личный канал/Динамика).
+    if current_user.is_observer:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Observer mode: chat is not available for you"
+        )
     room = (
         await session.execute(
             select(Room).where(
@@ -141,18 +146,19 @@ async def list_rooms(
     На каждую комнату — счётчик непрочитанных: живые чужие сообщения с
     id > last_read_message_id (статусы прочтения, CLAUDE.md п.4).
     """
-    # Наблюдатель (is_observer): пассивный доступ «только к материалам». Из чата ему
-    # доступен ТОЛЬКО новостной канал (на чтение) — ни dm/группы, ни прочие каналы.
-    stmt = select(Room).order_by(Room.created_at)
+    # Наблюдатель (is_observer): пассивный доступ «только к материалам». Чат ему
+    # недоступен целиком — ни dm/группы, ни каналы, ни новости. Возвращаем пусто.
     if current_user.is_observer:
-        stmt = stmt.where(Room.is_news.is_(True))
-    else:
-        member_rooms = select(RoomMember.room_id).where(
-            RoomMember.user_id == current_user.id
-        )
-        stmt = stmt.where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
+        return []
 
-    result = await session.execute(stmt)
+    member_rooms = select(RoomMember.room_id).where(
+        RoomMember.user_id == current_user.id
+    )
+    result = await session.execute(
+        select(Room)
+        .where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
+        .order_by(Room.created_at)
+    )
     rooms = list(result.scalars().all())
     if not rooms:
         return []

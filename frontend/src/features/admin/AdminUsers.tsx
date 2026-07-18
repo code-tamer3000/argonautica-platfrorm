@@ -266,12 +266,12 @@ export function AdminUsers() {
                 onChange={(e) => setEditObserver(e.target.checked)}
               />
               <label htmlFor="is_observer" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
-                Режим наблюдателя (только материалы: База знаний, Новости, Генные замки)
+                Режим наблюдателя (только материалы: База знаний, Генные замки)
               </label>
             </div>
             {editRole !== 'admin' && editObserver && (
               <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
-                Закрывает Рубку, Задачи, Календарь, Каюту, Динамику и уведомления.
+                Закрывает Рубку, Новости, Задачи, Календарь, Каюту, Динамику и уведомления.
               </p>
             )}
             <div className={styles.formActions}>

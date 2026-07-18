@@ -11,15 +11,16 @@
   - `can_create_groups` (default true) — may create group rooms.
   - `can_access_cabin` (default false) — see [CABIN.md](CABIN.md).
   - `is_observer` (default false) — **observer mode**: passive, materials-only access.
-    Keeps КБ ([KB.md](KB.md)), Новости (read-only — see [MESSAGES.md](MESSAGES.md)),
-    Генные ключи ([GENE_KEYS.md](GENE_KEYS.md)), own Профиль and Техподдержка.
-    **Loses** Рубка (all dm/group chat + all writes), Задачи ([TASKS.md](TASKS.md)),
-    Календарь ([CALENDAR.md](CALENDAR.md)), Каюта (even if `can_access_cabin`),
-    Динамика ([DYNAMICS.md](DYNAMICS.md)) and the notification feed
-    ([NOTIFICATIONS.md](NOTIFICATIONS.md)). Mutually exclusive with `admin` (a request
-    that would make a user both → 400). Enforced by `require_participant` (whole-router
-    on tasks/calendar/dynamics/notifications), `assert_room_access` /`assert_can_write`
-    for chat, and `require_cabin_access`.
+    Keeps **only** КБ ([KB.md](KB.md)) and Генные ключи ([GENE_KEYS.md](GENE_KEYS.md)),
+    plus own Профиль and Техподдержка.
+    **Loses** Рубка **and Новости** (all chat, including the news channel — no room
+    access at all), Задачи ([TASKS.md](TASKS.md)), Календарь ([CALENDAR.md](CALENDAR.md)),
+    Каюта (even if `can_access_cabin`), Динамика ([DYNAMICS.md](DYNAMICS.md)) and the
+    notification feed ([NOTIFICATIONS.md](NOTIFICATIONS.md)). Mutually exclusive with
+    `admin` (a request that would make a user both → 400). Enforced by
+    `require_participant` (whole-router on tasks/calendar/dynamics/notifications),
+    `assert_room_access` (403 on every room for observers) for chat, and
+    `require_cabin_access`.
 
 ## JWT flow
 
