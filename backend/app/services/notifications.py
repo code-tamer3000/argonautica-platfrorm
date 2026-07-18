@@ -62,8 +62,11 @@ async def _dm_recipient(session: AsyncSession, message: Message) -> int | None:
 
 
 async def _news_recipients(session: AsyncSession, sender_id: int) -> list[int]:
-    """Все пользователи платформы, кроме автора поста."""
-    rows = await session.execute(select(User.id).where(User.id != sender_id))
+    """Все пользователи платформы, кроме автора поста. Наблюдателей пропускаем —
+    ленты уведомлений у них нет (пассивный доступ), незачем плодить сироты."""
+    rows = await session.execute(
+        select(User.id).where(User.id != sender_id, User.is_observer.is_(False))
+    )
     return list(rows.scalars().all())
 
 
@@ -106,12 +109,16 @@ async def _mention_recipient_ids(
     if not usernames:
         return []
     rows = await session.execute(
-        select(User.id, User.username).where(func.lower(User.username).in_(usernames))
+        select(User.id, User.username, User.is_observer).where(
+            func.lower(User.username).in_(usernames)
+        )
     )
     allowed = await _room_user_ids(session, room)
     result: list[int] = []
-    for uid, _username in rows.all():
+    for uid, _username, is_observer in rows.all():
         if uid == message.sender_id:
+            continue
+        if is_observer:  # у наблюдателя нет ленты уведомлений
             continue
         if allowed is not None and uid not in allowed:
             continue
@@ -245,8 +252,11 @@ async def broadcast_admin(
     глотаем — это явное действие админа, ему важно знать результат. Возвращает
     число адресатов.
     """
+    # Наблюдателей исключаем: ленты уведомлений у них нет (пассивный доступ).
     users = (
-        await session.execute(select(User.id, User.settings))
+        await session.execute(
+            select(User.id, User.settings).where(User.is_observer.is_(False))
+        )
     ).all()
     preview = _preview(body)
     for uid, user_settings in users:

@@ -7,6 +7,8 @@ Tracks daily-homework completion over a **28-day** program. The diary **structur
 (which sections a day has) is admin-editable and **versioned by date** — see below. A day
 is **closed** when every section of the задание active on that day is submitted.
 
+> **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no Dynamics access: the whole `/api/dynamics` router is behind `require_participant` → 403 (the admin overview reuses the module's functions directly, not over HTTP, so it is unaffected).
+
 ## Structure: задания (versioned diary structure)
 
 - A **задание** (`journal_programs`) is a version of the diary structure effective from a

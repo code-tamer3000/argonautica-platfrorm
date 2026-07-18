@@ -70,11 +70,31 @@ async def require_admin(
     return user
 
 
+async def require_participant(
+    user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """Активный участник — НЕ наблюдатель. Наблюдатель имеет пассивный доступ
+    «только к материалам» (см. is_observer): Рубка, Задачи, Календарь, Каюта,
+    Динамика и уведомления для него закрыты. Админ наблюдателем не бывает."""
+    if user.is_observer:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Observer mode: this section is read-only for you",
+        )
+    return user
+
+
 async def require_cabin_access(
     user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
     """Доступ к личному разделу «Каюта». По умолчанию закрыт — админ выдаёт флаг
-    can_access_cabin. Админ имеет доступ всегда (он же его и раздаёт)."""
+    can_access_cabin. Админ имеет доступ всегда (он же его и раздаёт).
+    Наблюдатель Каюту теряет, даже если флаг ранее был выдан (пассивный доступ)."""
+    if user.is_observer:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Observer mode: this section is read-only for you",
+        )
     if not user.can_access_cabin and user.role != "admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
