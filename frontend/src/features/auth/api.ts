@@ -1,4 +1,5 @@
 import { api, http } from '../../lib/apiClient'
+import { clearMediaCache } from '../../lib/mediaCache'
 import { clearTokens, getRefreshToken, setTokens } from '../../lib/tokens'
 import type { TokenPair, UserOut } from '../../lib/types'
 
@@ -24,6 +25,10 @@ export async function logout(): Promise<void> {
     // logout идемпотентен — игнорируем сетевые ошибки
   }
   clearTokens()
+  // Медиа приватное, устройство может быть общим: рантайм-кэш картинок сносим,
+  // иначе после выхода они остаются доступны из Cache Storage. Best-effort —
+  // clearMediaCache сам глотает отсутствие Cache API и не роняет логаут.
+  await clearMediaCache()
 }
 
 export const changePassword = (current_password: string, new_password: string): Promise<null> =>

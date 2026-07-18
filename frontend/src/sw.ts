@@ -1,16 +1,61 @@
 /// <reference lib="webworker" />
-// Кастомный service worker (injectManifest). Делает две вещи:
+// Кастомный service worker (injectManifest). Делает три вещи:
 //  1) прекэш оболочки + управляемое обновление (сохраняем UX баннера «обновить»);
-//  2) нативные push-уведомления: показ по событию `push` и навигация по клику.
+//  2) рантайм-кэш картинок медиа с ключом без presigned-подписи (см. ниже);
+//  3) нативные push-уведомления: показ по событию `push` и навигация по клику.
 // API/WS никогда не кэшируем — precacheAndRoute трогает только собранные ассеты,
 // а навигационный fallback исключает /api и /ws.
+import { ExpirationPlugin } from 'workbox-expiration'
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching'
+import { registerRoute } from 'workbox-routing'
+import { CacheFirst } from 'workbox-strategies'
+import { MEDIA_CACHE_NAME, isMediaPath, mediaCacheKey } from './lib/mediaCache'
 
 declare const self: ServiceWorkerGlobalScope
 
 // __WB_MANIFEST — сюда Workbox инжектит список прекэш-ассетов на сборке.
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
+
+// --- Рантайм-кэш картинок медиа -------------------------------------------
+//
+// Медиа лежит на том же origin (/chat-media/, /kb-media/), ответы не opaque —
+// кэшируются нормально. Проблема была только в ключе: presigned-URL меняется на
+// каждой отдаче ленты, поэтому кэшируем по origin+pathname (см. lib/mediaCache).
+//
+// Осознанно кэшируем ТОЛЬКО картинки:
+//  • видео крупное и убивает квоту на телефоне, а главное — играется range-запросами;
+//    CacheFirst поверх range сломал бы перемотку (известные грабли проекта);
+//  • поэтому дополнительно пропускаем мимо кэша ЛЮБОЙ запрос с заголовком Range.
+// Расширения — потому что лайтбокс тянет картинку через fetch (destination '' ,
+// не 'image'), и без проверки пути под правило попало бы и видео.
+const IMAGE_EXT_RE = /\.(webp|jpe?g|png|gif|avif|bmp|heic|heif)$/i
+
+registerRoute(
+  ({ url, request, sameOrigin }) =>
+    sameOrigin &&
+    isMediaPath(url.pathname) &&
+    // Range → мимо кэша: это стриминг (видео/аудио), CacheFirst его сломает.
+    !request.headers.has('range') &&
+    request.destination !== 'video' &&
+    request.destination !== 'audio' &&
+    (request.destination === 'image' || IMAGE_EXT_RE.test(url.pathname)),
+  new CacheFirst({
+    cacheName: MEDIA_CACHE_NAME,
+    plugins: [
+      {
+        // Ключевое место всей фичи: ключ без query, иначе кэш снова не попадает.
+        cacheKeyWillBeUsed: async ({ request }) => mediaCacheKey(request.url),
+      },
+      // Ограничиваем рост: телефон не должен копить гигабайты картинок.
+      new ExpirationPlugin({
+        maxEntries: 60,
+        maxAgeSeconds: 7 * 24 * 60 * 60,
+        purgeOnQuotaError: true,
+      }),
+    ],
+  }),
+)
 
 // registerType:'prompt' + useRegisterSW: клиент шлёт SKIP_WAITING, когда юзер
 // нажал «Обновить» в баннере. Без этого новый SW висел бы в waiting.

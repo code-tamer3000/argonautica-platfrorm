@@ -37,6 +37,13 @@ class MediaAsset(Base):
     # старые записи, видео/файлы, либо не сгенерировалось). В ленте отдаём превью,
     # оригинал — только по клику/скачиванию. Генерится best-effort при подтверждении.
     thumb_key: Mapped[str | None] = mapped_column(Text)
+    # Ключ WebP-деривата среднего размера (≤PREVIEW_MAX_PX по длинной стороне) — то,
+    # что открывает лайтбокс вместо оригинала: на проде 90% медиа-трафика составляли
+    # полноразмерные исходники (реальный случай — JPG на 11 МБ ради одного просмотра).
+    # Только для kind='image'; у видео/файлов NULL. NULL также у легаси-строк, при
+    # неудачной генерации и когда дериват вышел не легче оригинала (маленькая картинка)
+    # — во всех этих случаях клиент откатывается на оригинал (`url`).
+    preview_key: Mapped[str | None] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(Text, nullable=False)
     size: Mapped[int] = mapped_column(BigInteger, nullable=False)  # байты

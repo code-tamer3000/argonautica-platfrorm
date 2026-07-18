@@ -116,6 +116,10 @@ export interface AttachmentOut {
   // Отдаваемый объект: у видео — транскод-вариант (если готов), иначе оригинал.
   url: string
   thumb_url: string | null
+  // Промежуточный дериват картинки (WebP ~1600px) для лайтбокса: оригинал в 11 МБ
+  // на телефоне открывать незачем. null — легаси-запись, не картинка, либо генерация
+  // не удалась; тогда лайтбокс откатывается на `url`. Скачивание всегда берёт `url`.
+  preview_url?: string | null
   kind: MediaKind
   mime_type: string
   size: number
@@ -175,6 +179,8 @@ export interface MediaUrlOut {
   width: number | null
   height: number | null
   thumb_url: string | null
+  // См. AttachmentOut.preview_url.
+  preview_url?: string | null
   transcode_status?: 'processing' | 'done' | 'failed' | null
 }
 

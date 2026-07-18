@@ -27,6 +27,14 @@ Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_ass
 - **Video** — two posters, both best-effort. **Client**: captures a poster frame (`<video>`→canvas→WebP), uploads it as a separate object, passes its key in confirm as `thumb_storage_key`; the server verifies a live upload intent for that key (same user, kind image) before adopting it as `thumb_key` — this gives an **instant** preview while the variant is still processing. **Server**: the transcode worker also extracts a poster (`~1s` frame, WebP) and sets it as `thumb_key` (fallback for clients that couldn't capture one, e.g. iOS, and for consistency with the variant). The poster doubles as `<video poster>`.
 - `thumb_key = NULL` → no preview; the original loads instead.
 
+## Lightbox preview (mid-size derivative)
+
+Thumbnails (≤1024px, q80) are for the feed; the lightbox used to open the **original** — prod measurements showed ~90% of media traffic was full-size originals (a real case: an 11 MB JPG fetched whole for one look). So images get a second derivative: `preview_key`, a WebP at **≤1600px, q82** under a `previews/` prefix (`services/media.py::build_preview_key`), generated on confirm right next to the thumbnail (`generate_image_preview`, same best-effort contract — any failure → `NULL` + a log line, never blocks the upload).
+
+- **Only `kind='image'`.** Video/files and pre-feature rows keep `preview_key = NULL` (no backfill).
+- **Never heavier than the source.** A small image isn't resized and its WebP can come out *larger* than the original; in that case no object is stored and `preview_key` stays `NULL` — the original wins (same rule as client-side compression above).
+- **Payload.** `AttachmentOut.preview_url` is a presigned-GET of `preview_key`, or `null`. `url` is unchanged (original / video variant) and stays the download source. Client rule: display `preview_url ?? url`, download `url`.
+
 ## Video transcode (server-side)
 
 Every uploaded video is transcoded in the background to a streaming-friendly H.264 720p variant; clients receive the variant, not the raw upload. This replaced client-side compression (in-browser `MediaRecorder` encoding drained battery, could crash low-end devices, and made the user wait *before* upload even started). Service: `services/transcode.py`; queue: `services/transcode_queue.py`; worker: `app/worker/transcode.py`.

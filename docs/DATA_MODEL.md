@@ -117,7 +117,8 @@ Metadata for all files; bytes live in MinIO. See [FILES.md](FILES.md).
 | id | BIGSERIAL | PK | |
 | bucket | TEXT | NOT NULL | e.g. `chat-media`, `kb-media` |
 | storage_key | TEXT | NOT NULL | object key, e.g. `2026/06/<uuid>.mp4` |
-| thumb_key | TEXT | NULL | preview key; NULL = no preview |
+| thumb_key | TEXT | NULL | feed thumbnail key (≤1024px WebP); NULL = no preview |
+| preview_key | TEXT | NULL | lightbox derivative key (`previews/…`, ≤1600px WebP); images only; NULL = legacy / failed / not smaller than the original |
 | kind | TEXT | NOT NULL | `'image'` \| `'video'` \| `'file'` \| `'audio'` (voice) |
 | mime_type | TEXT | NOT NULL | |
 | size | BIGINT | NOT NULL | bytes |
