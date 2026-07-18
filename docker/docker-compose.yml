@@ -49,6 +49,26 @@ services:
       timeout: 3s
       retries: 5
 
+  # Воркер серверного транскода видео (docs/FILES.md «Транскод видео»). Отдельный
+  # процесс: тянет джобы из Redis, гонит ffmpeg (H.264 720p + faststart), заливает
+  # вариант/постер в MinIO и обновляет media_assets. Образ — тот же backend-Dockerfile
+  # (в нём уже есть ffmpeg). Наружу портов не открывает. Прод-аналог — см. docs/DEPLOY.md
+  # (пользователь добавляет сервис в прод-compose вручную).
+  #
+  # Примечание: dev-бэкенд (uvicorn) при этом запускается на ХОСТЕ (см. шапку файла), а
+  # воркеру нужен доступ к postgres/redis/minio по docker-сети — поэтому он в compose.
+  transcode-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.worker.transcode"]
+    env_file: ../.env
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:

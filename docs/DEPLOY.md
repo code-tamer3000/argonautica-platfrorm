@@ -38,6 +38,20 @@
 - One codebase; only `.env` differs per environment. Names are fixed in `backend/app/core/config.py`; values are per-env. Dev compose (`docker/docker-compose.yml`) exposes ports and runs backend/frontend on the host (see CLAUDE.md commands).
 - Key nuance: `MINIO_ENDPOINT` (internal, server-side calls) and `MINIO_PUBLIC_ENDPOINT` (browser-facing, used to sign presigned URLs) are **different addresses** in prod.
 
+## Video transcode worker (apply to prod manually)
+
+Server-side video transcoding (see [FILES.md](FILES.md) "Video transcode") needs a **worker process** running the same backend image (ffmpeg is already in `backend/Dockerfile`). Dev has it as the `transcode-worker` service in `docker/docker-compose.yml`. **Prod is applied manually by the user** — add a service to `docker/docker-compose.prod.yml` reusing the `&backend` anchor (shares image/env/deps, no host ports, not part of blue-green):
+
+```yaml
+  transcode-worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker.transcode"]
+    healthcheck:
+      disable: true   # not an HTTP server, like the bot service
+```
+
+Notes: one worker is enough (it processes one job at a time by design; scale with `--scale transcode-worker=N` only if the queue backs up). No migration or nginx change is tied to it — the columns ship via the normal expand migration. If ffmpeg is ever missing from the image, transcoding jobs fail and videos fall back to serving the original (never lost).
+
 ## Backups
 
 `docker/backup.sh` (cron, daily) — `pg_dump | gzip` → MinIO bucket `backups`, 30-day retention. Runbook in archived DEPLOY §6.

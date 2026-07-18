@@ -46,10 +46,6 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
-  // Прогресс сжатия видео (0..100) ДО заливки; null — фаза сжатия не идёт. Большой
-  // файл долго готовится (перекодирование) ещё до первого байта в MinIO — без этого
-  // индикатора полоса висела бы немым «0%» всю подготовку.
-  const [prepProgress, setPrepProgress] = useState<number | null>(null)
   // Отмена текущей загрузки + подтверждающий поп-ап над ней.
   const uploadAbort = useRef<AbortController | null>(null)
   const [cancelAsk, setCancelAsk] = useState(false)
@@ -79,9 +75,6 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
       const { asset } = await mediaUpload(
         file,
         (f) => setProgress(Math.round(f * 100)),
-        // Фаза сжатия видео идёт до заливки — показываем «Сжатие NN%», чтобы большой
-        // файл не висел на «0%» до старта отправки байтов.
-        (ev) => setPrepProgress(Math.round(ev.fraction * 100)),
         controller.signal,
       )
       if (item) {
@@ -108,7 +101,6 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
       uploadAbort.current = null
       setUploading(false)
       setProgress(null)
-      setPrepProgress(null)
       setCancelAsk(false)
       if (fileRef.current) fileRef.current.value = ''
     }
@@ -210,23 +202,10 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
         </Button>
         {progress !== null && (
           <div className={styles.uploadProgress}>
-            {/* Фаза сжатия видео идёт ДО заливки: пока байты в MinIO ещё не пошли
-                (progress===0) и сжатие активно — показываем его; иначе — прогресс заливки. */}
-            {prepProgress !== null && progress === 0 ? (
-              <>
-                <div className={styles.uploadBar}>
-                  <div className={styles.uploadBarFill} style={{ width: `${prepProgress}%` }} />
-                </div>
-                <span className={styles.uploadPct}>Сжатие {prepProgress}%</span>
-              </>
-            ) : (
-              <>
-                <div className={styles.uploadBar}>
-                  <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
-                </div>
-                <span className={styles.uploadPct}>{progress}%</span>
-              </>
-            )}
+            <div className={styles.uploadBar}>
+              <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
+            </div>
+            <span className={styles.uploadPct}>{progress}%</span>
             <button
               type="button"
               className={styles.uploadCancel}

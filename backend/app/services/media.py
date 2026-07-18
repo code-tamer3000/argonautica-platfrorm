@@ -428,11 +428,29 @@ async def presign_asset_urls(
     }
 
 
+def serving_key(asset: MediaAsset) -> str:
+    """Какой объект отдаём под `url`. Видео с готовым транскодом — вариант; всё
+    остальное (не видео, транскод не готов/провалился/легаси) — оригинал. Так
+    stale-клиент и упавший транскод всё равно получают воспроизводимый/скачиваемый
+    оригинал (docs/FILES.md «Транскод видео», rollout с blue-green)."""
+    if (
+        asset.kind == "video"
+        and asset.transcode_status == "done"
+        and asset.variant_key
+    ):
+        return asset.variant_key
+    return asset.storage_key
+
+
 def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
-    """Вложение с готовыми presigned-URL (оригинал + превью). Подпись локальна, без сети."""
+    """Вложение с готовыми presigned-URL (отдаваемый объект + превью). Подпись локальна.
+
+    Для видео `url` ведёт на транскод-вариант, когда он готов (transcode_status='done'),
+    иначе на оригинал; `transcode_status` уходит клиенту, чтобы рисовать processing/failed.
+    """
     # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн.
     download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
-    url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
+    url = presigned_get_url(asset.bucket, serving_key(asset), download_name=download_name)
     thumb_url = (
         presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
     )
@@ -446,6 +464,7 @@ def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
         width=asset.width,
         height=asset.height,
         duration=asset.duration,
+        transcode_status=asset.transcode_status,
     )
 
 
@@ -482,6 +501,24 @@ async def resolve_attachments(
         message_id: [out_by_id[aid] for aid in asset_ids if aid in out_by_id]
         for message_id, asset_ids in per_message.items()
     }
+
+
+async def message_targets_for_asset(
+    session: AsyncSession, asset_id: int
+) -> list[tuple[int, int]]:
+    """`[(room_id, message_id), ...]` — все живые сообщения чата, к которым прикреплён
+    ассет (одно видео может попасть в несколько через repost). Нужно транскод-воркеру,
+    чтобы разослать WS-событие `attachment.updated` в нужные комнаты. Задачи/БЗ сюда не
+    попадают — у них нет room-канала; там вариант подхватится при следующем чтении."""
+    rows = await session.execute(
+        select(Message.room_id, Message.id)
+        .join(MessageAttachment, MessageAttachment.message_id == Message.id)
+        .where(
+            MessageAttachment.media_asset_id == asset_id,
+            Message.deleted_at.is_(None),
+        )
+    )
+    return [(room_id, message_id) for room_id, message_id in rows.all()]
 
 
 async def resolve_submission_attachments(
