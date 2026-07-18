@@ -65,6 +65,8 @@ class MediaUrlOut(BaseModel):
     height: int | None = None
     # Presigned-GET уменьшенного превью (картинки). None — превью нет, грузим оригинал.
     thumb_url: str | None = None
+    # Состояние серверного транскода видео (см. AttachmentOut). None — не видео/легаси.
+    transcode_status: str | None = None
 
 
 class AttachmentOut(BaseModel):
@@ -76,7 +78,8 @@ class AttachmentOut(BaseModel):
     """
 
     asset_id: int
-    url: str  # presigned-GET оригинала (лайтбокс, видео, скачивание файла)
+    url: str  # presigned-GET отдаваемого объекта: у видео — вариант (если готов),
+    # у остального — оригинал. Для видео это же лайтбокс/скачивание.
     thumb_url: str | None = None  # presigned-GET превью (лента); None — грузить оригинал
     kind: MediaKind
     mime_type: str
@@ -84,3 +87,9 @@ class AttachmentOut(BaseModel):
     width: int | None = None
     height: int | None = None
     duration: int | None = None
+    # Состояние серверного транскода видео (docs/FILES.md, docs/MESSAGES.md). Только у
+    # kind='video'; у остального None. None у видео = легаси/транскод неприменим —
+    # клиент отдаёт как раньше (по url). 'processing' — вариант готовится (спиннер +
+    # thumb_url-постер, url ведёт на оригинал как фолбэк); 'done' — url = вариант;
+    # 'failed' — вариант не собрался, url = оригинал, клиент рисует «обработка не удалась».
+    transcode_status: str | None = None

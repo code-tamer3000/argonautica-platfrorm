@@ -32,6 +32,10 @@ EVENT_TASK_UPDATED = "task.updated"
 EVENT_TASK_SUBMISSION_NEW = "submission.new"
 EVENT_TASK_SUBMISSION_STATUS = "submission.status"
 EVENT_TASK_COMMENT_NEW = "task.comment.new"
+# Транскод видео готов/провалился — в канал комнаты, клиент меняет processing→playable
+# (или помечает failed) прямо в ленте, без перезагрузки. Payload несёт свежий
+# attachment (с variant-URL), чтобы клиент подставил его на месте (docs/MESSAGES.md).
+EVENT_ATTACHMENT_UPDATED = "attachment.updated"
 
 
 def message_new_event(message: MessageOut) -> dict[str, Any]:
@@ -147,6 +151,22 @@ def task_submission_status_event(
         "task_id": task_id,
         "assignment_id": assignment_id,
         "status": status,
+    }
+
+
+def attachment_updated_event(
+    room_id: int,
+    message_id: int,
+    attachment: dict[str, Any],
+) -> dict[str, Any]:
+    """Транскод видео завершён (done/failed). `attachment` — сериализованный
+    AttachmentOut со свежим состоянием (transcode_status + variant-URL при done).
+    Клиент находит вложение по asset_id внутри и подменяет его в сообщении."""
+    return {
+        "type": EVENT_ATTACHMENT_UPDATED,
+        "room_id": room_id,
+        "message_id": message_id,
+        "attachment": attachment,
     }
 
 

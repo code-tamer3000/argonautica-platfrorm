@@ -13,7 +13,7 @@ import {
   useDetachKbMedia,
 } from '../../api/kb'
 import type { KbItemOut } from '../../lib/types'
-import { mediaUpload } from '../../lib/mediaUpload'
+import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
@@ -46,6 +46,9 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
+  // Отмена текущей загрузки + подтверждающий поп-ап над ней.
+  const uploadAbort = useRef<AbortController | null>(null)
+  const [cancelAsk, setCancelAsk] = useState(false)
 
   const attachMedia = useAttachKbMedia()
   const detachMedia = useDetachKbMedia()
@@ -64,10 +67,16 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    const controller = new AbortController()
+    uploadAbort.current = controller
     setUploading(true)
     setProgress(0)
     try {
-      const { asset } = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
+      const { asset } = await mediaUpload(
+        file,
+        (f) => setProgress(Math.round(f * 100)),
+        controller.signal,
+      )
       if (item) {
         // Редактирование: линкуем к материалу сразу.
         attachMedia.mutate(
@@ -84,12 +93,23 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
         toast('Медиа добавлено')
       }
     } catch (err) {
-      toast(err instanceof Error ? err.message : 'Ошибка загрузки', 'error')
+      // Отмена — не ошибка: тост не показываем.
+      if (!isUploadAbort(err)) {
+        toast(err instanceof Error ? err.message : 'Ошибка загрузки', 'error')
+      }
     } finally {
+      uploadAbort.current = null
       setUploading(false)
       setProgress(null)
+      setCancelAsk(false)
       if (fileRef.current) fileRef.current.value = ''
     }
+  }
+
+  function confirmCancelUpload() {
+    uploadAbort.current?.abort()
+    setCancelAsk(false)
+    toast('Загрузка отменена')
   }
 
   function removeMedia(assetId: number) {
@@ -186,9 +206,34 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
               <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
             </div>
             <span className={styles.uploadPct}>{progress}%</span>
+            <button
+              type="button"
+              className={styles.uploadCancel}
+              onClick={() => setCancelAsk(true)}
+              aria-label="Отменить загрузку"
+              title="Отменить загрузку"
+            >
+              ✕
+            </button>
           </div>
         )}
       </div>
+
+      {cancelAsk && (
+        <Modal title="Отменить загрузку?" onClose={() => setCancelAsk(false)}>
+          <p className={styles.confirmText}>
+            Загрузка файла будет прервана. Продолжить?
+          </p>
+          <div className={styles.formActions}>
+            <Button variant="outline" type="button" onClick={() => setCancelAsk(false)}>
+              Продолжить загрузку
+            </Button>
+            <Button type="button" onClick={confirmCancelUpload}>
+              Отменить загрузку
+            </Button>
+          </div>
+        </Modal>
+      )}
 
       <div className={styles.formActions}>
         <Button type="submit">Сохранить</Button>

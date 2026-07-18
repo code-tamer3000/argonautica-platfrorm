@@ -76,6 +76,15 @@ services:
   backend:
     <<: *backend
 
+  # Серверный транскод видео (docs/FILES.md «Video transcode»). Тот же образ и env,
+  # что у backend, но вместо uvicorn — воркер очереди. Без него загруженные видео
+  # копятся в Redis-очереди и НИКОГДА не транскодятся (отдаётся оригинал).
+  transcode-worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker.transcode"]
+    healthcheck:
+      disable: true   # не HTTP-сервер — healthcheck из Dockerfile тут неприменим
+
   frontend:
     build:
       context: ../frontend
@@ -90,6 +99,9 @@ services:
     ports:
       # Наружу только 8443 (прод держит 80/443 на этом же сервере).
       - "8443:443"
+      # HTTP/3 (QUIC) идёт по UDP на том же порту. Docker сам заводит DNAT;
+      # host-firewall (iptables INPUT ACCEPT) UDP не режет.
+      - "8443:443/udp"
     environment:
       DOMAIN: ${DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN}

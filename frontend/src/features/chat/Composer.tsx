@@ -66,9 +66,6 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const [refPickerTab, setRefPickerTab] = useState<'kb' | 'task'>('kb')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
-  // Прогресс сжатия видео при подготовке (0..100) или null, если фаза сжатия не идёт
-  // (мелкий файл/фото/не-видео) — тогда на кнопке просто крутится спиннер.
-  const [prepPercent, setPrepPercent] = useState<number | null>(null)
   // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
   const [voiceActive, setVoiceActive] = useState(false)
   // Идёт отправка репоста (форвард создаётся до комментария).
@@ -158,18 +155,15 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     e.target.value = ''
     setUploading(true)
     try {
-      // Только локальная подготовка (размеры/постер/сжатие) — БЕЗ сети. Сама заливка
-      // уйдёт в outbox при отправке, поэтому прикрепить файл можно и офлайн. Прогресс
-      // сжатия видео показываем на кнопке (иначе — «бесконечный» спиннер на большом видео).
-      const pending = await preparePendingUpload(file, (e) =>
-        setPrepPercent(Math.round(e.fraction * 100)),
-      )
+      // Только локальная подготовка (размеры/постер) — БЕЗ сети. Сама заливка уйдёт
+      // в outbox при отправке, поэтому прикрепить файл можно и офлайн. Видео льётся
+      // оригиналом (без клиентского сжатия), сервер транскодит его в фоне.
+      const pending = await preparePendingUpload(file)
       setPendingFiles(prev => [...prev, pending])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
       setUploading(false)
-      setPrepPercent(null)
     }
   }
 
@@ -558,18 +552,12 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                 className={styles.iconBtn}
                 onClick={() => setAttachMenuOpen((v) => !v)}
                 disabled={uploading}
-                title={prepPercent !== null ? `Сжатие видео… ${prepPercent}%` : 'Прикрепить'}
-                aria-label={prepPercent !== null ? `Сжатие видео ${prepPercent}%` : 'Прикрепить'}
+                title="Прикрепить"
+                aria-label="Прикрепить"
                 aria-haspopup="menu"
                 aria-expanded={attachMenuOpen}
               >
-                {prepPercent !== null ? (
-                  <span className={styles.prepPct}>{prepPercent}%</span>
-                ) : uploading ? (
-                  <span className={styles.spin} />
-                ) : (
-                  <IconAttach size={18} />
-                )}
+                {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
               </button>
             </div>
             <button

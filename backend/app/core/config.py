@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     # в БЗ (лекции, записи в m4a/mp3) — держим отдельно от видео-лимита.
     media_max_audio_bytes: int = 209_715_200  # 200 МБ
 
+    # --- Серверный транскод видео (docs/FILES.md «Транскод видео») ---
+    # Гардрейлы против «залили гигабайтный/часовой ролик → ffmpeg висит и жрёт ядра».
+    # Источник длиннее/тяжелее лимита или превысивший хардовый таймаут ffmpeg → джоба
+    # считается упавшей (после ретраев — status='failed', оригинал остаётся скачиваемым).
+    transcode_max_source_bytes: int = 2_147_483_648  # 2 ГБ — потолок исходника под транскод
+    transcode_max_duration_seconds: int = 3600  # 1 час
+    transcode_ffmpeg_timeout_seconds: int = 900  # 15 мин на один прогон ffmpeg
+    transcode_max_attempts: int = 3  # 1 попытка + 2 ретрая (спека: «2 retries»)
+    # Reclaim-on-timeout: если воркер забрал джобу и не закрыл её за столько секунд
+    # (упал/завис), другой воркер её переберёт. Больше суммарного бюджета ретраев.
+    transcode_claim_timeout_seconds: int = 1800  # 30 мин
+
     # --- JWT ---
     jwt_secret: str
     jwt_algorithm: str = "HS256"

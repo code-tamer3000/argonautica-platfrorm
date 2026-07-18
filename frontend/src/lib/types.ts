@@ -113,6 +113,7 @@ export interface OutboxDelivery {
 
 export interface AttachmentOut {
   asset_id: number
+  // Отдаваемый объект: у видео — транскод-вариант (если готов), иначе оригинал.
   url: string
   thumb_url: string | null
   kind: MediaKind
@@ -121,6 +122,10 @@ export interface AttachmentOut {
   width: number | null
   height: number | null
   duration: number | null
+  // Состояние серверного транскода видео. null у не-видео и у легаси-видео (до фичи —
+  // играем как раньше по url). 'processing' — вариант готовится (спиннер + постер);
+  // 'done' — url ведёт на вариант; 'failed' — вариант не собрался, url = оригинал.
+  transcode_status?: 'processing' | 'done' | 'failed' | null
 }
 
 export interface ThreadOut {
@@ -170,6 +175,7 @@ export interface MediaUrlOut {
   width: number | null
   height: number | null
   thumb_url: string | null
+  transcode_status?: 'processing' | 'done' | 'failed' | null
 }
 
 export interface ServerMetricsOut {
@@ -472,6 +478,14 @@ export type WsEvent =
   | { type: 'unsubscribed'; room_id: number }
   | { type: 'error'; detail: string; room_id?: number }
   | { type: 'pong' }
+  // Транскод видео готов/провалился — свежее вложение приходит целиком, клиент меняет
+  // его в сообщении по asset_id (processing → playable / failed). См. docs/MESSAGES.md.
+  | {
+      type: 'attachment.updated'
+      room_id: number
+      message_id: number
+      attachment: AttachmentOut
+    }
   // --- Задачи (приходят по тому же per-user каналу, что и notification.new) ---
   | { type: 'task.created'; task_id: number }
   | { type: 'task.updated'; task_id: number }

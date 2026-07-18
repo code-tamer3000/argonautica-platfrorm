@@ -18,6 +18,8 @@ type Resolved = {
   width: number | null
   height: number | null
   duration: number | null
+  // Состояние серверного транскода видео (у не-видео/легаси — undefined/null).
+  transcodeStatus?: 'processing' | 'done' | 'failed' | null
 }
 
 /**
@@ -43,6 +45,7 @@ export function Attachment({
         width: attachment.width,
         height: attachment.height,
         duration: attachment.duration,
+        transcodeStatus: attachment.transcode_status,
       }
     : query.data
       ? {
@@ -52,6 +55,7 @@ export function Attachment({
           width: query.data.width,
           height: query.data.height,
           duration: query.data.duration,
+          transcodeStatus: query.data.transcode_status,
         }
       : null
 
@@ -63,12 +67,20 @@ export function Attachment({
         <Spinner size={16} /> загрузка…
       </span>
     )
-  const { url, thumbUrl, kind, width, height, duration } = resolved
+  const { url, thumbUrl, kind, width, height, duration, transcodeStatus } = resolved
   if (kind === 'audio') return <VoicePlayer src={url} duration={duration} />
   if (kind === 'image')
     return <ImageAttachment url={url} thumbUrl={thumbUrl} width={width} height={height} />
-  if (kind === 'video')
+  if (kind === 'video') {
+    // Серверный транскод (docs/FILES.md). 'processing' — вариант ещё готовится: постер
+    // + спиннер, играть пока нельзя. 'failed' — вариант не собрался: даём скачать
+    // оригинал (url ведёт на него) + подсказку. 'done'/null(легаси) — играем как обычно.
+    if (transcodeStatus === 'processing')
+      return <VideoProcessing thumbUrl={thumbUrl} width={width} height={height} />
+    if (transcodeStatus === 'failed')
+      return <VideoFailed url={url} />
     return <VideoPlayer src={url} width={width} height={height} poster={thumbUrl} />
+  }
   // Скачиваем через blob (см. downloadFile) — надёжно на мобиле и в iOS-PWA, где
   // кросс-доменный `download`/`target=_blank` не срабатывают.
   const name = fileNameFromUrl(url)
@@ -141,6 +153,63 @@ function ImageAttachment({
         onLoad={onImgLoad}
       />
       {open && <Lightbox url={url} kind="image" onClose={() => setOpen(false)} />}
+    </div>
+  )
+}
+
+/**
+ * Видео в состоянии транскода (`processing`): показываем клиентский постер (если сняли
+ * при загрузке) + спиннер-оверлей «Обработка видео…». Играть ещё нельзя — вариант готовит
+ * сервер; по готовности прилетит WS `attachment.updated` и вложение сменится на плеер.
+ * Коробку резервируем по aspect-ratio, чтобы не было скачка при появлении плеера.
+ */
+function VideoProcessing({
+  thumbUrl,
+  width,
+  height,
+}: {
+  thumbUrl: string | null
+  width: number | null
+  height: number | null
+}) {
+  const ratio = width && height ? width / height : undefined
+  return (
+    <div
+      className={styles.attVideoProcessing}
+      style={ratio ? { aspectRatio: String(ratio) } : undefined}
+    >
+      {thumbUrl && <img className={styles.attVideoPoster} src={thumbUrl} alt="" />}
+      <div className={styles.attVideoOverlay}>
+        <Spinner size={20} />
+        <span>Обработка видео…</span>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Видео, у которого транскод провалился (`failed`): вариант не собрался, но ОРИГИНАЛ
+ * цел (url ведёт на него). Даём скачать его файлом + подсказку — воспроизведение в
+ * ленте не гарантируем (формат мог быть неигрибельным в браузере, потому и транскодили).
+ */
+function VideoFailed({ url }: { url: string }) {
+  const [busy, setBusy] = useState(false)
+  const name = fileNameFromUrl(url)
+  async function handleDownload() {
+    if (busy) return
+    setBusy(true)
+    try {
+      await downloadFile(url, name)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className={styles.attVideoFailed}>
+      <button className={styles.attFile} onClick={handleDownload} disabled={busy}>
+        <IconAttach size={16} /> {busy ? 'Скачивание…' : `Скачать ${name}`}
+      </button>
+      <span className={styles.attVideoFailedHint}>Обработка видео не удалась</span>
     </div>
   )
 }

@@ -1,6 +1,12 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
-import { appendMessage, bumpReplyCount, removeMessage, replaceMessage } from '../api/cache'
+import {
+  appendMessage,
+  bumpReplyCount,
+  removeMessage,
+  replaceMessage,
+  updateAttachment,
+} from '../api/cache'
 import { notificationsKey } from '../api/notifications'
 import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
@@ -154,6 +160,13 @@ export function useRealtime(): void {
           break
         case 'message.deleted':
           removeMessage(qc, e.room_id, e.message_id)
+          break
+        case 'attachment.updated':
+          // Серверный транскод видео готов/провалился — меняем вложение по asset_id
+          // в ленте. Тред-ветки держат вложения в своём запросе — обновляем и его
+          // (сообщение может быть ответом в треде).
+          updateAttachment(qc, e.room_id, e.message_id, e.attachment)
+          qc.invalidateQueries({ queryKey: ['thread', e.room_id] })
           break
         case 'pin.added':
         case 'pin.removed':

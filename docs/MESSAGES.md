@@ -68,7 +68,8 @@
 
 **Client → server:** `{"type":"subscribe"|"unsubscribe"|"typing", "room_id":int}`, `{"type":"ping"}`.
 
-**Server → client events** (`{"type": ...}`): `message.new`, `message.edited`, `message.deleted`, `pin.added`, `pin.removed`, `read`, `typing`, `presence`, `subscribed`, `unsubscribed`, `error`, `pong`, `notification.new`, `notification.removed`, plus task events (`task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` — see [TASKS.md](TASKS.md)).
+**Server → client events** (`{"type": ...}`): `message.new`, `message.edited`, `message.deleted`, `attachment.updated`, `pin.added`, `pin.removed`, `read`, `typing`, `presence`, `subscribed`, `unsubscribed`, `error`, `pong`, `notification.new`, `notification.removed`, plus task events (`task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` — see [TASKS.md](TASKS.md)).
 
 - `message.*` carry fully-resolved attachments (presigned url/thumb_url) in the payload — see [FILES.md](FILES.md).
+- **`attachment.updated`** (`{room_id, message_id, attachment}`) — a server video transcode finished: the payload is the fresh `AttachmentOut` (new `transcode_status` + variant url when `done`). The client finds the attachment by `asset_id` inside the message and swaps it in place (`processing` → playable, or → `failed`). Published to the room channel by the transcode worker (not the request path) once the variant is ready or the job terminally failed. Task/KB videos have no room channel, so they pick up the variant on the next fetch instead. See [FILES.md](FILES.md) "Video transcode".
 - Blue-green deploy tears sockets down; the client reconnects and re-subscribes — see [FRONTEND.md](FRONTEND.md).

@@ -3,11 +3,6 @@ import { http } from './apiClient'
 import { compressImage, shouldCompressImage } from './imageCompress'
 import { MediaTracer, reportMetric } from './metrics'
 import type { MediaAssetOut, MediaKind, UploadTicket } from './types'
-import {
-  VIDEO_COMPRESS_THRESHOLD_BYTES,
-  canTranscodeVideo,
-  transcodeVideo,
-} from './videoTranscode'
 
 function kindFor(type: string): MediaKind {
   if (type.startsWith('image/')) return 'image'
@@ -143,30 +138,30 @@ async function uploadPoster(blob: Blob): Promise<string | null> {
 export type UploadProgress = (fraction: number) => void
 
 /**
- * Прогресс ЛОКАЛЬНОЙ подготовки файла (до заливки) — сейчас это сжатие видео, самый
- * долгий шаг подготовки (идёт со скоростью воспроизведения). `phase` оставляет место
- * под будущие фазы (напр. сжатие фото), UI показывает подпись по фазе + процент.
- */
-export interface PrepareProgressEvent {
-  phase: 'compress'
-  fraction: number
-}
-export type PrepareProgress = (e: PrepareProgressEvent) => void
-
-/**
  * PUT файла в MinIO с отслеживанием прогресса. fetch не отдаёт upload-прогресс,
  * поэтому используем XMLHttpRequest (upload.onprogress).
+ *
+ * `signal` — необязательная отмена (юзер жмёт «Отменить»): при abort рвём XHR, и
+ * промис реджектится AbortError (`xhr.onabort`). Уже сработавший abort — сразу reject.
  */
 function putWithProgress(
   url: string,
   body: Blob,
   contentType: string,
   onProgress?: UploadProgress,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Загрузка отменена', 'AbortError'))
+      return
+    }
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', contentType)
+    if (signal) {
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(e.loaded / e.total)
@@ -191,7 +186,7 @@ function putWithProgress(
       }
     }
     xhr.onerror = () => reject(new Error('Не удалось загрузить файл в хранилище'))
-    xhr.onabort = () => reject(new Error('Загрузка отменена'))
+    xhr.onabort = () => reject(new DOMException('Загрузка отменена', 'AbortError'))
     xhr.send(body)
   })
 }
@@ -206,13 +201,20 @@ export interface UploadResult {
   blob: Blob
 }
 
+/** true, если ошибка — отмена загрузки (AbortController). Вызывающий гасит тост. */
+export function isUploadAbort(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
-  onPrepare?: PrepareProgress,
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
-  const pending = await preparePendingUpload(file, onPrepare)
-  const asset = await runPendingUpload(pending, onProgress)
+  // Подготовка (размеры/постер) сети не касается и отмену не поддерживает — сжатие
+  // видео, единственный отменяемый шаг, убрали. signal нужен только сетевой заливке.
+  const pending = await preparePendingUpload(file)
+  const asset = await runPendingUpload(pending, onProgress, signal)
   return { asset, blob: file }
 }
 
@@ -262,55 +264,6 @@ export interface PendingUpload {
 }
 
 /**
- * Крупное видео сжать на клиенте ПЕРЕД заливкой (≤720p, капнутый битрейт) — это
- * единственный рычаг против медленного мобильного аплинка (см. videoTranscode.ts).
- * Возвращает {blob, contentType}: сжатый — если получилось, иначе оригинал. Мелкое
- * видео (< порога) и неподдерживающие платформы (iOS без нужного кодека) идут как есть.
- * Замер до/после уходит отдельной метрикой (op=upload, step=transcode) — виден эффект.
- */
-async function maybeCompressVideo(
-  file: File,
-  onProgress?: PrepareProgress,
-): Promise<{ blob: Blob; contentType: string }> {
-  const original = { blob: file as Blob, contentType: file.type }
-  if (file.size < VIDEO_COMPRESS_THRESHOLD_BYTES || !canTranscodeVideo()) return original
-  const t0 = performance.now()
-  let result: Awaited<ReturnType<typeof transcodeVideo>> = null
-  try {
-    result = await transcodeVideo(file, undefined, (f) =>
-      onProgress?.({ phase: 'compress', fraction: f }),
-    )
-  } catch {
-    result = null // сжатие best-effort: любой сбой → льём оригинал
-  }
-  const elapsed = performance.now() - t0
-  const outBytes = result?.blob.size ?? file.size
-  // Метрика длительности сжатия: одиночный шаг `transcode` уходит в гистограмму (мс)
-  // — видно, сколько реально занимает перекодирование на устройствах пользователей.
-  // ВАЖНО: бэкенд кладёт КАЖДЫЙ шаг в ms-гистограмму (api/metrics.py), поэтому в
-  // steps нельзя слать байты — только длительности. Эффект по размеру виден по
-  // падению `size` в client:upload:video:put (там size = размер заливаемого blob).
-  // size тут — исходный, чтобы перцентиль transcode соотносился с исходным весом.
-  reportMetric({
-    op: 'upload',
-    kind: 'video',
-    size: file.size,
-    total_ms: elapsed,
-    steps: { transcode_ms: elapsed },
-  })
-  // До/после в консоль — для живой проверки на staging (метрика хранит только время).
-  if (import.meta.env.DEV) {
-    const pct = Math.round((1 - outBytes / file.size) * 100)
-    console.info(
-      `[video] transcode ${(file.size / 1e6).toFixed(1)}→${(outBytes / 1e6).toFixed(1)} MB ` +
-        `(-${pct}%) in ${Math.round(elapsed)}ms${result ? '' : ' (fallback: original)'}`,
-    )
-  }
-  if (!result) return original
-  return { blob: result.blob, contentType: result.mimeType }
-}
-
-/**
  * Крупное фото сжать на клиенте ПЕРЕД заливкой (≤2048px, WebP) — бьёт сразу по двум
  * болям с прода: медленный аплинк (меньше байт в PUT) И медленная отдача оригинала по
  * клику (тот же объект легче качать). См. imageCompress.ts. Возвращает {blob,contentType}:
@@ -355,21 +308,20 @@ async function maybeCompressImage(
 
 /**
  * Файл из проводника → описатель отложенной заливки (размеры/постер сняты локально).
- * `onProgress` даёт долю самого долгого шага подготовки (сжатие видео) — вызывающий
- * рисует «Сжатие NN%» вместо неопределённого спиннера.
+ *
+ * Видео БОЛЬШЕ НЕ сжимаем в браузере: перекодирование через MediaRecorder било по
+ * батарее/памяти и заставляло ждать ДО начала заливки. Теперь льём ОРИГИНАЛ сразу,
+ * а сервер транскодит его в фоне (H.264 720p + faststart) — см. docs/FILES.md. Фото
+ * по-прежнему ужимаем на клиенте (дёшево, бьёт и по аплинку, и по отдаче оригинала).
+ * Постер видео снимаем локально (мгновенное превью в processing-состоянии); сервер
+ * потом сгенерит свой как фолбэк/для консистентности.
  */
-export async function preparePendingUpload(
-  file: File,
-  onProgress?: PrepareProgress,
-): Promise<PendingUpload> {
+export async function preparePendingUpload(file: File): Promise<PendingUpload> {
   const kind = kindFor(contentTypeFor(file))
-  // Видео/фото сжимаем ДО снятия размеров/постера — они должны описывать реально
-  // заливаемый blob (у сжатого другое разрешение и, возможно, другой контейнер/формат).
   let blob: Blob
   let contentType: string
-  if (kind === 'video') {
-    ;({ blob, contentType } = await maybeCompressVideo(file, onProgress))
-  } else if (kind === 'image') {
+  if (kind === 'image') {
+    // Фото ужимаем ДО снятия размеров — они должны описывать реально заливаемый blob.
     ;({ blob, contentType } = await maybeCompressImage(file))
   } else {
     blob = file
@@ -404,7 +356,9 @@ export async function preparePendingVoice(
 export async function runPendingUpload(
   pu: PendingUpload,
   onProgress?: UploadProgress,
+  signal?: AbortSignal,
 ): Promise<MediaAssetOut> {
+  if (signal?.aborted) throw new DOMException('Загрузка отменена', 'AbortError')
   // Измерительный слой: засекаем каждый сетевой шаг, чтобы видеть, где на мобиле
   // теряется время (presign выдаёт бэкенд, PUT льёт в MinIO, confirm ждёт head_object
   // + генерацию превью). Сбор best-effort — не влияет на саму загрузку (см. metrics.ts).
@@ -417,9 +371,9 @@ export async function runPendingUpload(
     }),
   )
   // Прямой PUT клиент → MinIO (минуя бэкенд). ContentType PUT'а должен совпадать с
-  // подписанным (иначе MinIO вернёт SignatureDoesNotMatch).
+  // подписанным (иначе MinIO вернёт SignatureDoesNotMatch). Отмена рвёт этот шаг.
   await tr.step('put', () =>
-    putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress),
+    putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress, signal),
   )
   let thumbStorageKey: string | undefined
   if (pu.posterBlob) {

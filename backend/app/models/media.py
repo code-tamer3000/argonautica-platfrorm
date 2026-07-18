@@ -23,6 +23,11 @@ class MediaAsset(Base):
         CheckConstraint(
             "kind IN ('image', 'video', 'file', 'audio')", name="kind_valid"
         ),
+        CheckConstraint(
+            "transcode_status IS NULL OR transcode_status IN "
+            "('processing', 'done', 'failed')",
+            name="transcode_status_valid",
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -38,6 +43,20 @@ class MediaAsset(Base):
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
     duration: Mapped[int | None] = mapped_column(Integer)  # секунды, для видео
+    # Серверный транскод видео (docs/FILES.md «Транскод видео»). Только для kind=video;
+    # у остального NULL. Живой прогресс/попытки джобы — эфемерно в Redis; здесь ТОЛЬКО
+    # долговечное состояние отдачи, которое должен знать attachment-payload и после
+    # истечения Redis-джобы:
+    #   'processing' — оригинал залит, вариант ещё готовится (клиент рисует спиннер);
+    #   'done'       — вариант готов, отдаём его (variant_key может = storage_key на
+    #                  fast-path, когда исходник уже H.264/AAC/faststart/≤720p);
+    #   'failed'     — транскод не удался после ретраев, отдаём оригинал как файл.
+    # NULL — транскод неприменим (не видео) ИЛИ легаси-строка до этой фичи: такие
+    # видео отдаём как раньше (оригинал), фронт со stale-состоянием их всё равно рисует.
+    transcode_status: Mapped[str | None] = mapped_column(Text)
+    # Ключ отдаваемого H.264 720p mp4 (`video/720/<uuid>.mp4`); на fast-path = storage_key.
+    variant_key: Mapped[str | None] = mapped_column(Text)
+    variant_mime: Mapped[str | None] = mapped_column(Text)  # обычно video/mp4
     created_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
     )
