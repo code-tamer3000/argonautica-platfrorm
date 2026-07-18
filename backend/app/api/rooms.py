@@ -141,14 +141,18 @@ async def list_rooms(
     На каждую комнату — счётчик непрочитанных: живые чужие сообщения с
     id > last_read_message_id (статусы прочтения, CLAUDE.md п.4).
     """
-    member_rooms = select(RoomMember.room_id).where(
-        RoomMember.user_id == current_user.id
-    )
-    result = await session.execute(
-        select(Room)
-        .where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
-        .order_by(Room.created_at)
-    )
+    # Наблюдатель (is_observer): пассивный доступ «только к материалам». Из чата ему
+    # доступен ТОЛЬКО новостной канал (на чтение) — ни dm/группы, ни прочие каналы.
+    stmt = select(Room).order_by(Room.created_at)
+    if current_user.is_observer:
+        stmt = stmt.where(Room.is_news.is_(True))
+    else:
+        member_rooms = select(RoomMember.room_id).where(
+            RoomMember.user_id == current_user.id
+        )
+        stmt = stmt.where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
+
+    result = await session.execute(stmt)
     rooms = list(result.scalars().all())
     if not rooms:
         return []

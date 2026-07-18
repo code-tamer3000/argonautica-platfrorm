@@ -7,7 +7,7 @@ Private psychological journaling. Three subkinds (`kind`): `diary` (emotion diar
 
 ## Access — granted, not default-on
 
-- Personal endpoints `/api/cabin/{kind}` sit behind `require_cabin_access`. The section is closed while `users.can_access_cabin = false` (admin has access always).
+- Personal endpoints `/api/cabin/{kind}` sit behind `require_cabin_access`. The section is closed while `users.can_access_cabin = false` (admin has access always). **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) are refused even if `can_access_cabin` was granted — `require_cabin_access` checks `is_observer` first.
 - Admin grants via `PATCH /api/admin/users/{id}` (`can_access_cabin=true`); the false→true transition sends a `cabin_granted` notification (click → `/cabin`). See [AUTH.md](AUTH.md), [NOTIFICATIONS.md](NOTIFICATIONS.md).
 - Frontend hides the nav item and the `/cabin` route without access.
 

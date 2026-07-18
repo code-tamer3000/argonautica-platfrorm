@@ -32,6 +32,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup â€
 | must_change_password | BOOLEAN | NOT NULL, default false | one-time password issued â†’ must change on login |
 | can_create_groups | BOOLEAN | NOT NULL, default true | admin can revoke |
 | can_access_cabin | BOOLEAN | NOT NULL, default false | grants Cabin; admin has it implicitly. See [CABIN.md](CABIN.md) |
+| is_observer | BOOLEAN | NOT NULL, default false | observer mode: materials-only, passive access. Mutually exclusive with `role='admin'`. See [AUTH.md](AUTH.md) |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |

@@ -5,6 +5,8 @@
 
 In-app notification feed (header bell). Stored in **Postgres** (needs history, survives reload, future web-push) — this is domain data, unlike ephemeral typing/presence.
 
+> **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no feed: the `/api/notifications` router is behind `require_participant` → 403, and the bell is hidden. Generation also skips them — `_news_recipients`, `_mention_recipient_ids` and `broadcast_admin` filter out observers so no orphan rows accumulate.
+
 ## Kinds
 
 | kind | Trigger | room_id / message_id / actor_id |

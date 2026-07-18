@@ -105,10 +105,12 @@ export const adminAssignmentsKey = (id: number) => ['tasks', id, 'assignments'] 
 
 // --- Список / деталь ---
 
-export function useTasks() {
+export function useTasks(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: tasksKey,
     queryFn: () => http.get<TaskListOut>('/api/tasks'),
+    // Наблюдателю раздел «Задачи» закрыт (403) — не дёргаем эндпоинт.
+    enabled: options?.enabled ?? true,
   })
 }
 

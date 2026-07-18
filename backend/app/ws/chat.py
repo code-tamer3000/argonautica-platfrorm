@@ -93,7 +93,9 @@ async def _handle(conn: Conn, data: Any) -> None:
         elif mtype == "unsubscribe":
             manager.unsubscribe(conn, room_id)
             await conn.send_json(schemas.unsubscribed_event(room_id))
-        elif room_id in conn.subscribed:  # typing — только в подписанную комнату
+        elif room_id in conn.subscribed and not conn.user.is_observer:
+            # typing — только в подписанную комнату; наблюдатель не «печатает»
+            # (пассивный доступ: читает новостной канал, но не реагирует).
             await publish_room_event(
                 room_id, schemas.typing_event(room_id, conn.user.id)
             )

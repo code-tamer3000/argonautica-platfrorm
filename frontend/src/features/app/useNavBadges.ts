@@ -15,10 +15,12 @@ export interface NavBadges {
 // (useRooms) — отдельный бэкенд не нужен, unread_count там уже есть. Бейдж задач
 // берём из того же useTasks(), что и экран «Задачи» — общий кэш react-query.
 export function useNavBadges(): NavBadges {
-  const { data: rooms } = useRooms()
-  const { data: tasks } = useTasks()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const isObserver = !!user?.is_observer
+  const { data: rooms } = useRooms()
+  // Наблюдателю задачи закрыты — эндпоинт не дёргаем (иначе 403), бейдж всё равно скрыт.
+  const { data: tasks } = useTasks({ enabled: !isObserver })
   return useMemo(() => {
     let chats = 0
     let channels = 0

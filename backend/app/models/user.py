@@ -49,6 +49,12 @@ class User(Base):
     can_access_cabin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Режим наблюдателя: пассивный доступ «только к материалам» (База знаний,
+    # Новости — только чтение, Генные ключи). Отнимает Рубку, Задачи, Календарь,
+    # Каюту, Динамику и уведомления. Админ включает вручную; у админа не бывает.
+    is_observer: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

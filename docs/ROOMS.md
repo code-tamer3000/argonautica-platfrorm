@@ -21,6 +21,7 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
   - `channel` → the user is a platform participant (rule in code).
 - Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups.
 - `GET`/`DELETE /api/rooms/{id}` — room delete exists (see archived PROGRESS for history).
+- **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)): `assert_room_access` allows them **channels only** (news is a channel), for reading; dm/group → 403. `GET /api/rooms` returns them **only the news channel**. All writes (send/edit/delete/pin, WS typing) are blocked by `assert_can_write` — including news comments.
 
 ## Channels — implicit access (variant А)
 

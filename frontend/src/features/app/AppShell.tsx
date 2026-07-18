@@ -30,6 +30,7 @@ import { AdminFaq } from '../admin/AdminFaq'
 import { AdminBroadcast } from '../admin/AdminBroadcast'
 import { AdminCabin } from '../admin/AdminCabin'
 import { NotificationBell } from './NotificationBell'
+import { ObserverBlocked } from './ObserverBlocked'
 import { ProfileMenu } from './ProfileMenu'
 import { useNavBadges } from './useNavBadges'
 import { Spinner } from '../../components/Spinner'
@@ -49,9 +50,15 @@ export function AppShell() {
   const location = useLocation()
   const badges = useNavBadges()
 
+  // Режим наблюдателя: пассивный доступ «только к материалам». Прячем всё, кроме
+  // Базы знаний, Новостей, Генных замков, Профиля и Техподдержки. Бэкенд эти
+  // разделы всё равно закрывает (403) — здесь просто не показываем тупики.
+  const isObserver = !!user?.is_observer
+
   // Каюта закрыта по умолчанию — видна, только если админ выдал доступ (у самого
-  // админа доступ есть всегда). Прячем и пункт навигации, и маршрут.
-  const canCabin = user?.can_access_cabin || user?.role === 'admin'
+  // админа доступ есть всегда). Наблюдателю Каюта закрыта, даже если флаг был выдан.
+  // Прячем и пункт навигации, и маршрут.
+  const canCabin = !isObserver && (user?.can_access_cabin || user?.role === 'admin')
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -154,7 +161,7 @@ export function AppShell() {
           <span className={styles.brandStar} aria-hidden><StarSpark size={12} /></span>
         </span>
         <div className={styles.spacer} />
-        <NotificationBell />
+        {!isObserver && <NotificationBell />}
         <ProfileMenu />
       </header>
       <ConnectionBanner />
@@ -171,11 +178,13 @@ export function AppShell() {
               style={{ transform: `translate(${glider.x}px, ${glider.y}px)`, width: glider.w, height: glider.h }}
             />
           )}
-          <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
-            <span className={styles.navIcon}><IconChat /></span>
-            <span className={styles.navLabel}>Рубка</span>
-            {badges.rubka > 0 && <span className={styles.navBadge}>{badges.rubka > 99 ? '99+' : badges.rubka}</span>}
-          </NavLink>
+          {!isObserver && (
+            <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
+              <span className={styles.navIcon}><IconChat /></span>
+              <span className={styles.navLabel}>Рубка</span>
+              {badges.rubka > 0 && <span className={styles.navBadge}>{badges.rubka > 99 ? '99+' : badges.rubka}</span>}
+            </NavLink>
+          )}
           <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconNews /></span>
             <span className={styles.navLabel}>Новости</span>
@@ -185,15 +194,19 @@ export function AppShell() {
             <span className={styles.navIcon}><IconBook /></span>
             <span className={styles.navLabel}>База знаний</span>
           </NavLink>
-          <NavLink to="/tasks" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconTasks /></span>
-            <span className={styles.navLabel}>Задачи</span>
-            {badges.tasks > 0 && <span className={styles.navBadge}>{badges.tasks > 99 ? '99+' : badges.tasks}</span>}
-          </NavLink>
-          <NavLink to="/calendar" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconCalendar /></span>
-            <span className={styles.navLabel}>Календарь</span>
-          </NavLink>
+          {!isObserver && (
+            <NavLink to="/tasks" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+              <span className={styles.navIcon}><IconTasks /></span>
+              <span className={styles.navLabel}>Задачи</span>
+              {badges.tasks > 0 && <span className={styles.navBadge}>{badges.tasks > 99 ? '99+' : badges.tasks}</span>}
+            </NavLink>
+          )}
+          {!isObserver && (
+            <NavLink to="/calendar" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+              <span className={styles.navIcon}><IconCalendar /></span>
+              <span className={styles.navLabel}>Календарь</span>
+            </NavLink>
+          )}
           <NavLink to="/genkeys" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconGenkeys /></span>
             <span className={styles.navLabel}>Генные замки</span>
@@ -221,7 +234,13 @@ export function AppShell() {
         </nav>
         <main className={styles.content}>
           <Routes>
-            <Route path="/" element={<ChatLayout key="rubka" />} />
+            {/* Наблюдатель: Рубка и прочие активные разделы закрыты. Корень «/» для
+                него — не тупик-заглушка, а редирект на его домашние материалы (КБ);
+                при прямом заходе на закрытый URL показываем ObserverBlocked. */}
+            <Route
+              path="/"
+              element={isObserver ? <Navigate to="/kb" replace /> : <ChatLayout key="rubka" />}
+            />
             <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route
@@ -233,9 +252,9 @@ export function AppShell() {
               }
             />
             <Route path="/kb/:itemId" element={<KbViewer />} />
-            <Route path="/tasks" element={<TasksList />} />
-            <Route path="/tasks/:taskId" element={<TaskDetail />} />
-            <Route path="/calendar" element={<CalendarView />} />
+            <Route path="/tasks" element={isObserver ? <ObserverBlocked /> : <TasksList />} />
+            <Route path="/tasks/:taskId" element={isObserver ? <ObserverBlocked /> : <TaskDetail />} />
+            <Route path="/calendar" element={isObserver ? <ObserverBlocked /> : <CalendarView />} />
             <Route
               path="/genkeys"
               element={

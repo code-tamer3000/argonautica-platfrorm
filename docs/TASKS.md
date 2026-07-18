@@ -5,6 +5,8 @@
 
 Author assigns work; participants submit; admin reviews. A task is **common** (`type='common'` — visible to every active participant, anyone may submit), **individual** (`type='individual'` — addressed to specific users via `task_assignments`), or **pair** (`type='pair'` — peer-learning; see "Pair tasks" below).
 
+> **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no access to Задачи at all: the whole `/api/tasks` router is behind `require_participant` → 403.
+
 ## Assignments & lifecycle
 
 - Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels).
