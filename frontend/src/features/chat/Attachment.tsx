@@ -14,6 +14,8 @@ import styles from './chat.module.css'
 type Resolved = {
   url: string
   thumbUrl: string | null
+  // Средний дериват картинки для лайтбокса; null/undefined — открываем оригинал.
+  previewUrl?: string | null
   kind: MediaKind
   width: number | null
   height: number | null
@@ -41,6 +43,7 @@ export function Attachment({
     ? {
         url: attachment.url,
         thumbUrl: attachment.thumb_url,
+        previewUrl: attachment.preview_url,
         kind: attachment.kind,
         width: attachment.width,
         height: attachment.height,
@@ -51,6 +54,7 @@ export function Attachment({
       ? {
           url: query.data.url,
           thumbUrl: query.data.thumb_url,
+          previewUrl: query.data.preview_url,
           kind: query.data.kind ?? guessMediaKind(query.data.url),
           width: query.data.width,
           height: query.data.height,
@@ -67,10 +71,18 @@ export function Attachment({
         <Spinner size={16} /> загрузка…
       </span>
     )
-  const { url, thumbUrl, kind, width, height, duration, transcodeStatus } = resolved
+  const { url, thumbUrl, previewUrl, kind, width, height, duration, transcodeStatus } = resolved
   if (kind === 'audio') return <VoicePlayer src={url} duration={duration} />
   if (kind === 'image')
-    return <ImageAttachment url={url} thumbUrl={thumbUrl} width={width} height={height} />
+    return (
+      <ImageAttachment
+        url={url}
+        thumbUrl={thumbUrl}
+        previewUrl={previewUrl}
+        width={width}
+        height={height}
+      />
+    )
   if (kind === 'video') {
     // Серверный транскод (docs/FILES.md). 'processing' — вариант ещё готовится: постер
     // + спиннер, играть пока нельзя. 'failed' — вариант не собрался: даём скачать
@@ -102,24 +114,30 @@ export function Attachment({
 
 /**
  * Картинка в ленте: нативный <img loading="lazy">, без blob-прогресса и крутилки.
- * В ленте грузим лёгкое превью (thumbUrl); оригинал (url) открывается только
- * в лайтбоксе по клику — так лента не тянет мегабайтные оригиналы. Коробка
+ * В ленте грузим лёгкое превью (thumbUrl); по клику лайтбокс открывает средний
+ * дериват (previewUrl, ~1600px WebP) и лишь при его отсутствии — оригинал (url),
+ * так что мегабайтные оригиналы не тянутся ни в ленте, ни при просмотре. Коробка
  * резервируется по aspect-ratio из width/height (см. backfill_image_dims для
  * легаси-картинок); до декодирования виден только фон коробки, без индикатора.
  */
 function ImageAttachment({
   url,
   thumbUrl,
+  previewUrl,
   width,
   height,
 }: {
   url: string
   thumbUrl: string | null
+  previewUrl?: string | null
   width?: number | null
   height?: number | null
 }) {
   const [open, setOpen] = useState(false)
   const feedUrl = thumbUrl ?? url // нет превью (видео старые/битые) — грузим оригинал
+  // Фолбэк на оригинал обязателен: у легаси-вложений и при неудавшейся генерации
+  // preview_url = null, и просмотр должен работать как раньше.
+  const lightboxUrl = previewUrl ?? url
   const ratio = width && height ? width / height : undefined
 
   // Измерительный слой: сколько реально грузится картинка ленты на устройстве.
@@ -152,7 +170,7 @@ function ImageAttachment({
         onClick={() => setOpen(true)}
         onLoad={onImgLoad}
       />
-      {open && <Lightbox url={url} kind="image" onClose={() => setOpen(false)} />}
+      {open && <Lightbox url={lightboxUrl} kind="image" onClose={() => setOpen(false)} />}
     </div>
   )
 }

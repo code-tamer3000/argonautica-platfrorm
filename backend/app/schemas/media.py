@@ -65,6 +65,10 @@ class MediaUrlOut(BaseModel):
     height: int | None = None
     # Presigned-GET уменьшенного превью (картинки). None — превью нет, грузим оригинал.
     thumb_url: str | None = None
+    # Средний дериват картинки для лайтбокса (см. AttachmentOut.preview_url). Нужен и
+    # здесь: KB-вложения резолвятся через этот эндпоинт, а не через payload сообщения,
+    # и без поля тот путь молча тянул бы оригинал.
+    preview_url: str | None = None
     # Состояние серверного транскода видео (см. AttachmentOut). None — не видео/легаси.
     transcode_status: str | None = None
 
@@ -81,6 +85,11 @@ class AttachmentOut(BaseModel):
     url: str  # presigned-GET отдаваемого объекта: у видео — вариант (если готов),
     # у остального — оригинал. Для видео это же лайтбокс/скачивание.
     thumb_url: str | None = None  # presigned-GET превью (лента); None — грузить оригинал
+    # presigned-GET среднего WebP-деривата (≤1600px) — то, что открывает лайтбокс
+    # вместо тяжёлого оригинала. Только у kind='image'; у остального None. None также
+    # у легаси-строк, при неудачной генерации и когда дериват вышел не легче исходника.
+    # Клиент показывает `preview_url ?? url`; для скачивания всегда берёт `url`.
+    preview_url: str | None = None
     kind: MediaKind
     mime_type: str
     size: int

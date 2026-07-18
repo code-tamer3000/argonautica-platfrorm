@@ -32,6 +32,7 @@ from app.services.media import (
     PRESIGN_GET_EXPIRES,
     assert_media_access,
     build_storage_key,
+    generate_image_preview,
     generate_image_thumbnail,
     presigned_get_url,
     presigned_put_url,
@@ -199,11 +200,18 @@ async def confirm_upload(
     #    сервер лишь проверяет намерение и подхватывает его ключ (тянуть видео на
     #    бэкенд ради одного кадра дорого и против принципа «байты мимо FastAPI»).
     thumb_key: str | None = None
+    preview_key: str | None = None
     thumb_ms = 0.0
     if asset.kind == "image":
         _t_thumb = perf_counter()
         thumb_key = await run_in_threadpool(
             generate_image_thumbnail, bucket, body.storage_key, intent["mime_type"]
+        )
+        # Средний дериват для лайтбокса — чтобы полноэкранный просмотр не тянул
+        # оригинал (docs/FILES.md «Превью для лайтбокса»). Так же best-effort: None
+        # (ошибка или дериват не легче исходника) просто оставляет оригинал.
+        preview_key = await run_in_threadpool(
+            generate_image_preview, bucket, body.storage_key, intent["mime_type"]
         )
         thumb_ms = (perf_counter() - _t_thumb) * 1000
     elif asset.kind == "video" and body.thumb_storage_key:
@@ -212,6 +220,9 @@ async def confirm_upload(
         )
     if thumb_key is not None:
         asset.thumb_key = thumb_key
+    if preview_key is not None:
+        asset.preview_key = preview_key
+    if thumb_key is not None or preview_key is not None:
         await session.flush()
 
     # Видео → фоновый транскод. Ставим в очередь ТОЛЬКО после успешного commit (иначе
@@ -261,6 +272,9 @@ async def get_media_url(
     thumb_url = (
         presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
     )
+    preview_url = (
+        presigned_get_url(asset.bucket, asset.preview_key) if asset.preview_key else None
+    )
     return MediaUrlOut(
         url=url,
         expires_in=PRESIGN_GET_EXPIRES,
@@ -269,5 +283,6 @@ async def get_media_url(
         width=asset.width,
         height=asset.height,
         thumb_url=thumb_url,
+        preview_url=preview_url,
         transcode_status=asset.transcode_status,
     )

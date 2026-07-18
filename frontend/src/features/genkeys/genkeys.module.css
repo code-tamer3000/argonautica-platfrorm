@@ -17,6 +17,9 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  /* Width reference for the reading pane and its content (`cqw`), so both are a
+     share of THIS box and not of the viewport (which also holds the app sidebar). */
+  container-type: inline-size;
   background:
     radial-gradient(120% 90% at 30% 30%, rgba(19, 78, 69, 0.18), transparent 60%),
     var(--bg);
@@ -708,7 +711,12 @@
 .reading {
   height: 100%;
   min-height: 0;
-  width: min(560px, 46vw);
+  /* Same width the pane opens to — `cqw` is a share of `.screen`, so it matches
+     `.readingPane` exactly. A viewport-based width (46vw) did not: the app sidebar
+     eats part of the viewport, so the text came out wider than the pane and slid
+     out to the right under `.readingPane { overflow: hidden }`. Fixed (not 100%)
+     so the text does not re-wrap while the pane slides open. */
+  width: min(560px, 46cqw);
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   animation: gkReadingIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
