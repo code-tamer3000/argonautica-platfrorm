@@ -156,17 +156,28 @@ export type PrepareProgress = (e: PrepareProgressEvent) => void
 /**
  * PUT файла в MinIO с отслеживанием прогресса. fetch не отдаёт upload-прогресс,
  * поэтому используем XMLHttpRequest (upload.onprogress).
+ *
+ * `signal` — необязательная отмена (юзер жмёт «Отменить»): при abort рвём XHR, и
+ * промис реджектится AbortError (`xhr.onabort`). Уже сработавший abort — сразу reject.
  */
 function putWithProgress(
   url: string,
   body: Blob,
   contentType: string,
   onProgress?: UploadProgress,
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Загрузка отменена', 'AbortError'))
+      return
+    }
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
     xhr.setRequestHeader('Content-Type', contentType)
+    if (signal) {
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(e.loaded / e.total)
@@ -191,7 +202,7 @@ function putWithProgress(
       }
     }
     xhr.onerror = () => reject(new Error('Не удалось загрузить файл в хранилище'))
-    xhr.onabort = () => reject(new Error('Загрузка отменена'))
+    xhr.onabort = () => reject(new DOMException('Загрузка отменена', 'AbortError'))
     xhr.send(body)
   })
 }
@@ -206,13 +217,19 @@ export interface UploadResult {
   blob: Blob
 }
 
+/** true, если ошибка — отмена загрузки (AbortController). Вызывающий гасит тост. */
+export function isUploadAbort(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 export async function mediaUpload(
   file: File,
   onProgress?: UploadProgress,
   onPrepare?: PrepareProgress,
+  signal?: AbortSignal,
 ): Promise<UploadResult> {
-  const pending = await preparePendingUpload(file, onPrepare)
-  const asset = await runPendingUpload(pending, onProgress)
+  const pending = await preparePendingUpload(file, onPrepare, signal)
+  const asset = await runPendingUpload(pending, onProgress, signal)
   return { asset, blob: file }
 }
 
@@ -271,18 +288,23 @@ export interface PendingUpload {
 async function maybeCompressVideo(
   file: File,
   onProgress?: PrepareProgress,
+  signal?: AbortSignal,
 ): Promise<{ blob: Blob; contentType: string }> {
   const original = { blob: file as Blob, contentType: file.type }
   if (file.size < VIDEO_COMPRESS_THRESHOLD_BYTES || !canTranscodeVideo()) return original
   const t0 = performance.now()
   let result: Awaited<ReturnType<typeof transcodeVideo>> = null
   try {
-    result = await transcodeVideo(file, undefined, (f) =>
+    result = await transcodeVideo(file, signal, (f) =>
       onProgress?.({ phase: 'compress', fraction: f }),
     )
   } catch {
     result = null // сжатие best-effort: любой сбой → льём оригинал
   }
+  // transcodeVideo резолвится null и при отмене, и при сбое — их не различить по
+  // результату. Поэтому отдельно смотрим на сигнал: отмена должна прервать всю
+  // загрузку (бросить AbortError), а не тихо залить оригинал сжимаемого видео.
+  if (signal?.aborted) throw new DOMException('Загрузка отменена', 'AbortError')
   const elapsed = performance.now() - t0
   const outBytes = result?.blob.size ?? file.size
   // Метрика длительности сжатия: одиночный шаг `transcode` уходит в гистограмму (мс)
@@ -361,6 +383,7 @@ async function maybeCompressImage(
 export async function preparePendingUpload(
   file: File,
   onProgress?: PrepareProgress,
+  signal?: AbortSignal,
 ): Promise<PendingUpload> {
   const kind = kindFor(contentTypeFor(file))
   // Видео/фото сжимаем ДО снятия размеров/постера — они должны описывать реально
@@ -368,7 +391,7 @@ export async function preparePendingUpload(
   let blob: Blob
   let contentType: string
   if (kind === 'video') {
-    ;({ blob, contentType } = await maybeCompressVideo(file, onProgress))
+    ;({ blob, contentType } = await maybeCompressVideo(file, onProgress, signal))
   } else if (kind === 'image') {
     ;({ blob, contentType } = await maybeCompressImage(file))
   } else {
@@ -404,7 +427,9 @@ export async function preparePendingVoice(
 export async function runPendingUpload(
   pu: PendingUpload,
   onProgress?: UploadProgress,
+  signal?: AbortSignal,
 ): Promise<MediaAssetOut> {
+  if (signal?.aborted) throw new DOMException('Загрузка отменена', 'AbortError')
   // Измерительный слой: засекаем каждый сетевой шаг, чтобы видеть, где на мобиле
   // теряется время (presign выдаёт бэкенд, PUT льёт в MinIO, confirm ждёт head_object
   // + генерацию превью). Сбор best-effort — не влияет на саму загрузку (см. metrics.ts).
@@ -417,9 +442,9 @@ export async function runPendingUpload(
     }),
   )
   // Прямой PUT клиент → MinIO (минуя бэкенд). ContentType PUT'а должен совпадать с
-  // подписанным (иначе MinIO вернёт SignatureDoesNotMatch).
+  // подписанным (иначе MinIO вернёт SignatureDoesNotMatch). Отмена рвёт этот шаг.
   await tr.step('put', () =>
-    putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress),
+    putWithProgress(ticket.upload_url, pu.blob, pu.contentType, onProgress, signal),
   )
   let thumbStorageKey: string | undefined
   if (pu.posterBlob) {

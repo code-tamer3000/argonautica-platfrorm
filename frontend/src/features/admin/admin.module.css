@@ -51,6 +51,11 @@
 .uploadBar { flex: 1; height: 4px; background: var(--bg); border-radius: 2px; overflow: hidden; }
 .uploadBarFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 120ms ease; }
 .uploadPct { font-family: var(--font-t4); font-size: 0.75rem; color: var(--text-secondary); min-width: 34px; text-align: right; }
+/* Крестик отмены рядом с прогрессом загрузки. */
+.uploadCancel { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.4rem; height: 1.4rem; border: none; background: transparent; color: var(--text-secondary); font-size: 0.85rem; line-height: 1; cursor: pointer; border-radius: var(--radius-btn); }
+.uploadCancel:hover { color: var(--text-primary); background: var(--bg); }
+/* Текст в подтверждающем поп-апе. */
+.confirmText { font-size: var(--text-ui); color: var(--text-primary); margin: 0 0 var(--space-3); }
 .input { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-2) var(--space-3); color: var(--text-primary); font-size: var(--text-ui); width: 100%; box-sizing: border-box; }
 .input:focus { outline: none; border-color: var(--accent); }
 .textarea { resize: vertical; min-height: 120px; }
