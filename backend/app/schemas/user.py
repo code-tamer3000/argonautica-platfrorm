@@ -35,6 +35,7 @@ class AdminUpdateUserRequest(BaseModel):
 
     can_create_groups: bool | None = None
     can_access_cabin: bool | None = None
+    is_observer: bool | None = None
     role: Role | None = None
 
 
@@ -68,6 +69,7 @@ class UserOut(BaseModel):
     must_change_password: bool
     can_create_groups: bool
     can_access_cabin: bool
+    is_observer: bool = False
     settings: dict[str, Any] = {}
 
 
@@ -98,5 +100,6 @@ class AdminUserOut(BaseModel):
     role: str
     can_create_groups: bool
     can_access_cabin: bool
+    is_observer: bool = False
     is_active: bool = True
     created_at: datetime

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, require_admin
+from app.api.deps import get_current_active_user, require_admin, require_participant
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
 from app.models.room import Room, RoomMember
@@ -25,7 +25,12 @@ from app.schemas.calendar import (
 from app.services.rooms import assert_room_access, load_room
 from app.services.tasks import participant_count
 
-router = APIRouter(prefix="/api/calendar", tags=["calendar"])
+# Календарь — часть активной работы участника; наблюдателю закрыт.
+router = APIRouter(
+    prefix="/api/calendar",
+    tags=["calendar"],
+    dependencies=[Depends(require_participant)],
+)
 
 _PATCHABLE_FIELDS = {"title", "description", "starts_at", "ends_at", "all_day"}
 

@@ -10,6 +10,17 @@
 - **Per-flag grants** (not roles), admin-togglable via `PATCH /api/admin/users/{id}`:
   - `can_create_groups` (default true) — may create group rooms.
   - `can_access_cabin` (default false) — see [CABIN.md](CABIN.md).
+  - `is_observer` (default false) — **observer mode**: passive, materials-only access.
+    Keeps **only** КБ ([KB.md](KB.md)) and Генные ключи ([GENE_KEYS.md](GENE_KEYS.md)),
+    plus own Профиль and Техподдержка.
+    **Loses** Рубка **and Новости** (all chat, including the news channel — no room
+    access at all), Задачи ([TASKS.md](TASKS.md)), Календарь ([CALENDAR.md](CALENDAR.md)),
+    Каюта (even if `can_access_cabin`), Динамика ([DYNAMICS.md](DYNAMICS.md)) and the
+    notification feed ([NOTIFICATIONS.md](NOTIFICATIONS.md)). Mutually exclusive with
+    `admin` (a request that would make a user both → 400). Enforced by
+    `require_participant` (whole-router on tasks/calendar/dynamics/notifications),
+    `assert_room_access` (403 on every room for observers) for chat, and
+    `require_cabin_access`.
 
 ## JWT flow
 
@@ -33,12 +44,12 @@
 
 - Whole router under `require_admin`.
 - `POST /users` — server generates a one-time password, returns it **once**, sets `must_change_password=true`.
-- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, …). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md).
+- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, …). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive).
 - Bulk account creation runbook and the password-delivery bot: [OPERATIONS in archive] and [TELEGRAM_BOT.md](TELEGRAM_BOT.md).
 
 ## Authorization — threat #1
 
-Every read/action checks membership/role **server-side**; never trust client-supplied `id`/`room_id` (IDOR / broken access control). Dependency chain in `api/deps.py`: `get_current_user → get_current_active_user → require_admin`. Cabin adds `require_cabin_access`. See per-endpoint patterns in [API_CONVENTIONS.md](API_CONVENTIONS.md).
+Every read/action checks membership/role **server-side**; never trust client-supplied `id`/`room_id` (IDOR / broken access control). Dependency chain in `api/deps.py`: `get_current_user → get_current_active_user → require_admin`. Cabin adds `require_cabin_access`; observer-closed sections add `require_participant` (rejects `is_observer`). See per-endpoint patterns in [API_CONVENTIONS.md](API_CONVENTIONS.md).
 
 ## Security notes
 

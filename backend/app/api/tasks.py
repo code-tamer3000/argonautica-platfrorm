@@ -18,7 +18,7 @@ from sqlalchemy import ColumnElement, func, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, require_admin
+from app.api.deps import get_current_active_user, require_admin, require_participant
 from app.core.config import settings
 from app.db.session import get_session
 from app.models.kb import KbItem
@@ -78,7 +78,12 @@ from app.services.tasks import (
 )
 from app.ws import schemas as ws_schemas
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+# Задачи — активность участника; наблюдателю весь раздел закрыт (в т.ч. чтение).
+router = APIRouter(
+    prefix="/api/tasks",
+    tags=["tasks"],
+    dependencies=[Depends(require_participant)],
+)
 
 # Поля, которые admin вправе править через PATCH.
 _PATCHABLE_FIELDS = {"title", "body", "deadline_at", "kb_item_id"}

@@ -58,7 +58,7 @@ from app.services.notify_prefs import resolved_prefs
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
-_PATCHABLE_FIELDS = {"can_create_groups", "can_access_cabin", "role"}
+_PATCHABLE_FIELDS = {"can_create_groups", "can_access_cabin", "is_observer", "role"}
 
 # Весь роутер под require_admin — каждый запрос проверяет роль на сервере (п.1).
 router = APIRouter(
@@ -135,6 +135,15 @@ async def update_user(
     changes = body.model_dump(exclude_unset=True)
     # Переход «доступ к Каюте закрыт → открыт» — повод уведомить участника (после flush).
     grant_cabin = changes.get("can_access_cabin") is True and not user.can_access_cabin
+    # Наблюдатель и админ взаимоисключаемы: у админа полный доступ, наблюдатель —
+    # пассивный. Итоговое (с учётом переданных полей) состояние не должно быть «и то, и то».
+    final_role = changes.get("role", user.role)
+    final_observer = changes.get("is_observer", user.is_observer)
+    if final_role == "admin" and final_observer:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Админ не может быть наблюдателем — это взаимоисключающие режимы",
+        )
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:
             setattr(user, field, value)

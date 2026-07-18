@@ -36,6 +36,8 @@ export interface UserOut {
   must_change_password: boolean
   can_create_groups: boolean
   can_access_cabin: boolean
+  // Режим наблюдателя: пассивный доступ «только к материалам» (см. AppShell).
+  is_observer: boolean
   settings: Record<string, unknown>
 }
 
@@ -259,6 +261,7 @@ export interface AdminUserOut {
   role: Role
   can_create_groups: boolean
   can_access_cabin: boolean
+  is_observer: boolean
   is_active: boolean
   created_at: string
 }

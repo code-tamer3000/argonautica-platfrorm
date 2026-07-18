@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, require_participant
 from app.db.session import get_session
 from app.models.message import Message
 from app.models.notification import Notification
@@ -22,7 +22,12 @@ from app.schemas.notification import (
 )
 from app.services.notifications import _preview
 
-router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+# Наблюдателю уведомления не адресуются (нет чата/задач/ответов) — весь роутер закрыт.
+router = APIRouter(
+    prefix="/api/notifications",
+    tags=["notifications"],
+    dependencies=[Depends(require_participant)],
+)
 
 
 async def _unread_count(session: AsyncSession, user_id: int) -> int:

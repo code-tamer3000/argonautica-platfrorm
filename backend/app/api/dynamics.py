@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing_extensions import TypedDict
 
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, require_participant
 from app.core.config import settings
 from app.db.session import get_session
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
@@ -40,7 +40,14 @@ class _StatsResult(TypedDict):
     today_cats: list[str]
     pardoned: set[date]
 
-router = APIRouter(prefix="/api/dynamics", tags=["dynamics"])
+# Динамика (личный дневник/журнал ДЗ) — активность участника; наблюдателю закрыта.
+# Функции модуля переиспользует admin.py напрямую (не по HTTP) — их зависимость
+# роутера не касается, админ-обзор динамики работает как прежде.
+router = APIRouter(
+    prefix="/api/dynamics",
+    tags=["dynamics"],
+    dependencies=[Depends(require_participant)],
+)
 
 MAX_PARDONS = 3
 PROGRAM_DAYS = 28

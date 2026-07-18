@@ -29,6 +29,7 @@ export function AdminUsers() {
   const [editUser, setEditUser] = useState<AdminUserOut | null>(null)
   const [editCanCreate, setEditCanCreate] = useState(false)
   const [editCanCabin, setEditCanCabin] = useState(false)
+  const [editObserver, setEditObserver] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
 
   function handleCreateOpen() {
@@ -64,6 +65,7 @@ export function AdminUsers() {
     setEditUser(user)
     setEditCanCreate(user.can_create_groups)
     setEditCanCabin(user.can_access_cabin)
+    setEditObserver(user.is_observer)
     setEditRole(user.role as 'participant' | 'admin')
   }
 
@@ -88,6 +90,8 @@ export function AdminUsers() {
         id: editUser.id,
         can_create_groups: editCanCreate,
         can_access_cabin: editCanCabin,
+        // Наблюдатель и админ взаимоисключаемы — у админа флаг всегда снят.
+        is_observer: editRole === 'admin' ? false : editObserver,
         role: editRole,
       },
       {
@@ -118,7 +122,7 @@ export function AdminUsers() {
                 <div className={styles.listMeta}>@{user.username}</div>
               </div>
               <span className={user.role === 'admin' ? styles.badgePublished : styles.badgeDraft}>
-                {user.role}
+                {user.is_observer ? 'наблюдатель' : user.role}
               </span>
             </div>
             <div className={styles.listActions}>
@@ -253,6 +257,23 @@ export function AdminUsers() {
                 Доступ к разделу «Каюта»
               </label>
             </div>
+            <div className={styles.checkRow}>
+              <input
+                type="checkbox"
+                id="is_observer"
+                checked={editRole === 'admin' ? false : editObserver}
+                disabled={editRole === 'admin'}
+                onChange={(e) => setEditObserver(e.target.checked)}
+              />
+              <label htmlFor="is_observer" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
+                Режим наблюдателя (только материалы: База знаний, Генные замки)
+              </label>
+            </div>
+            {editRole !== 'admin' && editObserver && (
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
+                Закрывает Рубку, Новости, Задачи, Календарь, Каюту, Динамику и уведомления.
+              </p>
+            )}
             <div className={styles.formActions}>
               {editUser.id !== me?.id && (
                 <Button

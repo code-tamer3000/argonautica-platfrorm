@@ -5,6 +5,8 @@
 
 Project events (dates, titles, descriptions). An event is either **project-wide** (`room_id = NULL`) or **room/channel-scoped** (`room_id` set).
 
+> **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no calendar access: the whole `/api/calendar` router is behind `require_participant` → 403.
+
 ## Endpoints
 
 - CRUD **admin only**: `POST/PATCH/DELETE /api/calendar/events` (validates `ends_at >= starts_at`).

@@ -31,13 +31,32 @@ async def assert_room_access(
 
     dm/group: нет строки членства → 403. channel: доступ у любого участника
     платформы (вариант А) — вернуть существующую строку или None, НЕ создавая её.
+
+    Наблюдатель (is_observer) НЕ имеет доступа ни к одной комнате — включая каналы и
+    новостной канал. Его разделы — только материалы (База знаний, Генные замки).
     """
+    if user.is_observer:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Observer mode: chat is not available for you",
+        )
     membership = await session.get(RoomMember, (room.id, user.id))
     if room.type == "channel":
         return membership
     if membership is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
     return membership
+
+
+def assert_can_write(user: User) -> None:
+    """Наблюдателю запись в любую комнату запрещена. Формально избыточно (он и на
+    чтение комнату не проходит, см. assert_room_access) — оставлено как явный
+    защитный барьер на пишущих путях (отправка/правка/удаление/закреп/typing)."""
+    if user.is_observer:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Observer mode: this section is read-only for you",
+        )
 
 
 def assert_can_pin(room: Room, user: User, membership: RoomMember | None) -> None:

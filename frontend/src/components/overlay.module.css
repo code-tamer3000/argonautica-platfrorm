@@ -92,3 +92,19 @@
   font-size: var(--text-label-md); color: #fff; min-width: 34px; text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* Видео стримится нативно (range, перемотка), поэтому «процент скачивания» некорректен —
+   показываем состояние буферизации: спиннер, пока видео не готово играть, и долю буфера
+   (video.buffered / duration), если длительность уже известна. Гаснет, когда can play. */
+.lightboxVideoWrap { position: relative; display: flex; align-items: center; justify-content: center; }
+.lightboxSpinner {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25); border-top-color: var(--accent);
+  animation: spin 720ms linear infinite; pointer-events: none;
+}
+@keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+.lightboxBufLabel {
+  font-size: var(--text-label-md); color: #fff; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
