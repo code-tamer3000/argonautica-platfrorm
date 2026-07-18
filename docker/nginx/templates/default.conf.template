@@ -29,15 +29,22 @@ upstream minio {
     keepalive 32;
 }
 
-# Держим клиентские keepalive-соединения открытыми (мобильные клиенты на слабой
+# Клиентские keepalive-соединения держим открытыми (мобильные клиенты на слабой
 # сети переиспользуют одно соединение под серию запросов ленты/медиа).
-keepalive_timeout 65;
+# Директиву здесь НЕ задаём: базовый nginx.conf официального образа уже объявляет
+# `keepalive_timeout 65` в http{}, а этот файл подключается внутрь того же http{} —
+# повторное объявление роняет конфиг ("directive is duplicate", nginx -t падает).
+# Нужное значение = дефолт образа (65s), поэтому просто полагаемся на него.
 
 # TLS session resumption на уровне http → наследуется всеми :443 server-блоками.
 # Повторный TLS-хендшейк по session-id из общего кэша минует полный round-trip —
 # ощутимо на дальнем/слабом канале (Москва↔ЕС), где RTT дорогой.
 ssl_session_cache shared:SSL:10m;
 ssl_session_timeout 1h;
+
+# TLSv1.3 обязателен для HTTP/3 (QUIC); TLSv1.2 оставляем для h2/h1-клиентов.
+# На уровне http → наследуется всеми :443 server-блоками.
+ssl_protocols TLSv1.2 TLSv1.3;
 
 # --- HTTP → HTTPS + ACME-challenge (Let's Encrypt в проде) ---
 server {
@@ -63,6 +70,11 @@ server {
     listen 443 ssl default_server;
     listen [::]:443 ssl default_server;
     http2 on;
+    # HTTP/3 (QUIC) поверх UDP 443. reuseport задаётся РОВНО ОДИН раз на пару
+    # адрес:порт во всём конфиге — держим его здесь, в catch-all; остальные :443
+    # server-блоки объявляют quic без reuseport. Чужой Host по QUIC тоже отбиваем.
+    listen 443 quic default_server reuseport;
+    listen [::]:443 quic default_server reuseport;
     server_name _;
 
     ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
@@ -76,6 +88,9 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
+    # HTTP/3 (QUIC). reuseport — только в catch-all выше (одна пара адрес:порт).
+    listen 443 quic;
+    listen [::]:443 quic;
     server_name ${DOMAIN};
 
     ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
@@ -85,6 +100,9 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
+    # Анонс HTTP/3: клиент переподключится по UDP. Alt-Svc действует на весь origin,
+    # поэтому локациям без своего add_header (/api/, /ws, /) хватает этого уровня.
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
 
     # Сжатие проксируемых текстовых ответов (SPA-бандл, JSON API). Медиа не жмём —
     # картинки/видео уже сжаты (их типов нет в gzip_types).
@@ -168,6 +186,9 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
+    # HTTP/3 (QUIC). reuseport — только в catch-all выше (одна пара адрес:порт).
+    listen 443 quic;
+    listen [::]:443 quic;
     server_name ${MEDIA_DOMAIN};
 
     ssl_certificate     /etc/nginx/certs/${MEDIA_DOMAIN}.crt;
@@ -189,6 +210,10 @@ server {
         # Объекты неизменяемы (ключ = uuid), presigned-ссылка живёт сутки — кэшируем
         # в браузере, чтобы медиа не перекачивалось при каждой перерисовке ленты.
         add_header Cache-Control "private, max-age=86400, immutable" always;
+        # Alt-Svc обязан быть ИМЕННО ЗДЕСЬ: свой add_header в локации отменяет
+        # наследование server-уровня, а медиа — отдельный origin (${MEDIA_DOMAIN}),
+        # который иначе никогда бы не узнал про h3. Медиа — главный потребитель QUIC.
+        add_header Alt-Svc 'h3=":443"; ma=86400' always;
         # Прямые загрузки (видео) — тело запроса не буферизуем. Лимит держит бэкенд
         # до выдачи presigned-PUT, поэтому здесь nginx-потолок снят (0 = без лимита).
         client_max_body_size 0;

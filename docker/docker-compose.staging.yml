@@ -90,6 +90,9 @@ services:
     ports:
       # Наружу только 8443 (прод держит 80/443 на этом же сервере).
       - "8443:443"
+      # HTTP/3 (QUIC) идёт по UDP на том же порту. Docker сам заводит DNAT;
+      # host-firewall (iptables INPUT ACCEPT) UDP не режет.
+      - "8443:443/udp"
     environment:
       DOMAIN: ${DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN}
