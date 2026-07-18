@@ -185,11 +185,13 @@ export function AppShell() {
               {badges.rubka > 0 && <span className={styles.navBadge}>{badges.rubka > 99 ? '99+' : badges.rubka}</span>}
             </NavLink>
           )}
-          <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconNews /></span>
-            <span className={styles.navLabel}>Новости</span>
-            {badges.news > 0 && <span className={styles.navBadge}>{badges.news > 99 ? '99+' : badges.news}</span>}
-          </NavLink>
+          {!isObserver && (
+            <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
+              <span className={styles.navIcon}><IconNews /></span>
+              <span className={styles.navLabel}>Новости</span>
+              {badges.news > 0 && <span className={styles.navBadge}>{badges.news > 99 ? '99+' : badges.news}</span>}
+            </NavLink>
+          )}
           <NavLink to="/kb" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
             <span className={styles.navIcon}><IconBook /></span>
             <span className={styles.navLabel}>База знаний</span>
@@ -241,7 +243,7 @@ export function AppShell() {
               path="/"
               element={isObserver ? <Navigate to="/kb" replace /> : <ChatLayout key="rubka" />}
             />
-            <Route path="/news" element={<ChatLayout key="news" autoOpen="news" />} />
+            <Route path="/news" element={isObserver ? <ObserverBlocked /> : <ChatLayout key="news" autoOpen="news" />} />
             <Route path="/kb" element={<KbList />} />
             <Route
               path="/kb/read/:itemId/:assetId"

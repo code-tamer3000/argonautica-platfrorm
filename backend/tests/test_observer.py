@@ -43,7 +43,7 @@ async def _news_channel(session: AsyncSession, admin: User) -> Room:
 # --- Чтение новостей: наблюдателю доступно ----------------------------------
 
 
-async def test_observer_reads_news_channel(
+async def test_observer_cannot_read_news_channel(
     client: AsyncClient,
     make_user: MakeUser,
     session: AsyncSession,
@@ -52,7 +52,7 @@ async def test_observer_reads_news_channel(
     observer = await make_user(is_observer=True)
     news = await _news_channel(session, admin)
 
-    # Админ публикует пост, наблюдатель его читает.
+    # Админ публикует пост — наблюдатель даже читать новости не может (чат закрыт целиком).
     post = await client.post(
         f"/api/rooms/{news.id}/messages",
         headers=await _headers(client, admin),
@@ -63,11 +63,10 @@ async def test_observer_reads_news_channel(
     feed = await client.get(
         f"/api/rooms/{news.id}/messages", headers=await _headers(client, observer)
     )
-    assert feed.status_code == 200, feed.text
-    assert any(m["content"] == "Важное объявление" for m in feed.json())
+    assert feed.status_code == 403, feed.text
 
 
-async def test_observer_room_list_is_news_only(
+async def test_observer_room_list_is_empty(
     client: AsyncClient,
     make_user: MakeUser,
     make_room: MakeRoom,
@@ -76,16 +75,26 @@ async def test_observer_room_list_is_news_only(
 ) -> None:
     admin = await make_user(role="admin")
     observer = await make_user(is_observer=True)
-    news = await _news_channel(session, admin)
+    await _news_channel(session, admin)
 
-    # Даже если наблюдателя занесли в группу — в списке комнат её не видно.
+    # Даже если наблюдателя занесли в группу — чат недоступен, список комнат пуст.
     group = await make_room(created_by=admin.id)
     await add_membership(group.id, observer.id)
 
     resp = await client.get("/api/rooms", headers=await _headers(client, observer))
     assert resp.status_code == 200, resp.text
-    ids = {r["id"] for r in resp.json()}
-    assert ids == {news.id}
+    assert resp.json() == []
+
+
+async def test_observer_personal_channel_forbidden(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    observer = await make_user(is_observer=True)
+    resp = await client.get(
+        "/api/rooms/personal", headers=await _headers(client, observer)
+    )
+    assert resp.status_code == 403, resp.text
 
 
 # --- Запись: наблюдателю запрещена везде ------------------------------------
@@ -106,31 +115,6 @@ async def test_observer_cannot_post_to_news(
         json={"content": "не должен пройти"},
     )
     assert resp.status_code == 403, resp.text
-
-
-async def test_observer_cannot_comment_in_news_thread(
-    client: AsyncClient,
-    make_user: MakeUser,
-    session: AsyncSession,
-) -> None:
-    admin = await make_user(role="admin")
-    observer = await make_user(is_observer=True)
-    news = await _news_channel(session, admin)
-
-    post = await client.post(
-        f"/api/rooms/{news.id}/messages",
-        headers=await _headers(client, admin),
-        json={"content": "пост"},
-    )
-    root_id = post.json()["id"]
-
-    # Комментарии (треды) обычным участникам разрешены, наблюдателю — нет.
-    reply = await client.post(
-        f"/api/rooms/{news.id}/messages",
-        headers=await _headers(client, observer),
-        json={"content": "коммент", "reply_to_message_id": root_id},
-    )
-    assert reply.status_code == 403, reply.text
 
 
 async def test_observer_cannot_access_group(
