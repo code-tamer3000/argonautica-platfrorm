@@ -124,10 +124,15 @@ Metadata for all files; bytes live in MinIO. See [FILES.md](FILES.md).
 | width | INT | NULL | image/video |
 | height | INT | NULL | image/video |
 | duration | INT | NULL | seconds, video |
+| transcode_status | TEXT | NULL, CHECK in (`processing`,`done`,`failed`) | server video transcode state; NULL = not video / legacy (pre-feature) |
+| variant_key | TEXT | NULL | served H.264 720p mp4 key (`video/720/<uuid>.mp4`); = `storage_key` on the fast path |
+| variant_mime | TEXT | NULL | variant mime (`video/mp4`) |
 | created_by | BIGINT | FK users, NOT NULL | |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 
 Public URL is not stored: access is via presigned URL after an auth check (see [FILES.md](FILES.md)).
+
+**Video transcode columns** (see [FILES.md](FILES.md) "Video transcode"): expand-only, all nullable. `transcode_status` is the *durable serving state* (the worker's live progress/attempt count lives only in Redis); the served `url` is the variant iff `transcode_status='done'` and `variant_key` is set, else the original. Legacy videos (rows created before the feature) keep all three NULL and serve the original unchanged.
 
 ## stickerpacks / stickers
 Admin adds packs. Sticker message: `content = NULL`, `sticker_id` set.
@@ -423,6 +428,7 @@ Short-lived realtime state lives only in Redis. This is the single list of Redis
 | Refresh tokens / sessions | refresh `jti` whitelist for revoke/logout; access is stateless. See [AUTH.md](AUTH.md) |
 | Rate-limit counters | login / send / upload. See [API_CONVENTIONS.md](API_CONVENTIONS.md) |
 | Media upload intent | presigned-PUT intent, TTL ~15m. See [FILES.md](FILES.md) |
+| Video transcode queue | `transcode:pending` (list), `transcode:inflight` (hash, claim ts), `transcode:attempts` (hash). Job state + retry count; durable serving state is `media_assets.transcode_status`. See [FILES.md](FILES.md) |
 | Telegram bot state | `bot:pwd:{tg_id}`, `bot:await_q:{tg_id}`, `bot:qmap:{admin_msg_id}`. See [TELEGRAM_BOT.md](TELEGRAM_BOT.md) |
 | Pub/sub channels | `room:*`, `presence`, `user:{id}` (personal notifications) |
 

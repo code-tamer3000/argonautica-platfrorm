@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
-import type { MessageOut } from '../lib/types'
+import type { AttachmentOut, MessageOut } from '../lib/types'
 import { messagesKey, type MessagesData } from './messages'
 
 const has = (data: MessagesData, id: number): boolean =>
@@ -25,6 +25,27 @@ export function replaceMessage(qc: QueryClient, roomId: number, msg: MessageOut)
 export function removeMessage(qc: QueryClient, roomId: number, id: number): void {
   qc.setQueryData<MessagesData>(messagesKey(roomId), (old) =>
     old ? { ...old, pages: old.pages.map((p) => p.filter((m) => m.id !== id)) } : old,
+  )
+}
+
+// Подменить одно вложение в сообщении по asset_id — прилетает по WS attachment.updated,
+// когда серверный транскод видео готов/провалился. Меняем только совпавшее вложение
+// (свежий url/thumb/transcode_status), сообщение и остальные вложения не трогаем.
+export function updateAttachment(
+  qc: QueryClient,
+  roomId: number,
+  messageId: number,
+  attachment: AttachmentOut,
+): void {
+  const swap = (m: MessageOut): MessageOut => {
+    if (m.id !== messageId) return m
+    const attachments = m.attachments.map((a) =>
+      a.asset_id === attachment.asset_id ? attachment : a,
+    )
+    return { ...m, attachments }
+  }
+  qc.setQueryData<MessagesData>(messagesKey(roomId), (old) =>
+    old ? { ...old, pages: old.pages.map((p) => p.map(swap)) } : old,
   )
 }
 

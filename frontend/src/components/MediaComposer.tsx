@@ -50,8 +50,6 @@ export function MediaComposer({
 }: Props) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
-  // Прогресс сжатия видео (0..100) до заливки; null — фаза сжатия не идёт.
-  const [prepProgress, setPrepProgress] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -62,20 +60,13 @@ export function MediaComposer({
     setUploading(true)
     setProgress(0)
     try {
-      const { asset } = await mediaUpload(
-        file,
-        (f) => setProgress(Math.round(f * 100)),
-        // Фаза сжатия видео: показываем отдельно, чтобы большое видео не висело немым
-        // спиннером до старта заливки.
-        (ev) => setPrepProgress(Math.round(ev.fraction * 100)),
-      )
+      const { asset } = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
       onAttachmentsChange([...attachments, { id: asset.id, kind: asset.kind }])
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
       setUploading(false)
       setProgress(null)
-      setPrepProgress(null)
     }
   }
 
@@ -126,23 +117,10 @@ export function MediaComposer({
 
       {progress !== null && (
         <div className={styles.uploadProgress}>
-          {/* Фаза сжатия видео идёт ДО заливки: пока байты в MinIO ещё не пошли
-              (progress===0) и сжатие активно — показываем его; иначе — прогресс заливки. */}
-          {prepProgress !== null && progress === 0 ? (
-            <>
-              <div className={styles.uploadBar}>
-                <div className={styles.uploadBarFill} style={{ width: `${prepProgress}%` }} />
-              </div>
-              <span className={styles.uploadPct}>Сжатие {prepProgress}%</span>
-            </>
-          ) : (
-            <>
-              <div className={styles.uploadBar}>
-                <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
-              </div>
-              <span className={styles.uploadPct}>{progress}%</span>
-            </>
-          )}
+          <div className={styles.uploadBar}>
+            <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
+          </div>
+          <span className={styles.uploadPct}>{progress}%</span>
         </div>
       )}
 

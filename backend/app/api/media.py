@@ -17,7 +17,7 @@ from app.api.deps import get_current_active_user
 from app.core.config import settings
 from app.core.metrics import log_media_metric, record_step
 from app.core.redis import redis_client
-from app.db.session import get_session
+from app.db.session import after_commit, get_session
 from app.models.media import MediaAsset
 from app.models.user import User
 from app.schemas.media import (
@@ -35,9 +35,11 @@ from app.services.media import (
     generate_image_thumbnail,
     presigned_get_url,
     presigned_put_url,
+    serving_key,
     stat_object,
 )
 from app.services.ratelimit import enforce_rate_limit
+from app.services.transcode_queue import enqueue as enqueue_transcode
 
 router = APIRouter(prefix="/api/media", tags=["media"])
 
@@ -179,6 +181,11 @@ async def confirm_upload(
         width=body.width,
         height=body.height,
         duration=body.duration,
+        # Видео уходит в фоновый транскод (H.264 720p + faststart). Помечаем
+        # 'processing' сразу: attachment-payload вернёт это состояние, клиент покажет
+        # спиннер/постер, а по готовности воркер сменит на 'done' и пришлёт WS-событие.
+        # Оригинал заливается как есть — никакого сжатия в браузере (docs/FILES.md).
+        transcode_status="processing" if intent["kind"] == "video" else None,
         created_by=current_user.id,
     )
     session.add(asset)
@@ -206,6 +213,13 @@ async def confirm_upload(
     if thumb_key is not None:
         asset.thumb_key = thumb_key
         await session.flush()
+
+    # Видео → фоновый транскод. Ставим в очередь ТОЛЬКО после успешного commit (иначе
+    # воркер может забрать джобу до того, как строка появится в БД — «нашёл, а её нет»).
+    # Клиентский постер (thumb_key выше) даёт мгновенное превью, пока вариант готовится.
+    if asset.kind == "video":
+        asset_id = asset.id
+        after_commit(session, lambda: enqueue_transcode(asset_id))
 
     await redis_client.delete(_intent_key(body.storage_key))
 
@@ -241,8 +255,9 @@ async def get_media_url(
     await assert_media_access(session, asset, current_user)
 
     # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн (рендер в <img>/<video>).
+    # Видео с готовым транскодом отдаём вариантом (H.264 720p faststart), иначе оригинал.
     download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
-    url = presigned_get_url(asset.bucket, asset.storage_key, download_name=download_name)
+    url = presigned_get_url(asset.bucket, serving_key(asset), download_name=download_name)
     thumb_url = (
         presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
     )
@@ -254,4 +269,5 @@ async def get_media_url(
         width=asset.width,
         height=asset.height,
         thumb_url=thumb_url,
+        transcode_status=asset.transcode_status,
     )
