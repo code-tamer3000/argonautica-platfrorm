@@ -51,6 +51,15 @@ PRESIGN_GET_EXPIRES = 86_400  # 24 часа
 THUMB_MAX_PX = 1024
 THUMB_PREFIX = "thumbnails/"
 
+# Промежуточный дериват для полноэкранного просмотра: миниатюры (1024px, q80) для
+# лайтбокса мыльные, а оригинал тяжёлый (на проде 90% медиа-трафика — исходники,
+# вплоть до 11 МБ на одну фотографию). 1600px хватает для ретины на телефоне и
+# типичного десктопного окна, качество чуть выше миниатюрного — картинку смотрят
+# во весь экран, а не в ленте.
+PREVIEW_MAX_PX = 1600
+PREVIEW_QUALITY = 82
+PREVIEW_PREFIX = "previews/"
+
 
 def _build_client(endpoint: str) -> BaseClient:
     return boto3.client(
@@ -152,20 +161,32 @@ def build_thumb_key(storage_key: str) -> str:
     return f"{THUMB_PREFIX}{storage_key}.webp"
 
 
-def _encode_webp_thumbnail(raw: bytes) -> bytes:
-    """Ужать байты картинки до квадрата THUMB_MAX_PX и вернуть WebP-байты.
+def build_preview_key(storage_key: str) -> str:
+    """Ключ превью-деривата в том же бакете: `previews/<storage_key>.webp`.
 
-    Общий кодек для превью картинок и постеров видео (тот же формат/размер = одинаковая
-    лёгкость в ленте). Учитывает поворот из EXIF и приводит режим к RGB/RGBA.
+    Отдельный префикс от `thumbnails/` — это разные по назначению объекты (лента vs
+    лайтбокс), и смешивать их нельзя: бэкфиллы/уборка ходят по префиксу.
+    """
+    return f"{PREVIEW_PREFIX}{storage_key}.webp"
+
+
+def _encode_webp_thumbnail(
+    raw: bytes, max_px: int = THUMB_MAX_PX, quality: int = 80
+) -> bytes:
+    """Ужать байты картинки до квадрата `max_px` и вернуть WebP-байты.
+
+    Общий кодек для превью картинок, постеров видео (дефолт — миниатюра для ленты) и
+    для среднего деривата лайтбокса (`PREVIEW_MAX_PX`/`PREVIEW_QUALITY`). Учитывает
+    поворот из EXIF и приводит режим к RGB/RGBA.
     """
     from PIL import Image, ImageOps  # локальный импорт: Pillow нужен только тут
 
     with Image.open(BytesIO(raw)) as src:
         img = ImageOps.exif_transpose(src) or src  # учесть поворот из EXIF
         img = img.convert("RGBA" if img.mode in ("RGBA", "LA", "P") else "RGB")
-        img.thumbnail((THUMB_MAX_PX, THUMB_MAX_PX))
+        img.thumbnail((max_px, max_px))
         buf = BytesIO()
-        img.save(buf, format="WEBP", quality=80, method=4)
+        img.save(buf, format="WEBP", quality=quality, method=4)
     return buf.getvalue()
 
 
@@ -188,6 +209,33 @@ def generate_image_thumbnail(bucket: str, key: str, mime_type: str) -> str | Non
         return thumb_key
     except Exception:
         logger.warning("thumbnail generation failed for %s/%s", bucket, key, exc_info=True)
+        return None
+
+
+def generate_image_preview(bucket: str, key: str, mime_type: str) -> str | None:
+    """Best-effort средний дериват картинки для лайтбокса (WebP ≤PREVIEW_MAX_PX).
+
+    Возвращает ключ превью или None. None — при любой ошибке (как
+    `generate_image_thumbnail`: генерация НЕ должна ронять подтверждение загрузки), а
+    также когда дериват вышел НЕ легче оригинала: у маленькой картинки ресайза не
+    происходит, и WebP может оказаться тяжелее исходника — хранить и отдавать такой
+    объект бессмысленно, пусть клиент берёт оригинал. Тяжёлая (сеть + декодирование),
+    поэтому вызывать через run_in_threadpool.
+    """
+    try:
+        client = _server_client()
+        obj = client.get_object(Bucket=bucket, Key=key)
+        raw = obj["Body"].read()
+        webp = _encode_webp_thumbnail(raw, PREVIEW_MAX_PX, PREVIEW_QUALITY)
+        if len(webp) >= len(raw):
+            return None
+        preview_key = build_preview_key(key)
+        client.put_object(
+            Bucket=bucket, Key=preview_key, Body=webp, ContentType="image/webp"
+        )
+        return preview_key
+    except Exception:
+        logger.warning("preview generation failed for %s/%s", bucket, key, exc_info=True)
         return None
 
 
@@ -447,6 +495,8 @@ def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
 
     Для видео `url` ведёт на транскод-вариант, когда он готов (transcode_status='done'),
     иначе на оригинал; `transcode_status` уходит клиенту, чтобы рисовать processing/failed.
+    У картинок дополнительно `preview_url` (средний дериват для лайтбокса, если он есть);
+    `url` при этом остаётся оригиналом — он нужен для скачивания.
     """
     # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн.
     download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
@@ -454,10 +504,14 @@ def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
     thumb_url = (
         presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
     )
+    preview_url = (
+        presigned_get_url(asset.bucket, asset.preview_key) if asset.preview_key else None
+    )
     return AttachmentOut(
         asset_id=asset.id,
         url=url,
         thumb_url=thumb_url,
+        preview_url=preview_url,
         kind=asset.kind,
         mime_type=asset.mime_type,
         size=asset.size,

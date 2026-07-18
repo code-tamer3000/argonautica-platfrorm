@@ -406,6 +406,88 @@ async def test_image_thumbnail_and_attachment_in_feed(
     assert att["width"] == 1200 and att["height"] == 800
 
 
+async def test_image_preview_in_attachment_payload(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Крупная картинка получает средний дериват для лайтбокса: в payload вложения
+    приходит `preview_url` (и он реально скачивается), а `url` остаётся оригиналом.
+    У ассета без preview_key (видео/файл/легаси) `preview_url` — None.
+    """
+    import os
+    from io import BytesIO
+
+    from PIL import Image
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+
+    # Шум, а не заливка: сжимаемая однотонная картинка весит килобайты, и дериват
+    # оказался бы не легче оригинала (тогда сервер намеренно его не создаёт).
+    buf = BytesIO()
+    Image.frombytes("RGB", (2400, 1600), os.urandom(2400 * 1600 * 3)).save(
+        buf, format="JPEG", quality=95
+    )
+    data = buf.getvalue()
+
+    ticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            json={"content_type": "image/jpeg", "size": len(data), "kind": "image"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            ticket["upload_url"], content=data, headers={"Content-Type": "image/jpeg"}
+        )
+        assert put.status_code == 200, put.text
+
+    asset_id = (
+        await client.post(
+            "/api/media/assets",
+            headers=headers,
+            json={"storage_key": ticket["storage_key"], "width": 2400, "height": 1600},
+        )
+    ).json()["id"]
+
+    # Ассет без деривата — payload должен отдать preview_url = None.
+    plain = await _make_asset(session, owner.id, kind="file")
+
+    await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "фото", "attachment_ids": [asset_id, plain.id]},
+    )
+    feed = (await client.get(f"/api/rooms/{room.id}/messages", headers=headers)).json()
+    by_id = {att["asset_id"]: att for att in feed[0]["attachments"]}
+
+    image_att = by_id[asset_id]
+    assert image_att["preview_url"] is not None
+    assert image_att["url"] != image_att["preview_url"]  # url — по-прежнему оригинал
+    async with httpx.AsyncClient() as real:
+        preview = await real.get(image_att["preview_url"])
+        assert preview.status_code == 200
+        assert preview.headers["content-type"] == "image/webp"
+        # Смысл деривата: он ЛЕГЧЕ оригинала, иначе сервер его не создаёт.
+        assert len(preview.content) < len(data)
+
+    assert by_id[plain.id]["preview_url"] is None
+
+    # KB-вложения резолвятся не через payload сообщения, а через GET /api/media/{id};
+    # без preview_url в этом ответе тот путь молча тянул бы оригинал.
+    single = (await client.get(f"/api/media/{asset_id}", headers=headers)).json()
+    assert single["preview_url"] is not None
+    assert single["url"] != single["preview_url"]
+    single_plain = (await client.get(f"/api/media/{plain.id}", headers=headers)).json()
+    assert single_plain["preview_url"] is None
+
+
 async def test_video_client_poster_becomes_thumb(
     client: AsyncClient,
     make_user: MakeUser,
