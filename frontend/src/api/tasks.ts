@@ -61,6 +61,8 @@ export interface StreamNodeOut {
   approved_by_admin: boolean
   room_id: number | null
   is_mine: boolean
+  ready: boolean // все члены сдали текст своего раунда → можно выбирать фразу
+  pending_member_ids: number[] // кого ждём (своим членам и админу)
   options: StreamOptionOut[]
   my_vote_option_id: number | null
 }
@@ -73,21 +75,23 @@ export interface StreamTextOut {
 
 export interface StreamParticipantOut {
   user_id: number
+  version: number // версию с этим номером участник вправе писать сейчас
   submitted_current: boolean
+  done: boolean
 }
 
+// Глобальных стадий нет: каждый участник и каждый узел двигаются сами, упираясь
+// только в соседей (см. docs/TASKS.md «Поток»).
 export interface StreamOut {
   depth: number
-  stage: number
-  total_stages: number
-  stage_kind: 'text' | 'phrase'
-  stage_round: number | null
-  stage_version: number | null
   finished: boolean
   deadline_at: string | null
   nodes: StreamNodeOut[]
   participants: StreamParticipantOut[]
+  my_version: number
   my_current_text: string | null
+  my_waiting_on: number[] // узлы, чьих фраз я жду (пусто — ход мой)
+  my_active_node_id: number | null // где я сейчас голосую
   pending_user_ids: number[] | null // только админу
 }
 
@@ -486,18 +490,6 @@ export function useForceStreamPhrase(taskId: number) {
     mutationFn: ({ nodeId, text }: { nodeId: number; text: string }) =>
       http.patch<StreamOut>(`/api/tasks/${taskId}/stream/nodes/${nodeId}/phrase`, {
         text,
-      }),
-    onSuccess: () => invalidateStream(qc, taskId),
-  })
-}
-
-// Admin: следующая стадия + дедлайн на неё.
-export function useAdvanceStream(taskId: number) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (deadlineAt: string | null) =>
-      http.post<StreamOut>(`/api/tasks/${taskId}/stream/advance`, {
-        deadline_at: deadlineAt,
       }),
     onSuccess: () => invalidateStream(qc, taskId),
   })

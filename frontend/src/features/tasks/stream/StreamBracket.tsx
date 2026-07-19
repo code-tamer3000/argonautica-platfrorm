@@ -14,7 +14,7 @@ import styles from './stream.module.css'
 export function StreamBracket({
   nodes,
   depth,
-  activeRound,
+  activeNodeId,
   selectedUserId,
   selectedNodeId,
   onSelectUser,
@@ -22,7 +22,7 @@ export function StreamBracket({
 }: {
   nodes: StreamNodeOut[]
   depth: number
-  activeRound: number | null
+  activeNodeId: number | null
   selectedUserId: number | null
   selectedNodeId: number | null
   onSelectUser: (userId: number) => void
@@ -84,7 +84,8 @@ export function StreamBracket({
           if (node.id === selectedNodeId) classes.push(styles.selected)
           if (node.is_mine) classes.push(styles.mine)
           if (node.approved) classes.push(styles.approved)
-          if (activeRound === node.round) classes.push(styles.active)
+          if (node.ready && !node.approved) classes.push(styles.ready)
+          if (activeNodeId === node.id) classes.push(styles.active)
           return (
             <g
               key={node.id}

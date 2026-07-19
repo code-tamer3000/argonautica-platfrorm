@@ -7,8 +7,8 @@ import styles from './stream.module.css'
  * Голосование за общую фразу прямо в комнате подгруппы потока.
  *
  * Комнату завёл сервер при открытии раунда; `stream_node_id` приходит в RoomOut.
- * Пока раунд этого узла не активен (или уже закрыт), показываем только итог —
- * писать варианты и голосовать бэкенд всё равно не даст.
+ * Пока подгруппа не укомплектована (или фраза уже утверждена), показываем только
+ * итог — писать варианты и голосовать бэкенд всё равно не даст.
  */
 export function StreamRoomWidget({
   taskId,
@@ -21,7 +21,7 @@ export function StreamRoomWidget({
   const node = stream?.nodes.find((n) => n.id === nodeId)
   if (!stream || !node) return null
 
-  const active = !stream.finished && stream.stage_round === node.round
+  const active = stream.my_active_node_id === node.id
 
   return (
     <div className={styles.roomWidget}>
@@ -33,7 +33,11 @@ export function StreamRoomWidget({
           {node.phrase ? (
             <blockquote className={styles.phrase}>{node.phrase}</blockquote>
           ) : (
-            <p className={styles.empty}>Раунд этой подгруппы сейчас не идёт.</p>
+            <p className={styles.empty}>
+              {node.ready
+                ? 'Подгруппа ещё не договорилась о фразе.'
+                : 'Ждём, пока все в подгруппе сдадут свой текст.'}
+            </p>
           )}
         </div>
       )}

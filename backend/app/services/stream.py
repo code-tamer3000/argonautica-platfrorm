@@ -1,30 +1,33 @@
 """Бизнес-логика «потока» (task.type='stream'): турнирная сетка слияний.
 
 Механика. Участники разбиваются на пары (task_stream_nodes раунда 1), пары сливаются
-в четвёрки, четвёрки в восьмёрки — и так до единственного корневого узла. Задача идёт
-ЛЕСТНИЦЕЙ стадий, общей для всей задачи (жёсткая синхронизация, дедлайн на стадию —
-в tasks.deadline_at):
+в четвёрки, четвёрки в восьмёрки — и так до единственного корневого узла.
 
-    стадия 0      — все пишут личный текст версии 0
-    стадия 1      — узлы раунда 1 (пары) утверждают общую фразу
-    стадия 2      — все переписывают текст → версия 1
-    стадия 3      — узлы раунда 2 (четвёрки) утверждают фразу
-    …
-    стадия 2*depth   — финальный текст (версия depth)
-    стадия 2*depth+1 — поток завершён
+ПРОДВИЖЕНИЕ ЛОКАЛЬНОЕ, глобальных стадий нет. Подгруппа, закончившая работу, идёт
+дальше сразу и ждёт только своих соседей — не всю когорту. Состояние нигде не
+хранится, оно ВЫВОДИТСЯ из сданных текстов и утверждённых фраз:
 
-Чётная стадия = text, нечётная = phrase. Всего стадий 2*depth+1; значение stage,
-равное 2*depth+1, означает «поток закрыт».
+- узел ГОТОВ выбирать фразу, когда все его члены сдали текст версии `round - 1`;
+- фраза утверждается единогласием членов узла и после этого ФИКСИРУЕТСЯ (на неё уже
+  опираются соседи сверху; передумывать поздно — остаётся продавливание админом);
+- участник может писать версию `k`, когда утверждены все дочерние узлы его узла
+  раунда `k+1` — то есть его собственная подгруппа И соседние в пределах следующей
+  группы. Для последней версии (`k == depth`) условие — утверждена корневая фраза.
+
+Отсюда и «сделали и ждём соседей»: пара голосует, как только оба написали, а
+упирается лишь в соседнюю пару, когда приходит время переписывать текст.
 
 Видимость (анти-IDOR, CLAUDE.md п.1) — здесь она и живёт:
-- личный текст версии k виден автору всегда; остальным — только после закрытия
-  стадии, на которой он писался (stage >= 2k+1), и только тем, с кем автор лежит в
-  одном узле раунда k+1. Финальная версия (k == depth) по закрытии потока видна всем
-  участникам;
-- фраза узла видна его членам; членам родительского узла — после закрытия
-  соответствующей phrase-стадии (это и есть «видна фраза соседней подгруппы»);
-  корневая фраза по её утверждении видна всем участникам;
+- личный текст версии k виден автору всегда; остальным — когда узел раунда k+1, в
+  котором лежат и автор, и смотрящий, набрал тексты ОТ ВСЕХ своих членов (то есть
+  напарник открывается ровно тогда, когда вы оба сдали). Финальная версия
+  (k == depth) открывается всем участникам, когда её сдали все;
+- фраза узла видна его членам и членам родительского узла — с момента утверждения
+  (это и есть «видна фраза соседней подгруппы»); корневая — всем участникам;
 - админ видит всё.
+
+`task_streams.stage` больше не используется (осталась от версии с глобальными
+стадиями; колонку снимем отдельным релизом — expand/contract, CLAUDE.md).
 """
 import logging
 import random
@@ -181,31 +184,66 @@ def node_label(member_count: int, position: int, is_root: bool) -> str:
     return f"{names.get(member_count, 'Группа')} {position + 1}"
 
 
-# --- арифметика лестницы стадий ----------------------------------------------
+# --- выводимое состояние (вместо глобальных стадий) --------------------------
 
 
-def total_stages(depth: int) -> int:
-    """Число рабочих стадий. stage == total_stages означает «поток завершён»."""
-    return 2 * depth + 1
+def node_ready(round_: int, member_ids: list[int], texts: dict[int, set[int]]) -> bool:
+    """Все члены узла сдали текст своего раунда → узел вправе выбирать фразу."""
+    needed = round_ - 1
+    return bool(member_ids) and all(
+        needed in texts.get(uid, set()) for uid in member_ids
+    )
 
 
-def stage_kind(stage: int) -> str:
-    """'text' — все пишут свою версию; 'phrase' — узлы утверждают общую фразу."""
-    return "text" if stage % 2 == 0 else "phrase"
+def current_version(
+    depth: int,
+    my_nodes: dict[int, int],
+    approved: set[int],
+    children: dict[int, list[int]],
+) -> int:
+    """Какую версию текста участник вправе писать сейчас.
+
+    Поднимаемся по своей ветке, пока выполняются предпосылки: чтобы писать версию k,
+    нужны утверждённые фразы всех дочерних узлов своего узла раунда k+1 (своя
+    подгруппа плюс соседние), а для последней версии — утверждённая корневая фраза.
+    Условие монотонно: узел раунда k утверждается не раньше, чем все его члены сдали
+    версию k-1, поэтому «перепрыгнуть» версию нельзя.
+    """
+    version = 0
+    while version < depth:
+        nxt = version + 1
+        if nxt == depth:
+            root = my_nodes.get(depth)
+            ok = root is not None and root in approved
+        else:
+            parent = my_nodes.get(nxt + 1)
+            ok = parent is not None and all(
+                child in approved for child in children.get(parent, [])
+            )
+        if not ok:
+            break
+        version = nxt
+    return version
 
 
-def stage_version(stage: int) -> int:
-    """Номер версии личного текста, который пишется на этой text-стадии."""
-    return stage // 2
-
-
-def stage_round(stage: int) -> int:
-    """Раунд узлов, утверждающих фразу на этой phrase-стадии."""
-    return (stage + 1) // 2
-
-
-def is_finished(stream: TaskStream) -> bool:
-    return stream.stage >= total_stages(stream.depth)
+def waiting_on(
+    depth: int,
+    version: int,
+    my_nodes: dict[int, int],
+    approved: set[int],
+    children: dict[int, list[int]],
+) -> list[int]:
+    """Узлы, чьих фраз участник ждёт, чтобы писать следующую версию."""
+    if version >= depth:
+        return []
+    nxt = version + 1
+    if nxt == depth:
+        root = my_nodes.get(depth)
+        return [] if root is None or root in approved else [root]
+    parent = my_nodes.get(nxt + 1)
+    if parent is None:
+        return []
+    return [c for c in children.get(parent, []) if c not in approved]
 
 
 # --- загрузка и доступ --------------------------------------------------------
@@ -302,44 +340,49 @@ async def assert_node_member(
 
 def text_visible(
     *,
-    stream: TaskStream,
     version: int,
+    depth: int,
     viewer_id: int,
     author_id: int,
     is_admin: bool,
-    shared_round_node: int | None,
+    shared_node_ready: bool,
+    all_finals_in: bool,
 ) -> bool:
     """Виден ли viewer'у текст `author_id` версии `version`.
 
-    `shared_round_node` — общий node_id автора и зрителя на раунде version+1
-    (None, если такого узла нет либо раунда не существует).
+    `shared_node_ready` — автор и смотрящий лежат в одном узле раунда version+1 И
+    этот узел набрал тексты от всех своих членов. Пока хоть кто-то в узле не сдал,
+    черновики закрыты даже от напарника: иначе можно подсмотреть и подстроиться.
     """
     if is_admin or viewer_id == author_id:
         return True
-    # До закрытия своей стадии черновик виден только автору.
-    if stream.stage < 2 * version + 1:
-        return False
-    if version + 1 > stream.depth:
-        return True  # финальная версия — всем участникам по завершении потока
-    return shared_round_node is not None
+    if version >= depth:
+        # Финальная версия: открывается всем участникам, когда её сдали все.
+        return all_finals_in
+    return shared_node_ready
 
 
 def phrase_visible(
     *,
-    stream: TaskStream,
     node: TaskStreamNode,
+    depth: int,
     is_admin: bool,
     in_node: bool,
     in_parent_node: bool,
 ) -> bool:
-    """Видна ли viewer'у утверждённая фраза узла."""
+    """Видна ли viewer'у утверждённая фраза узла.
+
+    Отдельного гейта по времени не нужно: фраза появляется только при утверждении,
+    а членам родительского узла она в этот момент и требуется — именно на её основе
+    они переписывают свой текст.
+    """
     if node.phrase is None:
         return False
     if is_admin or in_node:
         return True
-    if node.round == stream.depth:
+    if node.round == depth:
         return True  # корневая фраза — общая для всех
-    return in_parent_node and stream.stage >= 2 * node.round
+    return in_parent_node
 
 
 # --- утверждение фразы --------------------------------------------------------
@@ -351,11 +394,12 @@ async def recompute_node_approval(
     """Пересчитать утверждение фразы узла по голосам (единогласие).
 
     Фраза утверждена, когда ВСЕ члены узла проголосовали за один и тот же вариант.
-    Идемпотентна и обратима: если кто-то переголосовал и единогласия больше нет —
-    утверждение снимается (но не трогаем фразу, продавленную админом).
+    Утверждение НЕОБРАТИМО: на фразу сразу опираются соседи сверху (она им видна и
+    они по ней переписывают тексты), поэтому переиграть её голосованием нельзя —
+    остаётся только продавливание админом. Функция идемпотентна.
     """
-    if node.approved_by is not None:
-        return  # продавлено админом — голоса больше ничего не решают
+    if node.approved_at is not None:
+        return  # уже утверждено (голосованием или админом) — не пересматриваем
 
     member_ids = await node_member_ids(session, node.id)
     rows = await session.execute(
@@ -372,11 +416,7 @@ async def recompute_node_approval(
             unanimous_option = chosen.pop()
 
     if unanimous_option is None:
-        node.phrase = None
-        node.phrase_option_id = None
-        node.approved_at = None
-        await session.flush()
-        return
+        return  # единогласия ещё нет — просто ждём
 
     option = await session.get(TaskStreamOption, unanimous_option)
     if option is None or option.deleted_at is not None:
@@ -457,76 +497,61 @@ def _room_hook(user_id: int, event: dict[str, object]) -> Callable[[], Awaitable
     return _hook
 
 
-# --- переход стадии -----------------------------------------------------------
+# --- продвижение по сетке -----------------------------------------------------
 
 
-async def unapproved_nodes(
-    session: AsyncSession, task_id: int, round_: int
-) -> list[TaskStreamNode]:
-    """Узлы раунда без утверждённой фразы (блокируют переход стадии)."""
+async def texts_by_user(
+    session: AsyncSession, task_id: int
+) -> dict[int, set[int]]:
+    """{user_id: {сданные версии}} — источник всего выводимого состояния."""
     rows = await session.execute(
-        select(TaskStreamNode).where(
-            TaskStreamNode.task_id == task_id,
-            TaskStreamNode.round == round_,
-            TaskStreamNode.deleted_at.is_(None),
-            TaskStreamNode.phrase.is_(None),
+        select(TaskStreamText.user_id, TaskStreamText.version).where(
+            TaskStreamText.task_id == task_id
         )
     )
-    return list(rows.scalars().all())
+    out: dict[int, set[int]] = {}
+    for user_id, version in rows.all():
+        out.setdefault(user_id, set()).add(version)
+    return out
 
 
-async def pending_text_user_ids(
-    session: AsyncSession, task_id: int, version: int
-) -> list[int]:
-    """Кто ещё не сдал текст этой версии — админу видно, кто тормозит."""
-    everyone = set(await participant_ids(session, task_id))
-    rows = await session.execute(
-        select(TaskStreamText.user_id).where(
-            TaskStreamText.task_id == task_id, TaskStreamText.version == version
-        )
-    )
-    return sorted(everyone - set(rows.scalars().all()))
-
-
-async def advance_stage(
-    session: AsyncSession, task: Task, stream: TaskStream
+async def open_ready_node(
+    session: AsyncSession, task: Task, stream: TaskStream, user_id: int, version: int
 ) -> None:
-    """Закрыть текущую стадию и открыть следующую (только админ, см. api/stream.py).
+    """После сдачи текста: если узел, который его потребляет, собрал тексты от всех
+    членов — завести ему комнату обсуждения.
 
-    Из phrase-стадии нельзя уйти, пока хоть один узел раунда без фразы: иначе
-    следующая стадия окажется без входных данных. Админ разруливает это, продавив
-    фразу (`force_phrase`).
+    Это и есть «пара закончила → идёт дальше сразу»: комната появляется в момент
+    готовности подгруппы, а не по общему переключателю.
     """
-    if is_finished(stream):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Stream already finished")
+    if version >= stream.depth:
+        return  # финальную версию не потребляет ни один узел
+    my_nodes = await user_nodes(session, task.id, user_id)
+    node_id = my_nodes.get(version + 1)
+    if node_id is None:
+        return
+    node = await session.get(TaskStreamNode, node_id)
+    if node is None or node.deleted_at is not None or node.room_id is not None:
+        return
+    members = await node_member_ids(session, node.id)
+    texts = await texts_by_user(session, task.id)
+    if node_ready(node.round, members, texts):
+        await ensure_node_room(session, task, node, stream.depth)
 
-    if stage_kind(stream.stage) == "phrase":
-        blocking = await unapproved_nodes(
-            session, task.id, stage_round(stream.stage)
+
+async def assert_node_open_for_voting(
+    session: AsyncSession, task_id: int, node: TaskStreamNode
+) -> None:
+    """Голосовать и предлагать варианты можно, только когда узел готов и не закрыт."""
+    if node.approved_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Phrase already approved")
+    members = await node_member_ids(session, node.id)
+    texts = await texts_by_user(session, task_id)
+    if not node_ready(node.round, members, texts):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Not everyone in this subgroup has submitted their text yet",
         )
-        if blocking:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                "Nodes without an approved phrase: "
-                + ", ".join(str(n.id) for n in blocking),
-            )
-
-    stream.stage += 1
-    await session.flush()
-
-    if not is_finished(stream) and stage_kind(stream.stage) == "phrase":
-        round_ = stage_round(stream.stage)
-        rows = await session.execute(
-            select(TaskStreamNode)
-            .where(
-                TaskStreamNode.task_id == task.id,
-                TaskStreamNode.round == round_,
-                TaskStreamNode.deleted_at.is_(None),
-            )
-            .order_by(TaskStreamNode.position)
-        )
-        for node in rows.scalars().all():
-            await ensure_node_room(session, task, node, stream.depth)
 
 
 async def build_stream_out(
@@ -534,14 +559,11 @@ async def build_stream_out(
 ) -> StreamOut:
     """Собрать состояние потока глазами `viewer` — одна ручка кормит всю канву.
 
-    Чужие фразы и чужие тексты сюда не попадают: всё, что отдаётся, проходит через
-    text_visible/phrase_visible (анти-IDOR).
+    Всё состояние выводится здесь из сданных текстов и утверждённых фраз; чужие
+    фразы и чужие тексты наружу не попадают (text_visible/phrase_visible, анти-IDOR).
     """
     is_admin = viewer.role == "admin"
-    kind = stage_kind(stream.stage)
-    finished = is_finished(stream)
-    active_round = None if finished or kind != "phrase" else stage_round(stream.stage)
-    active_version = None if finished or kind != "text" else stage_version(stream.stage)
+    depth = stream.depth
 
     node_rows = await session.execute(
         select(TaskStreamNode)
@@ -561,20 +583,48 @@ async def build_stream_out(
     for node_id, user_id in member_rows.all():
         members_by_node.setdefault(node_id, []).append(user_id)
 
-    my_node_ids = {
-        n.id for n in nodes if viewer.id in members_by_node.get(n.id, [])
+    texts = await texts_by_user(session, task.id)
+    approved = {n.id for n in nodes if n.approved_at is not None}
+    children: dict[int, list[int]] = {}
+    for node in nodes:
+        if node.parent_id is not None:
+            children.setdefault(node.parent_id, []).append(node.id)
+
+    my_nodes = {
+        n.round: n.id for n in nodes if viewer.id in members_by_node.get(n.id, [])
     }
+    my_node_ids = set(my_nodes.values())
+    ready_ids = {
+        n.id
+        for n in nodes
+        if node_ready(n.round, members_by_node.get(n.id, []), texts)
+    }
+
+    everyone = await participant_ids(session, task.id)
+    all_finals_in = bool(everyone) and all(
+        depth in texts.get(uid, set()) for uid in everyone
+    )
 
     out_nodes: list[StreamNodeOut] = []
     for node in nodes:
         member_ids = sorted(members_by_node.get(node.id, []))
         is_mine = node.id in my_node_ids
         visible = phrase_visible(
-            stream=stream,
             node=node,
+            depth=depth,
             is_admin=is_admin,
             in_node=is_mine,
             in_parent_node=node.parent_id in my_node_ids,
+        )
+        # «Кого ждём» — деталь внутренней кухни подгруппы, наружу не отдаём.
+        pending = (
+            sorted(
+                uid
+                for uid in member_ids
+                if (node.round - 1) not in texts.get(uid, set())
+            )
+            if (is_mine or is_admin)
+            else []
         )
         out_nodes.append(
             StreamNodeOut(
@@ -584,67 +634,106 @@ async def build_stream_out(
                 side=node.side,
                 parent_id=node.parent_id,
                 member_ids=member_ids,
-                label=node_label(
-                    len(member_ids), node.position, node.round == stream.depth
-                ),
+                label=node_label(len(member_ids), node.position, node.round == depth),
                 phrase=node.phrase if visible else None,
                 approved=node.approved_at is not None,
                 approved_by_admin=node.approved_by is not None,
                 room_id=node.room_id if (is_mine or is_admin) else None,
                 is_mine=is_mine,
+                ready=node.id in ready_ids,
+                pending_member_ids=pending,
                 options=[],
                 my_vote_option_id=None,
             )
         )
 
-    # Варианты и голоса — только для активного раунда (в остальных они не нужны).
-    if active_round is not None:
-        active_ids = [n.id for n in nodes if n.round == active_round]
-        allowed = (
-            active_ids if is_admin else [i for i in active_ids if i in my_node_ids]
-        )
-        if allowed:
-            await _attach_options(session, out_nodes, allowed, viewer.id)
+    my_version = current_version(depth, my_nodes, approved, children)
+    # «Жду соседей» показываем, только когда свою часть человек уже сделал: пока он
+    # не сдал текущую версию, мяч на его стороне и никакие узлы его не блокируют.
+    my_submitted = my_version in texts.get(viewer.id, set())
+    my_waiting = (
+        waiting_on(depth, my_version, my_nodes, approved, children)
+        if my_submitted
+        else []
+    )
+    # Узел, где смотрящий сейчас голосует: следующий по его ветке, уже готовый.
+    my_active_node_id = None
+    if my_version < depth:
+        candidate = my_nodes.get(my_version + 1)
+        if candidate in ready_ids and candidate not in approved:
+            my_active_node_id = candidate
 
-    everyone = await participant_ids(session, task.id)
-    check_version = active_version if active_version is not None else stream.depth
-    submitted_rows = await session.execute(
-        select(TaskStreamText.user_id).where(
+    # Варианты и голоса грузим только туда, где смотрящий вправе их видеть.
+    visible_option_nodes = (
+        [n.id for n in nodes if n.id in ready_ids and n.id not in approved]
+        if is_admin
+        else ([my_active_node_id] if my_active_node_id is not None else [])
+    )
+    if visible_option_nodes:
+        await _attach_options(session, out_nodes, visible_option_nodes, viewer.id)
+
+    my_text = await session.scalar(
+        select(TaskStreamText.body).where(
             TaskStreamText.task_id == task.id,
-            TaskStreamText.version == check_version,
+            TaskStreamText.user_id == viewer.id,
+            TaskStreamText.version == my_version,
         )
     )
-    submitted = set(submitted_rows.scalars().all())
 
-    my_text = None
-    if active_version is not None:
-        my_text = await session.scalar(
-            select(TaskStreamText.body).where(
-                TaskStreamText.task_id == task.id,
-                TaskStreamText.user_id == viewer.id,
-                TaskStreamText.version == active_version,
-            )
+    participants = [
+        StreamParticipantOut(
+            user_id=uid,
+            version=current_version(
+                depth,
+                {
+                    n.round: n.id
+                    for n in nodes
+                    if uid in members_by_node.get(n.id, [])
+                },
+                approved,
+                children,
+            ),
+            submitted_current=_submitted_current(
+                uid, nodes, members_by_node, texts, approved, children, depth
+            ),
+            done=depth in texts.get(uid, set()),
         )
+        for uid in everyone
+    ]
 
     return StreamOut(
-        depth=stream.depth,
-        stage=stream.stage,
-        total_stages=total_stages(stream.depth),
-        stage_kind=kind,
-        stage_round=active_round,
-        stage_version=active_version,
-        finished=finished,
+        depth=depth,
+        finished=all_finals_in,
         deadline_at=task.deadline_at,
         nodes=out_nodes,
-        participants=[
-            StreamParticipantOut(user_id=uid, submitted_current=uid in submitted)
-            for uid in everyone
-        ],
+        participants=participants,
+        my_version=my_version,
         my_current_text=my_text,
+        my_waiting_on=my_waiting,
+        my_active_node_id=my_active_node_id,
         pending_user_ids=(
-            sorted(set(everyone) - submitted) if is_admin else None
+            sorted(p.user_id for p in participants if not p.submitted_current)
+            if is_admin
+            else None
         ),
     )
+
+
+def _submitted_current(
+    user_id: int,
+    nodes: list[TaskStreamNode],
+    members_by_node: dict[int, list[int]],
+    texts: dict[int, set[int]],
+    approved: set[int],
+    children: dict[int, list[int]],
+    depth: int,
+) -> bool:
+    """Сдал ли участник ту версию, которую вправе писать прямо сейчас."""
+    their_nodes = {
+        n.round: n.id for n in nodes if user_id in members_by_node.get(n.id, [])
+    }
+    version = current_version(depth, their_nodes, approved, children)
+    return version in texts.get(user_id, set())
 
 
 async def _attach_options(
