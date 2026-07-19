@@ -27,10 +27,11 @@ class PairInput(BaseModel):
 
 class TaskCreate(BaseModel):
     """Создание задачи. Для individual `assignee_ids` обязателен непустой; для pair
-    `pairs` обязателен непустой, каждый участник — максимум в одной паре (проверяется
-    в эндпоинте, там же валидируется существование юзеров)."""
+    `pairs` обязателен непустой, каждый участник — максимум в одной паре; для stream
+    `participant_ids` — минимум двое (проверяется в эндпоинте, там же валидируется
+    существование юзеров)."""
 
-    type: Literal["common", "individual", "pair"]
+    type: Literal["common", "individual", "pair", "stream"]
     title: str
     body: str | None = None  # markdown
     kb_item_id: int | None = None
@@ -38,6 +39,8 @@ class TaskCreate(BaseModel):
     assignee_ids: list[int] = []
     # Пары для type='pair'. Организатор встречи выбирается сервером случайно.
     pairs: list[PairInput] = []
+    # Участники потока (type='stream'); сетку по ним строит сервер (build_bracket).
+    participant_ids: list[int] = []
     # Медиа условия задачи (создаёт admin). Ассеты должны существовать.
     media_asset_ids: list[int] = []
 
@@ -92,6 +95,115 @@ class PairOut(BaseModel):
     can_manage_meeting: bool  # смотрящий — организатор встречи этой пары
 
 
+class StreamOptionOut(BaseModel):
+    """Вариант-кандидат общей фразы внутри узла + кто за него уже проголосовал."""
+
+    id: int
+    author_id: int
+    text: str
+    voter_ids: list[int] = []
+    created_at: datetime
+
+
+class StreamNodeOut(BaseModel):
+    """Узел сетки глазами смотрящего.
+
+    `phrase` заполнена, только если фраза УЖЕ видна смотрящему (см.
+    services/stream.phrase_visible) — сервер не отдаёт чужие фразы раньше времени.
+    `room_id` — только своим членам. `options`/`my_vote_option_id` наполняются лишь
+    для активного узла смотрящего.
+    """
+
+    id: int
+    round: int
+    position: int
+    side: str | None
+    parent_id: int | None
+    member_ids: list[int]
+    label: str
+    phrase: str | None = None
+    approved: bool = False
+    approved_by_admin: bool = False
+    room_id: int | None = None
+    is_mine: bool = False  # смотрящий состоит в этом узле
+    options: list[StreamOptionOut] = []
+    my_vote_option_id: int | None = None
+
+
+class StreamTextOut(BaseModel):
+    """Одна версия личного текста участника (отдаётся только если видна)."""
+
+    version: int
+    body: str
+    updated_at: datetime
+
+
+class StreamParticipantOut(BaseModel):
+    """Строка участника для сетки: сдал ли текст текущей стадии."""
+
+    user_id: int
+    submitted_current: bool
+
+
+class StreamOut(BaseModel):
+    """Полное состояние потока для канвы — одна ручка кормит всю сетку."""
+
+    depth: int
+    stage: int
+    total_stages: int
+    stage_kind: str  # 'text' | 'phrase'
+    stage_round: int | None  # раунд активных узлов на phrase-стадии
+    stage_version: int | None  # версия текста на text-стадии
+    finished: bool
+    deadline_at: datetime | None
+    nodes: list[StreamNodeOut]
+    participants: list[StreamParticipantOut]
+    # Мой текст текущей text-стадии (чтобы композер открывался заполненным).
+    my_current_text: str | None = None
+    # Только админу: кто ещё не сдал текст текущей стадии.
+    pending_user_ids: list[int] | None = None
+
+
+class StreamTextInput(BaseModel):
+    """Сохранение своей версии текста на текущей text-стадии."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1)
+
+
+class StreamOptionInput(BaseModel):
+    """Предложить вариант общей фразы в своём узле."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class StreamVoteInput(BaseModel):
+    """Отдать/сменить голос за вариант."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    option_id: int
+
+
+class StreamPhraseInput(BaseModel):
+    """Админ продавливает фразу узла (поток не должен зависать)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class StreamAdvanceInput(BaseModel):
+    """Следующая стадия + дедлайн на неё (пишется в tasks.deadline_at)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    deadline_at: datetime | None = None
+
+
 class TaskWithStatusOut(TaskOut):
     """Задача с состоянием для текущего юзера и агрегатами прогресса."""
 
@@ -109,6 +221,8 @@ class TaskWithStatusOut(TaskOut):
     # Только для type='pair': пара(ы) смотрящего. Участник видит одну свою пару;
     # админ — все пары задания. None/[] для обычных задач.
     pairs: list[PairOut] | None = None
+    # Только для type='stream': состояние сетки глазами смотрящего. None иначе.
+    stream: StreamOut | None = None
 
 
 class MeetingUpdate(BaseModel):

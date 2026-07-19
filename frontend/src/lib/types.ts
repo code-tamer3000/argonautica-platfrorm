@@ -61,6 +61,9 @@ export interface RoomOut {
   is_news: boolean
   created_by: number
   peer_id?: number
+  // Комната подгруппы потока: над композером висит голосование за общую фразу.
+  stream_node_id?: number | null
+  stream_task_id?: number | null
 }
 
 export interface MemberOut {
@@ -492,6 +495,9 @@ export type WsEvent =
       message_id: number
       attachment: AttachmentOut
     }
+  // Сервер добавил юзера в новую комнату (комнаты узлов потока) — список комнат
+  // надо перечитать, иначе она появится только после reconnect.
+  | { type: 'room.created'; room_id: number }
   // --- Задачи (приходят по тому же per-user каналу, что и notification.new) ---
   | { type: 'task.created'; task_id: number }
   | { type: 'task.updated'; task_id: number }

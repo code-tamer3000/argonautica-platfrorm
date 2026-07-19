@@ -21,6 +21,7 @@ const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
   pair: 'Парная',
+  stream: 'Поток',
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -39,6 +40,8 @@ interface TaskFormValues {
   assignee_ids: number[]
   // Пары для type='pair': каждая — [userA, userB]. Организатор встречи выбирается сервером.
   pairs: [number, number][]
+  // Участники type='stream': сетку по ним строит сервер (build_bracket).
+  participant_ids: number[]
   media: MediaChip[]
 }
 
@@ -70,6 +73,8 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   const [assignees, setAssignees] = useState<number[]>([])
   // Пары для парного задания. Черновик текущей собираемой пары — [a, b].
   const [pairs, setPairs] = useState<[number, number][]>([])
+  // Участники потока — сетку (пары → четвёрки → …) собирает сервер.
+  const [streamers, setStreamers] = useState<number[]>([])
   const [draftA, setDraftA] = useState<number | ''>('')
   const [draftB, setDraftB] = useState<number | ''>('')
   // При редактировании инициализируем вложения из existing attachments.
@@ -85,6 +90,10 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   // не предлагаем (один человек — максимум в одной паре задания).
   const takenInPairs = new Set(pairs.flat())
   const nameOf = (uid: number) => users.find((u) => u.id === uid)?.display_name ?? `#${uid}`
+
+  function toggleStreamer(id: number) {
+    setStreamers((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
 
   function toggleAssignee(id: number) {
     setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -111,6 +120,7 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
       kb_item_id: kbItemId,
       assignee_ids: assignees,
       pairs,
+      participant_ids: streamers,
       media,
     })
   }
@@ -147,6 +157,15 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
                 onChange={() => setType('pair')}
               />
               Парная (взаимное обучение)
+            </label>
+            <label className={styles.checkLabel}>
+              <input
+                type="radio"
+                name="task-type"
+                checked={type === 'stream'}
+                onChange={() => setType('stream')}
+              />
+              Поток (турнирная сетка)
             </label>
           </div>
         </div>
@@ -214,6 +233,27 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
             ))}
             {participants.length === 0 && <p className={styles.mediaEmpty}>Нет участников</p>}
           </div>
+        </div>
+      )}
+
+      {!editing && type === 'stream' && (
+        <div className={styles.formRow}>
+          <label>Участники потока</label>
+          <div className={styles.mediaList}>
+            {users.map((u) => (
+              <label key={u.id} className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={streamers.includes(u.id)}
+                  onChange={() => toggleStreamer(u.id)}
+                />
+                {u.display_name}
+              </label>
+            ))}
+          </div>
+          <p className={styles.mediaEmpty}>
+            Выбрано: {streamers.length}. Сетку (пары → четвёрки → …) построит сервер.
+          </p>
         </div>
       )}
 
@@ -400,6 +440,10 @@ export function AdminTasks() {
       toast('Добавьте хотя бы одну пару', 'error')
       return
     }
+    if (values.type === 'stream' && values.participant_ids.length < 2) {
+      toast('В потоке должно быть минимум два участника', 'error')
+      return
+    }
     createTask.mutate(
       {
         type: values.type,
@@ -412,6 +456,8 @@ export function AdminTasks() {
           values.type === 'pair'
             ? values.pairs.map(([a, b]) => ({ user_ids: [a, b] as [number, number] }))
             : undefined,
+        participant_ids:
+          values.type === 'stream' ? values.participant_ids : undefined,
         media_asset_ids: values.media.map((m) => m.id),
       },
       {

@@ -25,6 +25,7 @@ import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
 import { Attachment } from '../chat/Attachment'
 import { PairPanel } from './PairPanel'
+import { StreamPanel } from './stream/StreamPanel'
 import { TaskComposer } from './TaskComposer'
 import styles from './tasks.module.css'
 
@@ -32,6 +33,7 @@ const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
   pair: 'Парная',
+  stream: 'Поток',
 }
 
 const TRACK_STATUS_LABEL: Record<string, string> = {
@@ -118,9 +120,15 @@ export function TaskDetail() {
         <PairPanel taskId={id} pairs={task.pairs ?? []} isAdmin={isAdmin} />
       )}
 
+      {/* Поток: турнирная сетка со своей лестницей стадий. Сдача и треки не нужны —
+          работа участника это его версии текста внутри сетки. */}
+      {task.type === 'stream' && task.stream && (
+        <StreamPanel taskId={id} stream={task.stream} isAdmin={isAdmin} />
+      )}
+
       {/* Участник: композер сдачи + свой статус (админ и автор перекрёстной задачи
           сами её не сдают — только проверяют). */}
-      {task.type !== 'pair' && !canReview && (
+      {task.type !== 'pair' && task.type !== 'stream' && !canReview && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Моя работа</h2>
           {myTrack && (
@@ -140,7 +148,7 @@ export function TaskDetail() {
           Для парного задания треков нет (сдачи — в перекрёстных задачах).
           Проверяющему делим на «на проверке» и «принятые», чтобы новые сдачи было
           сразу видно и они не тонули среди уже принятых. */}
-      {task.type !== 'pair' && (
+      {task.type !== 'pair' && task.type !== 'stream' && (
         <TracksSection
           title={task.type === 'common' && !isAdmin ? 'Работы участников' : 'Сдачи'}
           tracks={visibleTracks}

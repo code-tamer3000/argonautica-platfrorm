@@ -215,6 +215,10 @@ export function useRealtime(): void {
           })
           break
         }
+        case 'room.created':
+          // Комнату завёл сервер (узел потока) — подтянуть её в список чатов.
+          qc.invalidateQueries({ queryKey: roomsKey })
+          break
         case 'task.created':
           qc.invalidateQueries({ queryKey: tasksKey })
           if (!isAdminRef.current) notify({ title: 'Задачи', text: 'Новая задача' })
