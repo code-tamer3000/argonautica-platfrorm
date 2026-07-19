@@ -19,6 +19,7 @@ from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker
+from app.models.task import TaskStreamNode
 from app.models.user import User
 from app.schemas.room import AddMemberRequest, CreateRoomRequest, MemberOut, RoomOut
 
@@ -198,12 +199,28 @@ async def list_rooms(
         )
         dm_peer_map = {rid: uid for rid, uid in peer_rows.all()}
 
+    # Комнаты подгрупп потока — тоже батчем: клиент вешает на них виджет голосования.
+    node_rows = await session.execute(
+        select(
+            TaskStreamNode.room_id, TaskStreamNode.id, TaskStreamNode.task_id
+        ).where(
+            TaskStreamNode.room_id.in_(room_ids),
+            TaskStreamNode.deleted_at.is_(None),
+        )
+    )
+    stream_map: dict[int, tuple[int, int]] = {
+        room_id: (node_id, task_id) for room_id, node_id, task_id in node_rows.all()
+    }
+
     out: list[RoomOut] = []
     for room in rooms:
         item = RoomOut.model_validate(room)
         item.unread_count = unread.get(room.id, 0)
         if room.type == "dm":
             item.peer_id = dm_peer_map.get(room.id)
+        node = stream_map.get(room.id)
+        if node is not None:
+            item.stream_node_id, item.stream_task_id = node
         out.append(item)
     return out
 

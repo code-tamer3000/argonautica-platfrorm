@@ -42,6 +42,22 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - **News channel** — a singleton room with `rooms.is_news = true`, created in app lifespan (`ensure_news_channel`). Top-level posts are admin-only; everyone reads.
 - **Repost into news** — admin forwards a message from any room into the news channel. It is a **copy** (text/sticker/attachments) with `messages.forwarded_from_sender_id` set to the original author ("переслано от X" / forwarded from X), so the post lives independently of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
 
+## Stream subgroup rooms
+
+- A `stream`-type task auto-creates one **group** room per bracket node when that round's
+  phrase stage opens (`ensure_node_room` in `services/stream.py`, modelled on
+  `ensure_news_channel`). Name: `Поток «<задача>» · <Пара N|Четвёрка N|…|Финал>`;
+  `created_by` = the task's admin. The link lives on `task_stream_nodes.room_id` — there is
+  no column on `rooms`.
+- Group rooms have **no lazy membership** (`assert_room_access` rejects a group without a
+  `room_members` row), so rows are inserted for every node member at creation. A
+  participant of a 16-person stream ends up in 4 such rooms — one per round.
+- `RoomOut` carries `stream_node_id` / `stream_task_id` (resolved by a batch join in
+  `list_rooms`) so the client can hang the phrase-voting widget on those rooms.
+- Because the server creates them, members are told via the **`room.created`** WS event
+  (fired `after_commit`, per member); without it the room would only appear after a
+  reconnect. See [TASKS.md](TASKS.md) "Поток".
+
 ## Calendar link
 
 Events may be room-scoped (`calendar_events.room_id`); their visibility follows room access. See [CALENDAR.md](CALENDAR.md).

@@ -72,9 +72,57 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
   action): soft-deletes the pair, soft-deletes its cross-tasks (+ clears their deadline events),
   and drops the members' parent assignments.
 
+## Поток (`type='stream'`)
+
+Турнирная сетка слияний. Админ задаёт тему и выбирает участников; сервер строит сетку
+(`build_bracket` в `services/stream.py`), участники пишут личный текст, подгруппа
+согласует одну общую фразу, подгруппы сливаются вдвое — до единственного корневого узла.
+Таблицы: `task_streams`, `task_stream_nodes`, `task_stream_node_members`,
+`task_stream_texts`, `task_stream_options`, `task_stream_votes`
+(см. [DATA_MODEL.md](DATA_MODEL.md)). Эндпоинты — `backend/app/api/stream.py`, префикс
+`/api/tasks/{task_id}/stream` (роутер подключён ДО `tasks_router`).
+
+- **Сетка.** Участники тасуются и режутся по 2; при нечётном числе последняя группа —
+  тройка (13 = 5 пар + тройка). Узлы сливаются тем же способом до корня; `round` 1 —
+  пары, `depth` — корень. `side`/`position` — только раскладка канвы: поддеревья корня
+  дают ровно 8 слева и 8 справа для 16 участников. Членство денормализовано на все
+  раунды (`task_stream_node_members`), поэтому «в каком узле раунда r этот юзер» — один
+  запрос.
+- **Лестница стадий.** Жёсткая синхронизация: `task_streams.stage` общий на всю задачу.
+  Чётная стадия — все пишут свою версию текста, нечётная — узлы раунда `(stage+1)//2`
+  утверждают фразу. Всего `2*depth+1` стадий; `stage == 2*depth+1` — поток закрыт.
+  Дедлайн ТЕКУЩЕЙ стадии живёт в `tasks.deadline_at` (значит, попадает в календарь
+  через существующий `sync_task_calendar_event`).
+- **Переход стадии.** Только админ (`POST .../advance`, туда же дедлайн следующей).
+  Из phrase-стадии нельзя уйти, пока хоть один узел раунда без фразы → 409 (админ
+  разруливает продавливанием). При открытии phrase-стадии для каждого узла раунда
+  создаётся group-комната обсуждения (`ensure_node_room`, см. [ROOMS.md](ROOMS.md)).
+- **Утверждение фразы.** Любой член узла предлагает вариант (`task_stream_options`),
+  каждый голосует за один (`task_stream_votes`, `UNIQUE(node_id, user_id)` — переголосовать
+  = UPDATE). Фраза утверждается при **единогласии** и снимается, если единогласие
+  распалось. Админ вправе продавить фразу (`PATCH .../nodes/{id}/phrase`, пишет
+  `approved_by`) — после этого голоса на узел не влияют.
+- **Видимость (анти-IDOR).** Вся — в `services/stream.py`, ответ собирает
+  `build_stream_out` под конкретного смотрящего:
+  - личный текст версии `k` виден автору всегда; остальным — только после закрытия его
+    стадии (`stage >= 2k+1`) и только тем, кто лежит с автором в одном узле раунда
+    `k+1`. Финальная версия по завершении потока видна всем участникам;
+  - фраза узла видна его членам; членам родительского узла — после закрытия
+    соответствующей phrase-стадии (это и есть «видна фраза соседней подгруппы»);
+    корневая — всем участникам;
+  - `room_id` узла отдаётся только его членам и админу; админ видит всё.
+- **Назначения.** У каждого участника есть `task_assignments` на родительскую задачу —
+  так поток попадает в бейдж/прогресс. Назначение переходит в `accepted`, когда участник
+  сдал ФИНАЛЬНЫЙ текст (`mark_final_submitted`).
+- **Тексты — только текст**, без вложений (в отличие от обычных сдач с MediaComposer).
+- **Фронт.** `features/tasks/stream/`: `geometry.ts` (чистая раскладка, без React, по
+  образцу genkeys/wheel.ts) + `StreamBracket.tsx` (SVG-сетка), `StreamPanel.tsx` (стадия,
+  композер, карточка узла), `StreamVoteBox.tsx` (голосование — переиспользуется виджетом
+  `StreamRoomWidget` в комнате подгруппы), `UserTextsModal.tsx` (клик по участнику).
+
 ## Realtime
 
-WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events.
+WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events. Stream mutations (текст, вариант, голос, продавленная фраза, переход стадии) — тоже `task.updated` на родительскую задачу; отдельных stream-событий нет. Плюс `room.created` на членов узла, когда сервер завёл комнату подгруппы.
 
 ## Frontend note
 

@@ -16,6 +16,7 @@ const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
   pair: 'Парная',
+  stream: 'Поток',
 }
 
 const STATUS_LABEL: Record<Exclude<MyTaskStatus, null>, string> = {

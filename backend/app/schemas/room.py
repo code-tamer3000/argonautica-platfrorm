@@ -30,6 +30,10 @@ class RoomOut(BaseModel):
     is_news: bool = False
     created_by: int = 0
     peer_id: int | None = None  # заполняется только для type='dm'
+    # Комната подгруппы потока: узел сетки и его задача. Клиент вешает на такую
+    # комнату виджет голосования за общую фразу. None у обычных комнат.
+    stream_node_id: int | None = None
+    stream_task_id: int | None = None
 
 
 class AddMemberRequest(BaseModel):

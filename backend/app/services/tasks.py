@@ -15,8 +15,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calendar import CalendarEvent
-from app.models.task import Task, TaskAssignment, TaskPair, TaskPairMember
+from app.models.task import (
+    Task,
+    TaskAssignment,
+    TaskPair,
+    TaskPairMember,
+    TaskStreamNodeMember,
+)
 from app.models.user import User
+from app.services import stream as stream_service
 from app.ws.pubsub import publish_user_event
 
 logger = logging.getLogger(__name__)
@@ -38,7 +45,8 @@ async def assert_task_visible(
     common → видна любому активному участнику; admin → всё. Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
-    - pair → юзер состоит в одной из пар этого задания (task_pair_members).
+    - pair → юзер состоит в одной из пар этого задания (task_pair_members);
+    - stream → юзер входит в сетку потока (task_stream_node_members).
     """
     if task.type == "common":
         return
@@ -47,6 +55,11 @@ async def assert_task_visible(
 
     if task.type == "pair":
         if await _is_pair_task_member(session, task.id, user.id):
+            return
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+
+    if task.type == "stream":
+        if await stream_service.is_stream_member(session, task.id, user.id):
             return
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
 
@@ -297,11 +310,21 @@ async def task_recipients(session: AsyncSession, task: Task) -> list[int]:
 
     common → все юзеры платформы; individual → адресаты + автор (для перекрёстной
     задачи это выдавший участник, у него нет назначения) + админы; pair → оба
-    участника всех пар задания + админы.
+    участника всех пар задания + админы; stream → все участники сетки + админы.
     """
     if task.type == "common":
         rows = await session.execute(select(User.id))
         return list(rows.scalars().all())
+
+    if task.type == "stream":
+        member_rows = await session.execute(
+            select(TaskStreamNodeMember.user_id).where(
+                TaskStreamNodeMember.task_id == task.id
+            )
+        )
+        ids = set(member_rows.scalars().all())
+        ids.update(await _admin_ids(session))
+        return list(ids)
 
     if task.type == "pair":
         member_rows = await session.execute(
@@ -339,7 +362,8 @@ async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]
 
     total (Y) = число общих неудалённых задач + число персональных задач юзера
     (неудалённых): individual (в т.ч. перекрёстные внутри пар) + pair (родительское
-    парное задание — у юзера есть назначение). done (X) = сколько из них зачтено
+    парное задание — у юзера есть назначение) + stream (поток, назначение на каждого
+    участника сетки). done (X) = сколько из них зачтено
     (назначение в статусе 'accepted'). Для общих задача в total считается всегда, а в
     done — только если юзер её сдал и она принята.
     """
@@ -356,7 +380,7 @@ async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]
             .select_from(TaskAssignment)
             .join(Task, Task.id == TaskAssignment.task_id)
             .where(
-                Task.type.in_(("individual", "pair")),
+                Task.type.in_(("individual", "pair", "stream")),
                 Task.deleted_at.is_(None),
                 TaskAssignment.user_id == user.id,
             )
