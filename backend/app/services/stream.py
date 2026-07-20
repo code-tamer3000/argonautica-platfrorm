@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -425,6 +426,7 @@ async def recompute_node_approval(
     node.phrase_option_id = option.id
     node.approved_at = datetime.now(UTC)
     await session.flush()
+    await close_node_room(session, node)
 
 
 async def force_phrase(
@@ -436,6 +438,7 @@ async def force_phrase(
     node.approved_at = datetime.now(UTC)
     node.approved_by = admin_id
     await session.flush()
+    await close_node_room(session, node)
 
 
 # --- комнаты узлов ------------------------------------------------------------
@@ -486,6 +489,35 @@ async def ensure_node_room(
     for uid in member_ids:
         after_commit(session, _room_hook(uid, event))
     return room
+
+
+async def close_node_room(session: AsyncSession, node: TaskStreamNode) -> None:
+    """Закрыть комнату подгруппы: этап пройден, обсуждать больше нечего.
+
+    Снимаем строки `room_members` — у group-комнат нет ленивого доступа, поэтому без
+    членства комната пропадает из списков и отдаёт 403 всем, включая админа
+    (assert_room_access). Саму комнату и её сообщения НЕ трогаем: у rooms нет
+    deleted_at, а на messages висят FK — история остаётся в базе, просто недостижима.
+    `node.room_id` тоже оставляем: по нему ensure_node_room понимает, что комната для
+    узла уже заводилась, и не создаёт её заново. Идемпотентно.
+    """
+    if node.room_id is None:
+        return
+    member_rows = await session.execute(
+        select(RoomMember.user_id).where(RoomMember.room_id == node.room_id)
+    )
+    member_ids = list(member_rows.scalars().all())
+    if not member_ids:
+        return  # уже закрывали — второго события не шлём
+
+    await session.execute(
+        sa_delete(RoomMember).where(RoomMember.room_id == node.room_id)
+    )
+    await session.flush()
+
+    event = ws_schemas.room_closed_event(node.room_id)
+    for uid in member_ids:
+        after_commit(session, _room_hook(uid, event))
 
 
 def _room_hook(user_id: int, event: dict[str, object]) -> Callable[[], Awaitable[None]]:
@@ -638,7 +670,13 @@ async def build_stream_out(
                 phrase=node.phrase if visible else None,
                 approved=node.approved_at is not None,
                 approved_by_admin=node.approved_by is not None,
-                room_id=node.room_id if (is_mine or is_admin) else None,
+                # Комната живёт только до утверждения фразы (close_node_room), после
+                # него ссылку не отдаём — она вела бы в 403.
+                room_id=(
+                    node.room_id
+                    if (is_mine or is_admin) and node.approved_at is None
+                    else None
+                ),
                 is_mine=is_mine,
                 ready=node.id in ready_ids,
                 pending_member_ids=pending,

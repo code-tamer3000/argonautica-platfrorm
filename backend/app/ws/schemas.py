@@ -39,6 +39,9 @@ EVENT_ATTACHMENT_UPDATED = "attachment.updated"
 # Юзера добавили в новую комнату, которую создал сервер (комнаты узлов потока).
 # Клиент инвалидирует список комнат — иначе она появится только после reconnect.
 EVENT_ROOM_CREATED = "room.created"
+# Комната закрыта сервером: подгруппа потока утвердила фразу, этап пройден. Клиент
+# убирает её из списка — доступа к ней у бывших членов больше нет (docs/ROOMS.md).
+EVENT_ROOM_CLOSED = "room.closed"
 
 
 def message_new_event(message: MessageOut) -> dict[str, Any]:
@@ -136,6 +139,10 @@ def task_updated_event(task_id: int) -> dict[str, Any]:
 
 def room_created_event(room_id: int) -> dict[str, Any]:
     return {"type": EVENT_ROOM_CREATED, "room_id": room_id}
+
+
+def room_closed_event(room_id: int) -> dict[str, Any]:
+    return {"type": EVENT_ROOM_CLOSED, "room_id": room_id}
 
 
 def task_submission_new_event(

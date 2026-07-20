@@ -140,6 +140,33 @@
   color: var(--text-muted);
 }
 
+/* Единое текстовое поле потока: здесь пишут абзацы, а не строчку, поэтому крупный
+   кегль, воздух внутри и рост под содержимое (AutoTextarea считает высоту). */
+.field {
+  width: 100%;
+  min-height: 7rem;
+  padding: var(--space-3);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: vertical;
+  overflow: hidden;
+  transition: border-color var(--transition-base);
+}
+
+.field:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.field::placeholder {
+  color: var(--text-ghost);
+}
+
 .composer textarea {
   width: 100%;
   resize: vertical;
@@ -230,26 +257,97 @@
   gap: var(--space-3);
 }
 
-.options li {
-  padding: var(--space-3);
+/* Карточка варианта фразы: автор и счёт голосов сверху, сам текст — крупно. */
+.optionCard {
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--divider);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
+  background: var(--bg-deep);
+  transition: border-color var(--transition-base), background var(--transition-base);
 }
 
-.options li p {
-  margin: 0 0 var(--space-2);
+.optionHead {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.optionAuthor {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.optionCount {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.optionText {
+  margin: 0 0 var(--space-3);
+  font-size: 1.05rem;
+  line-height: 1.55;
   color: var(--text-primary);
+  white-space: pre-wrap;
 }
 
 .chosen {
   border-color: var(--divider-gold-strong) !important;
+  background: var(--bg-surface);
 }
 
 .optionRow {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-3);
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* «Снять» — деструктивно и жмётся редко: не кнопка, чтобы не соседствовать по весу
+   с «Голосовать» и не ловить случайный клик. */
+.linkAction {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkAction:hover:not(:disabled) {
+  color: var(--text-secondary);
+}
+
+.proposeBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--divider);
+}
+
+/* Блок админа отделён рамкой: его действия — не то же самое, что работа подгруппы. */
+.adminBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px dashed var(--divider-gold);
+  border-radius: var(--radius-sm);
+}
+
+.adminBox h5 {
+  margin: 0;
+  font-family: var(--font-t2);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
 }
 
 /* Виджет в комнате подгруппы: над лентой, ограничиваем высоту и скроллим. */
@@ -272,14 +370,56 @@
   gap: var(--space-4);
 }
 
+/* Версия текста — свёрнутая карточка; шеврон рисуем сами, дефолтный маркер снят. */
+.versionCard {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.versionCard summary {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.versionCard summary::-webkit-details-marker {
+  display: none;
+}
+
+.versionCard summary::after {
+  content: '▾';
+  color: var(--text-muted);
+  transition: transform var(--transition-base);
+}
+
+.versionCard[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.versionCard summary:hover {
+  background: var(--bg-deep);
+}
+
 .versionLabel {
-  display: block;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.versionDate {
   font-size: 0.8rem;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .versions p {
-  margin: var(--space-1) 0 0;
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
   white-space: pre-wrap;
+  line-height: 1.6;
   color: var(--text-primary);
 }

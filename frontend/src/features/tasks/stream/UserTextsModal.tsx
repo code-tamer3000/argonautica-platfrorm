@@ -34,12 +34,21 @@ export function UserTextsModal({
         </p>
       ) : (
         <ol className={styles.versions}>
-          {data.map((text) => (
+          {data.map((text, i) => (
             <li key={text.version}>
-              <span className={styles.versionLabel}>
-                {text.version === 0 ? 'Исходный текст' : `Версия ${text.version}`}
-              </span>
-              <p>{text.body}</p>
+              {/* Свёрнутые карточки: версий бывает до depth+1, сплошной простынёй их
+                  не сравнить. Раскрыта последняя — она и интересна. */}
+              <details className={styles.versionCard} open={i === data.length - 1}>
+                <summary>
+                  <span className={styles.versionLabel}>
+                    {text.version === 0 ? 'Исходный текст' : `Версия ${text.version}`}
+                  </span>
+                  <span className={styles.versionDate}>
+                    {new Date(text.updated_at).toLocaleDateString()}
+                  </span>
+                </summary>
+                <p>{text.body}</p>
+              </details>
             </li>
           ))}
         </ol>

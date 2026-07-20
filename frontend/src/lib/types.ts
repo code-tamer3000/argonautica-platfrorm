@@ -498,6 +498,7 @@ export type WsEvent =
   // Сервер добавил юзера в новую комнату (комнаты узлов потока) — список комнат
   // надо перечитать, иначе она появится только после reconnect.
   | { type: 'room.created'; room_id: number }
+  | { type: 'room.closed'; room_id: number }
   // --- Задачи (приходят по тому же per-user каналу, что и notification.new) ---
   | { type: 'task.created'; task_id: number }
   | { type: 'task.updated'; task_id: number }

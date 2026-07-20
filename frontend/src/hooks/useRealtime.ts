@@ -219,6 +219,17 @@ export function useRealtime(): void {
           // Комнату завёл сервер (узел потока) — подтянуть её в список чатов.
           qc.invalidateQueries({ queryKey: roomsKey })
           break
+        case 'room.closed': {
+          // Подгруппа потока утвердила фразу — сервер снял членство. Убираем комнату
+          // из списка сразу: доступа к ней больше нет, запрос отдал бы 403.
+          const closed = qc
+            .getQueryData<RoomOut[]>(roomsKey)
+            ?.find((r) => r.id === e.room_id)
+          patchRooms(qc, (rs) => rs.filter((r) => r.id !== e.room_id))
+          qc.invalidateQueries({ queryKey: roomsKey })
+          if (closed) notify({ title: closed.name ?? 'Чат', text: 'Этап пройден — чат подгруппы закрыт' })
+          break
+        }
         case 'task.created':
           qc.invalidateQueries({ queryKey: tasksKey })
           if (!isAdminRef.current) notify({ title: 'Задачи', text: 'Новая задача' })

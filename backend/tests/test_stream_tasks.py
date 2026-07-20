@@ -541,6 +541,36 @@ async def test_room_appears_when_the_subgroup_is_complete(
     assert sorted(r.user_id for r in rows) == sorted(first["member_ids"])
 
 
+async def test_room_closes_when_the_phrase_is_approved(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Этап пройден — комната подгруппы закрывается: членство снято, доступа нет."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    node = next(n for n in stream["nodes"] if n["round"] == 1)
+    a, b = node["member_ids"]
+
+    await _write(client, headers[a], task_id, "раз")
+    await _write(client, headers[b], task_id, "два")
+    view = await _stream(client, admin_headers, task_id)
+    room_id = next(n for n in view["nodes"] if n["id"] == node["id"])["room_id"]
+    assert room_id is not None
+
+    await _approve(
+        client, task_id, node["id"], headers[a], [headers[a], headers[b]]
+    )
+
+    rows = await session.execute(
+        RoomMember.__table__.select().where(RoomMember.room_id == room_id)
+    )
+    assert list(rows) == []
+    # Бывший член в комнату больше не попадёт, и ссылку на неё сервер не отдаёт.
+    denied = await client.get(f"/api/rooms/{room_id}/messages", headers=headers[a])
+    assert denied.status_code == 403
+    view = await _stream(client, headers[a], task_id)
+    assert next(n for n in view["nodes"] if n["id"] == node["id"])["room_id"] is None
+
+
 async def test_full_run_closes_assignments(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
