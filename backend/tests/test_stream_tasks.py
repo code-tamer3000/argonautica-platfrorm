@@ -1,9 +1,9 @@
 """Тесты задач-потоков (турнирная сетка слияний).
 
 Админ создаёт задание type='stream' со списком участников; сервер строит сетку
-(пары → четвёрки → … → корень). Задача идёт лестницей стадий: чётная — все пишут свою
-версию текста, нечётная — узлы раунда утверждают общую фразу единогласным
-голосованием (либо админ продавливает).
+(пары → четвёрки → … → корень). Глобальных стадий НЕТ: подгруппа, закончившая работу,
+идёт дальше сразу и ждёт только соседей — всё состояние выводится из сданных текстов и
+утверждённых фраз.
 
 Главное, что здесь проверяется, — видимость (анти-IDOR): чужой текст и чужая фраза не
 утекают раньше, чем открываются по правилам, а не-участник не видит поток вовсе.
@@ -49,27 +49,12 @@ async def _stream(client: AsyncClient, headers: dict[str, str], task_id: int) ->
 
 async def _write(
     client: AsyncClient, headers: dict[str, str], task_id: int, body: str
-) -> None:
+) -> dict:
     resp = await client.put(
         f"/api/tasks/{task_id}/stream/texts", headers=headers, json={"body": body}
     )
     assert resp.status_code == 200, resp.text
-
-
-async def _advance(
-    client: AsyncClient, admin_headers: dict[str, str], task_id: int
-) -> dict:
-    resp = await client.post(
-        f"/api/tasks/{task_id}/stream/advance",
-        headers=admin_headers,
-        json={"deadline_at": None},
-    )
-    assert resp.status_code == 200, resp.text
     return resp.json()
-
-
-def _my_node(stream: dict, round_: int) -> dict:
-    return next(n for n in stream["nodes"] if n["round"] == round_ and n["is_mine"])
 
 
 async def _approve(
@@ -97,6 +82,18 @@ async def _approve(
         )
         assert vote.status_code == 200, vote.text
     return option_id
+
+
+async def _setup(
+    client: AsyncClient, make_user: MakeUser, count: int = 4
+) -> tuple[dict[str, str], list[User], dict[int, dict[str, str]], int]:
+    """Админ + участники + созданный поток → (admin_headers, users, headers, task_id)."""
+    admin = await make_user(role="admin")
+    users = [await make_user() for _ in range(count)]
+    admin_headers = await _headers(client, admin)
+    task = await _create_stream(client, admin_headers, [u.id for u in users])
+    headers = {u.id: await _headers(client, u) for u in users}
+    return admin_headers, users, headers, task["id"]
 
 
 # --- построение сетки (чистая функция) ---------------------------------------
@@ -147,22 +144,17 @@ def test_build_bracket_rejects_too_few() -> None:
 async def test_create_stream_builds_grid_and_assignments(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    headers = await _headers(client, admin)
-
-    task = await _create_stream(client, headers, [u.id for u in users])
-    stream = await _stream(client, headers, task["id"])
+    admin_headers, _users, _hdrs, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
 
     assert stream["depth"] == 2
-    assert stream["stage"] == 0
-    assert stream["stage_kind"] == "text"
-    assert stream["total_stages"] == 5
+    assert stream["finished"] is False
     assert len(stream["nodes"]) == 3  # 2 пары + корень
     assert len(stream["participants"]) == 4
+    assert all(p["version"] == 0 for p in stream["participants"])
 
     # Назначение на каждого участника — иначе не работают бейдж и прогресс.
-    resp = await client.get(f"/api/tasks/{task['id']}/assignments", headers=headers)
+    resp = await client.get(f"/api/tasks/{task_id}/assignments", headers=admin_headers)
     assert resp.status_code == 200
     assert len(resp.json()) == 4
 
@@ -181,6 +173,100 @@ async def test_create_stream_requires_two_participants(
     assert resp.status_code == 422
 
 
+# --- локальное продвижение (главное отличие от глобальных стадий) -------------
+
+
+async def test_pair_proceeds_without_waiting_for_the_rest(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Пара, где оба сдали, выбирает фразу СРАЗУ — соседи ещё даже не начинали."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+
+    stream = await _stream(client, admin_headers, task_id)
+    first, second = [n for n in stream["nodes"] if n["round"] == 1]
+
+    for uid in first["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
+
+    view = await _stream(client, headers[first["member_ids"][0]], task_id)
+    assert next(n for n in view["nodes"] if n["id"] == first["id"])["ready"] is True
+    assert view["my_active_node_id"] == first["id"]
+
+    # И действительно голосует, хотя вторая пара не написала ни строчки.
+    await _approve(
+        client,
+        task_id,
+        first["id"],
+        headers[first["member_ids"][0]],
+        [headers[uid] for uid in first["member_ids"]],
+        text="фраза первой пары",
+    )
+
+    view = await _stream(client, admin_headers, task_id)
+    assert next(n for n in view["nodes"] if n["id"] == first["id"])["approved"]
+    assert next(n for n in view["nodes"] if n["id"] == second["id"])["ready"] is False
+
+
+async def test_next_version_waits_only_for_the_neighbour_subgroup(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Переписать текст можно, лишь когда готовы обе пары четвёрки — но не позже."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+
+    stream = await _stream(client, admin_headers, task_id)
+    first, second = [n for n in stream["nodes"] if n["round"] == 1]
+    me = first["member_ids"][0]
+
+    for uid in first["member_ids"] + second["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
+    await _approve(
+        client,
+        task_id,
+        first["id"],
+        headers[first["member_ids"][0]],
+        [headers[uid] for uid in first["member_ids"]],
+        text="фраза 1",
+    )
+
+    # Своя пара договорилась, соседняя — нет: версия ещё 0, ждём именно соседей.
+    view = await _stream(client, headers[me], task_id)
+    assert view["my_version"] == 0
+    assert view["my_waiting_on"] == [second["id"]]
+
+    await _approve(
+        client,
+        task_id,
+        second["id"],
+        headers[second["member_ids"][0]],
+        [headers[uid] for uid in second["member_ids"]],
+        text="фраза 2",
+    )
+
+    view = await _stream(client, headers[me], task_id)
+    assert view["my_version"] == 1
+    assert view["my_waiting_on"] == []
+    # И теперь видна фраза соседней пары — на её основе и переписываем.
+    assert next(n for n in view["nodes"] if n["id"] == second["id"])["phrase"] == "фраза 2"
+
+
+async def test_cannot_vote_before_the_whole_subgroup_submitted(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Один сдал, напарник нет — узел не готов, голосовать рано (409)."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    node = next(n for n in stream["nodes"] if n["round"] == 1)
+    a, _b = node["member_ids"]
+
+    await _write(client, headers[a], task_id, "только я")
+    resp = await client.post(
+        f"/api/tasks/{task_id}/stream/nodes/{node['id']}/options",
+        headers=headers[a],
+        json={"text": "рано"},
+    )
+    assert resp.status_code == 409
+
+
 # --- анти-IDOR ----------------------------------------------------------------
 
 
@@ -188,172 +274,131 @@ async def test_outsider_cannot_see_stream(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     """Не-участник не видит ни задачу, ни сетку."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
+    _admin_headers, _users, _hdrs, task_id = await _setup(client, make_user)
     outsider = await make_user()
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
 
     headers = await _headers(client, outsider)
-    assert (await client.get(f"/api/tasks/{task['id']}", headers=headers)).status_code == 403
+    assert (await client.get(f"/api/tasks/{task_id}", headers=headers)).status_code == 403
     assert (
-        await client.get(f"/api/tasks/{task['id']}/stream", headers=headers)
+        await client.get(f"/api/tasks/{task_id}/stream", headers=headers)
     ).status_code == 403
 
 
 async def test_observer_is_denied(client: AsyncClient, make_user: MakeUser) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
+    _admin_headers, _users, _hdrs, task_id = await _setup(client, make_user)
     observer = await make_user(is_observer=True)
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
 
     headers = await _headers(client, observer)
-    resp = await client.get(f"/api/tasks/{task['id']}/stream", headers=headers)
+    resp = await client.get(f"/api/tasks/{task_id}/stream", headers=headers)
     assert resp.status_code == 403
 
 
-async def test_draft_text_is_private_until_stage_closes(
+async def test_draft_is_private_until_the_whole_pair_submitted(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    """Черновик версии 0 не виден даже напарнику, пока стадия не закрыта."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
+    """Черновик не виден даже напарнику, пока напарник сам не сдал."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    node = next(n for n in stream["nodes"] if n["round"] == 1)
+    author, partner = node["member_ids"]
 
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-
-    author = users[0]
-    stream = await _stream(client, all_headers[author.id], task_id)
-    partner_id = next(
-        uid for uid in _my_node(stream, 1)["member_ids"] if uid != author.id
-    )
+    await _write(client, headers[author], task_id, "мой текст")
 
     resp = await client.get(
-        f"/api/tasks/{task_id}/stream/texts/{author.id}",
-        headers=all_headers[partner_id],
+        f"/api/tasks/{task_id}/stream/texts/{author}", headers=headers[partner]
     )
     assert resp.status_code == 200
-    assert resp.json() == []  # стадия ещё открыта — черновик приватен
+    assert resp.json() == []  # напарник ещё не сдал — подсмотреть нельзя
 
-    # Автор свой текст видит всегда.
     mine = await client.get(
-        f"/api/tasks/{task_id}/stream/texts/{author.id}",
-        headers=all_headers[author.id],
+        f"/api/tasks/{task_id}/stream/texts/{author}", headers=headers[author]
     )
     assert [t["version"] for t in mine.json()] == [0]
 
 
-async def test_partner_sees_text_after_stage_closes_but_stranger_does_not(
+async def test_partner_sees_text_once_both_submitted_but_stranger_does_not(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    """Версия 0 открывается напарнику по паре — и только ему (плюс админу)."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
+    """Оба сдали → текст открылся напарнику. Соседней паре — нет."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    first, second = [n for n in stream["nodes"] if n["round"] == 1]
+    author, partner = first["member_ids"]
+    stranger = second["member_ids"][0]
 
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)  # стадия 1 — фразы пар
-
-    author = users[0]
-    stream = await _stream(client, all_headers[author.id], task_id)
-    my_pair = _my_node(stream, 1)["member_ids"]
-    partner_id = next(uid for uid in my_pair if uid != author.id)
-    stranger_id = next(u.id for u in users if u.id not in my_pair)
+    for uid in first["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
 
     partner_view = await client.get(
-        f"/api/tasks/{task_id}/stream/texts/{author.id}",
-        headers=all_headers[partner_id],
+        f"/api/tasks/{task_id}/stream/texts/{author}", headers=headers[partner]
     )
     assert [t["version"] for t in partner_view.json()] == [0]
 
     stranger_view = await client.get(
-        f"/api/tasks/{task_id}/stream/texts/{author.id}",
-        headers=all_headers[stranger_id],
+        f"/api/tasks/{task_id}/stream/texts/{author}", headers=headers[stranger]
     )
-    assert stranger_view.json() == []  # из соседней пары — ещё нельзя
+    assert stranger_view.json() == []
 
     admin_view = await client.get(
-        f"/api/tasks/{task_id}/stream/texts/{author.id}", headers=admin_headers
+        f"/api/tasks/{task_id}/stream/texts/{author}", headers=admin_headers
     )
     assert [t["version"] for t in admin_view.json()] == [0]
 
 
-async def test_phrase_of_neighbour_pair_hidden_until_stage_closes(
+async def test_neighbour_phrase_hidden_until_approved(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    """Соседняя фраза раскрывается только после закрытия phrase-стадии."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)
-
-    # Обе пары утверждают свои фразы.
+    """Фраза соседней пары не видна, пока та её не утвердила."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
     stream = await _stream(client, admin_headers, task_id)
-    pairs = [n for n in stream["nodes"] if n["round"] == 1]
-    for index, node in enumerate(pairs):
-        members = node["member_ids"]
-        await _approve(
-            client,
-            task_id,
-            node["id"],
-            all_headers[members[0]],
-            [all_headers[uid] for uid in members],
-            text=f"фраза пары {index}",
-        )
+    first, second = [n for n in stream["nodes"] if n["round"] == 1]
+    viewer = first["member_ids"][0]
 
-    viewer = users[0]
-    view = await _stream(client, all_headers[viewer.id], task_id)
-    my_node_id = _my_node(view, 1)["id"]
-    for node in (n for n in view["nodes"] if n["round"] == 1):
-        if node["id"] == my_node_id:
-            assert node["phrase"] is not None  # свою видно сразу
-        else:
-            assert node["phrase"] is None  # соседнюю — ещё нет
+    for uid in first["member_ids"] + second["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
+    await _approve(
+        client,
+        task_id,
+        first["id"],
+        headers[first["member_ids"][0]],
+        [headers[uid] for uid in first["member_ids"]],
+        text="моя фраза",
+    )
 
-    await _advance(client, admin_headers, task_id)  # стадия 2 — переписывание
+    view = await _stream(client, headers[viewer], task_id)
+    assert next(n for n in view["nodes"] if n["id"] == first["id"])["phrase"] == "моя фраза"
+    assert next(n for n in view["nodes"] if n["id"] == second["id"])["phrase"] is None
 
-    view = await _stream(client, all_headers[viewer.id], task_id)
-    assert all(n["phrase"] is not None for n in view["nodes"] if n["round"] == 1)
+    await _approve(
+        client,
+        task_id,
+        second["id"],
+        headers[second["member_ids"][0]],
+        [headers[uid] for uid in second["member_ids"]],
+        text="соседняя фраза",
+    )
+
+    view = await _stream(client, headers[viewer], task_id)
+    assert (
+        next(n for n in view["nodes"] if n["id"] == second["id"])["phrase"]
+        == "соседняя фраза"
+    )
 
 
 async def test_cannot_vote_or_propose_in_someone_elses_node(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    first, second = [n for n in stream["nodes"] if n["round"] == 1]
+    intruder = first["member_ids"][0]
 
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)
-
-    intruder = users[0]
-    view = await _stream(client, all_headers[intruder.id], task_id)
-    other_node = next(
-        n for n in view["nodes"] if n["round"] == 1 and not n["is_mine"]
-    )
+    for uid in second["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
 
     resp = await client.post(
-        f"/api/tasks/{task_id}/stream/nodes/{other_node['id']}/options",
-        headers=all_headers[intruder.id],
+        f"/api/tasks/{task_id}/stream/nodes/{second['id']}/options",
+        headers=headers[intruder],
         json={"text": "влезаю"},
     )
     assert resp.status_code == 403
@@ -365,91 +410,82 @@ async def test_cannot_vote_or_propose_in_someone_elses_node(
 async def test_unanimity_approves_and_disagreement_does_not(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)
-
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
     stream = await _stream(client, admin_headers, task_id)
     node = next(n for n in stream["nodes"] if n["round"] == 1)
     a, b = node["member_ids"]
+    for uid in node["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
 
-    # Два варианта, голоса разошлись → фразы нет.
-    first = await client.post(
+    await client.post(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/options",
-        headers=all_headers[a],
+        headers=headers[a],
         json={"text": "вариант А"},
     )
     second = await client.post(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/options",
-        headers=all_headers[b],
+        headers=headers[b],
         json={"text": "вариант Б"},
     )
-    options = next(
-        n for n in second.json()["nodes"] if n["id"] == node["id"]
-    )["options"]
+    options = next(n for n in second.json()["nodes"] if n["id"] == node["id"])["options"]
     option_a = next(o["id"] for o in options if o["text"] == "вариант А")
     option_b = next(o["id"] for o in options if o["text"] == "вариант Б")
-    assert first.status_code == 201
 
     await client.put(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/vote",
-        headers=all_headers[a],
+        headers=headers[a],
         json={"option_id": option_a},
     )
     resp = await client.put(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/vote",
-        headers=all_headers[b],
+        headers=headers[b],
         json={"option_id": option_b},
     )
-    assert not next(
-        n for n in resp.json()["nodes"] if n["id"] == node["id"]
-    )["approved"]
+    assert not next(n for n in resp.json()["nodes"] if n["id"] == node["id"])["approved"]
 
     # b переголосовал за А → единогласие, фраза утверждена.
     resp = await client.put(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/vote",
-        headers=all_headers[b],
+        headers=headers[b],
         json={"option_id": option_a},
     )
     approved = next(n for n in resp.json()["nodes"] if n["id"] == node["id"])
     assert approved["approved"]
     assert approved["phrase"] == "вариант А"
 
-    # Передумали — утверждение снимается (единогласия больше нет).
+
+async def test_approved_phrase_is_final(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Утверждённую фразу нельзя переиграть голосом: на неё уже опираются соседи."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    node = next(n for n in stream["nodes"] if n["round"] == 1)
+    a, b = node["member_ids"]
+    for uid in node["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
+
+    option_id = await _approve(
+        client, task_id, node["id"], headers[a], [headers[a], headers[b]], text="итог"
+    )
     resp = await client.put(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/vote",
-        headers=all_headers[b],
-        json={"option_id": option_b},
+        headers=headers[b],
+        json={"option_id": option_id},
     )
-    assert not next(
-        n for n in resp.json()["nodes"] if n["id"] == node["id"]
-    )["approved"]
+    assert resp.status_code == 409
 
 
 async def test_admin_can_force_phrase(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    """Продавленная админом фраза утверждает узел и не сбрасывается голосами."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)
-
+    """Продавленная админом фраза разблокирует зависшую подгруппу."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
     stream = await _stream(client, admin_headers, task_id)
     node = next(n for n in stream["nodes"] if n["round"] == 1)
+    for uid in node["member_ids"]:
+        await _write(client, headers[uid], task_id, f"текст {uid}")
+
     resp = await client.patch(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/phrase",
         headers=admin_headers,
@@ -464,161 +500,88 @@ async def test_admin_can_force_phrase(
 async def test_participant_cannot_force_phrase(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
     stream = await _stream(client, admin_headers, task_id)
     node = next(n for n in stream["nodes"] if n["round"] == 1)
-    headers = await _headers(client, users[0])
+
     resp = await client.patch(
         f"/api/tasks/{task_id}/stream/nodes/{node['id']}/phrase",
-        headers=headers,
+        headers=headers[node["member_ids"][0]],
         json={"text": "хочу так"},
     )
     assert resp.status_code == 403
 
 
-# --- стадии -------------------------------------------------------------------
+# --- комнаты и полный прогон --------------------------------------------------
 
 
-async def test_cannot_write_text_during_phrase_stage(
-    client: AsyncClient, make_user: MakeUser
-) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)
-
-    resp = await client.put(
-        f"/api/tasks/{task_id}/stream/texts",
-        headers=all_headers[users[0].id],
-        json={"body": "поздно"},
-    )
-    assert resp.status_code == 409
-
-
-async def test_advance_blocked_while_a_node_has_no_phrase(
-    client: AsyncClient, make_user: MakeUser
-) -> None:
-    """Из phrase-стадии нельзя уйти, пока хоть один узел без фразы."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
-    await _advance(client, admin_headers, task_id)
-
-    resp = await client.post(
-        f"/api/tasks/{task_id}/stream/advance",
-        headers=admin_headers,
-        json={"deadline_at": None},
-    )
-    assert resp.status_code == 409
-
-
-async def test_participant_cannot_advance(
-    client: AsyncClient, make_user: MakeUser
-) -> None:
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-
-    headers = await _headers(client, users[0])
-    resp = await client.post(
-        f"/api/tasks/{task['id']}/stream/advance",
-        headers=headers,
-        json={"deadline_at": None},
-    )
-    assert resp.status_code == 403
-
-
-async def test_phrase_stage_creates_rooms_with_exactly_the_node_members(
+async def test_room_appears_when_the_subgroup_is_complete(
     client: AsyncClient, make_user: MakeUser, session: AsyncSession
 ) -> None:
-    """Открытие phrase-стадии создаёт group-комнату на каждый узел раунда."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
+    """Комната подгруппы заводится в момент её готовности, а не по общему флипу."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    first, second = [n for n in stream["nodes"] if n["round"] == 1]
 
-    all_headers = {u.id: await _headers(client, u) for u in users}
-    for user in users:
-        await _write(client, all_headers[user.id], task_id, f"текст {user.id}")
+    a, b = first["member_ids"]
+    await _write(client, headers[a], task_id, "раз")
+    view = await _stream(client, admin_headers, task_id)
+    assert next(n for n in view["nodes"] if n["id"] == first["id"])["room_id"] is None
 
-    before = await _stream(client, admin_headers, task_id)
-    assert all(n["room_id"] is None for n in before["nodes"])
+    await _write(client, headers[b], task_id, "два")
+    view = await _stream(client, admin_headers, task_id)
+    room_id = next(n for n in view["nodes"] if n["id"] == first["id"])["room_id"]
+    assert room_id is not None
+    # У соседней пары комнаты ещё нет — она не готова.
+    assert next(n for n in view["nodes"] if n["id"] == second["id"])["room_id"] is None
 
-    await _advance(client, admin_headers, task_id)
-
-    after = await _stream(client, admin_headers, task_id)
-    pairs = [n for n in after["nodes"] if n["round"] == 1]
-    assert all(n["room_id"] is not None for n in pairs)
-    # Комната корня появится только на своей стадии.
-    assert next(n for n in after["nodes"] if n["round"] == 2)["room_id"] is None
-
-    for node in pairs:
-        rows = await session.execute(
-            RoomMember.__table__.select().where(
-                RoomMember.room_id == node["room_id"]
-            )
-        )
-        assert sorted(r.user_id for r in rows) == sorted(node["member_ids"])
+    rows = await session.execute(
+        RoomMember.__table__.select().where(RoomMember.room_id == room_id)
+    )
+    assert sorted(r.user_id for r in rows) == sorted(first["member_ids"])
 
 
 async def test_full_run_closes_assignments(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     """Поток целиком: 4 участника, 2 раунда — финальный текст закрывает назначение."""
-    admin = await make_user(role="admin")
-    users = [await make_user() for _ in range(4)]
-    admin_headers = await _headers(client, admin)
-    task = await _create_stream(client, admin_headers, [u.id for u in users])
-    task_id = task["id"]
-    all_headers = {u.id: await _headers(client, u) for u in users}
+    admin_headers, users, headers, task_id = await _setup(client, make_user)
 
-    for version in range(3):  # версии 0, 1 и финальная 2
-        for user in users:
-            await _write(client, all_headers[user.id], task_id, f"v{version} {user.id}")
-        stream = await _advance(client, admin_headers, task_id)
+    for _ in range(10):  # с запасом; выходим по finished
+        stream = await _stream(client, admin_headers, task_id)
         if stream["finished"]:
             break
-        for node in (n for n in stream["nodes"] if n["round"] == stream["stage_round"]):
-            members = node["member_ids"]
-            await _approve(
-                client,
-                task_id,
-                node["id"],
-                all_headers[members[0]],
-                [all_headers[uid] for uid in members],
-                text=f"фраза {node['id']}",
-            )
-        await _advance(client, admin_headers, task_id)
+        for participant in stream["participants"]:
+            if not participant["submitted_current"]:
+                await _write(
+                    client,
+                    headers[participant["user_id"]],
+                    task_id,
+                    f"v{participant['version']} от {participant['user_id']}",
+                )
+        stream = await _stream(client, admin_headers, task_id)
+        for node in stream["nodes"]:
+            if node["ready"] and not node["approved"]:
+                members = node["member_ids"]
+                await _approve(
+                    client,
+                    task_id,
+                    node["id"],
+                    headers[members[0]],
+                    [headers[uid] for uid in members],
+                    text=f"фраза {node['id']}",
+                )
 
     final = await _stream(client, admin_headers, task_id)
     assert final["finished"]
+    assert all(n["approved"] for n in final["nodes"])
 
     resp = await client.get(f"/api/tasks/{task_id}/assignments", headers=admin_headers)
     assert {row["status"] for row in resp.json()} == {"accepted"}
 
     # По завершении финальный текст соседа виден любому участнику потока.
-    other = users[1]
     view = await client.get(
-        f"/api/tasks/{task_id}/stream/texts/{other.id}",
-        headers=all_headers[users[0].id],
+        f"/api/tasks/{task_id}/stream/texts/{users[1].id}",
+        headers=headers[users[0].id],
     )
     assert final["depth"] in [t["version"] for t in view.json()]

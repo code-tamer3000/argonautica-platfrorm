@@ -98,10 +98,16 @@
   stroke: var(--divider-gold-strong);
 }
 
-/* Узлы текущего раунда — там сейчас идёт работа. */
+/* Узел, где смотрящий прямо сейчас голосует. */
 .active rect {
   stroke: var(--accent);
   stroke-width: 2;
+}
+
+/* Подгруппа укомплектована, но фразу ещё не утвердила — «здесь идёт работа». */
+.ready rect {
+  stroke: var(--divider-gold-strong);
+  stroke-dasharray: 4 3;
 }
 
 .approved rect {

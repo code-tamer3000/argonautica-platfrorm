@@ -7,6 +7,10 @@
 в этом потоке), затем — для мутаций внутри узла — `assert_node_member`. Ничего из
 того, что смотрящему ещё не открыто, наружу не отдаётся: сборка ответа целиком идёт
 через services/stream.build_stream_out.
+
+Глобальных стадий нет — подгруппы двигаются сами, поэтому и ручки «следующая стадия»
+нет: что кому доступно, вычисляется из сданных текстов и утверждённых фраз. Дедлайн у
+потока один и правится обычным PATCH /api/tasks/{id}.
 """
 import logging
 from datetime import UTC, datetime
@@ -22,14 +26,12 @@ from app.db.session import get_session
 from app.models.task import (
     Task,
     TaskStream,
-    TaskStreamNode,
     TaskStreamOption,
     TaskStreamText,
     TaskStreamVote,
 )
 from app.models.user import User
 from app.schemas.task import (
-    StreamAdvanceInput,
     StreamOptionInput,
     StreamOut,
     StreamPhraseInput,
@@ -42,7 +44,6 @@ from app.services.tasks import (
     assert_task_visible,
     fan_out_task_event,
     load_task,
-    sync_task_calendar_event,
 )
 from app.ws import schemas as ws_schemas
 
@@ -103,6 +104,12 @@ async def get_user_texts(
     target_nodes = await stream_service.user_nodes(session, task.id, user_id)
     is_admin = current_user.role == "admin"
 
+    texts = await stream_service.texts_by_user(session, task.id)
+    everyone = await stream_service.participant_ids(session, task.id)
+    all_finals_in = bool(everyone) and all(
+        stream.depth in texts.get(uid, set()) for uid in everyone
+    )
+
     rows = await session.execute(
         select(TaskStreamText)
         .where(
@@ -112,16 +119,23 @@ async def get_user_texts(
     )
     out: list[StreamTextOut] = []
     for text in rows.scalars().all():
+        # Общий узел следующего раунда — и он должен быть укомплектован: пока хоть
+        # кто-то из подгруппы не сдал, черновики закрыты даже от напарника.
         shared = viewer_nodes.get(text.version + 1)
+        shared_ready = False
+        if shared is not None and shared == target_nodes.get(text.version + 1):
+            members = await stream_service.node_member_ids(session, shared)
+            shared_ready = stream_service.node_ready(
+                text.version + 1, members, texts
+            )
         visible = stream_service.text_visible(
-            stream=stream,
             version=text.version,
+            depth=stream.depth,
             viewer_id=current_user.id,
             author_id=user_id,
             is_admin=is_admin,
-            shared_round_node=(
-                shared if shared == target_nodes.get(text.version + 1) else None
-            ),
+            shared_node_ready=shared_ready,
+            all_finals_in=all_finals_in,
         )
         if visible:
             out.append(
@@ -147,14 +161,10 @@ async def put_my_text(
     task, stream = await _load_visible(session, task_id, current_user)
     if not await stream_service.is_stream_member(session, task.id, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a stream participant")
-    if stream_service.is_finished(stream):
-        raise HTTPException(status.HTTP_409_CONFLICT, "Stream is finished")
-    if stream_service.stage_kind(stream.stage) != "text":
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Current stage is not a writing stage"
-        )
 
-    version = stream_service.stage_version(stream.stage)
+    # Какую версию юзер вправе писать — решает сервер по состоянию ЕГО ветки сетки.
+    state = await stream_service.build_stream_out(session, task, stream, current_user)
+    version = state.my_version
     existing = await session.scalar(
         select(TaskStreamText).where(
             TaskStreamText.task_id == task.id,
@@ -178,6 +188,11 @@ async def put_my_text(
 
     if version == stream.depth:
         await stream_service.mark_final_submitted(session, task.id, current_user.id)
+    else:
+        # Подгруппа могла только что укомплектоваться — заводим ей комнату.
+        await stream_service.open_ready_node(
+            session, task, stream, current_user.id, version
+        )
 
     await _notify(session, task)
     return await stream_service.build_stream_out(session, task, stream, current_user)
@@ -195,9 +210,7 @@ async def create_option(
     task, stream = await _load_visible(session, task_id, current_user)
     node = await stream_service.load_node(session, task.id, node_id)
     await stream_service.assert_node_member(session, node, current_user)
-    _assert_node_active(stream, node)
-    if node.approved_at is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Phrase already approved")
+    await stream_service.assert_node_open_for_voting(session, task.id, node)
 
     session.add(
         TaskStreamOption(
@@ -255,9 +268,7 @@ async def cast_vote(
     task, stream = await _load_visible(session, task_id, current_user)
     node = await stream_service.load_node(session, task.id, node_id)
     await stream_service.assert_node_member(session, node, current_user)
-    _assert_node_active(stream, node)
-    if node.approved_by is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Phrase was set by an admin")
+    await stream_service.assert_node_open_for_voting(session, task.id, node)
 
     option = await session.get(TaskStreamOption, body.option_id)
     if option is None or option.deleted_at is not None or option.node_id != node.id:
@@ -298,38 +309,3 @@ async def set_phrase(
     await stream_service.force_phrase(session, node, body.text, current_admin.id)
     await _notify(session, task)
     return await stream_service.build_stream_out(session, task, stream, current_admin)
-
-
-@router.post("/advance", response_model=StreamOut)
-async def advance(
-    task_id: int,
-    body: StreamAdvanceInput,
-    current_admin: Annotated[User, Depends(require_admin)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> StreamOut:
-    """Закрыть текущую стадию и открыть следующую + поставить дедлайн на неё.
-
-    Дедлайн пишется в tasks.deadline_at — так он попадает в календарь через уже
-    существующий sync_task_calendar_event.
-    """
-    task, stream = await _load_visible(session, task_id, current_admin)
-    await stream_service.advance_stage(session, task, stream)
-
-    task.deadline_at = body.deadline_at
-    await session.flush()
-    await sync_task_calendar_event(session, task)
-
-    await _notify(session, task)
-    return await stream_service.build_stream_out(session, task, stream, current_admin)
-
-
-def _assert_node_active(stream: TaskStream, node: TaskStreamNode) -> None:
-    """Писать варианты и голосовать можно только в узле ТЕКУЩЕЙ phrase-стадии."""
-    if stream_service.is_finished(stream) or (
-        stream_service.stage_kind(stream.stage) != "phrase"
-    ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "Current stage is not a phrase stage"
-        )
-    if node.round != stream_service.stage_round(stream.stage):
-        raise HTTPException(status.HTTP_409_CONFLICT, "This node is not active now")

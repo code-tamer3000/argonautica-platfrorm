@@ -126,6 +126,10 @@ class StreamNodeOut(BaseModel):
     approved_by_admin: bool = False
     room_id: int | None = None
     is_mine: bool = False  # смотрящий состоит в этом узле
+    # Все члены сдали текст своего раунда → подгруппа может выбирать фразу.
+    ready: bool = False
+    # Кого ещё ждём (только своим членам и админу; чужую кухню не показываем).
+    pending_member_ids: list[int] = []
     options: list[StreamOptionOut] = []
     my_vote_option_id: int | None = None
 
@@ -139,28 +143,34 @@ class StreamTextOut(BaseModel):
 
 
 class StreamParticipantOut(BaseModel):
-    """Строка участника для сетки: сдал ли текст текущей стадии."""
+    """Строка участника: докуда он дошёл по своей ветке сетки."""
 
     user_id: int
-    submitted_current: bool
+    version: int  # версию с этим номером он вправе писать сейчас
+    submitted_current: bool  # и уже сдал её
+    done: bool  # сдал финальную версию
 
 
 class StreamOut(BaseModel):
-    """Полное состояние потока для канвы — одна ручка кормит всю сетку."""
+    """Полное состояние потока для канвы — одна ручка кормит всю сетку.
+
+    Глобальных стадий нет: каждый участник и каждый узел двигаются сами, упираясь
+    только в соседей (см. services/stream.py).
+    """
 
     depth: int
-    stage: int
-    total_stages: int
-    stage_kind: str  # 'text' | 'phrase'
-    stage_round: int | None  # раунд активных узлов на phrase-стадии
-    stage_version: int | None  # версия текста на text-стадии
-    finished: bool
-    deadline_at: datetime | None
+    finished: bool  # все сдали финальную версию
+    deadline_at: datetime | None  # один дедлайн на весь поток (tasks.deadline_at)
     nodes: list[StreamNodeOut]
     participants: list[StreamParticipantOut]
-    # Мой текст текущей text-стадии (чтобы композер открывался заполненным).
+    # Версия, которую смотрящий вправе писать сейчас, и её текущий текст.
+    my_version: int
     my_current_text: str | None = None
-    # Только админу: кто ещё не сдал текст текущей стадии.
+    # Узлы, чьих фраз он ждёт, чтобы двигаться дальше (пусто — можно писать).
+    my_waiting_on: list[int] = []
+    # Узел, где он сейчас голосует за общую фразу (None — голосовать негде).
+    my_active_node_id: int | None = None
+    # Только админу: кто не сдал версию, которую сейчас вправе писать.
     pending_user_ids: list[int] | None = None
 
 
@@ -194,14 +204,6 @@ class StreamPhraseInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str = Field(min_length=1, max_length=1000)
-
-
-class StreamAdvanceInput(BaseModel):
-    """Следующая стадия + дедлайн на неё (пишется в tasks.deadline_at)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    deadline_at: datetime | None = None
 
 
 class TaskWithStatusOut(TaskOut):

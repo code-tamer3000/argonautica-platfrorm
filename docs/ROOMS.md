@@ -44,9 +44,11 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 
 ## Stream subgroup rooms
 
-- A `stream`-type task auto-creates one **group** room per bracket node when that round's
-  phrase stage opens (`ensure_node_room` in `services/stream.py`, modelled on
-  `ensure_news_channel`). Name: `Поток «<задача>» · <Пара N|Четвёрка N|…|Финал>`;
+- A `stream`-type task auto-creates one **group** room per bracket node at the moment
+  that node becomes *ready* — i.e. every member has submitted the text of its round
+  (`open_ready_node` → `ensure_node_room` in `services/stream.py`, modelled on
+  `ensure_news_channel`). There is no global stage flip: a pair that finishes early gets
+  its room immediately, while its neighbours are still writing. Name: `Поток «<задача>» · <Пара N|Четвёрка N|…|Финал>`;
   `created_by` = the task's admin. The link lives on `task_stream_nodes.room_id` — there is
   no column on `rooms`.
 - Group rooms have **no lazy membership** (`assert_room_access` rejects a group without a
