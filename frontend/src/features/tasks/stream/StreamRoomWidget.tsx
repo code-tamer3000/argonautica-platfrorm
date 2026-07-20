@@ -49,8 +49,8 @@ export function StreamRoomWidget({
         <span>
           {node.label} — {status}
         </span>
-        <span className={styles.widgetChevron} data-open={open}>
-          ▾
+        <span className={styles.widgetAction}>
+          {open ? 'Свернуть' : 'Развернуть'}
         </span>
       </button>
 
