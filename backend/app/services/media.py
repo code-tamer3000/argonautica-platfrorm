@@ -380,7 +380,11 @@ async def assert_media_access(
     )
 
     async def _visible_task(task: Task) -> bool:
-        """Видит ли юзер задачу: common → любой; individual → админ/адресат."""
+        """Видит ли юзер задачу: common → любой; иначе админ/адресат.
+
+        У pair и stream назначение заведено на каждого участника, поэтому проверка
+        по task_assignments покрывает и их — отдельной ветки не нужно.
+        """
         if task.type == "common":
             return True
         if user.role == "admin":

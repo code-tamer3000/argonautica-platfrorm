@@ -4,7 +4,7 @@ import type { AttachmentOut } from '../lib/types'
 
 // --- Контракт бэкенда (поля = ответы API) ---
 
-export type TaskType = 'common' | 'individual' | 'pair'
+export type TaskType = 'common' | 'individual' | 'pair' | 'stream'
 export type MyTaskStatus = 'assigned' | 'submitted' | 'returned' | 'accepted' | null
 
 export interface TaskOut {
@@ -35,6 +35,66 @@ export interface PairOut {
   can_manage_meeting: boolean
 }
 
+// --- Поток (турнирная сетка слияний) ---
+
+// Вариант-кандидат общей фразы внутри узла + кто за него уже проголосовал.
+export interface StreamOptionOut {
+  id: number
+  author_id: number
+  text: string
+  voter_ids: number[]
+  created_at: string
+}
+
+// Узел сетки ГЛАЗАМИ СМОТРЯЩЕГО: `phrase` приходит, только если она уже открыта,
+// `room_id` — только своим членам. Клиент ничего не фильтрует, это делает сервер.
+export interface StreamNodeOut {
+  id: number
+  round: number
+  position: number
+  side: 'left' | 'right' | null // null у корня (центр канвы)
+  parent_id: number | null
+  member_ids: number[]
+  label: string
+  phrase: string | null
+  approved: boolean
+  approved_by_admin: boolean
+  room_id: number | null
+  is_mine: boolean
+  ready: boolean // все члены сдали текст своего раунда → можно выбирать фразу
+  pending_member_ids: number[] // кого ждём (своим членам и админу)
+  options: StreamOptionOut[]
+  my_vote_option_id: number | null
+}
+
+export interface StreamTextOut {
+  version: number
+  body: string
+  updated_at: string
+}
+
+export interface StreamParticipantOut {
+  user_id: number
+  version: number // версию с этим номером участник вправе писать сейчас
+  submitted_current: boolean
+  done: boolean
+}
+
+// Глобальных стадий нет: каждый участник и каждый узел двигаются сами, упираясь
+// только в соседей (см. docs/TASKS.md «Поток»).
+export interface StreamOut {
+  depth: number
+  finished: boolean
+  deadline_at: string | null
+  nodes: StreamNodeOut[]
+  participants: StreamParticipantOut[]
+  my_version: number
+  my_current_text: string | null
+  my_waiting_on: number[] // узлы, чьих фраз я жду (пусто — ход мой)
+  my_active_node_id: number | null // где я сейчас голосую
+  pending_user_ids: number[] | null // только админу
+}
+
 export interface TaskWithStatusOut extends TaskOut {
   my_status: MyTaskStatus
   late: boolean
@@ -46,6 +106,8 @@ export interface TaskWithStatusOut extends TaskOut {
   total_recipients: number
   // Только для type='pair': пары смотрящего (участник — свою; админ — все).
   pairs: PairOut[] | null
+  // Только для type='stream': состояние сетки глазами смотрящего.
+  stream: StreamOut | null
 }
 
 export interface ProgressOut {
@@ -136,6 +198,8 @@ export interface TaskCreateBody {
   deadline_at?: string | null
   assignee_ids?: number[]
   pairs?: PairInput[]
+  // Только для type='stream': участники сетки (её строит сервер).
+  participant_ids?: number[]
   media_asset_ids?: number[]
 }
 
@@ -338,6 +402,96 @@ export function useReplacePairMember(taskId: number) {
         new_user_id: newUserId,
       }),
     onSuccess: () => invalidateTask(qc, taskId),
+  })
+}
+
+// --- Поток ---
+
+export const streamKey = (id: number) => ['tasks', id, 'stream'] as const
+export const streamTextsKey = (id: number, userId: number) =>
+  ['tasks', id, 'stream', 'texts', userId] as const
+
+function invalidateStream(qc: ReturnType<typeof useQueryClient>, taskId: number) {
+  invalidateTask(qc, taskId)
+  qc.invalidateQueries({ queryKey: streamKey(taskId) })
+  // Раскрытие стадии меняет и то, какие чужие тексты видны.
+  qc.invalidateQueries({ queryKey: ['tasks', taskId, 'stream', 'texts'] })
+}
+
+// Состояние сетки. Обычно уже приехало внутри useTask(id).stream — этот хук нужен
+// там, где задачу целиком тянуть незачем (виджет голосования в комнате).
+export function useStream(taskId: number, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: streamKey(taskId),
+    queryFn: () => http.get<StreamOut>(`/api/tasks/${taskId}/stream`),
+    enabled: (options?.enabled ?? true) && taskId > 0,
+  })
+}
+
+// Версии текста участника, видимые смотрящему (клик по узлу сетки).
+export function useStreamTexts(taskId: number, userId: number | null) {
+  return useQuery({
+    queryKey: streamTextsKey(taskId, userId ?? 0),
+    queryFn: () =>
+      http.get<StreamTextOut[]>(`/api/tasks/${taskId}/stream/texts/${userId}`),
+    enabled: taskId > 0 && userId != null,
+  })
+}
+
+// Сохранить свою версию текста текущей стадии.
+export function usePutStreamText(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (body: string) =>
+      http.put<StreamOut>(`/api/tasks/${taskId}/stream/texts`, { body }),
+    onSuccess: () => invalidateStream(qc, taskId),
+  })
+}
+
+// Предложить вариант общей фразы в своём узле.
+export function useCreateStreamOption(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ nodeId, text }: { nodeId: number; text: string }) =>
+      http.post<StreamOut>(`/api/tasks/${taskId}/stream/nodes/${nodeId}/options`, {
+        text,
+      }),
+    onSuccess: () => invalidateStream(qc, taskId),
+  })
+}
+
+export function useDeleteStreamOption(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ nodeId, optionId }: { nodeId: number; optionId: number }) =>
+      http.del<null>(
+        `/api/tasks/${taskId}/stream/nodes/${nodeId}/options/${optionId}`,
+      ),
+    onSuccess: () => invalidateStream(qc, taskId),
+  })
+}
+
+// Отдать/сменить голос. Единогласие узла утверждает фразу (решает сервер).
+export function useVoteStreamOption(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ nodeId, optionId }: { nodeId: number; optionId: number }) =>
+      http.put<StreamOut>(`/api/tasks/${taskId}/stream/nodes/${nodeId}/vote`, {
+        option_id: optionId,
+      }),
+    onSuccess: () => invalidateStream(qc, taskId),
+  })
+}
+
+// Admin: продавить фразу узла, чтобы поток не завис на несогласии.
+export function useForceStreamPhrase(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ nodeId, text }: { nodeId: number; text: string }) =>
+      http.patch<StreamOut>(`/api/tasks/${taskId}/stream/nodes/${nodeId}/phrase`, {
+        text,
+      }),
+    onSuccess: () => invalidateStream(qc, taskId),
   })
 }
 

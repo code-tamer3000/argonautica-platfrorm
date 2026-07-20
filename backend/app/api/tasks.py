@@ -30,6 +30,9 @@ from app.models.task import (
     TaskMedia,
     TaskPair,
     TaskPairMember,
+    TaskStream,
+    TaskStreamNode,
+    TaskStreamNodeMember,
     TaskSubmission,
     TaskSubmissionMedia,
 )
@@ -43,6 +46,7 @@ from app.schemas.task import (
     PairOut,
     ProgressOut,
     ReviewRequest,
+    StreamOut,
     SubmissionCreate,
     SubmissionOut,
     TaskCommentCreate,
@@ -54,6 +58,7 @@ from app.schemas.task import (
     TaskUpdate,
     TaskWithStatusOut,
 )
+from app.services import stream as stream_service
 from app.services.media import (
     resolve_submission_attachments,
     resolve_task_attachments,
@@ -125,6 +130,7 @@ async def create_task(
     await _assert_kb_item_exists(session, body.kb_item_id)
 
     pairs_input: list[list[int]] = []
+    stream_user_ids: list[int] = []
     if body.type == "individual":
         assignee_ids = list(dict.fromkeys(body.assignee_ids))
         if not assignee_ids:
@@ -141,6 +147,12 @@ async def create_task(
             # Один человек — максимум в одной паре задания (см. uq_task_pair_member).
             raise HTTPException(422, "A user may appear in only one pair")
         await _assert_users_exist(session, flat)
+        assignee_ids = []
+    elif body.type == "stream":
+        stream_user_ids = list(dict.fromkeys(body.participant_ids))
+        if len(stream_user_ids) < stream_service.MIN_PARTICIPANTS:
+            raise HTTPException(422, "Stream task requires at least two participants")
+        await _assert_users_exist(session, stream_user_ids)
         assignee_ids = []
     else:
         assignee_ids = []
@@ -173,6 +185,39 @@ async def create_task(
                 TaskPairMember(pair_id=pair.id, task_id=task.id, user_id=uid)
             )
             session.add(TaskAssignment(task_id=task.id, user_id=uid))
+
+    # Поток: сетку строит сервер (build_bracket), членство денормализуем на все
+    # раунды, каждому участнику — назначение родительской задачи (бейдж/прогресс).
+    if stream_user_ids:
+        specs = stream_service.build_bracket(stream_user_ids)
+        depth = max(spec.round for spec in specs)
+        node_ids: list[int] = []
+        for spec in specs:
+            node = TaskStreamNode(
+                task_id=task.id,
+                round=spec.round,
+                position=spec.position,
+                side=spec.side,
+                parent_id=None,  # проставим вторым проходом: родитель создаётся позже
+            )
+            session.add(node)
+            await session.flush()
+            node_ids.append(node.id)
+            for uid in spec.member_ids:
+                session.add(
+                    TaskStreamNodeMember(
+                        node_id=node.id, task_id=task.id, user_id=uid
+                    )
+                )
+        for spec, node_id in zip(specs, node_ids, strict=True):
+            if spec.parent_index is not None:
+                child = await session.get(TaskStreamNode, node_id)
+                if child is not None:
+                    child.parent_id = node_ids[spec.parent_index]
+        for uid in stream_user_ids:
+            session.add(TaskAssignment(task_id=task.id, user_id=uid))
+        session.add(TaskStream(task_id=task.id, stage=0, depth=depth))
+        await session.flush()
 
     media_ids = list(dict.fromkeys(body.media_asset_ids))
     if media_ids:
@@ -492,6 +537,20 @@ async def _visible_pairs_for(
         stmt = stmt.where(TaskPair.id.in_(my_pair_ids))
     pairs = list((await session.execute(stmt.order_by(TaskPair.id))).scalars().all())
     return [await _build_pair_out(session, p, viewer) for p in pairs]
+
+
+async def _visible_stream_for(
+    session: AsyncSession, task: Task, viewer: User
+) -> StreamOut | None:
+    """Состояние потока глазами смотрящего. None для задач других типов.
+
+    Едет прямо в ответе задачи (как `pairs`), чтобы экран сетки открывался одним
+    запросом. Фильтрация видимости — внутри build_stream_out.
+    """
+    if task.type != "stream":
+        return None
+    stream = await stream_service.load_stream(session, task.id)
+    return await stream_service.build_stream_out(session, task, stream, viewer)
 
 
 @router.patch("/{task_id}/pairs/{pair_id}", status_code=204)
@@ -926,6 +985,7 @@ async def get_task(
         created_at=task.created_at,
         attachments=task_attachments,
         pairs=await _visible_pairs_for(session, task, current_user),
+        stream=await _visible_stream_for(session, task, current_user),
         my_status=my.status if my else None,
         late=bool(my.late) if my else False,
         deadline_soon=deadline_soon(task, now, settings.task_deadline_soon_days),
@@ -935,7 +995,7 @@ async def get_task(
         unreviewed_count=unreviewed,
         total_recipients=(
             total
-            if task.type in ("individual", "pair")
+            if task.type in ("individual", "pair", "stream")
             else await participant_count(session)
         ),
     )

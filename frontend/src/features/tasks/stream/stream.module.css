@@ -1,0 +1,469 @@
+/* Стили потока. Только семантические токены (docs/FRONTEND.md): палитра светлой темы
+   переопределяется в tokens.css под :root[data-theme='light'], поэтому хардкод hex
+   сломал бы её. SVG красим через классы, а не атрибуты — как в genkeys. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  margin-top: var(--space-6);
+}
+
+/* --- полоса стадии --- */
+
+.stageBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.stageBar h3 {
+  margin: 0;
+  font-family: var(--font-t2);
+  color: var(--text-primary);
+}
+
+.stageMeta {
+  margin: var(--space-1) 0 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.stageActions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* --- канва сетки --- */
+
+/* Сетка широкая: скроллим её саму, страница по горизонтали не едет. */
+.canvasScroll {
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.canvas {
+  display: block;
+  max-width: none;
+}
+
+.links path {
+  fill: none;
+  stroke: var(--divider-gold);
+  stroke-width: 1.5;
+}
+
+.leaf rect,
+.node rect {
+  fill: var(--bg-surface);
+  stroke: var(--divider);
+  stroke-width: 1;
+  transition: stroke var(--transition-base), fill var(--transition-base);
+}
+
+.leaf text,
+.node text {
+  fill: var(--text-secondary);
+  font-size: 12px;
+  font-family: var(--font-body);
+  pointer-events: none;
+}
+
+.leaf,
+.node {
+  cursor: pointer;
+}
+
+.leaf:focus-visible rect,
+.node:focus-visible rect {
+  stroke: var(--accent-bright);
+  stroke-width: 2;
+}
+
+.leaf:hover rect,
+.node:hover rect {
+  stroke: var(--accent);
+}
+
+/* Узел, где состоит смотрящий. */
+.mine rect {
+  stroke: var(--divider-gold-strong);
+}
+
+/* Узел, где смотрящий прямо сейчас голосует. */
+.active rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+/* Подгруппа укомплектована, но фразу ещё не утвердила — «здесь идёт работа». */
+.ready rect {
+  stroke: var(--divider-gold-strong);
+  stroke-dasharray: 4 3;
+}
+
+.approved rect {
+  fill: var(--bg-sea-soft);
+}
+
+.approved text {
+  fill: var(--text-primary);
+}
+
+.selected rect {
+  stroke: var(--accent-bright);
+  stroke-width: 2;
+}
+
+.muted {
+  fill: var(--text-ghost) !important;
+}
+
+/* --- композер текста --- */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.composer label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Единое текстовое поле потока: здесь пишут абзацы, а не строчку, поэтому крупный
+   кегль, воздух внутри и рост под содержимое (AutoTextarea считает высоту). */
+.field {
+  width: 100%;
+  min-height: 7rem;
+  padding: var(--space-3);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: vertical;
+  overflow: hidden;
+  transition: border-color var(--transition-base);
+}
+
+.field:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.field::placeholder {
+  color: var(--text-ghost);
+}
+
+.composer textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.composerRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.composerRow input {
+  flex: 1 1 240px;
+}
+
+.ok {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* --- карточка узла и голосование --- */
+
+.nodeCard,
+.voteBox {
+  padding: var(--space-4);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.nodeCard h4,
+.voteBox h4 {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-t2);
+  color: var(--text-primary);
+}
+
+.members {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.phrase {
+  margin: 0;
+  padding: var(--space-3);
+  border-left: 2px solid var(--accent);
+  background: var(--bg-deep);
+  color: var(--text-primary);
+}
+
+.badge {
+  margin-left: var(--space-2);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.empty {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* И <Link>, и <button> (переход в комнату идёт через pendingOpen, а не по URL). */
+.roomLink {
+  display: inline-block;
+  margin-top: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roomLink:hover {
+  color: var(--accent-bright);
+}
+
+.forceRow {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.forceRow input {
+  flex: 1 1 220px;
+}
+
+.options {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* Карточка варианта фразы: автор и счёт голосов сверху, сам текст — крупно. */
+.optionCard {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  background: var(--bg-deep);
+  transition: border-color var(--transition-base), background var(--transition-base);
+}
+
+.optionHead {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.optionAuthor {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.optionCount {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.optionText {
+  margin: 0 0 var(--space-3);
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.chosen {
+  border-color: var(--divider-gold-strong) !important;
+  background: var(--bg-surface);
+}
+
+.optionRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* «Снять» — деструктивно и жмётся редко: не кнопка, чтобы не соседствовать по весу
+   с «Голосовать» и не ловить случайный клик. */
+.linkAction {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.linkAction:hover:not(:disabled) {
+  color: var(--text-secondary);
+}
+
+.proposeBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--divider);
+}
+
+/* Блок админа отделён рамкой: его действия — не то же самое, что работа подгруппы. */
+.adminBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px dashed var(--divider-gold);
+  border-radius: var(--radius-sm);
+}
+
+.adminBox h5 {
+  margin: 0;
+  font-family: var(--font-t2);
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+/* Виджет в комнате подгруппы: над лентой. Свёрнутый — одна полоска-заголовок,
+   развёрнутый ограничен по высоте и скроллится сам, чтобы не съесть ленту. */
+.roomWidget {
+  border-bottom: 1px solid var(--divider-gold);
+  background: var(--bg);
+}
+
+.widgetToggle {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.widgetToggle:hover {
+  color: var(--text-primary);
+}
+
+.widgetChevron {
+  color: var(--text-muted);
+  transition: transform var(--transition-base);
+}
+
+.widgetChevron[data-open='true'] {
+  transform: rotate(180deg);
+}
+
+.widgetBody {
+  max-height: 45vh;
+  overflow-y: auto;
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+/* --- версии текста участника --- */
+
+.versions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Версия текста — свёрнутая карточка; шеврон рисуем сами, дефолтный маркер снят. */
+.versionCard {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.versionCard summary {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+}
+
+.versionCard summary::-webkit-details-marker {
+  display: none;
+}
+
+.versionCard summary::after {
+  content: '▾';
+  color: var(--text-muted);
+  transition: transform var(--transition-base);
+}
+
+.versionCard[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.versionCard summary:hover {
+  background: var(--bg-deep);
+}
+
+.versionLabel {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.versionDate {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.versions p {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  white-space: pre-wrap;
+  line-height: 1.6;
+  color: var(--text-primary);
+}

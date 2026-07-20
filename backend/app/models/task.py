@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Text,
     UniqueConstraint,
     func,
@@ -26,18 +27,22 @@ from app.db.base import Base
 
 
 class Task(Base):
-    """Задача автора. `type` различает общую/индивидуальную/парную (поведение — в коде).
+    """Задача автора. `type` различает общую/индивидуальную/парную/поток (поведение — в коде).
 
     `pair` — родительское парное задание (взаимное обучение): админ распределяет
     участников по парам (task_pairs); у каждого участника пары — своё назначение,
     закрывающееся, когда обе перекрёстные задачи пары приняты. Перекрёстная задача —
     обычная `individual` с `created_by`=участник и `pair_id`, указывающим на пару.
+
+    `stream` — «поток»: турнирная сетка слияний (task_streams / task_stream_nodes).
+    Участники пишут личный текст, подгруппа утверждает общую фразу, подгруппы
+    сливаются вдвое — и так до корня. См. services/stream.py и docs/TASKS.md.
     """
 
     __tablename__ = "tasks"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('common', 'individual', 'pair')", name="task_type_valid"
+            "type IN ('common', 'individual', 'pair', 'stream')", name="task_type_valid"
         ),
     )
 
@@ -110,6 +115,169 @@ class TaskPairMember(Base):
     )
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+
+class TaskStream(Base):
+    """Конфиг потока (task.type='stream'), 1:1 с задачей.
+
+    `stage` — позиция в лестнице стадий: чётная = все пишут свой текст, нечётная =
+    подгруппы раунда `(stage+1)//2` утверждают общую фразу. Всего стадий `2*depth+1`.
+    Дедлайн ТЕКУЩЕЙ стадии живёт в `tasks.deadline_at` (переиспользуем календарь).
+    """
+
+    __tablename__ = "task_streams"
+    __table_args__ = (UniqueConstraint("task_id", name="uq_task_stream_task"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), nullable=False
+    )
+    stage: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Число раундов слияния: 16 участников → 4 (пары, четвёрки, восьмёрки, корень).
+    depth: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaskStreamNode(Base):
+    """Узел турнирной сетки: подгруппа, утверждающая одну общую фразу.
+
+    Дерево через `parent_id` (NULL у корня). `side`/`position` — чисто раскладка канвы
+    (8 слева, 8 справа, сходятся к центру). `room_id` — group-комната обсуждения,
+    создаётся лениво при открытии раунда. Фраза утверждена, когда все члены узла
+    проголосовали за один вариант (`approved_by` NULL) либо её продавил админ.
+    """
+
+    __tablename__ = "task_stream_nodes"
+    __table_args__ = (
+        CheckConstraint("side IN ('left', 'right')", name="task_stream_node_side_valid"),
+        Index("ix_task_stream_nodes_task", "task_id"),
+        Index("ix_task_stream_nodes_room", "room_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), nullable=False
+    )
+    # 1 = пары, 2 = четвёрки, … depth = корень.
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("task_stream_nodes.id")
+    )
+    side: Mapped[str | None] = mapped_column(Text)  # NULL у корня
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    room_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("rooms.id"))
+    phrase: Mapped[str | None] = mapped_column(Text)
+    phrase_option_id: Mapped[int | None] = mapped_column(BigInteger)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # NULL = утверждено единогласным голосованием; иначе id админа, продавившего фразу.
+    approved_by: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaskStreamNodeMember(Base):
+    """Членство в узле. Денормализовано на ВСЕ раунды (участник лежит в узле каждого
+    раунда), чтобы «кто в узле» и «в каком узле раунда r этот юзер» были одним запросом —
+    от этого зависит вся проверка видимости (anti-IDOR).
+    """
+
+    __tablename__ = "task_stream_node_members"
+    __table_args__ = (
+        UniqueConstraint("node_id", "user_id", name="uq_task_stream_node_member"),
+        Index("ix_task_stream_node_members_user", "task_id", "user_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    node_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("task_stream_nodes.id"), nullable=False
+    )
+    # Денормализованный task_id — для выборки «все узлы юзера в этом потоке».
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+
+
+class TaskStreamText(Base):
+    """Версия личного текста участника. `version` 0 — исходный, дальше по одной на
+    каждый раунд слияния (последняя = финальный текст). Правится до закрытия стадии,
+    поэтому UPDATE строки, а не история (в отличие от task_submissions).
+    """
+
+    __tablename__ = "task_stream_texts"
+    __table_args__ = (
+        UniqueConstraint("task_id", "user_id", "version", name="uq_task_stream_text"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class TaskStreamOption(Base):
+    """Вариант-кандидат общей фразы, предложенный членом узла. Мягкое удаление."""
+
+    __tablename__ = "task_stream_options"
+    __table_args__ = (Index("ix_task_stream_options_node", "node_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    node_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("task_stream_nodes.id"), nullable=False
+    )
+    author_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TaskStreamVote(Base):
+    """Голос за вариант. UNIQUE(node_id, user_id) — один голос на человека в узле;
+    переголосовать = UPDATE строки. Фраза утверждается при единогласии.
+    """
+
+    __tablename__ = "task_stream_votes"
+    __table_args__ = (
+        UniqueConstraint("node_id", "user_id", name="uq_task_stream_vote"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    node_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("task_stream_nodes.id"), nullable=False
+    )
+    option_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("task_stream_options.id"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
 

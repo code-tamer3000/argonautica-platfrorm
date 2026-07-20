@@ -17,6 +17,7 @@ import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
 import { useMessageMenu } from './useMessageMenu'
 import { PinsBar } from './PinsBar'
+import { StreamRoomWidget } from '../tasks/stream/StreamRoomWidget'
 import { PinsDrawer } from './PinsDrawer'
 import { TypingIndicator } from './TypingIndicator'
 import { UserProfileModal } from './UserProfileModal'
@@ -249,6 +250,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} onNavigate={navigateToMessage} />
       )}
       {room.is_personal && showCalendar && <ChannelCalendar roomId={roomId} />}
+      {/* Комната подгруппы потока — голосование за общую фразу над лентой. */}
+      {room.stream_node_id != null && room.stream_task_id != null && (
+        <StreamRoomWidget taskId={room.stream_task_id} nodeId={room.stream_node_id} />
+      )}
       <MessageList
         key={roomId}
         ref={messageListRef}

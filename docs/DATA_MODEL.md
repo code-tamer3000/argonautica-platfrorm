@@ -381,6 +381,65 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 
 **UNIQUE:** (`task_id`, `user_id`) — one user in at most one pair per pair-task.
 
+**task_streams** — config of a `stream`-type task (turnir bracket), 1:1 with the task. See [TASKS.md](TASKS.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| task_id | BIGINT | FK tasks, NOT NULL, UNIQUE | `uq_task_stream_task` |
+| stage | INT | NOT NULL, default 0 | **deprecated** — leftover from the global-stage design; no longer read or written (dropped in a later release, expand/contract) |
+| depth | INT | NOT NULL | number of merge rounds (16 participants → 4) |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| deleted_at | TIMESTAMPTZ | NULL | soft delete |
+
+> A stream has a single deadline, the ordinary `tasks.deadline_at` (so it lands on the calendar for free). Progression itself is derived, not stored — see [TASKS.md](TASKS.md) "Поток".
+
+**task_stream_nodes** — a subgroup in the bracket (the thing that agrees one phrase). Soft delete.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| task_id | BIGINT | FK tasks, NOT NULL | index (`task_id`) |
+| round | INT | NOT NULL | 1 = pairs, … `depth` = root |
+| parent_id | BIGINT | FK task_stream_nodes, NULL | NULL at the root |
+| side | TEXT | CHECK IN ('left','right'), NULL | canvas layout only; NULL at the root (centre) |
+| position | INT | NOT NULL | order within the round |
+| room_id | BIGINT | FK rooms, NULL | discussion group room; created when the node becomes ready (all members submitted); index (`room_id`) |
+| phrase | TEXT | NULL | approved phrase; NULL = not agreed yet |
+| phrase_option_id | BIGINT | NULL | winning option (NULL when an admin forced the phrase) |
+| approved_at | TIMESTAMPTZ | NULL | |
+| approved_by | BIGINT | FK users, NULL | NULL = unanimous vote; otherwise the admin who forced it |
+| created_at / deleted_at | TIMESTAMPTZ | | |
+
+**task_stream_node_members** — membership, denormalized across **all** rounds (a participant has one row per round), so "who is in this node" and "which node of round r is this user in" are single queries — the whole visibility check depends on it.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| node_id | BIGINT | FK task_stream_nodes, NOT NULL | |
+| task_id | BIGINT | FK tasks, NOT NULL | denormalized; index (`task_id`, `user_id`) |
+| user_id | BIGINT | FK users, NOT NULL | |
+
+**UNIQUE:** (`node_id`, `user_id`).
+
+**task_stream_texts** — a participant's personal text, one row per version (0 = initial, `depth` = final). Editable while its stage is open, hence UPDATE rather than a submission history.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| task_id / user_id | BIGINT | FK, NOT NULL | |
+| version | INT | NOT NULL | 0..depth |
+| body | TEXT | NOT NULL | plain text (no attachments) |
+| created_at / updated_at | TIMESTAMPTZ | NOT NULL | |
+
+**UNIQUE:** (`task_id`, `user_id`, `version`) — `uq_task_stream_text`.
+
+**task_stream_options** — candidate phrases proposed inside a node. Soft delete. Fields: `id`, `node_id` (FK, index), `author_id` (FK users), `text`, `created_at`, `deleted_at`.
+
+**task_stream_votes** — one vote per person per node; re-voting is an UPDATE. Fields: `id`, `node_id` (FK), `option_id` (FK task_stream_options), `user_id` (FK users), `created_at`.
+
+**UNIQUE:** (`node_id`, `user_id`) — `uq_task_stream_vote`. A phrase is approved on **unanimity** and is then final (`recompute_node_approval` is a no-op once `approved_at` is set) — neighbours upstream already rely on it.
+
 **task_assignments**
 
 | Field | Type | Constraints | Notes |
@@ -460,6 +519,12 @@ task_assignments --< task_submissions --< task_submission_media >-- media_assets
 task_submissions --< task_comments >-- users
 tasks --< task_pairs (pair-type) --< task_pair_members >-- users
 tasks --> task_pairs                   (pair_id nullable; cross-task → its pair)
+tasks --> task_streams (stream-type, 1:1)
+tasks --< task_stream_nodes --< task_stream_node_members >-- users
+task_stream_nodes --> task_stream_nodes (parent_id; the bracket tree)
+task_stream_nodes --> rooms            (room_id nullable; subgroup discussion room)
+task_stream_nodes --< task_stream_options --< task_stream_votes >-- users
+tasks --< task_stream_texts >-- users  (one row per participant per version)
 tasks --> kb_items                     (kb_item_id nullable)
 media_assets                           (shared: messages, KB, tasks, avatars, stickers)
 ```

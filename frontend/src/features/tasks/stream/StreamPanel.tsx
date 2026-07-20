@@ -1,0 +1,347 @@
+import { useState } from 'react'
+import {
+  useForceStreamPhrase,
+  usePutStreamText,
+  type StreamNodeOut,
+  type StreamOut,
+} from '../../../api/tasks'
+import { useUsersMap } from '../../../api/users'
+import { useAuth } from '../../auth/AuthContext'
+import { useOpenRoom } from '../../app/useOpenRoom'
+import { Button } from '../../../components/Button'
+import { toast } from '../../../stores/toast'
+import { AutoTextarea } from './AutoTextarea'
+import { StreamBracket } from './StreamBracket'
+import { StreamVoteBox } from './StreamVoteBox'
+import { UserTextsModal } from './UserTextsModal'
+import styles from './stream.module.css'
+
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : 'Ошибка'
+}
+
+/**
+ * Экран задачи-потока: статус участника, турнирная сетка, композер личного текста и
+ * блок голосования за общую фразу. Админу — продавливание зависшей фразы.
+ *
+ * Глобальных стадий нет: что можно делать сейчас, сервер сообщает полями
+ * my_version / my_active_node_id / my_waiting_on. Данные приезжают уже
+ * отфильтрованными по видимости, поэтому здесь ничего не прячем «на всякий случай».
+ */
+export function StreamPanel({
+  taskId,
+  stream,
+  isAdmin,
+}: {
+  taskId: number
+  stream: StreamOut
+  isAdmin: boolean
+}) {
+  const { user } = useAuth()
+  const [openUserId, setOpenUserId] = useState<number | null>(null)
+  const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null)
+
+  // Админ обычно поток только ведёт, а не пишет в нём: участники — те, кого он выбрал
+  // при создании. Без этой проверки ему рисовался композер, хотя put_my_text отдаёт
+  // 403 (is_stream_member). Заодно закрывает случай «участника сняли из потока».
+  const isParticipant = stream.participants.some((p) => p.user_id === user?.id)
+
+  const myActiveNode = stream.nodes.find((n) => n.id === stream.my_active_node_id)
+  const selectedNode =
+    stream.nodes.find((n) => n.id === selectedNodeId) ?? myActiveNode ?? null
+
+  return (
+    <section className={styles.panel}>
+      <StatusBar stream={stream} isAdmin={isAdmin} isParticipant={isParticipant} />
+
+      <StreamBracket
+        nodes={stream.nodes}
+        depth={stream.depth}
+        activeNodeId={stream.my_active_node_id}
+        selectedUserId={openUserId}
+        selectedNodeId={selectedNode?.id ?? null}
+        onSelectUser={setOpenUserId}
+        onSelectNode={setSelectedNodeId}
+      />
+
+      {/* Композер — только участнику, пока свою текущую версию он не отдал. */}
+      {isParticipant && !stream.finished && stream.my_current_text == null && (
+        <TextComposer taskId={taskId} stream={stream} />
+      )}
+
+      {myActiveNode && <StreamVoteBox taskId={taskId} node={myActiveNode} />}
+
+      {isParticipant && stream.my_current_text != null && !myActiveNode && (
+        <WaitingNote stream={stream} />
+      )}
+
+      {selectedNode && (
+        <NodeCard node={selectedNode} taskId={taskId} isAdmin={isAdmin} />
+      )}
+
+      {/* Админ в подгруппах не состоит: показываем ход голосования только на просмотр,
+          его собственный инструмент — «продавить фразу» в карточке узла выше. */}
+      {isAdmin && selectedNode && !selectedNode.is_mine && selectedNode.ready && (
+        <StreamVoteBox taskId={taskId} node={selectedNode} readOnly />
+      )}
+
+      {openUserId != null && (
+        <UserTextsModal
+          taskId={taskId}
+          userId={openUserId}
+          onClose={() => setOpenUserId(null)}
+        />
+      )}
+    </section>
+  )
+}
+
+/** Где лично ты сейчас находишься + дедлайн потока + сводка для админа. */
+function StatusBar({
+  stream,
+  isAdmin,
+  isParticipant,
+}: {
+  stream: StreamOut
+  isAdmin: boolean
+  isParticipant: boolean
+}) {
+  const users = useUsersMap()
+  const name = (id: number) => users.get(id)?.display_name ?? `#${id}`
+
+  // Не-участнику (обычно это админ) личный статус не адресован: он за потоком следит.
+  const title = stream.finished
+    ? 'Поток завершён'
+    : !isParticipant
+      ? 'Поток идёт — вы не участвуете'
+      : stream.my_active_node_id != null
+        ? 'Согласуйте общую фразу подгруппы'
+        : stream.my_current_text == null
+          ? stream.my_version === 0
+            ? 'Шаг 1 — напишите свой текст'
+            : stream.my_version === stream.depth
+              ? 'Финальный текст — перепишите с учётом общей фразы'
+              : 'Перепишите свой текст с учётом нового видения'
+          : 'Ждём соседние подгруппы'
+
+  const pending = stream.pending_user_ids ?? []
+  const done = stream.participants.filter((p) => p.done).length
+
+  return (
+    <header className={styles.stageBar}>
+      <div>
+        <h3>{title}</h3>
+        <p className={styles.stageMeta}>
+          {isParticipant
+            ? `Версия ${stream.my_version} из ${stream.depth}`
+            : `Финальный текст сдали ${done} из ${stream.participants.length}`}
+          {stream.deadline_at &&
+            ` · срок до ${new Date(stream.deadline_at).toLocaleString()}`}
+        </p>
+        {isAdmin && !stream.finished && (
+          <p className={styles.stageMeta}>
+            {pending.length === 0
+              ? 'Все сдали то, что могут на своём шаге.'
+              : `Ждём текст от: ${pending.map(name).join(', ')}`}
+          </p>
+        )}
+      </div>
+    </header>
+  )
+}
+
+/** «Сделал и жду» — объясняем, кого именно ждём: сперва свою подгруппу, потом соседей. */
+function WaitingNote({ stream }: { stream: StreamOut }) {
+  const users = useUsersMap()
+  const name = (id: number) => users.get(id)?.display_name ?? `#${id}`
+
+  const waiting = stream.my_waiting_on
+    .map((id) => stream.nodes.find((n) => n.id === id))
+    .filter((n): n is StreamNodeOut => n != null)
+
+  // Своя подгруппа следующего раунда: пока она не укомплектована, ждём не «соседей»,
+  // а конкретных людей рядом — сервер отдаёт их в pending_member_ids членам узла.
+  const myNode = stream.nodes.find(
+    (n) => n.is_mine && n.round === stream.my_version + 1,
+  )
+  const pending = myNode?.pending_member_ids ?? []
+
+  if (stream.finished) return null
+
+  if (pending.length > 0) {
+    return (
+      <div className={styles.nodeCard}>
+        <h4>Ждём подгруппу</h4>
+        <p className={styles.empty}>
+          Свой текст вы сдали. В вашей подгруппе ({myNode?.label}) ещё не сдали:{' '}
+          {pending.map(name).join(', ')}. Как только сдадут все, откроются их тексты и
+          можно будет согласовать общую фразу.
+        </p>
+      </div>
+    )
+  }
+
+  if (waiting.length === 0) {
+    return (
+      <div className={styles.nodeCard}>
+        <p className={styles.empty}>Свою часть вы сдали. Ждём остальных.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.nodeCard}>
+      <h4>Ждём соседей</h4>
+      <p className={styles.empty}>
+        Свой текст вы сдали. Чтобы двигаться дальше, нужны фразы:{' '}
+        {waiting.map((n) => n.label).join(', ')}. Как только они договорятся, вы
+        увидите их формулировки и сможете переписать свой текст.
+      </p>
+    </div>
+  )
+}
+
+/** Композер личного текста. Версию, которую он пишет, определяет сервер. */
+function TextComposer({ taskId, stream }: { taskId: number; stream: StreamOut }) {
+  const [body, setBody] = useState(stream.my_current_text ?? '')
+  const save = usePutStreamText(taskId)
+  const saved = stream.my_current_text != null
+
+  return (
+    <div className={styles.composer}>
+      {/* На новом этапе человек не «сдаёт версию N», а переписывает себя с учётом
+          фраз, которые согласовали его подгруппа и соседи. Так и говорим. */}
+      <label htmlFor="stream-text">
+        {stream.my_version === 0
+          ? 'Ваш текст'
+          : 'Перепишите свой текст с учётом нового видения'}
+      </label>
+      <AutoTextarea
+        id="stream-text"
+        minRows={8}
+        value={body}
+        placeholder={
+          stream.my_version === 0
+            ? 'Напишите свой ответ на тему задания…'
+            : 'Что изменилось в вашем понимании после общей фразы…'
+        }
+        onChange={(e) => setBody(e.target.value)}
+      />
+      <div className={styles.composerRow}>
+        <Button
+          disabled={save.isPending || body.trim().length === 0}
+          onClick={() =>
+            save.mutate(body, {
+              onSuccess: () => toast('Текст сохранён'),
+              onError: (err) => toast(errMsg(err)),
+            })
+          }
+        >
+          {saved ? 'Сохранить изменения' : 'Сдать текст'}
+        </Button>
+        {saved && (
+          <span className={styles.ok}>
+            Сдано — правьте, пока подгруппа не утвердила фразу
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Карточка выбранного узла: состав, фраза, комната, продавливание админом. */
+function NodeCard({
+  node,
+  taskId,
+  isAdmin,
+}: {
+  node: StreamNodeOut
+  taskId: number
+  isAdmin: boolean
+}) {
+  const users = useUsersMap()
+  const force = useForceStreamPhrase(taskId)
+  const openRoom = useOpenRoom()
+  const [draft, setDraft] = useState('')
+  const roomId = node.room_id
+
+  return (
+    <div className={styles.nodeCard}>
+      <h4>{node.label}</h4>
+      <p className={styles.members}>
+        {node.member_ids
+          .map((id) => users.get(id)?.display_name ?? `#${id}`)
+          .join(', ')}
+      </p>
+
+      {node.phrase ? (
+        <blockquote className={styles.phrase}>
+          {node.phrase}
+          {node.approved_by_admin && (
+            <span className={styles.badge}>решение админа</span>
+          )}
+        </blockquote>
+      ) : (
+        <p className={styles.empty}>
+          {roomId != null
+            ? 'Фраза ещё не утверждена — переходите в комнату, чтобы обсудить её с подгруппой.'
+            : 'Фраза ещё не утверждена или пока не открыта вам.'}
+        </p>
+      )}
+
+      {/* Маршрута /chat/:roomId нет: комната открывается через pendingOpen на «/»
+          (как в useOpenNotification). Ссылка на /chat/... вела в пустой экран. */}
+      {roomId != null && (
+        <button
+          type="button"
+          className={styles.roomLink}
+          onClick={() => openRoom(roomId)}
+        >
+          Перейти в комнату для обсуждения фразы
+        </button>
+      )}
+
+      {/* Действия админа. Голосовать он не может (в узле не состоит) — только
+          продавить фразу, если подгруппа зависла на несогласии. */}
+      {isAdmin && !node.approved && (
+        <div className={styles.adminBox}>
+          <h5>Действия администратора</h5>
+          <p className={styles.stageMeta}>
+            {node.pending_member_ids.length > 0
+              ? `Ещё не сдали текст: ${node.pending_member_ids
+                  .map((id) => users.get(id)?.display_name ?? `#${id}`)
+                  .join(', ')}`
+              : 'Все сдали текст — подгруппа согласует фразу.'}
+          </p>
+          <AutoTextarea
+            minRows={2}
+            value={draft}
+            placeholder="Продавить фразу за подгруппу…"
+            aria-label="Фраза узла"
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <Button
+            variant="outline"
+            disabled={force.isPending || draft.trim().length === 0}
+            onClick={() => {
+              const ok = window.confirm(
+                `Утвердить за подгруппу «${node.label}» фразу:\n\n${draft}\n\n` +
+                  'Фраза фиксируется окончательно, а комната подгруппы закроется.',
+              )
+              if (!ok) return
+              force.mutate(
+                { nodeId: node.id, text: draft },
+                {
+                  onSuccess: () => setDraft(''),
+                  onError: (err) => toast(errMsg(err)),
+                },
+              )
+            }}
+          >
+            Утвердить за подгруппу
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}

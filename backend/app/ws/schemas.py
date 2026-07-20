@@ -36,6 +36,12 @@ EVENT_TASK_COMMENT_NEW = "task.comment.new"
 # (или помечает failed) прямо в ленте, без перезагрузки. Payload несёт свежий
 # attachment (с variant-URL), чтобы клиент подставил его на месте (docs/MESSAGES.md).
 EVENT_ATTACHMENT_UPDATED = "attachment.updated"
+# Юзера добавили в новую комнату, которую создал сервер (комнаты узлов потока).
+# Клиент инвалидирует список комнат — иначе она появится только после reconnect.
+EVENT_ROOM_CREATED = "room.created"
+# Комната закрыта сервером: подгруппа потока утвердила фразу, этап пройден. Клиент
+# убирает её из списка — доступа к ней у бывших членов больше нет (docs/ROOMS.md).
+EVENT_ROOM_CLOSED = "room.closed"
 
 
 def message_new_event(message: MessageOut) -> dict[str, Any]:
@@ -129,6 +135,14 @@ def task_created_event(task_id: int, task_type: str, title: str) -> dict[str, An
 
 def task_updated_event(task_id: int) -> dict[str, Any]:
     return {"type": EVENT_TASK_UPDATED, "task_id": task_id}
+
+
+def room_created_event(room_id: int) -> dict[str, Any]:
+    return {"type": EVENT_ROOM_CREATED, "room_id": room_id}
+
+
+def room_closed_event(room_id: int) -> dict[str, Any]:
+    return {"type": EVENT_ROOM_CLOSED, "room_id": room_id}
 
 
 def task_submission_new_event(
