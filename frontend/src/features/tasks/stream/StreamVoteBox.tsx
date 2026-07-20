@@ -43,6 +43,7 @@ export function StreamVoteBox({
   const { user } = useAuth()
   const users = useUsersMap()
   const [draft, setDraft] = useState('')
+  const [open, setOpen] = useState(false)
   const propose = useCreateStreamOption(taskId)
   const vote = useVoteStreamOption(taskId)
   const remove = useDeleteStreamOption(taskId)
@@ -159,29 +160,52 @@ export function StreamVoteBox({
         <p className={styles.stageMeta}>Ждём голос: {waiting.map(name).join(', ')}</p>
       )}
 
+      {/* Форма спрятана за кнопкой: в комнате подгруппы виджет висит над лентой, и
+          развёрнутое поле постоянно съедало бы высоту переписки. */}
       {!readOnly && (
         <div className={styles.proposeBox}>
-          <AutoTextarea
-            minRows={2}
-            value={draft}
-            placeholder="Предложить свою формулировку…"
-            aria-label="Вариант общей фразы"
-            onChange={(e) => setDraft(e.target.value)}
-          />
-          <Button
-            disabled={propose.isPending || draft.trim().length === 0}
-            onClick={() =>
-              propose.mutate(
-                { nodeId: node.id, text: draft },
-                {
-                  onSuccess: () => setDraft(''),
-                  onError: (err) => toast(errMsg(err)),
-                },
-              )
-            }
-          >
-            Предложить
-          </Button>
+          {open ? (
+            <>
+              <AutoTextarea
+                minRows={2}
+                autoFocus
+                value={draft}
+                placeholder="Предложить свою формулировку…"
+                aria-label="Вариант общей фразы"
+                onChange={(e) => setDraft(e.target.value)}
+              />
+              <div className={styles.composerRow}>
+                <Button
+                  disabled={propose.isPending || draft.trim().length === 0}
+                  onClick={() =>
+                    propose.mutate(
+                      { nodeId: node.id, text: draft },
+                      {
+                        onSuccess: () => {
+                          setDraft('')
+                          setOpen(false)
+                        },
+                        onError: (err) => toast(errMsg(err)),
+                      },
+                    )
+                  }
+                >
+                  Предложить
+                </Button>
+                <button
+                  type="button"
+                  className={styles.linkAction}
+                  onClick={() => setOpen(false)}
+                >
+                  Отмена
+                </button>
+              </div>
+            </>
+          ) : (
+            <Button variant="outline" onClick={() => setOpen(true)}>
+              + Предложить формулировку
+            </Button>
+          )}
         </div>
       )}
     </div>
