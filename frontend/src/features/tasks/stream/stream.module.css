@@ -111,7 +111,7 @@
 }
 
 .approved rect {
-  fill: var(--bg-sea);
+  fill: var(--bg-sea-soft);
 }
 
 .approved text {
@@ -231,10 +231,21 @@
   color: var(--text-muted);
 }
 
+/* И <Link>, и <button> (переход в комнату идёт через pendingOpen, а не по URL). */
 .roomLink {
   display: inline-block;
   margin-top: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roomLink:hover {
+  color: var(--accent-bright);
 }
 
 .forceRow {

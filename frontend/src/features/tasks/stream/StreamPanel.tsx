@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   useForceStreamPhrase,
   usePutStreamText,
@@ -7,6 +6,8 @@ import {
   type StreamOut,
 } from '../../../api/tasks'
 import { useUsersMap } from '../../../api/users'
+import { useAuth } from '../../auth/AuthContext'
+import { useOpenRoom } from '../../app/useOpenRoom'
 import { Button } from '../../../components/Button'
 import { toast } from '../../../stores/toast'
 import { AutoTextarea } from './AutoTextarea'
@@ -36,8 +37,14 @@ export function StreamPanel({
   stream: StreamOut
   isAdmin: boolean
 }) {
+  const { user } = useAuth()
   const [openUserId, setOpenUserId] = useState<number | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null)
+
+  // Админ обычно поток только ведёт, а не пишет в нём: участники — те, кого он выбрал
+  // при создании. Без этой проверки ему рисовался композер, хотя put_my_text отдаёт
+  // 403 (is_stream_member). Заодно закрывает случай «участника сняли из потока».
+  const isParticipant = stream.participants.some((p) => p.user_id === user?.id)
 
   const myActiveNode = stream.nodes.find((n) => n.id === stream.my_active_node_id)
   const selectedNode =
@@ -45,7 +52,7 @@ export function StreamPanel({
 
   return (
     <section className={styles.panel}>
-      <StatusBar stream={stream} isAdmin={isAdmin} />
+      <StatusBar stream={stream} isAdmin={isAdmin} isParticipant={isParticipant} />
 
       <StreamBracket
         nodes={stream.nodes}
@@ -57,14 +64,14 @@ export function StreamPanel({
         onSelectNode={setSelectedNodeId}
       />
 
-      {/* Композер показываем, пока свою текущую версию человек не отдал. */}
-      {!stream.finished && stream.my_current_text == null && (
+      {/* Композер — только участнику, пока свою текущую версию он не отдал. */}
+      {isParticipant && !stream.finished && stream.my_current_text == null && (
         <TextComposer taskId={taskId} stream={stream} />
       )}
 
       {myActiveNode && <StreamVoteBox taskId={taskId} node={myActiveNode} />}
 
-      {stream.my_current_text != null && !myActiveNode && (
+      {isParticipant && stream.my_current_text != null && !myActiveNode && (
         <WaitingNote stream={stream} />
       )}
 
@@ -90,30 +97,44 @@ export function StreamPanel({
 }
 
 /** Где лично ты сейчас находишься + дедлайн потока + сводка для админа. */
-function StatusBar({ stream, isAdmin }: { stream: StreamOut; isAdmin: boolean }) {
+function StatusBar({
+  stream,
+  isAdmin,
+  isParticipant,
+}: {
+  stream: StreamOut
+  isAdmin: boolean
+  isParticipant: boolean
+}) {
   const users = useUsersMap()
   const name = (id: number) => users.get(id)?.display_name ?? `#${id}`
 
+  // Не-участнику (обычно это админ) личный статус не адресован: он за потоком следит.
   const title = stream.finished
     ? 'Поток завершён'
-    : stream.my_active_node_id != null
-      ? 'Согласуйте общую фразу подгруппы'
-      : stream.my_current_text == null
-        ? stream.my_version === 0
-          ? 'Шаг 1 — напишите свой текст'
-          : stream.my_version === stream.depth
-            ? 'Финальный текст'
-            : `Перепишите свой текст (версия ${stream.my_version})`
-        : 'Ждём соседние подгруппы'
+    : !isParticipant
+      ? 'Поток идёт — вы не участвуете'
+      : stream.my_active_node_id != null
+        ? 'Согласуйте общую фразу подгруппы'
+        : stream.my_current_text == null
+          ? stream.my_version === 0
+            ? 'Шаг 1 — напишите свой текст'
+            : stream.my_version === stream.depth
+              ? 'Финальный текст — перепишите с учётом общей фразы'
+              : 'Перепишите свой текст с учётом нового видения'
+          : 'Ждём соседние подгруппы'
 
   const pending = stream.pending_user_ids ?? []
+  const done = stream.participants.filter((p) => p.done).length
 
   return (
     <header className={styles.stageBar}>
       <div>
         <h3>{title}</h3>
         <p className={styles.stageMeta}>
-          Версия {stream.my_version} из {stream.depth}
+          {isParticipant
+            ? `Версия ${stream.my_version} из ${stream.depth}`
+            : `Финальный текст сдали ${done} из ${stream.participants.length}`}
           {stream.deadline_at &&
             ` · срок до ${new Date(stream.deadline_at).toLocaleString()}`}
         </p>
@@ -129,13 +150,37 @@ function StatusBar({ stream, isAdmin }: { stream: StreamOut; isAdmin: boolean })
   )
 }
 
-/** «Сделал и жду соседей» — объясняем, кого именно ждём. */
+/** «Сделал и жду» — объясняем, кого именно ждём: сперва свою подгруппу, потом соседей. */
 function WaitingNote({ stream }: { stream: StreamOut }) {
+  const users = useUsersMap()
+  const name = (id: number) => users.get(id)?.display_name ?? `#${id}`
+
   const waiting = stream.my_waiting_on
     .map((id) => stream.nodes.find((n) => n.id === id))
     .filter((n): n is StreamNodeOut => n != null)
 
+  // Своя подгруппа следующего раунда: пока она не укомплектована, ждём не «соседей»,
+  // а конкретных людей рядом — сервер отдаёт их в pending_member_ids членам узла.
+  const myNode = stream.nodes.find(
+    (n) => n.is_mine && n.round === stream.my_version + 1,
+  )
+  const pending = myNode?.pending_member_ids ?? []
+
   if (stream.finished) return null
+
+  if (pending.length > 0) {
+    return (
+      <div className={styles.nodeCard}>
+        <h4>Ждём подгруппу</h4>
+        <p className={styles.empty}>
+          Свой текст вы сдали. В вашей подгруппе ({myNode?.label}) ещё не сдали:{' '}
+          {pending.map(name).join(', ')}. Как только сдадут все, откроются их тексты и
+          можно будет согласовать общую фразу.
+        </p>
+      </div>
+    )
+  }
+
   if (waiting.length === 0) {
     return (
       <div className={styles.nodeCard}>
@@ -164,14 +209,22 @@ function TextComposer({ taskId, stream }: { taskId: number; stream: StreamOut })
 
   return (
     <div className={styles.composer}>
+      {/* На новом этапе человек не «сдаёт версию N», а переписывает себя с учётом
+          фраз, которые согласовали его подгруппа и соседи. Так и говорим. */}
       <label htmlFor="stream-text">
-        {stream.my_version === 0 ? 'Ваш текст' : `Ваш текст, версия ${stream.my_version}`}
+        {stream.my_version === 0
+          ? 'Ваш текст'
+          : 'Перепишите свой текст с учётом нового видения'}
       </label>
       <AutoTextarea
         id="stream-text"
         minRows={8}
         value={body}
-        placeholder="Напишите свой ответ на тему задания…"
+        placeholder={
+          stream.my_version === 0
+            ? 'Напишите свой ответ на тему задания…'
+            : 'Что изменилось в вашем понимании после общей фразы…'
+        }
         onChange={(e) => setBody(e.target.value)}
       />
       <div className={styles.composerRow}>
@@ -208,7 +261,9 @@ function NodeCard({
 }) {
   const users = useUsersMap()
   const force = useForceStreamPhrase(taskId)
+  const openRoom = useOpenRoom()
   const [draft, setDraft] = useState('')
+  const roomId = node.room_id
 
   return (
     <div className={styles.nodeCard}>
@@ -227,13 +282,23 @@ function NodeCard({
           )}
         </blockquote>
       ) : (
-        <p className={styles.empty}>Фраза ещё не утверждена или пока не открыта вам.</p>
+        <p className={styles.empty}>
+          {roomId != null
+            ? 'Фраза ещё не утверждена — переходите в комнату, чтобы обсудить её с подгруппой.'
+            : 'Фраза ещё не утверждена или пока не открыта вам.'}
+        </p>
       )}
 
-      {node.room_id != null && (
-        <Link className={styles.roomLink} to={`/chat/${node.room_id}`}>
-          Перейти в комнату подгруппы
-        </Link>
+      {/* Маршрута /chat/:roomId нет: комната открывается через pendingOpen на «/»
+          (как в useOpenNotification). Ссылка на /chat/... вела в пустой экран. */}
+      {roomId != null && (
+        <button
+          type="button"
+          className={styles.roomLink}
+          onClick={() => openRoom(roomId)}
+        >
+          Перейти в комнату для обсуждения фразы
+        </button>
       )}
 
       {/* Действия админа. Голосовать он не может (в узле не состоит) — только
