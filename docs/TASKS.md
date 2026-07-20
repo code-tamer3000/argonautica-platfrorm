@@ -106,8 +106,11 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
   нельзя → 409. Зависший узел разруливает админ (`PATCH .../nodes/{id}/phrase`, пишет
   `approved_by`).
 - **Комнаты.** Group-комната обсуждения заводится в момент готовности узла
-  (`open_ready_node` → `ensure_node_room`), а не по общему переключателю —
-  см. [ROOMS.md](ROOMS.md).
+  (`open_ready_node` → `ensure_node_room`), а не по общему переключателю, и
+  ЗАКРЫВАЕТСЯ, как только фраза узла утверждена (`close_node_room`: снимаем
+  `room_members`, шлём `room.closed`, `room_id` в ответе становится `null`). Этап
+  пройден — обсуждать нечего; иначе у участника к финалу висело бы по чату на раунд.
+  Сообщения остаются в БД, но недостижимы — см. [ROOMS.md](ROOMS.md).
 - **Дедлайн** у потока ОДИН, на всю задачу: обычный `tasks.deadline_at`, правится
   штатным `PATCH /api/tasks/{id}`. Отдельной ручки перехода стадии не существует.
 - **Видимость (анти-IDOR).** Вся — в `services/stream.py`, ответ собирает
@@ -127,15 +130,25 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
 - **Тексты — только текст**, без вложений (в отличие от обычных сдач с MediaComposer).
 - `task_streams.stage` — рудимент версии с глобальными стадиями, больше не читается и
   не пишется; колонку снимем отдельным релизом (expand/contract).
+- **Админ голосовать не может** — он не член узла (`assert_node_member` исключений ему
+  не делает, в комнату подгруппы `assert_room_access` тоже не пустит). В `build_stream_out`
+  ему грузятся варианты и голоса ВСЕХ готовых узлов, но это только обзор: на фронте
+  вотбокс для не-своего узла рисуется в режиме `readOnly` (без кнопок), а его
+  собственный инструмент — «Утвердить за подгруппу» (`force_phrase`) в блоке
+  «Действия администратора» карточки узла.
 - **Фронт.** `features/tasks/stream/`: `geometry.ts` (чистая раскладка, без React, по
   образцу genkeys/wheel.ts) + `StreamBracket.tsx` (SVG-сетка), `StreamPanel.tsx` (статус
-  участника, композер, карточка узла, «ждём соседей»), `StreamVoteBox.tsx` (голосование —
-  переиспользуется виджетом `StreamRoomWidget` в комнате подгруппы),
-  `UserTextsModal.tsx` (клик по участнику).
+  участника, композер, карточка узла, «ждём соседей», админ-блок), `StreamVoteBox.tsx`
+  (голосование карточками — переиспользуется виджетом `StreamRoomWidget` в комнате
+  подгруппы; голос и снятие своего варианта идут через подтверждение: фраза фиксируется
+  единогласием необратимо, а снятие обнуляет отданные голоса), `AutoTextarea.tsx`
+  (растущее под текст поле — в потоке пишут абзацы), `UserTextsModal.tsx` (версии
+  участника свёрнутыми карточками, раскрыта последняя).
 
 ## Realtime
 
-WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events. Stream mutations (текст, вариант, голос, продавленная фраза, переход стадии) — тоже `task.updated` на родительскую задачу; отдельных stream-событий нет. Плюс `room.created` на членов узла, когда сервер завёл комнату подгруппы.
+WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events. Stream mutations (текст, вариант, голос, продавленная фраза, переход стадии) — тоже `task.updated` на родительскую задачу; отдельных stream-событий нет. Плюс `room.created` на членов узла, когда сервер завёл комнату подгруппы, и
+`room.closed` — когда фраза узла утверждена и комната закрылась.
 
 ## Frontend note
 

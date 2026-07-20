@@ -9,6 +9,7 @@ import {
 import { useUsersMap } from '../../../api/users'
 import { Button } from '../../../components/Button'
 import { toast } from '../../../stores/toast'
+import { AutoTextarea } from './AutoTextarea'
 import { StreamBracket } from './StreamBracket'
 import { StreamVoteBox } from './StreamVoteBox'
 import { UserTextsModal } from './UserTextsModal'
@@ -69,6 +70,12 @@ export function StreamPanel({
 
       {selectedNode && (
         <NodeCard node={selectedNode} taskId={taskId} isAdmin={isAdmin} />
+      )}
+
+      {/* Админ в подгруппах не состоит: показываем ход голосования только на просмотр,
+          его собственный инструмент — «продавить фразу» в карточке узла выше. */}
+      {isAdmin && selectedNode && !selectedNode.is_mine && selectedNode.ready && (
+        <StreamVoteBox taskId={taskId} node={selectedNode} readOnly />
       )}
 
       {openUserId != null && (
@@ -160,9 +167,9 @@ function TextComposer({ taskId, stream }: { taskId: number; stream: StreamOut })
       <label htmlFor="stream-text">
         {stream.my_version === 0 ? 'Ваш текст' : `Ваш текст, версия ${stream.my_version}`}
       </label>
-      <textarea
+      <AutoTextarea
         id="stream-text"
-        rows={6}
+        minRows={8}
         value={body}
         placeholder="Напишите свой ответ на тему задания…"
         onChange={(e) => setBody(e.target.value)}
@@ -229,18 +236,34 @@ function NodeCard({
         </Link>
       )}
 
-      {isAdmin && (
-        <div className={styles.forceRow}>
-          <input
+      {/* Действия админа. Голосовать он не может (в узле не состоит) — только
+          продавить фразу, если подгруппа зависла на несогласии. */}
+      {isAdmin && !node.approved && (
+        <div className={styles.adminBox}>
+          <h5>Действия администратора</h5>
+          <p className={styles.stageMeta}>
+            {node.pending_member_ids.length > 0
+              ? `Ещё не сдали текст: ${node.pending_member_ids
+                  .map((id) => users.get(id)?.display_name ?? `#${id}`)
+                  .join(', ')}`
+              : 'Все сдали текст — подгруппа согласует фразу.'}
+          </p>
+          <AutoTextarea
+            minRows={2}
             value={draft}
-            placeholder="Продавить фразу…"
+            placeholder="Продавить фразу за подгруппу…"
             aria-label="Фраза узла"
             onChange={(e) => setDraft(e.target.value)}
           />
           <Button
             variant="outline"
             disabled={force.isPending || draft.trim().length === 0}
-            onClick={() =>
+            onClick={() => {
+              const ok = window.confirm(
+                `Утвердить за подгруппу «${node.label}» фразу:\n\n${draft}\n\n` +
+                  'Фраза фиксируется окончательно, а комната подгруппы закроется.',
+              )
+              if (!ok) return
               force.mutate(
                 { nodeId: node.id, text: draft },
                 {
@@ -248,9 +271,9 @@ function NodeCard({
                   onError: (err) => toast(errMsg(err)),
                 },
               )
-            }
+            }}
           >
-            Утвердить
+            Утвердить за подгруппу
           </Button>
         </div>
       )}

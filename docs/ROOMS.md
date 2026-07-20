@@ -59,6 +59,16 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - Because the server creates them, members are told via the **`room.created`** WS event
   (fired `after_commit`, per member); without it the room would only appear after a
   reconnect. See [TASKS.md](TASKS.md) "Поток".
+- **The room closes when the node's phrase is approved** (`close_node_room`, called from
+  both approval paths — unanimity and an admin force). The stage is over; there is nothing
+  left to agree on, and leaving it open would keep a per-round chat around forever.
+  Closing = deleting the room's `room_members` rows: since group rooms have no lazy
+  membership, the room then disappears from every list and returns 403 to everyone,
+  admins included. The `rooms` row and its messages stay in the DB (there is no
+  `rooms.deleted_at`, and `messages` FK it) — history survives, it is just unreachable;
+  `task_stream_nodes.room_id` stays too, so `ensure_node_room` will not recreate it.
+  Members are told via the **`room.closed`** WS event; `StreamNodeOut.room_id` goes `null`
+  once the node is approved, so the UI stops linking to a room that would 403.
 
 ## Calendar link
 
