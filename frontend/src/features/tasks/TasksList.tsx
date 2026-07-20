@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   useAdminAssignments,
@@ -89,6 +90,43 @@ function TaskCard({ task, isAdmin }: { task: TaskWithStatusOut; isAdmin: boolean
   )
 }
 
+// Сворачиваемая секция списка. Раскрытой по умолчанию оставляем только одну
+// (активные общие) — остальных задач у админа кратно больше, и они топят главное.
+function CollapsibleSection({
+  title,
+  tasks,
+  isAdmin,
+  defaultOpen = false,
+}: {
+  title: string
+  tasks: TaskWithStatusOut[]
+  isAdmin: boolean
+  defaultOpen?: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  if (tasks.length === 0) return null
+  return (
+    <section className={styles.section}>
+      <button
+        type="button"
+        className={styles.sectionToggle}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} {title}
+        <span className={styles.sectionCount}>{tasks.length}</span>
+      </button>
+      {open && (
+        <div className={styles.grid}>
+          {tasks.map((task) => (
+            <TaskCard key={task.id} task={task} isAdmin={isAdmin} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export function TasksList() {
   const { data, isLoading } = useTasks()
   const { user } = useAuth()
@@ -96,12 +134,19 @@ export function TasksList() {
 
   const items = data?.items ?? []
 
-  // Админ (боковая панель «Задачи») делит по сроку: активные vs истёкшие.
   // Участник — по своему статусу: активные vs выполненные (принятые).
-  const [firstItems, secondItems] = isAdmin
-    ? [items.filter((t) => !isOverdue(t)), items.filter(isOverdue)]
-    : [items.filter((t) => t.my_status !== 'accepted'), items.filter((t) => t.my_status === 'accepted')]
-  const secondTitle = isAdmin ? 'Истёк срок' : 'Выполненные'
+  const mine = items.filter((t) => t.my_status !== 'accepted')
+  const mineDone = items.filter((t) => t.my_status === 'accepted')
+
+  // Админ: активные режем по типу, чтобы общие не тонули среди индивидуальных и
+  // перекрёстных (последних — по 2 на каждую пару задания).
+  const activeItems = items.filter((t) => !isOverdue(t))
+  const overdue = items.filter(isOverdue)
+  const activeCross = activeItems.filter((t) => t.pair_id != null)
+  const activeMain = activeItems.filter((t) => t.pair_id == null)
+  const activeCommon = activeMain.filter((t) => t.type === 'common')
+  const activeIndividual = activeMain.filter((t) => t.type === 'individual')
+  const activeGroup = activeMain.filter((t) => t.type === 'pair' || t.type === 'stream')
 
   return (
     <div className={styles.page}>
@@ -112,26 +157,48 @@ export function TasksList() {
         <div className="center muted" style={{ padding: 40 }}>Задач пока нет</div>
       )}
 
-      {firstItems.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>Активные</h2>
-          <div className={styles.grid}>
-            {firstItems.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin={isAdmin} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {secondItems.length > 0 && (
-        <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>{secondTitle}</h2>
-          <div className={styles.grid}>
-            {secondItems.map((task) => (
-              <TaskCard key={task.id} task={task} isAdmin={isAdmin} />
-            ))}
-          </div>
-        </section>
+      {isAdmin ? (
+        <>
+          {activeCommon.length > 0 && (
+            <section className={styles.section}>
+              <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>
+                Активные общие
+              </h2>
+              <div className={styles.grid}>
+                {activeCommon.map((task) => (
+                  <TaskCard key={task.id} task={task} isAdmin />
+                ))}
+              </div>
+            </section>
+          )}
+          <CollapsibleSection title="Индивидуальные" tasks={activeIndividual} isAdmin />
+          <CollapsibleSection title="Парные и потоки" tasks={activeGroup} isAdmin />
+          <CollapsibleSection title="Перекрёстные из пар" tasks={activeCross} isAdmin />
+          <CollapsibleSection title="Истёк срок" tasks={overdue} isAdmin />
+        </>
+      ) : (
+        <>
+          {mine.length > 0 && (
+            <section className={styles.section}>
+              <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>Активные</h2>
+              <div className={styles.grid}>
+                {mine.map((task) => (
+                  <TaskCard key={task.id} task={task} isAdmin={false} />
+                ))}
+              </div>
+            </section>
+          )}
+          {mineDone.length > 0 && (
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>Выполненные</h2>
+              <div className={styles.grid}>
+                {mineDone.map((task) => (
+                  <TaskCard key={task.id} task={task} isAdmin={false} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
     </div>
   )
