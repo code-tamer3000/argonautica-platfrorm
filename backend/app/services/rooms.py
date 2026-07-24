@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.room import Room, RoomMember
+from app.models.task import TaskStreamNode
 from app.models.user import User
 
 NEWS_CHANNEL_NAME = "Новости"
@@ -24,6 +25,21 @@ async def load_room(session: AsyncSession, room_id: int) -> Room:
     return room
 
 
+async def is_stream_node_room(session: AsyncSession, room_id: int) -> bool:
+    """Комната принадлежит узлу потока (task_stream_nodes.room_id).
+
+    Нужна только для оверсайт-доступа админа: у group-комнат узлов нет строки членства
+    для админа, поэтому решение «пускать ли» опирается на эту связь. Индекс
+    ix_task_stream_nodes_room делает проверку точечной.
+    """
+    node_id = (
+        await session.execute(
+            select(TaskStreamNode.id).where(TaskStreamNode.room_id == room_id).limit(1)
+        )
+    ).scalar_one_or_none()
+    return node_id is not None
+
+
 async def assert_room_access(
     session: AsyncSession, room: Room, user: User
 ) -> RoomMember | None:
@@ -31,6 +47,11 @@ async def assert_room_access(
 
     dm/group: нет строки членства → 403. channel: доступ у любого участника
     платформы (вариант А) — вернуть существующую строку или None, НЕ создавая её.
+
+    Исключение — комнаты подгрупп потока: платформенный админ входит туда для
+    оверсайта (написать/подсмотреть обсуждение), хотя членом узла не является.
+    Строку членства ему НЕ заводим — комната не всплывает в его общем списке чатов,
+    вход только по кнопке на карточке узла (build_stream_out отдаёт админу room_id).
 
     Наблюдатель (is_observer) НЕ имеет доступа ни к одной комнате — включая каналы и
     новостной канал. Его разделы — только материалы (База знаний, Генные замки).
@@ -44,6 +65,12 @@ async def assert_room_access(
     if room.type == "channel":
         return membership
     if membership is None:
+        if (
+            user.role == "admin"
+            and room.type == "group"
+            and await is_stream_node_room(session, room.id)
+        ):
+            return None
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
     return membership
 

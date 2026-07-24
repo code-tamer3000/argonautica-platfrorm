@@ -544,6 +544,18 @@ async def mark_read(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found in this room")
 
     if membership is None:
+        if room.type != "channel":
+            # Админ-оверсайт в комнате подгруппы потока: членства нет и не заводим
+            # (комната не должна всплывать в его списке чатов). Прочтение ему не
+            # трекаем — просто отдаём непрочитанные относительно запрошенной точки.
+            unread = await _unread_count(
+                session, room_id, current_user, body.last_read_message_id
+            )
+            return ReadStateOut(
+                room_id=room_id,
+                last_read_message_id=body.last_read_message_id,
+                unread_count=unread,
+            )
         # Канал: ленивое членство только ради last_read_message_id.
         membership = await get_or_create_channel_membership(session, room, current_user)
 

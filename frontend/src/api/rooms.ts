@@ -8,6 +8,17 @@ export function useRooms() {
   return useQuery({ queryKey: roomsKey, queryFn: () => http.get<RoomOut[]>('/api/rooms') })
 }
 
+// Одна комната по id. Нужна, когда её нет в списке `useRooms` — админ входит в
+// комнату подгруппы потока через кнопку на карточке узла, но членства (а значит и
+// строки в списке) у него нет. `enabled` — включаем фолбэк только при промахе списка.
+export function useRoom(roomId: number, enabled: boolean) {
+  return useQuery({
+    queryKey: ['room', roomId],
+    queryFn: () => http.get<RoomOut>(`/api/rooms/${roomId}`),
+    enabled,
+  })
+}
+
 export interface CreateRoomBody {
   type: RoomType
   name?: string
