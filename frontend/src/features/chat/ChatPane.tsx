@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMarkRead, useMessages } from '../../api/messages'
-import { useRooms } from '../../api/rooms'
+import { useRoom, useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
@@ -32,7 +32,11 @@ const subLabel = (type: string, isPersonal = false, isNews = false): string =>
 export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpenRoom?: (id: number) => void; onBack?: () => void }) {
   const { user } = useAuth()
   const { data: rooms } = useRooms()
-  const room = rooms?.find((r) => r.id === roomId)
+  const listedRoom = rooms?.find((r) => r.id === roomId)
+  // Комнаты нет в списке (админ вошёл в комнату подгруппы потока — членства нет) —
+  // дотягиваем метаданные точечным запросом, иначе ниже завис бы вечный спиннер.
+  const { data: fetchedRoom } = useRoom(roomId, !!rooms && !listedRoom)
+  const room = listedRoom ?? fetchedRoom
   const users = useUsersMap()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const setDmPeer = useUiStore((s) => s.setDmPeer)

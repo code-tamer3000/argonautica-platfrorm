@@ -22,6 +22,7 @@ from app.models.sticker import Sticker
 from app.models.task import TaskStreamNode
 from app.models.user import User
 from app.schemas.room import AddMemberRequest, CreateRoomRequest, MemberOut, RoomOut
+from app.services.rooms import assert_room_access, load_room
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -223,6 +224,57 @@ async def list_rooms(
             item.stream_node_id, item.stream_task_id = node
         out.append(item)
     return out
+
+
+@router.get("/{room_id}", response_model=RoomOut)
+async def get_room(
+    room_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RoomOut:
+    """Одна комната по id — для случаев, когда её нет в списке `GET /rooms`.
+
+    Нужна админу для оверсайт-входа в комнату подгруппы потока: членства у него нет,
+    поэтому комната не приходит в общий список, но `assert_room_access` его туда
+    пускает (см. services/rooms), а клиенту нужны метаданные (название, stream-виджет).
+    Доступ — та же единая проверка, что и на чтение ленты; строку членства не заводим.
+    """
+    room = await load_room(session, room_id)
+    membership = await assert_room_access(session, room, current_user)
+
+    item = RoomOut.model_validate(room)
+    last_read = (membership.last_read_message_id or 0) if membership else 0
+    unread_result = await session.execute(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.room_id == room.id,
+            Message.deleted_at.is_(None),
+            Message.sender_id != current_user.id,
+            Message.id > last_read,
+        )
+    )
+    item.unread_count = unread_result.scalar_one()
+
+    if room.type == "dm":
+        peer_row = await session.execute(
+            select(RoomMember.user_id).where(
+                RoomMember.room_id == room.id,
+                RoomMember.user_id != current_user.id,
+            )
+        )
+        item.peer_id = peer_row.scalar_one_or_none()
+
+    node_row = await session.execute(
+        select(TaskStreamNode.id, TaskStreamNode.task_id).where(
+            TaskStreamNode.room_id == room.id,
+            TaskStreamNode.deleted_at.is_(None),
+        )
+    )
+    node = node_row.first()
+    if node is not None:
+        item.stream_node_id, item.stream_task_id = node
+    return item
 
 
 async def _load_group(session: AsyncSession, room_id: int) -> Room:

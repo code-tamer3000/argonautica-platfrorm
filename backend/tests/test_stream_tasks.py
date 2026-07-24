@@ -541,6 +541,76 @@ async def test_room_appears_when_the_subgroup_is_complete(
     assert sorted(r.user_id for r in rows) == sorted(first["member_ids"])
 
 
+async def test_admin_can_enter_and_write_in_a_node_room(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Админ входит в комнату подгруппы для оверсайта: читает ленту, пишет, тянет
+    метаданные — при этом строку членства ему НЕ заводят (комната не в его списке)."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    node = next(n for n in stream["nodes"] if n["round"] == 1)
+    a, b = node["member_ids"]
+    await _write(client, headers[a], task_id, "раз")
+    await _write(client, headers[b], task_id, "два")
+    view = await _stream(client, admin_headers, task_id)
+    room_id = next(n for n in view["nodes"] if n["id"] == node["id"])["room_id"]
+    assert room_id is not None
+
+    # Метаданные комнаты — точечным запросом, хотя её нет в общем списке админа.
+    listed = await client.get("/api/rooms", headers=admin_headers)
+    assert room_id not in [r["id"] for r in listed.json()]
+    single = await client.get(f"/api/rooms/{room_id}", headers=admin_headers)
+    assert single.status_code == 200, single.text
+    assert single.json()["stream_node_id"] == node["id"]
+
+    # Чтение ленты и отправка сообщения — доступны.
+    assert (
+        await client.get(f"/api/rooms/{room_id}/messages", headers=admin_headers)
+    ).status_code == 200
+    sent = await client.post(
+        f"/api/rooms/{room_id}/messages",
+        headers=admin_headers,
+        json={"content": "подсказка от админа"},
+    )
+    assert sent.status_code == 201, sent.text
+    msg_id = sent.json()["id"]
+
+    # Отметка прочтения не падает и НЕ плодит строку членства админа.
+    read = await client.post(
+        f"/api/rooms/{room_id}/read",
+        headers=admin_headers,
+        json={"last_read_message_id": msg_id},
+    )
+    assert read.status_code == 200, read.text
+    rows = await session.execute(
+        RoomMember.__table__.select().where(RoomMember.room_id == room_id)
+    )
+    assert sorted(r.user_id for r in rows) == sorted(node["member_ids"])
+
+
+async def test_outsider_cannot_enter_a_node_room(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Не-админ и не-член узла в комнату подгруппы не попадает (оверсайт — только админу)."""
+    admin_headers, _users, headers, task_id = await _setup(client, make_user)
+    stream = await _stream(client, admin_headers, task_id)
+    node = next(n for n in stream["nodes"] if n["round"] == 1)
+    a, b = node["member_ids"]
+    await _write(client, headers[a], task_id, "раз")
+    await _write(client, headers[b], task_id, "два")
+    view = await _stream(client, admin_headers, task_id)
+    room_id = next(n for n in view["nodes"] if n["id"] == node["id"])["room_id"]
+
+    outsider = await make_user()
+    outsider_headers = await _headers(client, outsider)
+    assert (
+        await client.get(f"/api/rooms/{room_id}", headers=outsider_headers)
+    ).status_code == 403
+    assert (
+        await client.get(f"/api/rooms/{room_id}/messages", headers=outsider_headers)
+    ).status_code == 403
+
+
 async def test_room_closes_when_the_phrase_is_approved(
     client: AsyncClient, make_user: MakeUser, session: AsyncSession
 ) -> None:
