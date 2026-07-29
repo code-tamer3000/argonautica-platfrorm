@@ -20,6 +20,7 @@ from app.models.notification import Notification
 from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
+from app.models.survey import SurveyResponse
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -53,6 +54,7 @@ __all__ = [
     "JournalProgram",
     "JournalSection",
     "Notification",
+    "SurveyResponse",
     "PushSubscription",
     "Task",
     "TaskAssignment",

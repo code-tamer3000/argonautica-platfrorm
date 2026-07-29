@@ -37,7 +37,7 @@
 | `POST /refresh` | **Rotation:** revoke the presented `jti`, issue a new pair. |
 | `POST /logout` | Idempotent revoke of the refresh `jti`. |
 | `POST /change-password` | Allowed while `must_change_password=true` (first login). |
-| `GET /me` | Current profile (signed `avatar_url`, bio, settings). Reachable even when `must_change_password`. |
+| `GET /me` | Current profile (signed `avatar_url`, bio, settings). Reachable even when `must_change_password` or `survey_required`. |
 | `PATCH /me` | Update display_name/bio/avatar/settings; avatar must be the caller's own image asset (else 403/404); `extra="forbid"`. |
 
 ## Provisioning (admin, `/api/admin`)
@@ -49,7 +49,7 @@
 
 ## Authorization — threat #1
 
-Every read/action checks membership/role **server-side**; never trust client-supplied `id`/`room_id` (IDOR / broken access control). Dependency chain in `api/deps.py`: `get_current_user → get_current_active_user → require_admin`. Cabin adds `require_cabin_access`; observer-closed sections add `require_participant` (rejects `is_observer`). See per-endpoint patterns in [API_CONVENTIONS.md](API_CONVENTIONS.md).
+Every read/action checks membership/role **server-side**; never trust client-supplied `id`/`room_id` (IDOR / broken access control). Dependency chain in `api/deps.py`: `get_current_user → get_current_active_user → require_admin`. `get_current_active_user` is also the platform-wide gate: it rejects users who must change their password (`must_change_password`) and users who owe the exit survey (`survey_required` → 403 `Survey required`, see [SURVEY.md](SURVEY.md)). The WS handshake rejects both flags too. Cabin adds `require_cabin_access`; observer-closed sections add `require_participant` (rejects `is_observer`). See per-endpoint patterns in [API_CONVENTIONS.md](API_CONVENTIONS.md).
 
 ## Security notes
 

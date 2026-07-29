@@ -60,6 +60,7 @@ Hard rules:
 | docs/DYNAMICS.md           | daily-homework journal (28 days), pardons, credits, stats |
 | docs/NOTIFICATIONS.md      | bell feed: kinds, generation, realtime delivery           |
 | docs/SUPPORT.md            | feedback (bug/improvement) + FAQ                          |
+| docs/SURVEY.md             | выпускная анкета: гейт платформы, вопросы, подарок-PDF     |
 | docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |

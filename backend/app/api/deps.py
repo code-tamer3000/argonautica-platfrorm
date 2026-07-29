@@ -50,11 +50,21 @@ async def get_current_user(
 async def get_current_active_user(
     user: Annotated[User, Depends(get_current_user)],
 ) -> User:
-    """Юзер обязан сменить временный пароль перед работой с платформой."""
+    """Юзер обязан сменить временный пароль перед работой с платформой.
+
+    Здесь же второй барьер — выпускная анкета: пока админ ждёт её от человека
+    (`survey_required`), платформа закрыта целиком. Эндпоинты самой анкеты и
+    `/api/auth/me` сидят на `get_current_user`, поэтому остаются доступны.
+    """
     if user.must_change_password:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Password change required",
+        )
+    if user.survey_required:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Survey required",
         )
     return user
 

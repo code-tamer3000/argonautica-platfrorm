@@ -21,6 +21,7 @@ from app.api.push import router as push_router
 from app.api.rooms import router as rooms_router
 from app.api.stickers import router as stickers_router
 from app.api.stream import router as stream_router
+from app.api.survey import router as survey_router
 from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
 from app.core.redis import close_redis, redis_client
@@ -69,6 +70,7 @@ app.include_router(notifications_router)
 app.include_router(push_router)
 # Поток — до tasks_router: его пути конкретнее, чем /api/tasks/{task_id}.
 app.include_router(stream_router)
+app.include_router(survey_router)
 app.include_router(tasks_router)
 app.include_router(ws_router)
 
