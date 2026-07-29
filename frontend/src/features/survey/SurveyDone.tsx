@@ -56,11 +56,14 @@ export function SurveyDone({ giftAvailable, onEnter }: Props) {
                 {gift.isPending ? 'Готовим…' : 'Скачать книгу (PDF)'}
               </Button>
               {error && <div className={styles.error}>{error}</div>}
+              <span className={styles.qHint}>
+                Книга останется в твоём профиле — можно скачать её и позже.
+              </span>
             </div>
           ) : (
             <p className={styles.doneText}>
-              Твоя личная книга экспедиции ещё собирается — она придёт, как только
-              будет готова.
+              Твоя личная книга экспедиции ещё собирается — она появится в твоём
+              профиле, как только будет готова.
             </p>
           )}
 

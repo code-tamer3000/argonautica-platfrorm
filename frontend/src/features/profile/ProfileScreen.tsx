@@ -7,6 +7,7 @@ import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '.
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { NotificationsSection } from './NotificationsSection'
+import { SurveyGiftSection } from './SurveyGiftSection'
 import { toast } from '../../stores/toast'
 import { useThemeStore, type Theme } from '../../stores/theme'
 import { useAuth } from '../auth/AuthContext'
@@ -274,6 +275,9 @@ export function ProfileScreen() {
 
       {/* Уведомления — доступно всем */}
       <NotificationsSection />
+
+      {/* Книга экспедиции — у тех, кто сдал выпускную анкету */}
+      <SurveyGiftSection />
 
       {/* Динамика — только для участников */}
       {user.role !== 'admin' && <DynamicsSection />}

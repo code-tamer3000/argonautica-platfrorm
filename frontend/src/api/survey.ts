@@ -80,7 +80,9 @@ export function useSurveyForm() {
   return useQuery({
     queryKey: surveyFormKey,
     queryFn: () => http.get<SurveyForm>('/api/survey/me'),
-    staleTime: Infinity,
+    // Не Infinity: книгу админ может привязать уже ПОСЛЕ того, как человек сдал
+    // анкету — профиль должен подхватить её без перезагрузки страницы.
+    staleTime: 60_000,
   })
 }
 
