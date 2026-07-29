@@ -41,7 +41,8 @@ async def _authenticate(websocket: WebSocket, token: str | None) -> User | None:
 
     async with SessionLocal() as session:
         user = await session.get(User, int(payload["sub"]))
-    if user is None or user.must_change_password:
+    # survey_required — платформа перекрыта выпускной анкетой (см. deps).
+    if user is None or user.must_change_password or user.survey_required:
         await websocket.close(code=1008)
         return None
     return user

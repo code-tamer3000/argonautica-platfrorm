@@ -33,6 +33,8 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | can_create_groups | BOOLEAN | NOT NULL, default true | admin can revoke |
 | can_access_cabin | BOOLEAN | NOT NULL, default false | grants Cabin; admin has it implicitly. See [CABIN.md](CABIN.md) |
 | is_observer | BOOLEAN | NOT NULL, default false | observer mode: materials-only, passive access. Mutually exclusive with `role='admin'`. See [AUTH.md](AUTH.md) |
+| survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
+| survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
@@ -324,6 +326,19 @@ See [SUPPORT.md](SUPPORT.md).
 | sort_order | INT | NOT NULL, default 0 | manual order (ties by id) |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
+
+## survey_responses
+Exit survey of the expedition, one row per participant. Questions live in code
+(`app/services/survey_form.py`), answers in JSONB — same trade-off as Cabin. See [SURVEY.md](SURVEY.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL, UNIQUE | one submission per person, no edits |
+| version | INT | NOT NULL | `SURVEY_VERSION` at submit time |
+| answers | JSONB | NOT NULL | `{question_key: answer}`, shape depends on question kind |
+| publish_consent | BOOLEAN | NOT NULL, default false | may the testimonial be shown publicly with the author's name |
+| created_at | TIMESTAMPTZ | NOT NULL | |
 
 ## cabin_entries
 Каюта (private psych journaling). Form fields per subkind live in JSONB `data`. Hard delete. See [CABIN.md](CABIN.md).

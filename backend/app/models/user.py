@@ -55,6 +55,16 @@ class User(Base):
     is_observer: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Выпускная анкета экспедиции: админ поднимает флаг — платформа целиком
+    # перекрыта экраном анкеты (см. deps.get_current_active_user), пока человек
+    # её не отправит. Снимается автоматически при отправке.
+    survey_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # Подарок за анкету: персональная PDF-книга пути. Загружает админ в панели.
+    survey_gift_asset_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("media_assets.id")
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

@@ -70,6 +70,8 @@ class UserOut(BaseModel):
     can_create_groups: bool
     can_access_cabin: bool
     is_observer: bool = False
+    # Ждём выпускную анкету — фронт перекрывает платформу её экраном (AuthGuard).
+    survey_required: bool = False
     settings: dict[str, Any] = {}
 
 

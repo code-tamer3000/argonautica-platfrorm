@@ -38,6 +38,8 @@ export interface UserOut {
   can_access_cabin: boolean
   // Режим наблюдателя: пассивный доступ «только к материалам» (см. AppShell).
   is_observer: boolean
+  // Ждём выпускную анкету — AuthGuard перекрывает платформу её экраном.
+  survey_required: boolean
   settings: Record<string, unknown>
 }
 
