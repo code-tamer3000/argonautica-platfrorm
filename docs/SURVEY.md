@@ -95,6 +95,10 @@ overrides the match.
 - `src/features/survey/SurveyDone.tsx` — thanks + «Скачать книгу (PDF)» via
   `lib/mediaUpload.ts::downloadFile` (cross-origin `<a download>` is ignored by
   browsers, and `target=_blank` opens a blank tab in iOS PWA).
+- `src/features/profile/SurveyGiftSection.tsx` — the book in the personal cabinet
+  (`/profile`). The thank-you screen shows once and never again, so this is the only
+  lasting entry point — and the only place a person sees a book attached *after* they
+  submitted. Hidden until the survey is submitted.
 - `src/api/survey.ts` — user and admin hooks.
 
 After a successful submit the screen calls `refreshMe()`, otherwise the stale

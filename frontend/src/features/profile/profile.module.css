@@ -453,3 +453,19 @@
   .dynOverdueItem { flex-direction: column; align-items: flex-start; gap: var(--space-2); }
   .dynPardonBtn { width: 100%; justify-content: center; }
 }
+
+/* ── Книга экспедиции (подарок за выпускную анкету) ── */
+.giftText {
+  margin: 0;
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.giftError {
+  margin: 0;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--blood-bright);
+}
