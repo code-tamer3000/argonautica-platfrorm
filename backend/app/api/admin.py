@@ -28,6 +28,7 @@ from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
+from app.models.survey import SurveyResponse
 from app.models.user import User
 from app.schemas.feedback import (
     FeedbackListOut,
@@ -46,6 +47,12 @@ from app.schemas.push import (
     NotifPrefsOverviewOut,
     UserNotifPrefsOut,
 )
+from app.schemas.survey import (
+    SurveyGiftRequest,
+    SurveyInviteRequest,
+    SurveyOverviewOut,
+    SurveyRowOut,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -55,6 +62,7 @@ from app.schemas.user import (
 )
 from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
+from app.services.survey_form import question_form
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
@@ -486,3 +494,110 @@ async def notification_prefs_overview(
             )
         )
     return NotifPrefsOverviewOut(items=items)
+
+
+# --- выпускная анкета экспедиции ---------------------------------------
+
+
+@router.get("/survey", response_model=SurveyOverviewOut)
+async def survey_overview(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> SurveyOverviewOut:
+    """Кому показана анкета, кто её сдал и что ответил — одной таблицей.
+
+    Форму отдаём вместе со строками: админка подписывает ответы по канону, а не
+    по своей копии вопросов.
+    """
+    rows = (
+        await session.execute(
+            select(User, SurveyResponse)
+            .outerjoin(SurveyResponse, SurveyResponse.user_id == User.id)
+            .where(User.role != "admin")
+            .order_by(User.display_name)
+        )
+    ).all()
+
+    items = [
+        SurveyRowOut(
+            user_id=user.id,
+            username=user.username,
+            display_name=user.display_name,
+            invited=user.survey_required or response is not None,
+            completed_at=response.created_at if response else None,
+            publish_consent=bool(response and response.publish_consent),
+            has_gift=user.survey_gift_asset_id is not None,
+            gift_asset_id=user.survey_gift_asset_id,
+            answers=response.answers if response else None,
+            version=response.version if response else None,
+        )
+        for user, response in rows
+    ]
+    return SurveyOverviewOut(
+        form=question_form(),
+        rows=items,
+        invited_count=sum(1 for i in items if i.invited),
+        completed_count=sum(1 for i in items if i.completed_at is not None),
+    )
+
+
+@router.post("/survey/invite", status_code=status.HTTP_204_NO_CONTENT)
+async def invite_to_survey(
+    body: SurveyInviteRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Показать анкету перечисленным участникам — платформа для них закрывается.
+
+    Тем, кто анкету уже сдал, флаг не поднимаем: сдавать её можно один раз, иначе
+    человек упрётся в 409 и останется заперт.
+    """
+    already_done = (
+        (
+            await session.execute(
+                select(SurveyResponse.user_id).where(
+                    SurveyResponse.user_id.in_(body.user_ids)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    targets = set(body.user_ids) - set(already_done)
+    if not targets:
+        return
+    await session.execute(
+        update(User)
+        .where(User.id.in_(targets), User.role != "admin")
+        .values(survey_required=True)
+    )
+    await session.flush()
+
+
+@router.delete("/survey/invite/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_survey_invite(
+    user_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Снять блокировку с человека, не дожидаясь анкеты."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    user.survey_required = False
+    await session.flush()
+
+
+@router.patch("/survey/gift/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def set_survey_gift(
+    user_id: int,
+    body: SurveyGiftRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Привязать участнику его личную книгу (media_asset_id) или отвязать (null)."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if body.media_asset_id is not None:
+        asset = await session.get(MediaAsset, body.media_asset_id)
+        if asset is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+    user.survey_gift_asset_id = body.media_asset_id
+    await session.flush()
