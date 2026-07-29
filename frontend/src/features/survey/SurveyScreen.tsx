@@ -8,6 +8,7 @@ import {
   type SurveyAnswers,
   type SurveyQuestion,
 } from '../../api/survey'
+import { ApiError, isNetworkError } from '../../lib/apiClient'
 import { useAuth } from '../auth/AuthContext'
 import { SurveyDone } from './SurveyDone'
 import styles from './survey.module.css'
@@ -67,6 +68,30 @@ function formErrors(questions: SurveyQuestion[], answers: SurveyAnswers): string
     }
   }
   return errors
+}
+
+/**
+ * Внятная причина вместо «попробуй ещё раз»: анкета сдаётся один раз, и человек,
+ * упёршийся в глухую ошибку, остаётся заперт на этом экране — он должен понимать,
+ * что происходит, а поддержка — что чинить.
+ */
+function submitErrorText(err: unknown): string {
+  if (isNetworkError(err)) {
+    return 'Нет связи с сервером. Ответы сохранены — попробуй ещё раз.'
+  }
+  if (err instanceof ApiError) {
+    if (err.status === 409) {
+      return 'Эта анкета уже отправлена. Обнови страницу — платформа откроется.'
+    }
+    if (err.status === 401 || err.status === 403) {
+      return 'Сессия истекла. Зайди заново — ответы сохранены.'
+    }
+    if (err.status === 422) {
+      return `Ответы не приняты: ${err.detail}`
+    }
+    return `Не удалось отправить анкету (ошибка ${err.status}). Ответы сохранены.`
+  }
+  return 'Не удалось отправить анкету. Ответы сохранены — попробуй ещё раз.'
 }
 
 interface QuestionProps {
@@ -208,14 +233,23 @@ export function SurveyScreen() {
       return
     }
     try {
-      const res = await submit.mutateAsync({ answers, publish_consent: consent })
+      // Шлём только ключи текущего канона: в черновике из localStorage могут
+      // лежать ответы на вопросы, которых в форме уже нет (её переделали между
+      // сессиями), а бэкенд бракует неизвестные ключи целиком — 422 на ровном
+      // месте, причём экран такой ответ даже не показывает.
+      const payload: SurveyAnswers = {}
+      for (const q of form.questions) {
+        const a = answers[q.key]
+        if (a) payload[q.key] = a
+      }
+      const res = await submit.mutateAsync({ answers: payload, publish_consent: consent })
       localStorage.removeItem(DRAFT_KEY)
       setGiftReady(res.gift_available)
       setDone(true)
       // Флаг снят на сервере — обновляем профиль, иначе гейт вернётся при перезагрузке.
       await refreshMe()
-    } catch {
-      setErrors(['Не удалось отправить анкету. Попробуй ещё раз.'])
+    } catch (err) {
+      setErrors([submitErrorText(err)])
     }
   }
 
