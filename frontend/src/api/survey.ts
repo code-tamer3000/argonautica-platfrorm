@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
 
 /** Вид вопроса — канон живёт в бэкенде (app/services/survey_form.py). */
-export type SurveyQuestionKind = 'scale' | 'choice' | 'matrix' | 'text'
+export type SurveyQuestionKind = 'text' | 'multi'
 
 export interface SurveyOption {
   key: string
@@ -12,15 +12,10 @@ export interface SurveyOption {
 export interface SurveyQuestion {
   key: string
   kind: SurveyQuestionKind
-  step: number
   title: string
   required: boolean
   hint: string | null
   placeholder: string | null
-  min_value: number
-  max_value: number
-  min_label: string | null
-  max_label: string | null
   options: SurveyOption[]
   min_length: number
   max_length: number
@@ -33,7 +28,6 @@ export interface SurveyForm {
   title: string
   subtitle: string
   intro: string
-  steps: string[]
   consent_label: string
   questions: SurveyQuestion[]
   completed_at: string | null
@@ -43,10 +37,11 @@ export interface SurveyForm {
 
 /** Ответ на один вопрос. Форма зависит от kind — см. survey_form.py. */
 export interface SurveyAnswer {
-  value?: number | string
-  comment?: string
-  values?: Record<string, number>
+  /** text */
   text?: string
+  /** multi */
+  choices?: string[]
+  comment?: string
 }
 
 export type SurveyAnswers = Record<string, SurveyAnswer>

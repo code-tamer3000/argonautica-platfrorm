@@ -32,19 +32,18 @@ frontend: the screen and the admin panel both render from `question_form()`.
 Changing the question set means bumping `SURVEY_VERSION`; old answers stay readable
 under their own version, no data migration.
 
-12 questions over 3 steps: экспедиция целиком (ожидания, NPS, что изменилось,
-поворотная точка) → форматы пути (матрица по дневнику / заданиям / паре / турниру /
-Генным Ключам / КБ / чату, стихия, «слишком/не хватило», открытость дневника, ритм) →
-платформа и свободное слово (удобство, отзыв для публикации, слово ведущему).
+One page, all questions in a row — no steps, no scales, no ratings: the survey asks
+people to tell it in their own words. 9 questions: что изменилось · поворотная точка ·
+форматы ведения дневника · стихии (множественный выбор + почему) · «слишком/не
+хватило» · открытость дневника · где сыпался ритм · платформа и что чинить ·
+отзыв для публикации.
 
 Question kinds and the shape of their answer in `answers` JSONB:
 
 | kind | answer |
 |---|---|
-| `scale` | `{"value": int, "comment": str?}` — `value` within `[min_value, max_value]` |
-| `choice` | `{"value": option_key, "comment": str?}` |
-| `matrix` | `{"values": {option_key: int}}` — every row required when the question is |
 | `text` | `{"text": str}` — `min_length`/`max_length` enforced |
+| `multi` | `{"choices": [option_key], "comment": str?}` — stored in canon order, foreign keys dropped |
 
 `validate_answers()` rejects unknown keys, missing required answers and short texts,
 collecting all problems into one 422 instead of walking the user through them one
@@ -90,9 +89,9 @@ overrides the match.
 
 ## Frontend
 
-- `src/features/survey/SurveyScreen.tsx` — intro → 3 steps → submit. Draft is kept in
-  `localStorage` (`survey:draft:v1`): the form is long, a reload must not wipe it.
-  Per-step validation mirrors the backend rules so people don't submit into a 422.
+- `src/features/survey/SurveyScreen.tsx` — intro → one page of questions → submit.
+  Draft is kept in `localStorage` (`survey:draft:v1`): the form is long, a reload must
+  not wipe it. Validation mirrors the backend rules so people don't submit into a 422.
 - `src/features/survey/SurveyDone.tsx` — thanks + «Скачать книгу (PDF)» via
   `lib/mediaUpload.ts::downloadFile` (cross-origin `<a download>` is ignored by
   browsers, and `target=_blank` opens a blank tab in iOS PWA).

@@ -6,7 +6,6 @@ import {
   useSurveyForm,
   type SurveyAnswer,
   type SurveyAnswers,
-  type SurveyForm,
   type SurveyQuestion,
 } from '../../api/survey'
 import { useAuth } from '../auth/AuthContext'
@@ -40,36 +39,31 @@ function saveDraft(draft: Draft): void {
   }
 }
 
-/** Пустой ли ответ на вопрос — по нему считаем «шаг не заполнен». */
-function isBlank(q: SurveyQuestion, a: SurveyAnswer | undefined): boolean {
-  if (!a) return true
-  if (q.kind === 'text') return !(a.text ?? '').trim()
-  if (q.kind === 'matrix') {
-    const values = a.values ?? {}
-    return q.options.some((o) => typeof values[o.key] !== 'number')
-  }
-  return a.value === undefined || a.value === null || a.value === ''
-}
-
-/** Ошибки шага. Пустой массив — можно идти дальше. */
-function stepErrors(questions: SurveyQuestion[], answers: SurveyAnswers): string[] {
+/**
+ * Ошибки формы — те же правила, что и на бэкенде (`validate_answers`), чтобы
+ * человек не отправлял анкету в 422. Пустой массив — можно отправлять.
+ */
+function formErrors(questions: SurveyQuestion[], answers: SurveyAnswers): string[] {
   const errors: string[] = []
   for (const q of questions) {
     const a = answers[q.key]
-    if (q.required && isBlank(q, a)) {
-      errors.push(
-        q.kind === 'matrix' ? `«${q.title}» — оцени каждый формат` : `«${q.title}» — без ответа`,
-      )
+    if (q.kind === 'multi') {
+      if (q.required && !(a?.choices ?? []).length) {
+        errors.push(`«${q.title}» — отметь хотя бы один вариант`)
+        continue
+      }
+      if (q.comment_required && (a?.choices ?? []).length && !(a?.comment ?? '').trim()) {
+        errors.push(`«${q.comment_title ?? q.title}» — без ответа`)
+      }
       continue
     }
-    if (q.kind === 'text' && q.required) {
-      const text = (a?.text ?? '').trim()
-      if (text.length < q.min_length) {
-        errors.push(`«${q.title}» — минимум ${q.min_length} символов`)
-      }
+    const text = (a?.text ?? '').trim()
+    if (!text) {
+      if (q.required) errors.push(`«${q.title}» — без ответа`)
+      continue
     }
-    if (q.comment_required && !(a?.comment ?? '').trim() && !isBlank(q, a)) {
-      errors.push(`«${q.comment_title ?? q.title}» — без ответа`)
+    if (q.required && text.length < q.min_length) {
+      errors.push(`«${q.title}» — минимум ${q.min_length} символов`)
     }
   }
   return errors
@@ -81,77 +75,28 @@ interface QuestionProps {
   onChange: (patch: SurveyAnswer) => void
 }
 
-function ScaleInput({ q, answer, onChange }: QuestionProps) {
-  const values: number[] = []
-  for (let v = q.min_value; v <= q.max_value; v += 1) values.push(v)
-  return (
-    <>
-      <div className={styles.scale}>
-        {values.map((v) => (
-          <button
-            key={v}
-            type="button"
-            className={`${styles.scaleBtn} ${answer?.value === v ? styles.scaleBtnOn : ''}`}
-            onClick={() => onChange({ value: v })}
-            aria-pressed={answer?.value === v}
-          >
-            {v}
-          </button>
-        ))}
-      </div>
-      {(q.min_label || q.max_label) && (
-        <div className={styles.scaleEnds}>
-          <span>{q.min_label}</span>
-          <span>{q.max_label}</span>
-        </div>
-      )}
-    </>
-  )
-}
-
-function ChoiceInput({ q, answer, onChange }: QuestionProps) {
+function MultiInput({ q, answer, onChange }: QuestionProps) {
+  const chosen = answer?.choices ?? []
   return (
     <div className={styles.choices}>
-      {q.options.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          className={`${styles.choice} ${answer?.value === o.key ? styles.choiceOn : ''}`}
-          onClick={() => onChange({ value: o.key })}
-          aria-pressed={answer?.value === o.key}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-function MatrixInput({ q, answer, onChange }: QuestionProps) {
-  const values = answer?.values ?? {}
-  const scale: number[] = []
-  for (let v = q.min_value; v <= q.max_value; v += 1) scale.push(v)
-  return (
-    <div>
-      {q.options.map((o) => (
-        <div key={o.key} className={styles.matrixRow}>
-          <span className={styles.matrixLabel}>{o.label}</span>
-          <div className={styles.matrixScale}>
-            {scale.map((v) => (
-              <button
-                key={v}
-                type="button"
-                className={`${styles.matrixBtn} ${values[o.key] === v ? styles.matrixBtnOn : ''}`}
-                onClick={() => onChange({ values: { ...values, [o.key]: v } })}
-                aria-label={`${o.label}: ${v}`}
-                aria-pressed={values[o.key] === v}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        </div>
-      ))}
+      {q.options.map((o) => {
+        const on = chosen.includes(o.key)
+        return (
+          <button
+            key={o.key}
+            type="button"
+            className={`${styles.choice} ${on ? styles.choiceOn : ''}`}
+            aria-pressed={on}
+            onClick={() =>
+              onChange({
+                choices: on ? chosen.filter((k) => k !== o.key) : [...chosen, o.key],
+              })
+            }
+          >
+            {o.label}
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -168,7 +113,7 @@ function TextInput({ q, answer, onChange }: QuestionProps) {
         placeholder={q.placeholder ?? ''}
         onChange={(e) => onChange({ text: e.target.value })}
       />
-      {q.min_length > 0 && (
+      {q.required && q.min_length > 0 && (
         <span className={`${styles.counter} ${short ? styles.counterShort : ''}`}>
           {text.trim().length} / {q.min_length} символов минимум
         </span>
@@ -189,10 +134,11 @@ function QuestionField({ q, answer, onChange }: QuestionProps) {
         {q.required && <span className={styles.required}> *</span>}
       </span>
       {q.hint && <span className={styles.qHint}>{q.hint}</span>}
-      {q.kind === 'scale' && <ScaleInput q={q} answer={answer} onChange={patch} />}
-      {q.kind === 'choice' && <ChoiceInput q={q} answer={answer} onChange={patch} />}
-      {q.kind === 'matrix' && <MatrixInput q={q} answer={answer} onChange={patch} />}
-      {q.kind === 'text' && <TextInput q={q} answer={answer} onChange={patch} />}
+      {q.kind === 'multi' ? (
+        <MultiInput q={q} answer={answer} onChange={patch} />
+      ) : (
+        <TextInput q={q} answer={answer} onChange={patch} />
+      )}
       {q.comment_title && (
         <>
           <span className={styles.qHint}>
@@ -216,7 +162,7 @@ function QuestionField({ q, answer, onChange }: QuestionProps) {
  * `user.survey_required` — точно как экран смены пароля (см. AuthGuard).
  *
  * Форму не хардкодим: канон вопросов приходит с бэкенда (`GET /api/survey/me`),
- * фронт лишь рисует их по `kind`.
+ * фронт лишь рисует их по `kind`. Анкета одностраничная — все вопросы подряд.
  */
 export function SurveyScreen() {
   const { user, refreshMe, logout } = useAuth()
@@ -226,19 +172,21 @@ export function SurveyScreen() {
   const initial = useMemo(loadDraft, [])
   const [answers, setAnswers] = useState<SurveyAnswers>(initial.answers)
   const [consent, setConsent] = useState(initial.consent)
-  // -1 — вступительная заставка, дальше индексы шагов.
-  const [step, setStep] = useState(-1)
+  const [started, setStarted] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
   const [done, setDone] = useState(false)
   const [giftReady, setGiftReady] = useState(false)
 
-  const setAnswer = useCallback((key: string, patch: SurveyAnswer) => {
-    setAnswers((prev) => {
-      const next = { ...prev, [key]: patch }
-      saveDraft({ answers: next, consent })
-      return next
-    })
-  }, [consent])
+  const setAnswer = useCallback(
+    (key: string, patch: SurveyAnswer) => {
+      setAnswers((prev) => {
+        const next = { ...prev, [key]: patch }
+        saveDraft({ answers: next, consent })
+        return next
+      })
+    },
+    [consent],
+  )
 
   if (isLoading || !form) {
     return (
@@ -252,11 +200,9 @@ export function SurveyScreen() {
     return <SurveyDone giftAvailable={giftReady} onEnter={() => void refreshMe()} />
   }
 
-  const stepQuestions = (index: number): SurveyQuestion[] =>
-    form.questions.filter((q) => q.step === index + 1)
-
-  async function onSubmit(f: SurveyForm) {
-    const problems = stepErrors(stepQuestions(f.steps.length - 1), answers)
+  async function onSubmit() {
+    if (!form) return
+    const problems = formErrors(form.questions, answers)
     if (problems.length) {
       setErrors(problems)
       return
@@ -273,14 +219,14 @@ export function SurveyScreen() {
     }
   }
 
-  if (step < 0) {
+  if (!started) {
     return (
       <div className={styles.screen}>
         <div className={styles.card}>
           <div className={styles.wordmark}>{form.title}</div>
           <div className={styles.subtitle}>{form.subtitle}</div>
           <p className={styles.intro}>{form.intro}</p>
-          <Button type="button" variant="gold" onClick={() => setStep(0)}>
+          <Button type="button" variant="gold" onClick={() => setStarted(true)}>
             Начать
           </Button>
           <Button type="button" variant="outline" onClick={() => void logout()}>
@@ -291,27 +237,14 @@ export function SurveyScreen() {
     )
   }
 
-  const last = step === form.steps.length - 1
-  const questions = stepQuestions(step)
-
   return (
     <div className={styles.screen}>
       <div className={styles.card}>
-        <div className={styles.steps}>
-          {form.steps.map((label, i) => (
-            <span
-              key={label}
-              className={`${styles.stepBar} ${i <= step ? styles.stepBarDone : ''}`}
-            />
-          ))}
-          <span className={styles.stepLabel}>
-            {step + 1} / {form.steps.length}
-          </span>
-        </div>
-        <div className={styles.stepTitle}>{form.steps[step]}</div>
+        <div className={styles.wordmark}>{form.title}</div>
+        <div className={styles.subtitle}>{form.subtitle}</div>
 
         <div className={styles.questions}>
-          {questions.map((q) => (
+          {form.questions.map((q) => (
             <QuestionField
               key={q.key}
               q={q}
@@ -321,19 +254,17 @@ export function SurveyScreen() {
           ))}
         </div>
 
-        {last && (
-          <label className={styles.consent}>
-            <input
-              type="checkbox"
-              checked={consent}
-              onChange={(e) => {
-                setConsent(e.target.checked)
-                saveDraft({ answers, consent: e.target.checked })
-              }}
-            />
-            {form.consent_label}
-          </label>
-        )}
+        <label className={styles.consent}>
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsent(e.target.checked)
+              saveDraft({ answers, consent: e.target.checked })
+            }}
+          />
+          {form.consent_label}
+        </label>
 
         {errors.map((e) => (
           <div key={e} className={styles.error}>
@@ -342,40 +273,14 @@ export function SurveyScreen() {
         ))}
 
         <div className={styles.actions}>
-          {step > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setErrors([])
-                setStep(step - 1)
-              }}
-            >
-              Назад
-            </Button>
-          )}
-          {last ? (
-            <Button
-              type="button"
-              variant="gold"
-              disabled={submit.isPending}
-              onClick={() => void onSubmit(form)}
-            >
-              {submit.isPending ? 'Отправка…' : 'Отправить и получить книгу'}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="gold"
-              onClick={() => {
-                const problems = stepErrors(questions, answers)
-                setErrors(problems)
-                if (!problems.length) setStep(step + 1)
-              }}
-            >
-              Далее
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="gold"
+            disabled={submit.isPending}
+            onClick={() => void onSubmit()}
+          >
+            {submit.isPending ? 'Отправка…' : 'Отправить и получить книгу'}
+          </Button>
         </div>
         {user && <span className={styles.qHint}>{user.display_name}</span>}
       </div>

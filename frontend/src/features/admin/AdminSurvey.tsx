@@ -34,17 +34,11 @@ function formatDatetime(iso: string): string {
 /** Ответ одним человекочитаемым куском — по типу вопроса из канона. */
 function renderAnswer(q: SurveyQuestion, a: SurveyAnswer): string {
   if (q.kind === 'text') return a.text ?? '—'
-  if (q.kind === 'matrix') {
-    const values = a.values ?? {}
-    return q.options
-      .map((o) => `${o.label}: ${values[o.key] ?? '—'}/${q.max_value}`)
-      .join('\n')
-  }
-  const label =
-    q.kind === 'choice'
-      ? (q.options.find((o) => o.key === a.value)?.label ?? String(a.value))
-      : `${a.value} / ${q.max_value}`
-  return a.comment ? `${label}\n${a.comment}` : label
+  const labels = (a.choices ?? []).map(
+    (key) => q.options.find((o) => o.key === key)?.label ?? key,
+  )
+  const picked = labels.join(', ') || '—'
+  return a.comment ? `${picked}\n${a.comment}` : picked
 }
 
 /**

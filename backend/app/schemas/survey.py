@@ -17,7 +17,6 @@ class SurveyFormOut(BaseModel):
     title: str
     subtitle: str
     intro: str
-    steps: list[str]
     consent_label: str
     questions: list[dict[str, Any]]
     # Заполнена ли анкета и ждёт ли она ответа прямо сейчас.
