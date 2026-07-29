@@ -57,6 +57,11 @@ async def submit_survey(
 ) -> dict[str, bool]:
     """Принять анкету и снять блокировку платформы. Сдать можно один раз."""
     if await _response_of(session, current_user.id) is not None:
+        # Ответ уже есть, а флаг всё ещё поднят (админ переприслал анкету, ручная
+        # правка в БД) — снимаем его здесь, иначе человек заперт на экране анкеты
+        # навсегда: отправить нельзя (409), а пройти дальше не даёт гейт.
+        current_user.survey_required = False
+        await session.flush()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Survey already submitted"
         )
