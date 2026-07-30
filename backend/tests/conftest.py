@@ -7,6 +7,7 @@ Event loop — session-scoped, чтобы глобальные async engine/redi
 """
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from datetime import datetime
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -75,6 +76,7 @@ async def make_user(session: AsyncSession) -> MakeUser:
         can_create_groups: bool = True,
         can_access_cabin: bool = False,
         is_observer: bool = False,
+        graduated_at: datetime | None = None,
     ) -> User:
         user = User(
             username=username or f"u_{uuid.uuid4().hex[:12]}",
@@ -86,6 +88,7 @@ async def make_user(session: AsyncSession) -> MakeUser:
             can_create_groups=can_create_groups,
             can_access_cabin=can_access_cabin,
             is_observer=is_observer,
+            graduated_at=graduated_at,
         )
         session.add(user)
         await session.commit()

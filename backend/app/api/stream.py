@@ -40,6 +40,7 @@ from app.schemas.task import (
     StreamVoteInput,
 )
 from app.services import stream as stream_service
+from app.services.graduation import assert_not_graduated
 from app.services.tasks import (
     assert_task_visible,
     fan_out_task_event,
@@ -158,6 +159,7 @@ async def put_my_text(
     Правится до перехода стадии (в отличие от task_submissions истории не ведём —
     история версий здесь и так есть, по одной на раунд).
     """
+    assert_not_graduated(current_user)  # выпускник в потоке уже не участвует
     task, stream = await _load_visible(session, task_id, current_user)
     if not await stream_service.is_stream_member(session, task.id, current_user.id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a stream participant")
@@ -207,6 +209,7 @@ async def create_option(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> StreamOut:
     """Предложить вариант общей фразы в своём узле."""
+    assert_not_graduated(current_user)  # выпускник в потоке уже не участвует
     task, stream = await _load_visible(session, task_id, current_user)
     node = await stream_service.load_node(session, task.id, node_id)
     await stream_service.assert_node_member(session, node, current_user)
@@ -232,6 +235,7 @@ async def delete_option(
     response: Response,
 ) -> Response:
     """Снять свой вариант (автор, до утверждения фразы). Мягкое удаление."""
+    assert_not_graduated(current_user)  # выпускник в потоке уже не участвует
     task, stream = await _load_visible(session, task_id, current_user)
     node = await stream_service.load_node(session, task.id, node_id)
     await stream_service.assert_node_member(session, node, current_user)
@@ -265,6 +269,7 @@ async def cast_vote(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> StreamOut:
     """Отдать/сменить голос. Единогласие узла утверждает фразу (см. сервис)."""
+    assert_not_graduated(current_user)  # выпускник в потоке уже не участвует
     task, stream = await _load_visible(session, task_id, current_user)
     node = await stream_service.load_node(session, task.id, node_id)
     await stream_service.assert_node_member(session, node, current_user)

@@ -11,6 +11,7 @@
   - `can_create_groups` (default true) — may create group rooms.
   - `can_access_cabin` (default false) — see [CABIN.md](CABIN.md).
   - `is_observer` (default false) — **observer mode**: passive, materials-only access.
+  - `graduated_at` (NULL by default) — **экспедиция пройдена**, set by submitting the exit survey: not a gate but an end-of-path state (Dynamics hidden, Tasks collapse to submitted, Рубка read-only). See [SURVEY.md](SURVEY.md).
     Keeps **only** КБ ([KB.md](KB.md)) and Генные ключи ([GENE_KEYS.md](GENE_KEYS.md)),
     plus own Профиль and Техподдержка.
     **Loses** Рубка **and Новости** (all chat, including the news channel — no room
@@ -49,7 +50,7 @@
 
 ## Authorization — threat #1
 
-Every read/action checks membership/role **server-side**; never trust client-supplied `id`/`room_id` (IDOR / broken access control). Dependency chain in `api/deps.py`: `get_current_user → get_current_active_user → require_admin`. `get_current_active_user` is also the platform-wide gate: it rejects users who must change their password (`must_change_password`) and users who owe the exit survey (`survey_required` → 403 `Survey required`, see [SURVEY.md](SURVEY.md)). The WS handshake rejects both flags too. Cabin adds `require_cabin_access`; observer-closed sections add `require_participant` (rejects `is_observer`). See per-endpoint patterns in [API_CONVENTIONS.md](API_CONVENTIONS.md).
+Every read/action checks membership/role **server-side**; never trust client-supplied `id`/`room_id` (IDOR / broken access control). Dependency chain in `api/deps.py`: `get_current_user → get_current_active_user → require_admin`. `get_current_active_user` is also the platform-wide gate: it rejects users who must change their password (`must_change_password`) and users who owe the exit survey (`survey_required` → 403 `Survey required`, see [SURVEY.md](SURVEY.md)). The WS handshake rejects both flags too. Cabin adds `require_cabin_access`; observer-closed sections add `require_participant` (rejects `is_observer`); Dynamics adds `require_ongoing_participant` (also rejects graduates, `graduated_at`). See per-endpoint patterns in [API_CONVENTIONS.md](API_CONVENTIONS.md).
 
 ## Security notes
 

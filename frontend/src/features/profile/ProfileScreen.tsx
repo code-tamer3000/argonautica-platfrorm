@@ -279,8 +279,10 @@ export function ProfileScreen() {
       {/* Книга экспедиции — у тех, кто сдал выпускную анкету */}
       <SurveyGiftSection />
 
-      {/* Динамика — только для участников */}
-      {user.role !== 'admin' && <DynamicsSection />}
+      {/* Динамика — только для участников, которые ещё в пути. У выпускника
+          (graduated_at) она исчезает целиком: экспедиция пройдена, считать нечего
+          (бэкенд закрывает /api/dynamics для него 403). */}
+      {user.role !== 'admin' && !user.graduated_at && <DynamicsSection />}
     </div>
   )
 }

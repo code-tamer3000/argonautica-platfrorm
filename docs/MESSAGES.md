@@ -10,6 +10,7 @@
 - **Edit** (`PATCH /api/rooms/{room_id}/messages/{message_id}`) — **author only** (admin does not rewrite others' text, unlike delete); sticker/attachment-only has nothing to edit → 400; sets `edited_at`.
 - **Delete** — soft (`deleted_at`), by author or admin.
 - **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have **no message access at all** — every room (including the news channel) is 403 via `assert_room_access`, so they can neither read nor write messages. Chat is closed for them; their sections are materials-only (КБ, Генные ключи).
+- **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) keep **read access everywhere** — DMs, diary, channels, full history — but write nothing: `assert_can_write` refuses send/edit/delete/pin with `GRADUATED_MESSAGE` («Аргонавт, ты прошёл Экспедицию»), and the WS handler drops their `typing`. The frontend replaces the composer (and the diary form) with `GraduatedNotice` carrying the same sentence, and prunes the write items from the message menu.
 
 ## Room feed & pagination
 

@@ -40,6 +40,9 @@ export interface UserOut {
   is_observer: boolean
   // Ждём выпускную анкету — AuthGuard перекрывает платформу её экраном.
   survey_required: boolean
+  // Экспедиция пройдена (анкета сдана): Динамика скрыта, в Задачах только сданное,
+  // Рубка — только чтение. Ставится сервером один раз и не снимается.
+  graduated_at: string | null
   settings: Record<string, unknown>
 }
 
@@ -280,6 +283,7 @@ export interface AdminUserOut {
   can_access_cabin: boolean
   is_observer: boolean
   is_active: boolean
+  graduated_at: string | null
   created_at: string
 }
 
@@ -311,6 +315,9 @@ export interface UserDynamicsOut {
   active_today: boolean
   journal_today: boolean
   recent_days: RecentDay[]
+  // Экспедиция пройдена: строка заморожена на дне выпуска и помечена бейджем,
+  // в сводных счётчиках такой участник не учитывается.
+  graduated_at: string | null
 }
 
 export interface DynamicsSummary {

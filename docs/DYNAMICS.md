@@ -7,7 +7,9 @@ Tracks daily-homework completion over a **28-day** program. The diary **structur
 (which sections a day has) is admin-editable and **versioned by date** — see below. A day
 is **closed** when every section of the задание active on that day is submitted.
 
-> **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no Dynamics access: the whole `/api/dynamics` router is behind `require_participant` → 403 (the admin overview reuses the module's functions directly, not over HTTP, so it is unaffected).
+> **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no Dynamics access: the whole `/api/dynamics` router is behind `require_ongoing_participant` → 403 (the admin overview reuses the module's functions directly, not over HTTP, so it is unaffected).
+
+> **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) lose Dynamics by the same dependency: the expedition is over, there is nothing left to score. In the admin overview they stay visible but **frozen at the graduation day** — `_calc_stats`/`_recent_days` take a `today` override, so overdue days stop accruing and the streak does not reset the day after. Such a row carries `graduated_at`, is badged «Прошёл Экспедицию», sorts last, and is **excluded from the summary counters** (which describe people still on the way).
 
 ## Structure: задания (versioned diary structure)
 
