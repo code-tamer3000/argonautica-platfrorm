@@ -61,6 +61,11 @@ class User(Base):
     survey_required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Экспедиция пройдена: проставляется в момент отправки выпускной анкеты и больше
+    # не снимается. Это не блокировка доступа, а конец пути: Динамика исчезает,
+    # Задачи схлопываются до сданных, вся Рубка переходит в режим «только чтение»
+    # (см. app/services/graduation.py).
+    graduated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Подарок за анкету: персональная PDF-книга пути. Загружает админ в панели.
     survey_gift_asset_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("media_assets.id")

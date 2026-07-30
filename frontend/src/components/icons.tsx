@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleCheck,
+  Compass,
   Copy,
   CornerUpLeft,
   Dna,
@@ -77,6 +78,8 @@ export const IconEdit = (p: IconProps) => <Pencil {...DEFAULTS} {...p} />
 export const IconFlame = (p: IconProps) => <Flame {...DEFAULTS} {...p} />
 export const IconWaves = (p: IconProps) => <Waves {...DEFAULTS} {...p} />
 export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
+// Компас — знак пройденной экспедиции (плашка «только чтение», бейдж в Динамике).
+export const IconCompass = (p: IconProps) => <Compass {...DEFAULTS} {...p} />
 export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
 export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
 export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />

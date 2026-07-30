@@ -62,6 +62,9 @@ export function TaskDetail() {
   if (!task) return <div className="center grow muted">Задача не найдена</div>
 
   const isAdmin = user?.role === 'admin'
+  // Экспедиция пройдена: раздел остаётся историей сданного — без новых сдач и
+  // комментариев (бэкенд закрывает те же пути 403).
+  const isGraduated = !!user?.graduated_at
   const bodyHtml = task.body ? DOMPurify.sanitize(marked.parse(task.body) as string) : ''
 
   // Автор перекрёстной задачи (участник, выдавший её партнёру внутри пары) —
@@ -140,7 +143,8 @@ export function TaskDetail() {
               {myTrack.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
             </div>
           )}
-          <TaskComposer taskId={id} status={myTrack?.status} />
+          {/* Выпускник свою сдачу видит, но дослать/переслать уже не может. */}
+          {!isGraduated && <TaskComposer taskId={id} status={myTrack?.status} />}
         </section>
       )}
 
@@ -399,9 +403,11 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
   }
 
   const list = comments ?? []
+  const isGraduated = !!user?.graduated_at
 
   return (
     <div className={styles.comments}>
+      {!isGraduated && (
       <div className={styles.commentForm}>
         <textarea
           className={styles.commentInput}
@@ -424,12 +430,13 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
           </button>
         )}
       </div>
+      )}
 
       <ul className={styles.commentList}>
         {list.map((c) => {
           const author = users.get(c.author_id)
           const authorName = author?.display_name ?? `Участник #${c.author_id}`
-          const canDelete = c.author_id === user?.id || user?.role === 'admin'
+          const canDelete = !isGraduated && (c.author_id === user?.id || user?.role === 'admin')
           return (
             <li key={c.id} className={styles.commentItem}>
               <Avatar name={authorName} url={author?.avatar_url} size={28} />

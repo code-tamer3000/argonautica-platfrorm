@@ -4,6 +4,7 @@
 иначе они бы отбивались тем самым гейтом, который сами и снимают (тот же приём,
 что у смены пароля: `app/api/auth.py`).
 """
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -56,12 +57,16 @@ async def submit_survey(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, bool]:
     """Принять анкету и снять блокировку платформы. Сдать можно один раз."""
-    if await _response_of(session, current_user.id) is not None:
+    if (existing := await _response_of(session, current_user.id)) is not None:
         # Ответ уже есть, а флаг всё ещё поднят (админ переприслал анкету, ручная
         # правка в БД) — снимаем его здесь, иначе человек заперт на экране анкеты
         # навсегда: отправить нельзя (409), а пройти дальше не даёт гейт.
         current_user.survey_required = False
-        await session.flush()
+        if current_user.graduated_at is None:
+            current_user.graduated_at = existing.created_at
+        # Именно commit, а не flush: дальше мы бросаем 409, а get_session на
+        # исключении откатывает транзакцию — почин флага уехал бы вместе с ней.
+        await session.commit()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="Survey already submitted"
         )
@@ -81,6 +86,10 @@ async def submit_survey(
         )
     )
     current_user.survey_required = False
+    # Анкета сдана — экспедиция пройдена. Отсюда Динамика исчезает, Задачи
+    # схлопываются до сданных, Рубка становится «только чтение»
+    # (см. app/services/graduation.py).
+    current_user.graduated_at = datetime.now(UTC)
     await session.flush()
     return {"gift_available": current_user.survey_gift_asset_id is not None}
 

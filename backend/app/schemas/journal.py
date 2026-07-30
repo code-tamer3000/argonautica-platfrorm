@@ -1,5 +1,5 @@
 """Схемы для раздела Динамика (прогресс ДЗ / помилования) + структура дневника."""
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -37,6 +37,9 @@ class UserDynamicsOut(BaseModel):
     active_today: bool
     journal_today: bool
     recent_days: list[RecentDay]
+    # Экспедиция пройдена: строка остаётся в списке, но заморожена на дне выпуска
+    # и помечена отдельно (в сводных счётчиках такой участник не учитывается).
+    graduated_at: datetime | None = None
 
 
 class DynamicsSummary(BaseModel):

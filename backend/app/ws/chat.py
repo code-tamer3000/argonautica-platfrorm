@@ -94,10 +94,15 @@ async def _handle(conn: Conn, data: Any) -> None:
         elif mtype == "unsubscribe":
             manager.unsubscribe(conn, room_id)
             await conn.send_json(schemas.unsubscribed_event(room_id))
-        elif room_id in conn.subscribed and not conn.user.is_observer:
+        elif (
+            room_id in conn.subscribed
+            and not conn.user.is_observer
+            and conn.user.graduated_at is None
+        ):
             # typing — только в подписанную комнату; наблюдателю чат недоступен целиком
             # (он и подписаться не сможет — assert_room_access его отбивает), барьер на
-            # всякий случай.
+            # всякий случай. Выпускник читает, но не пишет — «печатает…» от него тоже
+            # не показываем.
             await publish_room_event(
                 room_id, schemas.typing_event(room_id, conn.user.id)
             )

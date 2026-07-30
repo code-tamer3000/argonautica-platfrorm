@@ -59,12 +59,14 @@ from app.schemas.task import (
     TaskWithStatusOut,
 )
 from app.services import stream as stream_service
+from app.services.graduation import assert_not_graduated, is_graduated
 from app.services.media import (
     resolve_submission_attachments,
     resolve_task_attachments,
 )
 from app.services.ratelimit import enforce_rate_limit
 from app.services.tasks import (
+    GRADUATE_VISIBLE_STATUSES,
     assert_pair_member,
     assert_task_visible,
     attention_count,
@@ -341,6 +343,7 @@ async def review_assignment(
     задачу партнёру внутри пары) — по своей задаче. Приёмка/возврат перекрёстной
     задачи пересчитывает завершённость её пары.
     """
+    assert_not_graduated(current_user)  # выпускник больше не проверяет чужие сдачи
     assignment = await session.get(TaskAssignment, assignment_id)
     if assignment is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Assignment not found")
@@ -428,6 +431,7 @@ async def create_submission_comment(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TaskComment:
     """Комментарий под сдачей. Право = видимость задачи (individual — адресат/админ)."""
+    assert_not_graduated(current_user)  # выпускник свои сдачи читает, но не дописывает
     await enforce_rate_limit(
         f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
     )
@@ -833,12 +837,22 @@ async def list_tasks(
     # Видимые задачи: админ видит ВСЕ неудалённые (он модератор и автор — иначе
     # созданная им individual-задача, где он не адресат, выпала бы из его списка).
     # Участник: common ∪ (individual, где у него есть назначение).
+    # Выпускник: экспедиция пройдена — в разделе остаются только задачи, которые он
+    # успел сдать (см. GRADUATE_VISIBLE_STATUSES); всё остальное для него закрыто и
+    # в assert_task_visible.
     where: list[ColumnElement[bool]] = [Task.deleted_at.is_(None)]
     if current_user.role != "admin":
-        my_individual = select(TaskAssignment.task_id).where(
-            TaskAssignment.user_id == current_user.id
-        )
-        where.append((Task.type == "common") | (Task.id.in_(my_individual)))
+        if is_graduated(current_user):
+            my_submitted = select(TaskAssignment.task_id).where(
+                TaskAssignment.user_id == current_user.id,
+                TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+            )
+            where.append(Task.id.in_(my_submitted))
+        else:
+            my_individual = select(TaskAssignment.task_id).where(
+                TaskAssignment.user_id == current_user.id
+            )
+            where.append((Task.type == "common") | (Task.id.in_(my_individual)))
     stmt = (
         select(Task)
         .where(*where)
@@ -1050,6 +1064,7 @@ async def create_submission(
     """Сдать задачу: текст и/или свои вложения. Ставит назначение в 'submitted',
     late=True если дедлайн прошёл и это первая сдача трека. Фан-аут submission.new.
     """
+    assert_not_graduated(current_user)  # экспедиция пройдена — новых сдач нет
     await enforce_rate_limit(
         f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
     )

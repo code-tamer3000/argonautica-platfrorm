@@ -128,6 +128,7 @@
 .streakBadge,
 .overdueBadge,
 .pardonBadge,
+.graduatedBadge,
 .okBadge {
   display: flex;
   align-items: center;
@@ -158,6 +159,16 @@
   color: #48bb78;
   padding: 3px 6px;
 }
+
+/* Экспедиция пройдена: карточка остаётся (видно, что человек делал), но помечена
+   и заморожена на дне выпуска. */
+.graduatedBadge {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--text-secondary);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.cardGraduated { opacity: 0.85; }
 
 /* Сетка дней — 28 ячеек */
 .days {

@@ -72,6 +72,9 @@ class UserOut(BaseModel):
     is_observer: bool = False
     # Ждём выпускную анкету — фронт перекрывает платформу её экраном (AuthGuard).
     survey_required: bool = False
+    # Экспедиция пройдена (анкета сдана): Динамика скрыта, Задачи только сданные,
+    # Рубка — только чтение. См. app/services/graduation.py.
+    graduated_at: datetime | None = None
     settings: dict[str, Any] = {}
 
 
@@ -104,4 +107,5 @@ class AdminUserOut(BaseModel):
     can_access_cabin: bool
     is_observer: bool = False
     is_active: bool = True
+    graduated_at: datetime | None = None
     created_at: datetime

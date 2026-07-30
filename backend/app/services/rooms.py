@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.room import Room, RoomMember
 from app.models.task import TaskStreamNode
 from app.models.user import User
+from app.services.graduation import assert_not_graduated
 
 NEWS_CHANNEL_NAME = "Новости"
 
@@ -78,12 +79,17 @@ async def assert_room_access(
 def assert_can_write(user: User) -> None:
     """Наблюдателю запись в любую комнату запрещена. Формально избыточно (он и на
     чтение комнату не проходит, см. assert_room_access) — оставлено как явный
-    защитный барьер на пишущих путях (отправка/правка/удаление/закреп/typing)."""
+    защитный барьер на пишущих путях (отправка/правка/удаление/закреп/typing).
+
+    Выпускник (`graduated_at`) тем же барьером теряет запись во ВСЕЙ Рубке —
+    личные чаты, дневник, каналы: история остаётся, новых сообщений нет
+    (см. app/services/graduation.py)."""
     if user.is_observer:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Observer mode: this section is read-only for you",
         )
+    assert_not_graduated(user)
 
 
 def assert_can_pin(room: Room, user: User, membership: RoomMember | None) -> None:
