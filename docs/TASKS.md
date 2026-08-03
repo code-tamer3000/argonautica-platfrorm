@@ -7,6 +7,8 @@ Author assigns work; participants submit; admin reviews. A task is **common** (`
 
 > **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no access to Задачи at all: the whole `/api/tasks` router is behind `require_participant` → 403.
 
+> **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) keep the section as an archive of what they handed in: `list_tasks` and `assert_task_visible` narrow it to tasks whose own assignment is `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES` in `services/tasks.py`) — `returned`/`assigned` and untouched common tasks disappear, since they can no longer be worked on. Writing is closed too: new submissions, submission comments, review of a cross-task and every stream write → 403. `attention_count` is 0 and progress X/Y is counted over the submitted tasks only, so the denominator never points at tasks they cannot see.
+
 ## Assignments & lifecycle
 
 - Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels).

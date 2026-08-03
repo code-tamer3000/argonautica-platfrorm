@@ -33,9 +33,14 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
   // Смена комнаты закрывает открытое меню (его якорь уже неактуален).
   useEffect(() => { setMenu(null) }, [roomId])
 
+  // Выпускник (graduated_at) в Рубке только читает: из меню остаётся копирование,
+  // всё пишущее (ответ/правка/закреп/репост/удаление) убрано — бэкенд их и так
+  // отбивает 403 (см. services/graduation.py).
+  const isGraduated = !!user?.graduated_at
+
   function buildItems(msg: MessageOut): MenuItem[] {
     const items: MenuItem[] = []
-    if (onReply) {
+    if (onReply && !isGraduated) {
       items.push({ key: 'reply', label: 'Ответить', icon: <IconReply size={18} />, onClick: () => onReply(msg) })
     }
     if (msg.content) {
@@ -44,16 +49,16 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
         onClick: () => { void navigator.clipboard?.writeText(msg.content ?? ''); toast('Скопировано') },
       })
     }
-    if (user?.id === msg.sender_id && msg.content != null) {
+    if (user?.id === msg.sender_id && msg.content != null && !isGraduated) {
       items.push({ key: 'edit', label: 'Редактировать', icon: <IconEdit size={18} />, onClick: () => onEdit(msg) })
     }
-    if (canPin) {
+    if (canPin && !isGraduated) {
       items.push({ key: 'pin', label: 'Закрепить', icon: <IconPin size={18} />, onClick: () => pin.mutate(msg.id) })
     }
-    if (onRepost && user?.role === 'admin' && !isNews) {
+    if (onRepost && user?.role === 'admin' && !isNews && !isGraduated) {
       items.push({ key: 'repost', label: 'Репост в новости', icon: <IconNews size={18} />, onClick: () => onRepost(msg) })
     }
-    if (user?.id === msg.sender_id || user?.role === 'admin') {
+    if (!isGraduated && (user?.id === msg.sender_id || user?.role === 'admin')) {
       items.push({ key: 'delete', label: 'Удалить', icon: <IconTrash size={18} />, danger: true, onClick: () => del.mutate(msg.id) })
     }
     return items

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.db.session import get_session
 from app.models.user import User
+from app.services.graduation import assert_not_graduated
 
 bearer = HTTPBearer()
 
@@ -91,6 +92,19 @@ async def require_participant(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Observer mode: this section is read-only for you",
         )
+    return user
+
+
+async def require_ongoing_participant(
+    user: Annotated[User, Depends(require_participant)],
+) -> User:
+    """Участник, который ещё В ПУТИ: не наблюдатель и не выпускник.
+
+    Выпускник (`graduated_at`, ставится отправкой выпускной анкеты) закончил
+    экспедицию — Динамика для него исчезает целиком. У админа она остаётся: обзор
+    в панели зовёт функции модуля напрямую, не по HTTP.
+    """
+    assert_not_graduated(user)
     return user
 
 

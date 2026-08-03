@@ -341,6 +341,19 @@
   .composerReveal { animation: none; }
 }
 
+/* Экспедиция пройдена: плашка на месте композера — история читается, ввода нет. */
+.graduatedNotice {
+  display: flex; align-items: center; justify-content: center; gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface);
+  font-family: var(--font-t3);
+  font-size: var(--text-body-sm);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.graduatedIcon { display: inline-flex; color: var(--accent); }
+
 /* Прогресс загрузки медиа. */
 .uploadProgress { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-2); }
 .uploadBar { flex: 1; height: 4px; background: var(--bg-deep); border-radius: 2px; overflow: hidden; }

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing_extensions import TypedDict
 
-from app.api.deps import get_current_active_user, require_participant
+from app.api.deps import get_current_active_user, require_ongoing_participant
 from app.core.config import settings
 from app.db.session import get_session
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
@@ -40,13 +40,14 @@ class _StatsResult(TypedDict):
     today_cats: list[str]
     pardoned: set[date]
 
-# Динамика (личный дневник/журнал ДЗ) — активность участника; наблюдателю закрыта.
-# Функции модуля переиспользует admin.py напрямую (не по HTTP) — их зависимость
-# роутера не касается, админ-обзор динамики работает как прежде.
+# Динамика (личный дневник/журнал ДЗ) — активность участника; наблюдателю закрыта,
+# а выпускнику (graduated_at) исчезает целиком: экспедиция пройдена, считать больше
+# нечего. Функции модуля переиспользует admin.py напрямую (не по HTTP) — их
+# зависимость роутера не касается, админ-обзор динамики работает как прежде.
 router = APIRouter(
     prefix="/api/dynamics",
     tags=["dynamics"],
-    dependencies=[Depends(require_participant)],
+    dependencies=[Depends(require_ongoing_participant)],
 )
 
 MAX_PARDONS = 3
@@ -160,8 +161,12 @@ def _calc_stats(
     program_start: date,
     timeline: Timeline,
     credits: list[date] | None = None,
+    today: date | None = None,
 ) -> _StatsResult:
-    today = _platform_today()
+    # `today` подменяем только для выпускника: его динамику замораживаем на дне
+    # выпуска, иначе после экспедиции у него бесконечно копились бы просрочки, а
+    # стрик обнулялся бы на следующий же день.
+    today = today or _platform_today()
     yesterday = today - timedelta(days=1)
     pardoned = set(pardons)
 
@@ -218,8 +223,10 @@ def _recent_days(
     pardoned: set[date],
     program_start: date,
     credited: set[date] | None = None,
+    today: date | None = None,
 ) -> list[RecentDay]:
-    today = _platform_today()
+    # `today` подменяется для выпускника — окно строим вокруг дня выпуска (см. _calc_stats).
+    today = today or _platform_today()
     credited = credited or set()
     program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
@@ -670,9 +677,15 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
         pardons = pardons_by_user.get(user.id, [])
         credits = credits_by_user.get(user.id, [])
         per_day = _calc_closed_days(messages)
-        stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
-        recent = _recent_days(stats["closed_days"], stats["pardoned"], program_start, set(credits))
-        journal_today = today in stats["closed_days"]
+        # Выпускник: считаем его путь по состоянию на день выпуска — что он делал,
+        # видно целиком, но экспедиция для него закончилась и дальше не «идёт».
+        graduated_on = _platform_day(user.graduated_at) if user.graduated_at else None
+        as_of = graduated_on or today
+        stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+        recent = _recent_days(
+            stats["closed_days"], stats["pardoned"], program_start, set(credits), today=as_of
+        )
+        journal_today = graduated_on is None and today in stats["closed_days"]
         users_out.append(
             UserDynamicsOut(
                 user_id=user.id,
@@ -685,16 +698,20 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
                 active_today=user.id in active_today_ids,
                 journal_today=journal_today,
                 recent_days=recent,
+                graduated_at=user.graduated_at,
             )
         )
 
-    total = len(users_out)
-    streaks = [u.streak for u in users_out]
+    # Сводка — про тех, кто ещё в пути: выпускники в ней только размыли бы цифры
+    # (у них навсегда «сегодня не писал»). В списке они при этом остаются.
+    ongoing = [u for u in users_out if u.graduated_at is None]
+    total = len(ongoing)
+    streaks = [u.streak for u in ongoing]
     summary = DynamicsSummary(
         total_participants=total,
-        active_today=sum(1 for u in users_out if u.active_today),
-        journal_today=sum(1 for u in users_out if u.journal_today),
-        no_overdue=sum(1 for u in users_out if u.overdue_count == 0),
+        active_today=sum(1 for u in ongoing if u.active_today),
+        journal_today=sum(1 for u in ongoing if u.journal_today),
+        no_overdue=sum(1 for u in ongoing if u.overdue_count == 0),
         avg_streak=round(sum(streaks) / total, 1) if total else 0.0,
     )
     return AdminDynamicsOut(summary=summary, users=users_out)

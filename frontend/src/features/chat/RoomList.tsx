@@ -126,7 +126,9 @@ export function RoomList({ selectedId, onSelect }: Props) {
       </div>
 
       <div className={styles.listHead}>
-        {tab === 'chats' && (
+        {/* Выпускнику новые чаты/группы не заводим: писать в них он всё равно
+            не сможет (Рубка у него только на чтение). */}
+        {tab === 'chats' && !me?.graduated_at && (
           <div className={styles.headActions}>
             <button className={styles.headBtn} onClick={() => setModal('chat')}>
               <IconPlus size={16} /> Новый чат

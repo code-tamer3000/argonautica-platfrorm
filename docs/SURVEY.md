@@ -25,6 +25,35 @@ lift.
 Frontend mirror: `AuthGuard` renders `SurveyScreen` instead of `AppShell` when
 `user.survey_required` — right after the `must_change_password` branch.
 
+## After submitting: экспедиция пройдена (`users.graduated_at`)
+
+Submitting sets `users.graduated_at` (timestamptz, once, never cleared) — a second
+flag with the opposite meaning to `survey_required`: the platform is **not** closed,
+but the path is over. Rules live in one place, `app/services/graduation.py`
+(`is_graduated` / `assert_not_graduated` / `GRADUATED_MESSAGE`):
+
+- **Dynamics disappears** for the graduate: the `/api/dynamics` router sits behind
+  `require_ongoing_participant` → 403, and the profile drops `DynamicsSection`.
+  The admin keeps the row in `/admin/dynamics` — frozen as of the graduation day
+  (`_calc_stats(..., today=graduated_on)`), badged «Прошёл Экспедицию», sorted last
+  and excluded from the summary counters. See [DYNAMICS.md](DYNAMICS.md).
+- **Tasks collapse to what was submitted**: only tasks whose own assignment is
+  `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES`); new submissions, comments,
+  reviews and stream writes → 403. See [TASKS.md](TASKS.md).
+- **Рубка becomes read-only**: full history everywhere (DMs, diary, channels), no
+  writing — `assert_can_write` refuses with `GRADUATED_MESSAGE`, WS `typing` is
+  dropped, and the composer is replaced by the «Аргонавт, ты прошёл Экспедицию»
+  notice. See [MESSAGES.md](MESSAGES.md).
+
+Каюта is deliberately untouched — it is private journaling, not part of the
+expedition track.
+
+The repair branch of `POST /api/survey` (a response already exists) commits before
+raising 409: `get_session` rolls back on exceptions, so clearing `survey_required`
+and backfilling `graduated_at` has to be committed explicitly. The migration
+backfills `graduated_at` from `survey_responses.created_at` for people who submitted
+before this release.
+
 ## Questions
 
 The canon lives in `app/services/survey_form.py` (`SURVEY_VERSION`), never on the
@@ -59,7 +88,7 @@ User (`/api/survey`, all on `get_current_user`):
 | Endpoint | Behavior |
 |---|---|
 | `GET /me` | Form canon + `completed_at`, `required`, `gift_available` |
-| `POST ` | Submit. Validates, writes `survey_responses`, clears `survey_required`. Second attempt → 409 |
+| `POST ` | Submit. Validates, writes `survey_responses`, clears `survey_required`, sets `graduated_at`. Second attempt → 409 (and repairs both flags) |
 | `GET /gift` | Presigned link to the personal book. 403 before submitting, 404 if no book is attached yet |
 
 The gift URL is signed directly via `presigned_get_url(..., download_name=...)`,

@@ -22,6 +22,7 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups.
 - `GET`/`DELETE /api/rooms/{id}` — room delete exists (see archived PROGRESS for history).
 - **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)): **no room access at all** — `assert_room_access` returns 403 for every room type, including channels and the news channel. `GET /api/rooms` returns them an **empty list**; `GET /api/rooms/personal` → 403. Chat is entirely closed for them (materials-only). `assert_can_write` stays as a redundant write-path barrier.
+- **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)): rooms stay fully readable (list, history, personal diary), but every write path is closed by `assert_can_write` → 403. The «Новый чат»/«Группа» buttons are hidden for them — a room they cannot write in is a dead end.
 
 ## Channels — implicit access (variant А)
 

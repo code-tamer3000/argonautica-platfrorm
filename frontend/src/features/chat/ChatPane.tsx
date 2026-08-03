@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthContext'
 import { ChannelCalendar } from './ChannelCalendar'
 import { Composer } from './Composer'
 import { DailyJournalForm } from './DailyJournalForm'
+import { GraduatedNotice } from './GraduatedNotice'
 import { MembersDrawer } from './MembersDrawer'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
@@ -197,6 +198,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   // Свой личный дневник: композер держим скрытым, пока пользователь не выбрал
   // режим в DailyJournalForm — раздел задания или свободную запись.
   const isOwnPersonal = !!room.is_personal && room.created_by === user?.id
+  // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403).
+  const isGraduated = !!user?.graduated_at
   const journalChosen =
     pendingJournal?.roomId === roomId || journalFreeEntry === roomId
 
@@ -284,9 +287,12 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onAtBottomChange={onAtBottomChange}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      {room.is_personal && room.created_by === user?.id && (
+      {room.is_personal && room.created_by === user?.id && !isGraduated && (
         <DailyJournalForm roomId={roomId} />
       )}
+      {/* Экспедиция пройдена: вместо любого ввода — плашка. История комнаты
+          (личные чаты, дневник, каналы) остаётся доступной на чтение. */}
+      {isGraduated && <GraduatedNotice />}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
           в новостном — только админ. Комментировать можно через треды.
           В своём личном дневнике композер СКРЫТ, пока пользователь не выбрал режим
@@ -294,7 +300,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           (journalFreeEntry): нельзя написать «просто так», не выбрав ничего.
           НО когда открыт тред — композер показываем всегда (в режиме ответа): ответить
           в тред можно везде, даже там, где верхний уровень запрещён (комментарии). */}
-      {(threadRootId != null ||
+      {!isGraduated && (threadRootId != null ||
         ((!room.is_personal || room.created_by === user?.id) &&
           (!room.is_news || user?.role === 'admin') &&
           (!isOwnPersonal || journalChosen))) && (

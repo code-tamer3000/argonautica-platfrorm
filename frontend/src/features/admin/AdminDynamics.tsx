@@ -1,6 +1,6 @@
 import { useAdminCreditDay, useAdminDynamics } from '../../api/dynamics'
 import { Avatar } from '../../components/Avatar'
-import { IconAlert, IconCheck, IconFlame, IconUsers, IconWaves } from '../../components/icons'
+import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import type { DayStatus, DynamicsSummary, RecentDay, UserDynamicsOut } from '../../lib/types'
 import styles from './admin.module.css'
@@ -135,7 +135,11 @@ function UserCard({
   busy: boolean
 }) {
   return (
-    <div className={`${dynStyles.card} ${u.active_today ? dynStyles.cardActive : ''}`}>
+    <div
+      className={`${dynStyles.card} ${u.active_today ? dynStyles.cardActive : ''} ${
+        u.graduated_at ? dynStyles.cardGraduated : ''
+      }`}
+    >
       <div className={dynStyles.cardHeader}>
         <div className={dynStyles.cardAvatarWrap}>
           <Avatar name={u.display_name} url={u.avatar_url} size={36} />
@@ -146,6 +150,16 @@ function UserCard({
           <span className={dynStyles.username}>@{u.username}</span>
         </div>
         <div className={dynStyles.badges}>
+          {/* Экспедиция пройдена: дальше динамика не идёт — цифры ниже это картина
+              на день выпуска, а не сегодняшняя. */}
+          {u.graduated_at && (
+            <span
+              className={dynStyles.graduatedBadge}
+              title={`Экспедиция пройдена ${new Date(u.graduated_at).toLocaleDateString('ru-RU')}`}
+            >
+              <IconCompass size={12} /> Прошёл Экспедицию
+            </span>
+          )}
           {u.streak > 0 && (
             <span className={dynStyles.streakBadge}>
               <IconFlame size={12} /> {u.streak}
@@ -202,6 +216,9 @@ export function AdminDynamics() {
 
   // Сортировка: сначала с просрочками, потом по убыванию стрика.
   const sorted = [...users].sort((a, b) => {
+    // Выпускники — в конец: их динамика заморожена, реагировать на неё уже не нужно.
+    const graduated = Number(!!a.graduated_at) - Number(!!b.graduated_at)
+    if (graduated !== 0) return graduated
     if (b.overdue_count !== a.overdue_count) return b.overdue_count - a.overdue_count
     return b.streak - a.streak
   })

@@ -24,9 +24,15 @@ from app.models.task import (
 )
 from app.models.user import User
 from app.services import stream as stream_service
+from app.services.graduation import is_graduated
 from app.ws.pubsub import publish_user_event
 
 logger = logging.getLogger(__name__)
+
+# Что остаётся в разделе «Задачи» у выпускника (`graduated_at`): только то, что он
+# успел сдать. 'returned' сюда не входит — доработать он уже не может, висящая
+# карточка была бы тупиком; 'assigned' тем более.
+GRADUATE_VISIBLE_STATUSES = ("submitted", "accepted")
 
 
 async def load_task(session: AsyncSession, task_id: int) -> Task:
@@ -42,15 +48,28 @@ async def assert_task_visible(
 ) -> None:
     """Проверить видимость задачи для юзера (анти-IDOR, п.1).
 
-    common → видна любому активному участнику; admin → всё. Иначе:
+    common → видна любому активному участнику; admin → всё; выпускник → только свои
+    сданные задачи (см. GRADUATE_VISIBLE_STATUSES). Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
     - pair → юзер состоит в одной из пар этого задания (task_pair_members);
     - stream → юзер входит в сетку потока (task_stream_node_members).
     """
-    if task.type == "common":
-        return
     if user.role == "admin":
+        return
+    if is_graduated(user):
+        # Экспедиция пройдена: видны только сданные задачи, независимо от типа.
+        submitted = await session.scalar(
+            select(TaskAssignment.id).where(
+                TaskAssignment.task_id == task.id,
+                TaskAssignment.user_id == user.id,
+                TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+            )
+        )
+        if submitted is None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+        return
+    if task.type == "common":
         return
 
     if task.type == "pair":
@@ -357,6 +376,21 @@ async def fan_out_task_event(
 # --- прогресс и «требует внимания» ------------------------------------------
 
 
+async def _graduate_progress(session: AsyncSession, user: User) -> tuple[int, int]:
+    """(done, total) выпускника: знаменатель — сданные задачи, числитель — принятые."""
+    rows = await session.execute(
+        select(TaskAssignment.status)
+        .join(Task, Task.id == TaskAssignment.task_id)
+        .where(
+            Task.deleted_at.is_(None),
+            TaskAssignment.user_id == user.id,
+            TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+        )
+    )
+    statuses = [r[0] for r in rows.all()]
+    return sum(1 for st in statuses if st == "accepted"), len(statuses)
+
+
 async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]:
     """(done, total) прогресса юзера.
 
@@ -367,6 +401,11 @@ async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]
     (назначение в статусе 'accepted'). Для общих задача в total считается всегда, а в
     done — только если юзер её сдал и она принята.
     """
+    if is_graduated(user):
+        # У выпускника раздел схлопнут до сданных задач — прогресс считаем по ним же,
+        # иначе знаменатель ссылался бы на задачи, которых он уже не видит.
+        return await _graduate_progress(session, user)
+
     common_total = (
         await session.scalar(
             select(func.count())
@@ -414,6 +453,9 @@ async def attention_count(session: AsyncSession, user: User) -> int:
       (2) непочатые общие задачи, у которых строки назначения ещё нет (ленивое
           создание при первой сдаче) — участнику всё равно есть что сдать.
     """
+    if is_graduated(user):
+        return 0  # экспедиция пройдена — сдавать больше нечего, бейдж пуст
+
     active_assignments = (
         await session.scalar(
             select(func.count())
