@@ -292,7 +292,7 @@
   font-size: 0.8rem;
   color: var(--text-secondary);
 }
-.deliveryFailed { color: var(--danger, #c0392b); }
+.deliveryFailed { color: var(--blood-bright); }
 .deliveryBtn {
   background: none;
   border: none;

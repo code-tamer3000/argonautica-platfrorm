@@ -9,6 +9,7 @@ import {
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
 import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
+import { Spinner } from '../../components/Spinner'
 import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
 import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
@@ -557,7 +558,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                 aria-haspopup="menu"
                 aria-expanded={attachMenuOpen}
               >
-                {uploading ? <span className={styles.spin} /> : <IconAttach size={18} />}
+                {uploading ? <Spinner size={16} /> : <IconAttach size={18} />}
               </button>
             </div>
             <button
@@ -597,7 +598,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
             title="Отправить"
             aria-label="Отправить"
           >
-            {send.isPending || reposting ? <span className={styles.spin} /> : <IconSend size={20} />}
+            {send.isPending || reposting ? <Spinner size={16} /> : <IconSend size={20} />}
           </button>
         ) : (
           <VoiceComposer

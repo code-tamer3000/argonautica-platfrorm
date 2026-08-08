@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { IconClose, IconMic, IconSend, IconTrash } from '../../components/icons'
+import { Spinner } from '../../components/Spinner'
 import { VoicePlayer } from '../../components/VoicePlayer'
 import { preparePendingVoice, type PendingUpload } from '../../lib/mediaUpload'
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder'
@@ -138,7 +139,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
           title="Отправить голосовое"
           aria-label="Отправить голосовое"
         >
-          {sending ? <span className={styles.spin} /> : <IconSend size={20} />}
+          {sending ? <Spinner size={16} /> : <IconSend size={20} />}
         </button>
       </div>
     )

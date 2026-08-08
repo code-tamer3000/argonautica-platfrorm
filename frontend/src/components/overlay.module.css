@@ -101,9 +101,9 @@
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   width: 40px; height: 40px; border-radius: 50%;
   border: 3px solid rgba(255, 255, 255, 0.25); border-top-color: var(--accent);
-  animation: spin 720ms linear infinite; pointer-events: none;
+  animation: arg-spin-center 720ms linear infinite; pointer-events: none;
 }
-@keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes arg-spin-center { to { transform: translate(-50%, -50%) rotate(360deg); } }
 .lightboxBufLabel {
   font-size: var(--text-label-md); color: #fff; white-space: nowrap;
   font-variant-numeric: tabular-nums;

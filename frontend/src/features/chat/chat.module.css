@@ -372,7 +372,7 @@
 }
 .recDot {
   width: 10px; height: 10px; flex: none; border-radius: 50%;
-  background: var(--color-error, #d9534f); animation: arg-rec-pulse 1.2s ease-in-out infinite;
+  background: var(--blood-bright); animation: arg-rec-pulse 1.2s ease-in-out infinite;
 }
 @keyframes arg-rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .composerInput {
@@ -419,13 +419,6 @@
 }
 .sendBtn:hover:not(:disabled) { background: var(--color-zoloto-yar); }
 .sendBtn:disabled { opacity: 0.6; cursor: default; }
-
-.spin {
-  width: 16px; height: 16px; display: inline-block;
-  border: 2px solid var(--color-frame-deep); border-top-color: var(--accent);
-  border-radius: 50%; animation: arg-spin 0.7s linear infinite;
-}
-@keyframes arg-spin { to { transform: rotate(360deg); } }
 
 /* Процент сжатия видео на кнопке-скрепке (вместо неопределённого спиннера). Моноширинно
    и по центру, чтобы цифры не прыгали при смене (18px — габарит IconAttach). */
@@ -854,7 +847,7 @@
 }
 .profileName { font-size: 18px; font-weight: 600; margin-top: var(--space-2); }
 .profileUsername { font-size: 13px; color: var(--text-muted); }
-.profileRole { font-size: 12px; color: var(--color-gold, #c9a24b); }
+.profileRole { font-size: 12px; color: var(--accent); }
 .profileBio {
   font-size: var(--text-ui);
   color: var(--text-primary);
