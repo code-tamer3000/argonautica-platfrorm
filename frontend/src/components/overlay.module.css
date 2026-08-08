@@ -87,7 +87,7 @@
   backdrop-filter: blur(4px);
 }
 .lightboxBar { flex: 1; height: 4px; background: rgba(255, 255, 255, 0.2); border-radius: 2px; overflow: hidden; }
-.lightboxBarFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 120ms ease; }
+.lightboxBarFill { width: 100%; height: 100%; background: var(--accent); border-radius: 2px; transform-origin: left; transition: transform 120ms ease; }
 .lightboxPct {
   font-size: var(--text-label-md); color: #fff; min-width: 34px; text-align: right;
   font-variant-numeric: tabular-nums;
