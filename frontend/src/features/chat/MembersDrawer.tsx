@@ -56,7 +56,7 @@ export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }:
               display: 'flex',
               gap: 8,
               padding: '8px 0',
-              borderBottom: '1px solid var(--border)',
+              borderBottom: '1px solid var(--divider)',
               alignItems: 'center',
             }}
           >
@@ -94,9 +94,9 @@ export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }:
                   fontSize: 11,
                   padding: '2px 6px',
                   borderRadius: 4,
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--divider)',
                   background: 'transparent',
-                  color: 'var(--danger, #e74c3c)',
+                  color: 'var(--blood-bright)',
                   cursor: 'pointer',
                 }}
               >
@@ -108,7 +108,7 @@ export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }:
       })}
 
       {canDelete && (
-        <div style={{ paddingTop: 16, marginTop: 8, borderTop: '1px solid var(--border)' }}>
+        <div style={{ paddingTop: 16, marginTop: 8, borderTop: '1px solid var(--divider)' }}>
           <button
             onClick={handleDeleteRoom}
             disabled={deleteRoom.isPending}
@@ -117,9 +117,9 @@ export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }:
               fontSize: 13,
               padding: '8px 12px',
               borderRadius: 6,
-              border: '1px solid var(--danger, #e74c3c)',
+              border: '1px solid var(--blood-bright)',
               background: 'transparent',
-              color: 'var(--danger, #e74c3c)',
+              color: 'var(--blood-bright)',
               cursor: 'pointer',
             }}
           >

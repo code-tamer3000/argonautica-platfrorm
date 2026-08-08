@@ -26,20 +26,6 @@
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.progressTrack {
-  flex: 1;
-  height: 6px;
-  background: var(--bg-deep);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-.progressFill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: var(--radius-pill);
-  transition: width 200ms ease;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -530,7 +516,7 @@
 
 .uploadProgress { display: flex; align-items: center; gap: var(--space-2); }
 .uploadBar { flex: 1; height: 4px; background: var(--bg-deep); border-radius: 2px; overflow: hidden; }
-.uploadBarFill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 120ms ease; }
+.uploadBarFill { width: 100%; height: 100%; background: var(--accent); border-radius: 2px; transform-origin: left; transition: transform 120ms ease; }
 .uploadPct { font-family: var(--font-t4); font-size: 0.75rem; color: var(--text-secondary); min-width: 34px; text-align: right; }
 
 .composerActions {

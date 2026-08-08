@@ -185,7 +185,7 @@ function MessageItemInner({
                 <div className={styles.uploadBar}>
                   <div
                     className={styles.uploadBarFill}
-                    style={{ width: `${Math.round(outbox.uploadProgress * 100)}%` }}
+                    style={{ transform: `scaleX(${outbox.uploadProgress})` }}
                   />
                 </div>
                 <span className={styles.uploadPct}>

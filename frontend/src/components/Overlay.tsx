@@ -80,7 +80,7 @@ function LightboxImage({ url }: { url: string }) {
       {loading && pct != null && (
         <div className={styles.lightboxProgress} aria-hidden="true">
           <div className={styles.lightboxBar}>
-            <div className={styles.lightboxBarFill} style={{ width: `${pct}%` }} />
+            <div className={styles.lightboxBarFill} style={{ transform: `scaleX(${pct / 100})` }} />
           </div>
           <span className={styles.lightboxPct}>{pct}%</span>
         </div>
@@ -140,7 +140,7 @@ function LightboxVideo({ url }: { url: string }) {
       {buffering && pct != null && (
         <div className={styles.lightboxProgress} aria-hidden="true">
           <div className={styles.lightboxBar}>
-            <div className={styles.lightboxBarFill} style={{ width: `${pct}%` }} />
+            <div className={styles.lightboxBarFill} style={{ transform: `scaleX(${pct / 100})` }} />
           </div>
           <span className={styles.lightboxBufLabel}>буфер {pct}%</span>
         </div>

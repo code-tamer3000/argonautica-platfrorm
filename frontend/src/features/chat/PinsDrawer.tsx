@@ -36,7 +36,7 @@ export function PinsDrawer({ roomId, onClose, onNavigate }: Props) {
             key={pin.message_id}
             style={{
               padding: '10px 0',
-              borderBottom: '1px solid var(--border)',
+              borderBottom: '1px solid var(--divider)',
               display: 'flex',
               gap: 8,
               alignItems: 'flex-start',
@@ -96,7 +96,7 @@ export function PinsDrawer({ roomId, onClose, onNavigate }: Props) {
                   fontSize: 11,
                   padding: '2px 6px',
                   borderRadius: 4,
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--divider)',
                   background: 'transparent',
                   color: 'var(--muted)',
                   cursor: 'pointer',
