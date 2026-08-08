@@ -26,20 +26,6 @@
   color: var(--text-secondary);
   white-space: nowrap;
 }
-.progressTrack {
-  flex: 1;
-  height: 6px;
-  background: var(--bg-deep);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-}
-.progressFill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: var(--radius-pill);
-  transition: width 200ms ease;
-}
-
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
