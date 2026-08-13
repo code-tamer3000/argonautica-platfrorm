@@ -100,3 +100,4 @@ New feature docs: fold into the closest core domain file if <50 lines AND a natu
 - Do not mock PostgreSQL or Redis in integration tests — the test compose provides real ones.
 - Frontend has no test runner yet; the gate is `tsc --noEmit`. When vitest is added, cover components with logic (skip snapshot-only tests).
 - `make migration` autogenerate re-reports 4 phantom index diffs — see docs/DATA_MODEL.md "Migrations gotchas"; NEVER commit those index drops/recreates.
+- A task that changes UI is not done until the agent opened the result (Playwright MCP against `make local-up`) and looked at it — clicked through, screenshot, checked console errors. Don't report a UI change as working from reading the diff alone.
