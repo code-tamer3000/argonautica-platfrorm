@@ -1,11 +1,13 @@
 # nginx тестового стенда (staging). Отдельный шаблон — прод-конфиг не трогаем.
 # Отличия от прода:
 #   - один backend (без blue-green и include active_backend.conf) — proxy_pass прямо;
-#   - один server на 443, server_name = ${DOMAIN} (поддомен staging.*), боевой LE-серт.
-#     Наружу торчит на :8443 (прод держит :443 на том же IP). Доступ по IP закрыт.
+#   - один server на 80, БЕЗ TLS/QUIC — TLS терминирует прод-nginx (см.
+#     docker/nginx/templates/default.conf.template, server_name ${STAGING_DOMAIN}),
+#     который проксирует сюда по внутренней сети `gateway`. Наружу этот контейнер
+#     ничего не публикует (см. docker-compose.staging.yml — нет секции ports).
 # Стенд открыт (без Basic Auth) — это внутренний тестовый превью, не прод.
 # envsubst официального nginx-образа подставляет ${DOMAIN} (nginx-переменные $host и т.п.
-# не трогаются). Наружу маппится 8443:443 (см. docker-compose.staging.yml).
+# не трогаются).
 
 # Карта для WebSocket-апгрейда.
 map $http_upgrade $connection_upgrade {
@@ -14,33 +16,13 @@ map $http_upgrade $connection_upgrade {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
-    # HTTP/3 (QUIC) поверх UDP 443 (снаружи :8443/udp, см. compose). Аддитивно к
-    # h2/h1 — клиент апгрейдится по Alt-Svc ниже. reuseport: единственный server
-    # на этой паре адрес:порт, поэтому здесь.
-    listen 443 quic reuseport;
-    listen [::]:443 quic reuseport;
-    # TLSv1.3 обязателен для h3; TLSv1.2 оставляем для h2/h1-клиентов.
-    ssl_protocols TLSv1.2 TLSv1.3;
-    # Стенд отвечает ТОЛЬКО на свой поддомен (staging.argonautica-systems.ru) —
-    # доступ по IP закрыт. Прод на этом же IP держит :443; стенд — :8443.
+    listen 80;
+    listen [::]:80;
     server_name ${DOMAIN};
-
-    # TLS-серт под ${DOMAIN}. На поддомене — боевой Let's Encrypt (выпущен webroot'ом
-    # через :80 прода; см. docs/DEPLOY.md → staging). В git не коммитится (только .example
-    # bootstrap self-signed через docker/nginx-staging/make-self-signed.sh для IP-режима).
-    ssl_certificate     /etc/nginx/certs/${DOMAIN}.crt;
-    ssl_certificate_key /etc/nginx/certs/${DOMAIN}.key;
 
     add_header X-Content-Type-Options nosniff always;
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
-    # Анонс HTTP/3: клиент повторно подключится по UDP. Порт :8443 — тот, на
-    # который клиент реально ходит снаружи (стенд маппит 8443:443). ma=86400 — сутки.
-    # Медиа тут тот же origin (path-style), поэтому server-уровня достаточно.
-    add_header Alt-Svc 'h3=":8443"; ma=86400' always;
 
     # Сжатие текстовых ответов (SPA-бандл, JSON API). Медиа не жмём — уже сжато.
     gzip on;
@@ -59,17 +41,14 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # MinIO по префиксу бакета (path-style S3): один хост по IP, медиа-поддомена нет.
-    # Presigned-URL path-style = https://<host>:8443/<bucket>/<key>; SigV4 подписывает
-    # host+path, поэтому путь не переписываем.
-    #   ВАЖНО: стенд слушает НЕСТАНДАРТНЫЙ порт :8443, и backend подписывает URL с
-    #   портом → в подпись входит host="<ip>:8443". Значит MinIO должен увидеть тот же
-    #   Host С ПОРТОМ, иначе SignatureDoesNotMatch. $host порт ОТБРАСЫВАЕТ, поэтому тут
-    #   именно $http_host (полный Host из запроса, с :8443). На проде порт стандартный
-    #   443 — там $host и подписанный host совпадают, эта тонкость не всплывает.
+    # MinIO по префиксу бакета (path-style S3): один хост, медиа-поддомена нет.
+    # Presigned-URL path-style = https://<host>/<bucket>/<key>; SigV4 подписывает
+    # host+path, поэтому путь не переписываем. Порт больше не часть подписи (прод-nginx
+    # терминирует TLS на стандартном :443 и шлёт сюда Host БЕЗ порта), значит здесь
+    # достаточно обычного $host — костыль с $http_host (нужен был только под :8443) убран.
     location ~ ^/(chat-media|kb-media)/ {
         proxy_pass http://minio:9000;
-        proxy_set_header Host $http_host;
+        proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

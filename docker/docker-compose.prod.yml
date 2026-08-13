@@ -115,12 +115,26 @@ services:
     environment:
       DOMAIN: ${DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN}
+      # Поддомен стенда — проксируется этим же nginx (см. docs/DEPLOY.md → Staging),
+      # отдельного порта у стенда больше нет.
+      STAGING_DOMAIN: ${STAGING_DOMAIN}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/active_backend.conf:/etc/nginx/active_backend.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - certbot_webroot:/var/www/certbot
+    networks:
+      # Без явного списка сервис получил бы ТОЛЬКО перечисленные сети — `default`
+      # обязателен, иначе backend-blue/backend-green/frontend/minio станут недостижимы.
+      - default
+      # Мост к staging-compose-проекту (platform-staging), созданный один раз вручную
+      # (`docker network create gateway`) и объявленный `external` в обоих compose-файлах.
+      - gateway
     restart: unless-stopped
+
+networks:
+  gateway:
+    external: true
 
 volumes:
   postgres_data:
