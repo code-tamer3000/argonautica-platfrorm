@@ -1,0 +1,34 @@
+/*
+ * Пустое состояние. Сводит четыре расходившиеся версии:
+ *   support, cabin      — --text-ui / --text-ghost
+ *   app/notifications   — --text-label-md / --text-muted, padding --space-5
+ *   tasks/stream        — 0.9rem (мимо шкалы) / --text-muted
+ *   chat                — --text-muted, padding --space-8, на всю высоту
+ * Каноника: --text-ui / --text-muted.
+ */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  text-align: center;
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-muted);
+}
+
+/* Внутри списка или панели. */
+.inline {
+  padding: var(--space-5);
+}
+
+/* Пустой экран целиком. */
+.block {
+  flex: 1;
+  padding: var(--space-8);
+}
+
+.glyph {
+  color: var(--text-ghost);
+}

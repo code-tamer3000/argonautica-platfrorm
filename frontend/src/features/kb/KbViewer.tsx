@@ -3,6 +3,7 @@ import { useKbItem } from '../../api/kb'
 import { MdAttachment } from './MdAttachment'
 import { KbComments } from './KbComments'
 import { Spinner } from '../../components/Spinner'
+import { Badge } from '../../components/Badge'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
 import { marked } from 'marked'
@@ -26,7 +27,7 @@ export function KbViewer() {
     <div className={styles.viewer}>
       <div className={styles.viewerHead}>
         {user?.role === 'admin' && !item.published && (
-          <span className={styles.badgeDraft}>Черновик</span>
+          <Badge>Черновик</Badge>
         )}
         <h1 className={styles.articleTitle}>{item.title}</h1>
         <div className={styles.articleMeta}>

@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useKbCategories, useKbItems } from '../../api/kb'
 import { Spinner } from '../../components/Spinner'
+import { Badge } from '../../components/Badge'
+import { cardClass } from '../../components/Card'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
 import type { KbItemOut } from '../../lib/types'
@@ -73,14 +75,14 @@ export function KbList() {
           {showHeadings && <h2 className={styles.categoryTitle}>{group.title}</h2>}
           <div className={styles.grid}>
             {group.items.map((item) => (
-              <Link key={item.id} to={`/kb/${item.id}`} className={styles.card}>
+              <Link key={item.id} to={`/kb/${item.id}`} className={cardClass({ interactive: true })}>
                 <div className={styles.cardHead}>
                   <span className={styles.cardTitle}>{item.title}</span>
                   {user?.role === 'admin' && !item.published && (
-                    <span className={styles.badgeDraft}>Черновик</span>
+                    <Badge>Черновик</Badge>
                   )}
                   {user?.role === 'admin' && item.published && (
-                    <span className={styles.badgePublished}>Опубликовано</span>
+                    <Badge tone="accent">Опубликовано</Badge>
                   )}
                 </div>
                 {item.body && (

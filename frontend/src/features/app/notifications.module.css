@@ -82,12 +82,7 @@
 .panelList {
   overflow-y: auto;
 }
-.empty {
-  padding: var(--space-5);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--text-label-md);
-}
+/* Пустой список — components/EmptyState. */
 
 .item {
   position: relative;

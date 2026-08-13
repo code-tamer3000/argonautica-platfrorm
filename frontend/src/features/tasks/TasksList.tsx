@@ -10,6 +10,9 @@ import {
 import { useUsersMap } from '../../api/users'
 import { useAuth } from '../auth/AuthContext'
 import { Spinner } from '../../components/Spinner'
+import { Badge } from '../../components/Badge'
+import { Chip, type ChipKind } from '../../components/Chip'
+import { cardClass } from '../../components/Card'
 import { dayLabel } from '../../lib/format'
 import styles from './tasks.module.css'
 
@@ -27,10 +30,10 @@ const STATUS_LABEL: Record<Exclude<MyTaskStatus, null>, string> = {
   accepted: 'Принята',
 }
 
-function statusChipClass(status: MyTaskStatus): string {
-  if (status === 'accepted') return `${styles.chip} ${styles.chipAccepted}`
-  if (status === 'returned') return `${styles.chip} ${styles.chipReturned}`
-  return styles.chip
+function statusChipKind(status: MyTaskStatus): ChipKind {
+  if (status === 'accepted') return 'accepted'
+  if (status === 'returned') return 'returned'
+  return 'neutral'
 }
 
 // Истёкшая = есть дедлайн в прошлом.
@@ -46,9 +49,9 @@ function AssigneeChips({ taskId }: { taskId: number }) {
   return (
     <div className={styles.cardChips}>
       {assignments.map((a) => (
-        <span key={a.assignment_id} className={`${styles.chip}`}>
+        <Chip key={a.assignment_id}>
           {users.get(a.user_id)?.display_name ?? `Участник #${a.user_id}`}
-        </span>
+        </Chip>
       ))}
     </div>
   )
@@ -56,19 +59,19 @@ function AssigneeChips({ taskId }: { taskId: number }) {
 
 function TaskCard({ task, isAdmin }: { task: TaskWithStatusOut; isAdmin: boolean }) {
   return (
-    <Link to={`/tasks/${task.id}`} className={styles.card}>
+    <Link to={`/tasks/${task.id}`} className={cardClass({ interactive: true })}>
       <div className={styles.cardHead}>
         <span className={styles.cardTitle}>{task.title}</span>
-        <span className={`${styles.badge} ${styles.badgeType}`}>{TYPE_LABEL[task.type]}</span>
+        <Badge tone="accent">{TYPE_LABEL[task.type]}</Badge>
       </div>
       <div className={styles.cardChips}>
         {task.my_status && (
-          <span className={statusChipClass(task.my_status)}>
+          <Chip kind={statusChipKind(task.my_status)}>
             {STATUS_LABEL[task.my_status]}
-          </span>
+          </Chip>
         )}
-        {task.deadline_soon && <span className={`${styles.chip} ${styles.chipSoon}`}>Подходит срок</span>}
-        {task.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
+        {task.deadline_soon && <Chip kind="soon">Подходит срок</Chip>}
+        {task.late && <Chip kind="late">Сдано позже</Chip>}
       </div>
       {isAdmin && (
         <div className={styles.progressRow}>
@@ -76,9 +79,9 @@ function TaskCard({ task, isAdmin }: { task: TaskWithStatusOut; isAdmin: boolean
             сдали {task.submitted_count} из {task.total_recipients}
           </span>
           {task.unreviewed_count > 0 && (
-            <span className={`${styles.chip} ${styles.chipUnreviewed}`}>
+            <Chip kind="unreviewed">
               {task.unreviewed_count} на проверке
-            </span>
+            </Chip>
           )}
         </div>
       )}
