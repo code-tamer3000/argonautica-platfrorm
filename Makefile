@@ -8,7 +8,7 @@
 #
 # Prereqs: Docker running. Nothing else — no host venv, no host node_modules.
 
-COMPOSE_FILE := docker-compose.test.yaml
+COMPOSE_FILE := docker/docker-compose.test.yaml
 PROJECT := argonautica-test
 # Prefer Compose v2 (`docker compose`); fall back to v1 (`docker-compose`).
 DC := $(shell docker compose version >/dev/null 2>&1 && echo "docker compose" || echo "docker-compose")
@@ -19,7 +19,21 @@ NODE_IMAGE := node:20-slim
 # install never writes root-owned files back onto the host tree.
 FE_RUN := docker run --rm -v "$(CURDIR)/frontend":/app -v /app/node_modules -w /app $(NODE_IMAGE)
 
-.PHONY: help test test-backend test-frontend lint migrate-test migration up-test down-test
+# --- local prod-like stack (browser/Playwright checks before commit) ---
+# Runs the ACTUAL docker/docker-compose.prod.yml locally (DOMAIN=localhost,
+# MEDIA_DOMAIN=media.localhost from .env) — same topology as prod: one nginx
+# edge, built SPA, MinIO behind it. No blue-green (single backend-blue),
+# bot always scaled to 0 (needs a real TELEGRAM_BOT_TOKEN). Separate project
+# name (platform-local) so it never collides with the test stack or prod.
+LOCAL_CF := docker/docker-compose.prod.yml
+LOCAL_PROJECT := platform-local
+# STAGING_DOMAIN живёт только в серверном .env (стенд за прод-шлюзом). Локально он
+# пуст, а пустой `server_name ;` в шаблоне nginx — синтаксическая ошибка, и nginx
+# уходит в crash-loop. Подставляем localhost: блок стенда становится дублем основного
+# (nginx это warning'ом игнорирует, выигрывает первый), сертификат берётся готовый.
+LOCAL_DCT := STAGING_DOMAIN=localhost $(DC) -p $(LOCAL_PROJECT) -f $(LOCAL_CF) --env-file .env
+
+.PHONY: help test test-backend test-frontend lint migrate-test migration up-test down-test local-up local-down local-reset local-logs
 
 help:
 	@echo "Targets:"
@@ -31,6 +45,10 @@ help:
 	@echo "  test-backend   - pytest in the api container"
 	@echo "  test-frontend  - tsc typecheck in a node container (no vitest yet)"
 	@echo "  lint           - ruff + mypy (backend) + tsc (frontend)"
+	@echo "  local-up       - build + migrate + start prod-like stack at https://localhost"
+	@echo "  local-down     - stop it (data kept)"
+	@echo "  local-reset    - stop it + drop volumes (clean DB/MinIO)"
+	@echo "  local-logs     - tail backend + nginx logs"
 
 # --- test env (stateful services) ---
 up-test:
@@ -74,3 +92,31 @@ test-frontend:
 lint:
 	$(DCT) run --rm api sh -lc "ruff check --no-cache app alembic && mypy --cache-dir=/tmp/mypy app"
 	$(FE_RUN) sh -lc "npm ci --silent && npm run typecheck"
+
+# --- local prod-like stack ---
+# First run needs TLS certs trusted by the browser (mkcert, one-time, see CLAUDE.md):
+#   mkcert -install
+#   mkcert -cert-file docker/nginx/certs/localhost.crt -key-file docker/nginx/certs/localhost.key localhost 127.0.0.1 ::1
+#   mkcert -cert-file docker/nginx/certs/media.localhost.crt -key-file docker/nginx/certs/media.localhost.key media.localhost
+local-up:
+	@test -f docker/nginx/certs/localhost.crt || \
+		{ echo "нет docker/nginx/certs/*.crt — см. коммент над local-up в Makefile (mkcert)"; exit 1; }
+	@# Прод-compose объявляет сеть `gateway` external (мост прод↔staging на сервере).
+	@# Локально её никто не создаёт — создаём сами, идемпотентно.
+	@docker network inspect gateway >/dev/null 2>&1 || docker network create gateway >/dev/null
+	$(LOCAL_DCT) build backend-blue frontend
+	$(LOCAL_DCT) run --rm migrate
+	$(LOCAL_DCT) up -d postgres redis minio backend-blue transcode-worker frontend nginx
+	@echo "waiting for backend..."
+	@for i in $$(seq 1 30); do $(LOCAL_DCT) exec -T backend-blue true >/dev/null 2>&1 && break; sleep 1; done
+	@$(LOCAL_DCT) exec -T backend-blue python -m scripts.bootstrap_admin admin
+	@echo "https://localhost  (admin / see password above on first run)"
+
+local-down:
+	$(LOCAL_DCT) stop
+
+local-reset:
+	$(LOCAL_DCT) down -v
+
+local-logs:
+	$(LOCAL_DCT) logs -f backend-blue nginx

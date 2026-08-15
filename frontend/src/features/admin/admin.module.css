@@ -17,8 +17,6 @@
 .listTitle { font-family: var(--font-t4); color: var(--text-primary); font-size: var(--text-ui); }
 .listMeta { font-size: 0.75rem; color: var(--text-secondary); }
 .listActions { display: flex; gap: var(--space-2); flex-shrink: 0; }
-.badgePublished { font-size: 0.75rem; padding: 2px var(--space-2); background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); border-radius: 9999px; }
-.badgeDraft { font-size: 0.75rem; padding: 2px var(--space-2); background: var(--divider); color: var(--text-secondary); border-radius: 9999px; }
 /* Статус разобранного обращения + «хлебные крошки» для возврата в работу. */
 .crumbs { display: inline-flex; align-items: center; gap: var(--space-1); flex-wrap: wrap; font-size: 0.75rem; color: var(--text-secondary); margin-top: var(--space-1); }
 .crumbLink { background: none; border: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }

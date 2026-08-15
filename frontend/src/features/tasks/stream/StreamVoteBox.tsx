@@ -91,7 +91,7 @@ export function StreamVoteBox({
     <div className={styles.voteBox}>
       <h4>
         {node.label} — общая фраза
-        {readOnly && <span className={styles.badge}>наблюдение</span>}
+        {readOnly && <span className={styles.mark}>наблюдение</span>}
       </h4>
       <p className={styles.stageMeta}>
         Фраза принимается, когда за один вариант проголосуют все:{' '}
@@ -99,7 +99,7 @@ export function StreamVoteBox({
       </p>
 
       {node.options.length === 0 ? (
-        <p className={styles.empty}>
+        <p className={styles.note}>
           {readOnly
             ? 'Подгруппа пока не предложила ни одного варианта.'
             : 'Вариантов пока нет — предложите первый.'}

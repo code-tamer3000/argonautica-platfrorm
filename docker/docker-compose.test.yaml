@@ -52,13 +52,13 @@ services:
     # compose v1/v2 and would silently fall back to a full local build.
     image: argonautica-test-api
     build:
-      context: ./backend
+      context: ../backend
       dockerfile: Dockerfile
       target: test # prod runtime + pinned dev tooling (pytest/ruff/mypy)
-    env_file: .env.test
+    env_file: ../.env.test
     depends_on:
       - postgres
       - redis
       - minio
     volumes:
-      - ./backend:/app
+      - ../backend:/app

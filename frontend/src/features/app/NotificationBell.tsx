@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useMarkNotificationsRead, useNotifications } from '../../api/notifications'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
+import { EmptyState } from '../../components/EmptyState'
 import { IconAlert, IconBell } from '../../components/icons'
 import { timeHM } from '../../lib/format'
 import type { NotificationKind, NotificationOut } from '../../lib/types'
@@ -82,7 +83,7 @@ export function NotificationBell() {
             )}
           </div>
           <div className={styles.panelList}>
-            {items.length === 0 && <div className={styles.empty}>Пока пусто</div>}
+            {items.length === 0 && <EmptyState>Пока пусто</EmptyState>}
             {items.map((n) => {
               const system = n.actor_id == null
               const title = system

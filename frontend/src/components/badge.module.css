@@ -1,0 +1,24 @@
+/*
+ * Статусная плашка. Каноника взята из features/kb (.badgeDraft/.badgePublished)
+ * и features/tasks (.badge/.badgeType) — они совпадали один-в-один.
+ * В features/admin под теми же именами жил другой вид (залитая пилюля 0.75rem
+ * с radius 9999px мимо шкалы) — он сведён сюда.
+ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.accent {
+  border-color: var(--divider-gold);
+  color: var(--accent);
+}

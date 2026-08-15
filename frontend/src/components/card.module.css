@@ -1,0 +1,40 @@
+/*
+ * Поверхность над фоном. Каноника — features/tasks и features/kb (.card),
+ * они совпадали один-в-один.
+ *
+ * Тени нет: глубину даёт сдвиг тона плюс волосяная линейка. Свечение
+ * (--glow-gold) на карточки не вешаем — оно зарезервировано за всплывающими
+ * поверхностями: модалка, тост, баннер обновления.
+ */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* Компактный вариант — им пользуется каюта. */
+.compact {
+  padding: var(--space-3) var(--space-4);
+}
+
+/* Кликабельная карточка рендерится как <a> или <button>. */
+.interactive {
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition-base);
+}
+
+.interactive:hover {
+  border-color: var(--divider-gold);
+}
+
+/* Карточка, которая сама просит внимания (запись Динамики). */
+.accent {
+  border-color: var(--divider-gold);
+}

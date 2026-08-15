@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useCabinEntries, useDeleteCabinEntry } from '../../api/cabin'
 import { Button } from '../../components/Button'
+import { EmptyState } from '../../components/EmptyState'
+import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { IconPlus, IconEdit, IconTrash, IconClose, IconAlert } from '../../components/icons'
 import { toast } from '../../stores/toast'
@@ -14,6 +16,7 @@ import { CabinEntryCard, CabinEntryList } from './CabinEntryCard'
 import styles from './cabin.module.css'
 
 const KINDS: CabinKind[] = ['diary', 'decatastrophize', 'trigger']
+const KIND_OPTIONS = KINDS.map((k) => ({ value: k, label: CABIN_SECTIONS[k].title }))
 
 export function CabinScreen() {
   const [kind, setKind] = useState<CabinKind>('diary')
@@ -43,23 +46,15 @@ export function CabinScreen() {
     <div className={styles.page}>
       <h1 className={styles.title}>Каюта</h1>
 
-      <div className={styles.segmented} role="tablist">
-        {KINDS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={kind === k}
-            className={kind === k ? styles.segActive : styles.seg}
-            onClick={() => {
-              setKind(k)
-              setEditing(null)
-            }}
-          >
-            {CABIN_SECTIONS[k].title}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label="Подраздел каюты"
+        options={KIND_OPTIONS}
+        value={kind}
+        onChange={(k) => {
+          setKind(k)
+          setEditing(null)
+        }}
+      />
 
       <p className={styles.subtitle}>{section.subtitle}</p>
 
@@ -82,7 +77,7 @@ export function CabinScreen() {
       )}
 
       {!isLoading && (entries?.length ?? 0) === 0 && editing !== 'new' && (
-        <p className={styles.empty}>Пока нет записей. Добавьте первую — заполните форму выше.</p>
+        <EmptyState>Пока нет записей. Добавьте первую — заполните форму выше.</EmptyState>
       )}
 
       <CabinEntryList

@@ -17,6 +17,7 @@ import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { Badge } from '../../components/Badge'
 import { Attachment } from '../chat/Attachment'
 import styles from './admin.module.css'
 
@@ -409,9 +410,9 @@ export function AdminKb() {
             <div className={styles.listItemMain}>
               <span className={styles.listTitle}>{item.title}</span>
               {item.published ? (
-                <span className={styles.badgePublished}>Опубликовано</span>
+                <Badge tone="accent">Опубликовано</Badge>
               ) : (
-                <span className={styles.badgeDraft}>Черновик</span>
+                <Badge>Черновик</Badge>
               )}
             </div>
             <div className={styles.listActions}>

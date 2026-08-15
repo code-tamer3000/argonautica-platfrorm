@@ -49,18 +49,6 @@
   gap: var(--space-4);
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--divider);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  text-decoration: none;
-  color: var(--text-primary);
-  transition: var(--transition-base);
-}
 
 .card:hover {
   border-color: var(--divider-gold);
@@ -101,29 +89,6 @@
   margin-top: auto;
 }
 
-.badgeDraft {
-  font-family: var(--font-t4);
-  font-size: var(--text-label);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--divider);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.badgePublished {
-  font-family: var(--font-t4);
-  font-size: var(--text-label);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--divider-gold);
-  color: var(--accent);
-  white-space: nowrap;
-}
 
 /* Viewer */
 
