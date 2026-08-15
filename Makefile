@@ -80,7 +80,7 @@ migration:
 # network installs at run time. See backend/requirements-dev.txt.
 test: test-backend test-frontend
 
-test-backend:
+test-backend: up-test migrate-test
 	$(DCT) run --rm api pytest -q -p no:cacheprovider
 
 # No vitest suite yet — typecheck is the frontend gate (see CLAUDE.md testing rules).
