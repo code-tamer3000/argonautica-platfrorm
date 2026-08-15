@@ -66,6 +66,7 @@ Hard rules:
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
 | docs/ARCHITECTURE.md       | Mermaid diagrams: stack, per-domain ER, key flows, environments (human layer, NOT a contract) |
 | docs/DECISIONS.md          | ADR log: why each non-obvious decision was made, what breaks if changed (🔒 = frozen) |
+| docs/TASK_PROTOCOL.md      | task contract: template, size calibrator, interrogation rule, Linear directions |
 
 Do not read the whole docs/ directory. Pick from the index. Historical/vision docs are in docs/archive/.
 
@@ -74,6 +75,27 @@ They never override DATA_MODEL.md or the feature docs — those stay the contrac
 Before "simplifying" something that looks over-engineered, check DECISIONS.md first.
 
 New feature docs: fold into the closest core domain file if <50 lines AND a natural home exists; otherwise a standalone docs/<DOMAIN>.md added to this index.
+
+## Task workflow
+
+Tasks live in **Linear** (team `ArgonauticaPlatform`, `ARG-*`) — that is the source of
+truth for scope. The repo never stores a second copy of a spec.
+
+| Skill | Does | Never does |
+|-------|------|------------|
+| `/idea` | raw dictated thought → interrogation → one Linear issue per protocol | write code |
+| `/slice` | oversized issue → 2–6 sub-issues, each one session / one PR | write code |
+| `/work ARG-NN` | issue → implementation → verification → PR → Done | reformulate or re-slice the issue |
+
+Hard rules:
+- **One task — one context — one PR.** If a feature does not fit in one context, it is
+  sliced wrong; that is a missing planning step, not a tool limit. Stop and `/slice`.
+- `/work` refuses an issue that lacks the protocol sections «Границы» / «Готово, когда»,
+  or that fails the size calibrator in docs/TASK_PROTOCOL.md.
+- Discovering mid-task that the task is bigger than it looked → do NOT push through.
+  Commit what is green, note the remainder on the issue, open a follow-up.
+- Ask the user only where different answers produce different work; everything else is a
+  documented assumption (see «Assumptions» in the protocol).
 
 ## Git & PR rules
 
