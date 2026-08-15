@@ -34,6 +34,16 @@
 - **`MINIO_PUBLIC_ENDPOINT` no longer carries a port** (`https://staging.argonautica-systems.ru`). Now that staging sits behind the standard `:443`, the signed Host matches what staging-nginx forwards with plain `Host $host` — the old `Host $http_host` port-preservation hack (needed only for the nonstandard `:8443`) is gone.
 - Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx is recreated. `deploy-staging.sh` runs `up -d --force-recreate nginx` for exactly this — and `--force-recreate` (not `restart`) is also required so envsubst re-renders the template after a config change. This is now separate from — and does not replace — recreating **prod** nginx if the staging-facing block in its own template changed.
 
+## Marketing site (`argonautica-systems.ru`)
+
+The apex domain is **not** the platform — it's the static marketing одностраничник, served by the *same* prod gateway.
+
+- **Content + container:** files live on the server in `/root/argonautica-site`; a standalone `nginx:alpine` container `argonautica-site` (started by hand, `--restart unless-stopped`, joined to the `gateway` network, **no host ports**) serves them, with its config at `/root/argonautica-site.nginx.conf`. It is *not* part of any compose project — `deploy.sh` neither touches nor restarts it.
+- **Static only.** The page has PHP files next to it (`send.php`, `poll.php`, `lead_ingest.php`, `config*.php`), but no PHP runtime is installed and the JS bundle calls none of them. The site's own nginx returns **404** for `*.php`, dotfiles, `*.db|sqlite|md|sh|log|ini|sql` — without that, `config*.php` (bot token) would be served as plain text.
+- **Gateway block:** prod's template owns `server_name argonautica-systems.ru www.argonautica-systems.ru` with `resolver` + `set $site_upstream` lazy resolution, same pattern as staging. The domain is **hardcoded** there (unlike `${DOMAIN}`/`${STAGING_DOMAIN}`) because prod compose passes no variable for it; `make local-up` therefore self-signs a local `argonautica-systems.ru` cert so the block doesn't crash-loop the local nginx.
+- **TLS:** own Let's Encrypt cert (`argonautica-systems.ru` + `www`), issued via webroot through prod's `:80`, renewed by `/root/renew-argo-cert.sh` (cron twice daily) which installs it into `docker/nginx/certs/` and **recreates prod nginx**.
+- Failure mode to recognize: no apex block → apex falls into the `:443` catch-all, which answers with the **platform** cert and `return 444`. Browser shows «невозможно установить безопасное соединение» / HSTS warning, not a 404. This is what happened when a deploy re-rendered the template from the repo over a hand-added block.
+
 ## Local dev vs prod
 
 - One codebase; only `.env` differs per environment. Names are fixed in `backend/app/core/config.py`; values are per-env. Dev compose (`docker/docker-compose.yml`) exposes ports and runs backend/frontend on the host (see CLAUDE.md commands).

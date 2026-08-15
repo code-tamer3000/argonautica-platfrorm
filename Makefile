@@ -104,6 +104,16 @@ local-up:
 	@# Прод-compose объявляет сеть `gateway` external (мост прод↔staging на сервере).
 	@# Локально её никто не создаёт — создаём сами, идемпотентно.
 	@docker network inspect gateway >/dev/null 2>&1 || docker network create gateway >/dev/null
+	@# Визитку (argonautica-systems.ru) отдаёт тот же шлюз, и домен в шаблоне nginx
+	@# захардкожен — значит локально нужен серт под него, иначе nginx уходит в
+	@# crash-loop на отсутствующем ssl_certificate. Self-signed достаточно: локально
+	@# в этот vhost никто не ходит (апстрима визитки тут всё равно нет).
+	@test -f docker/nginx/certs/argonautica-systems.ru.crt || \
+		docker run --rm -v "$(CURDIR)/docker/nginx/certs":/certs nginx:1.27 \
+			openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+			-keyout /certs/argonautica-systems.ru.key -out /certs/argonautica-systems.ru.crt \
+			-subj "/CN=argonautica-systems.ru" \
+			-addext "subjectAltName=DNS:argonautica-systems.ru,DNS:www.argonautica-systems.ru" 2>/dev/null
 	$(LOCAL_DCT) build backend-blue frontend
 	$(LOCAL_DCT) run --rm migrate
 	$(LOCAL_DCT) up -d postgres redis minio backend-blue transcode-worker frontend nginx

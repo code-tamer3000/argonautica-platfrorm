@@ -226,6 +226,48 @@ server {
     }
 }
 
+# --- Маркетинговая визитка: argonautica-systems.ru (apex + www) ---
+# Статика лежит в отдельном контейнере `argonautica-site` (nginx:alpine, вебрут
+# /root/argonautica-site на сервере), включённом в ту же внешнюю сеть `gateway`,
+# что и стенд. Здесь — только TLS-терминация под серт визитки и proxy_pass.
+# Домен захардкожен намеренно: он не параметр контура (в отличие от ${DOMAIN}/
+# ${MEDIA_DOMAIN}), а прод-compose не пробрасывает под него отдельную переменную.
+# Без этого блока apex попадал в catch-all выше: чужой серт + return 444, то есть
+# браузер показывал «невозможно установить безопасное соединение».
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    # HTTP/3 (QUIC). reuseport — только в catch-all выше (одна пара адрес:порт).
+    listen 443 quic;
+    listen [::]:443 quic;
+    server_name argonautica-systems.ru www.argonautica-systems.ru;
+
+    ssl_certificate     /etc/nginx/certs/argonautica-systems.ru.crt;
+    ssl_certificate_key /etc/nginx/certs/argonautica-systems.ru.key;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+    # HSTS здесь НЕ ставим: визитка — отчуждаемый сайт (может уехать на хостинг),
+    # а год залипшего HSTS на apex превратит такой переезд в аварию.
+
+    # Ленивый резолв имени апстрима (как в блоке стенда): если контейнер визитки
+    # не поднят, прод-nginx всё равно обязан стартовать для платформы.
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $site_upstream http://argonautica-site:80;
+        proxy_pass $site_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
 # --- MinIO: presigned PUT/GET напрямую клиент↔MinIO через nginx ---
 server {
     listen 443 ssl;
