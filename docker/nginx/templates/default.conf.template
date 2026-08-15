@@ -50,7 +50,7 @@ ssl_protocols TLSv1.2 TLSv1.3;
 server {
     listen 80;
     listen [::]:80;
-    server_name ${DOMAIN} ${MEDIA_DOMAIN};
+    server_name ${DOMAIN} ${MEDIA_DOMAIN} ${STAGING_DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -178,6 +178,51 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# --- Staging: тот же шлюз, свой поддомен, проксируем внутрь compose-проекта стенда ---
+# staging-nginx живёт в отдельном compose-проекте (platform-staging), общаемся с ним
+# через внешнюю сеть `gateway` (объявлена в обоих docker-compose.*.yml). Он сам
+# терминирует внутреннюю маршрутизацию (/api, /ws, /chat-media|kb-media/, /) — здесь
+# только TLS-терминация под свой сертификат и один сквозной proxy_pass.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    # HTTP/3 (QUIC). reuseport — только в catch-all выше (одна пара адрес:порт).
+    listen 443 quic;
+    listen [::]:443 quic;
+    server_name ${STAGING_DOMAIN};
+
+    ssl_certificate     /etc/nginx/certs/${STAGING_DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/certs/${STAGING_DOMAIN}.key;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+
+    # DNS-резолвер докера + переменная в proxy_pass: имя резолвится ЛЕНИВО, на запрос,
+    # а не при чтении конфига. Если контейнер стенда временно не поднят (передеплой,
+    # рестарт), это не должно мешать (пере)запуску прод-nginx для боевых пользователей —
+    # со статическим "proxy_pass http://staging_nginx:80" нерезолвящееся имя при старте
+    # уронило бы весь nginx, включая прод-vhost.
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $staging_upstream http://staging_nginx:80;
+        proxy_pass $staging_upstream;
+        # staging-nginx сам разруливает /api, /ws, /chat-media|kb-media/, / — здесь
+        # достаточно одной location с апгрейдом (map $connection_upgrade объявлена выше).
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
     }
 }
 

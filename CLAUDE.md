@@ -64,8 +64,14 @@ Hard rules:
 | docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
+| docs/ARCHITECTURE.md       | Mermaid diagrams: stack, per-domain ER, key flows, environments (human layer, NOT a contract) |
+| docs/DECISIONS.md          | ADR log: why each non-obvious decision was made, what breaks if changed (🔒 = frozen) |
 
 Do not read the whole docs/ directory. Pick from the index. Historical/vision docs are in docs/archive/.
+
+ARCHITECTURE.md and DECISIONS.md are the *human* layer: orientation and rationale.
+They never override DATA_MODEL.md or the feature docs — those stay the contract.
+Before "simplifying" something that looks over-engineered, check DECISIONS.md first.
 
 New feature docs: fold into the closest core domain file if <50 lines AND a natural home exists; otherwise a standalone docs/<DOMAIN>.md added to this index.
 

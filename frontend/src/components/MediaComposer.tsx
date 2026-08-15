@@ -118,7 +118,7 @@ export function MediaComposer({
       {progress !== null && (
         <div className={styles.uploadProgress}>
           <div className={styles.uploadBar}>
-            <div className={styles.uploadBarFill} style={{ width: `${progress}%` }} />
+            <div className={styles.uploadBarFill} style={{ transform: `scaleX(${progress / 100})` }} />
           </div>
           <span className={styles.uploadPct}>{progress}%</span>
         </div>

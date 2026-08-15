@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError, isNetworkError } from '../../lib/apiClient'
 import { Button } from '../../components/Button'
+import { Input } from '../../components/Input'
 import { StarSpark } from '../../components/StarSpark'
 import { useAuth } from './AuthContext'
 import styles from './auth.module.css'
@@ -46,28 +47,22 @@ export function LoginScreen() {
             <span className={`${styles.rule} ${styles.ruleR}`} />
           </div>
         </div>
-        <div className={styles.field}>
-          <label className="label" htmlFor="username">Логин</label>
-          <input
-            id="username"
-            className={styles.input}
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-          />
-        </div>
-        <div className={styles.field}>
-          <label className="label" htmlFor="password">Пароль</label>
-          <input
-            id="password"
-            className={styles.input}
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
+        <Input
+          id="username"
+          label="Логин"
+          autoComplete="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
+        <Input
+          id="password"
+          label="Пароль"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         {error && <div className={styles.error}>{error}</div>}
         <Button type="submit" variant="gold" disabled={busy || !username || !password}>
           {busy ? 'Вход…' : 'Войти'}

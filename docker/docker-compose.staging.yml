@@ -7,9 +7,11 @@
 #     сеть/volume'ы прод-проекта). Задаётся флагом `-p platform-staging` в
 #     deploy-staging.sh (top-level `name:` не поддерживается docker-compose v1);
 #   - один backend (без blue-green — стенду не нужен zero-downtime);
-#   - наружу торчит только nginx на 8443 (прод занимает 80/443);
+#   - nginx стенда НИЧЕГО не публикует наружу — он внутренний реверс-прокси, доступ
+#     снаружи идёт ЧЕРЕЗ прод-nginx (сеть `gateway`, см. docker-compose.prod.yml и
+#     docs/DEPLOY.md → Staging). TLS терминирует прод-nginx под свой сертификат;
 #   - НЕТ сервиса bot (прод-бот на long-polling с тем же токеном сломался бы от 2-го поллера);
-#   - свой nginx-шаблон + Basic Auth (docker/nginx-staging).
+#   - свой (упрощённый, HTTP-only) nginx-шаблон (docker/nginx-staging).
 #
 # Первый запуск / bootstrap — см. шапку docker/deploy-staging.sh.
 # Деплой новой версии: docker/deploy-staging.sh (вызывается из CI на push в develop).
@@ -96,19 +98,31 @@ services:
     depends_on:
       - backend
       - frontend
-    ports:
-      # Наружу только 8443 (прод держит 80/443 на этом же сервере).
-      - "8443:443"
-      # HTTP/3 (QUIC) идёт по UDP на том же порту. Docker сам заводит DNAT;
-      # host-firewall (iptables INPUT ACCEPT) UDP не режет.
-      - "8443:443/udp"
+    # Никаких ports: — контейнер не публикует ничего наружу, к нему заходят только
+    # изнутри docker-сети (прод-nginx через `gateway`, см. комментарий выше).
     environment:
       DOMAIN: ${DOMAIN}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN}
     volumes:
       - ./nginx-staging/templates:/etc/nginx/templates:ro
-      - ./nginx-staging/certs:/etc/nginx/certs:ro
+    networks:
+      # `default` обязателен явно, раз список не пуст — иначе backend/frontend/minio
+      # станут недостижимы для этого контейнера.
+      default: {}
+      # Мост к прод-compose-проекту (docker), создан один раз вручную
+      # (`docker network create gateway`), объявлен `external` в обоих compose-файлах.
+      # Свой alias ОБЯЗАТЕЛЕН: сервис в обоих compose называется `nginx`, поэтому
+      # дефолтный DNS-алиас (= имя сервиса) на общей сети `gateway` коллизирует между
+      # прод- и staging-nginx. `staging_nginx` — то самое имя, на которое проксирует
+      # прод (см. docker/nginx/templates/default.conf.template).
+      gateway:
+        aliases:
+          - staging_nginx
     restart: unless-stopped
+
+networks:
+  gateway:
+    external: true
 
 volumes:
   postgres_data:

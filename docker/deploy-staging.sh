@@ -8,9 +8,11 @@
 #   2. Создать /opt/platform-staging/.env из .env.staging.example: подставить <IP> стенда,
 #      сгенерить свои POSTGRES_*/MINIO_*/JWT_SECRET (openssl rand -hex 32). TELEGRAM_BOT_TOKEN
 #      оставить ПУСТЫМ (стенд бота не поднимает).
-#   3. Серт:   DOMAIN=<IP> docker/nginx-staging/make-self-signed.sh
-#   4. Открыть 8443/tcp в firewall/security-group хостинга.
-#   5. Первый подъём (дальше — автоматически этим скриптом из CI):
+#   3. Сеть-мост к проду: `docker network create gateway` (один раз, общая для обоих
+#      compose-проектов — см. docker-compose.staging.yml/docker-compose.prod.yml).
+#      TLS стенда терминирует ПРОД-nginx (docker/nginx/certs/, docker/nginx/renew-staging-cert.sh)
+#      — сюда, в docker/nginx-staging/, сертификаты больше не кладём.
+#   4. Первый подъём (дальше — автоматически этим скриптом из CI):
 #        cd /opt/platform-staging && bash docker/deploy-staging.sh
 # Стенд открыт (без Basic Auth) — внутренний превью. Аккаунтов в свежей БД нет;
 # первого админа завести вручную (см. backend/scripts/create_users.py или прямой insert).
@@ -54,4 +56,4 @@ $DC up -d
 echo ">> staging: пересоздание nginx (обновить IP апстримов + re-render шаблона)"
 $DC up -d --force-recreate nginx
 
-echo ">> staging: готово. Доступ: https://<IP>:8443."
+echo ">> staging: готово. Доступ: https://staging.argonautica-systems.ru (через прод-nginx, см. docs/DEPLOY.md → Staging)."
