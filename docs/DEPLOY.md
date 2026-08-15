@@ -25,13 +25,14 @@
 | Branch | Environment | Server | Trigger |
 |---|---|---|---|
 | `main` | Production | `193.233.245.210` (`platform.argonautica-systems.ru`) | merge → GitHub Actions (`deploy-prod.yml`) → rsync + `docker/deploy.sh` |
-| `develop` | Staging | same host, `/opt/platform-staging`, **`https://staging.argonautica-systems.ru:8443`**, isolated compose project | push → `Deploy → staging` → `deploy-staging.sh` |
+| `develop` | Staging | same host, `/opt/platform-staging`, **`https://staging.argonautica-systems.ru`**, isolated compose project behind the prod gateway | push → `Deploy → staging` → `deploy-staging.sh` |
 | PR (any) | — | — | CI: ruff + mypy + pytest (`ci.yml`) |
 
 - Staging is isolated (separate compose project, own network/volumes/`.env`/`JWT_SECRET`), no blue-green, **no `bot` service** (a second long-poller on the prod token would break the prod bot — see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)).
-- **Domain & TLS:** staging answers only on `staging.argonautica-systems.ru` (nginx `server_name = ${DOMAIN}`; access by raw IP is closed). A-record → `193.233.245.210` (same host as prod; prod stays on `:443`, staging on `:8443` — one IP serves both, no conflict). Real **Let's Encrypt** cert, issued/renewed via **webroot through prod's `:80`** (prod nginx already serves `/.well-known/acme-challenge/` from the shared `docker_certbot_webroot` volume). The **host** certbot (v0.40) is broken, so issuance/renewal run in the `certbot/certbot` **container** against an isolated `/opt/platform-staging/letsencrypt`. Renewal + delivery: `docker/nginx-staging/renew-cert.sh` (installed on the server as `/opt/platform-staging/renew-staging-cert.sh`, cron twice-daily) renews, copies the cert into `docker/nginx-staging/certs/${DOMAIN}.crt/.key`, and **recreates** staging nginx.
-- **`MINIO_PUBLIC_ENDPOINT` must carry the `:8443` port** (`https://staging.argonautica-systems.ru:8443`). The backend signs presigned MinIO URLs with the port, so the nginx MinIO location proxies `Host $http_host` (not `$host`, which drops the port) — otherwise MinIO returns `SignatureDoesNotMatch` and **all uploads fail**. (Prod is on standard `:443`, where this is moot.)
-- Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx is recreated. `deploy-staging.sh` runs `up -d --force-recreate nginx` for exactly this — and `--force-recreate` (not `restart`) is also required so envsubst re-renders the template after a config change.
+- **Gateway, not a second port:** staging-nginx publishes nothing to the host — it's an internal HTTP (no TLS) reverse proxy in front of the stand's own backend/frontend/MinIO. The **prod** nginx owns a `server_name ${STAGING_DOMAIN}` block on the standard `:443` and proxies into it. The two compose projects reach each other over an `external: true` docker network named `gateway`, created once by hand (`docker network create gateway`) and declared in both `docker-compose.prod.yml` and `docker-compose.staging.yml`. `proxy_pass` on the prod side uses a `resolver 127.0.0.11` + `set $staging_upstream ...` so prod nginx doesn't fail to (re)start if the staging container happens to be down.
+- **Domain & TLS:** staging answers only on `staging.argonautica-systems.ru` (access by raw IP is closed by the prod catch-all `default_server`). A-record → `193.233.245.210` (same host as prod, same port `:443` — one gateway serves both, routed by SNI/Host, not by port). Real **Let's Encrypt** cert, issued/renewed via **webroot through prod's `:80`** (prod nginx already serves `/.well-known/acme-challenge/` from the shared `docker_certbot_webroot` volume), same as before — but the cert itself now lives with **prod**, in `docker/nginx/certs/${STAGING_DOMAIN}.{crt,key}`, since prod-nginx is the one terminating TLS for the staging domain. The **host** certbot (v0.40) is broken, so issuance/renewal run in the `certbot/certbot` **container**. Renewal + delivery: `docker/nginx/renew-staging-cert.sh` (installed on the server as `/opt/platform/renew-staging-cert.sh`, cron twice-daily) renews, copies the cert into `docker/nginx/certs/`, and **recreates prod nginx** (not staging nginx).
+- **`MINIO_PUBLIC_ENDPOINT` no longer carries a port** (`https://staging.argonautica-systems.ru`). Now that staging sits behind the standard `:443`, the signed Host matches what staging-nginx forwards with plain `Host $host` — the old `Host $http_host` port-preservation hack (needed only for the nonstandard `:8443`) is gone.
+- Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx is recreated. `deploy-staging.sh` runs `up -d --force-recreate nginx` for exactly this — and `--force-recreate` (not `restart`) is also required so envsubst re-renders the template after a config change. This is now separate from — and does not replace — recreating **prod** nginx if the staging-facing block in its own template changed.
 
 ## Local dev vs prod
 
@@ -69,13 +70,15 @@ net.core.wmem_max = 16777216         # QUIC's UDP path has no kernel autotuning 
 Apply with `sysctl --system`. The big UDP buffers are the part that actually matters for h3:
 unlike TCP, QUIC gets no kernel receive-buffer autotuning, so the 208 KB default caps throughput.
 
-**nginx** (`docker/nginx/templates/`, `docker/nginx-staging/templates/`): each `:443` server
-block gains `listen 443 quic` next to `listen 443 ssl` (h3 is *additive* — h2/h1 keep working),
-plus `ssl_protocols TLSv1.2 TLSv1.3` (TLSv1.3 is mandatory for QUIC) and an `Alt-Svc` header
-that tells the browser to re-connect over UDP. Two rules that will bite:
+**nginx** (`docker/nginx/templates/` only — `docker/nginx-staging/templates/` has no `:443`
+block at all, it's plain HTTP behind prod): each `:443` server block gains `listen 443 quic`
+next to `listen 443 ssl` (h3 is *additive* — h2/h1 keep working), plus `ssl_protocols TLSv1.2
+TLSv1.3` (TLSv1.3 is mandatory for QUIC) and an `Alt-Svc` header that tells the browser to
+re-connect over UDP. Two rules that will bite:
 
-- **`reuseport` exactly once per address:port** in the whole config. Prod has three `:443`
-  blocks, so it lives only in the catch-all `default_server`; the others declare bare `quic`.
+- **`reuseport` exactly once per address:port** in the whole config. Prod has four `:443`
+  blocks (app, media, staging, catch-all), so it lives only in the catch-all `default_server`;
+  the others declare bare `quic`.
 - **`Alt-Svc` must sit where it is actually emitted.** nginx drops inherited `add_header`s in
   any location that defines its own — so the media `location /` (which sets `Cache-Control`)
   needs its own `Alt-Svc`, or that origin never advertises h3.
@@ -83,8 +86,10 @@ that tells the browser to re-connect over UDP. Two rules that will bite:
 **Firewall:** nothing to open by hand. The host has `ufw` inactive and `iptables` `INPUT ACCEPT`
 with no UDP rules; publishing the port in compose is what installs Docker's DNAT.
 
-Both composes publish the UDP port (`"443:443/udp"` on prod, `"8443:443/udp"` on staging).
-Note staging advertises `h3=":8443"`, not `:443` — `Alt-Svc` names the port the *client* dials.
+Only **prod** nginx publishes the UDP port (`"443:443/udp"`) — staging-nginx publishes
+nothing at all (it's internal-only, proxied by prod, see "Environments" above), so it
+neither terminates TLS nor advertises h3 itself; `Alt-Svc 'h3=":443"'` for the staging
+domain is emitted by prod's staging-facing server block, same port as everything else.
 
 **`deploy.sh` alone cannot apply an nginx change.** It only runs `nginx -s reload`, which:
 - **cannot change published ports** — that needs the container recreated;

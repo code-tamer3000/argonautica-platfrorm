@@ -24,7 +24,9 @@ dist/
 .DS_Store
 .idea/
 .vscode/
-.claude/
+.claude/*
+# Проектные скиллы агента — часть репозитория (см. docs/TASK_PROTOCOL.md).
+!.claude/skills/
 
 # TLS-серты (self-signed локально / боевые на сервере) — никогда в git.
 docker/nginx/certs/
