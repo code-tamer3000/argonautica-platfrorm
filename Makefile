@@ -27,7 +27,11 @@ FE_RUN := docker run --rm -v "$(CURDIR)/frontend":/app -v /app/node_modules -w /
 # name (platform-local) so it never collides with the test stack or prod.
 LOCAL_CF := docker/docker-compose.prod.yml
 LOCAL_PROJECT := platform-local
-LOCAL_DCT := $(DC) -p $(LOCAL_PROJECT) -f $(LOCAL_CF) --env-file .env
+# STAGING_DOMAIN живёт только в серверном .env (стенд за прод-шлюзом). Локально он
+# пуст, а пустой `server_name ;` в шаблоне nginx — синтаксическая ошибка, и nginx
+# уходит в crash-loop. Подставляем localhost: блок стенда становится дублем основного
+# (nginx это warning'ом игнорирует, выигрывает первый), сертификат берётся готовый.
+LOCAL_DCT := STAGING_DOMAIN=localhost $(DC) -p $(LOCAL_PROJECT) -f $(LOCAL_CF) --env-file .env
 
 .PHONY: help test test-backend test-frontend lint migrate-test migration up-test down-test local-up local-down local-reset local-logs
 
@@ -97,6 +101,9 @@ lint:
 local-up:
 	@test -f docker/nginx/certs/localhost.crt || \
 		{ echo "нет docker/nginx/certs/*.crt — см. коммент над local-up в Makefile (mkcert)"; exit 1; }
+	@# Прод-compose объявляет сеть `gateway` external (мост прод↔staging на сервере).
+	@# Локально её никто не создаёт — создаём сами, идемпотентно.
+	@docker network inspect gateway >/dev/null 2>&1 || docker network create gateway >/dev/null
 	$(LOCAL_DCT) build backend-blue frontend
 	$(LOCAL_DCT) run --rm migrate
 	$(LOCAL_DCT) up -d postgres redis minio backend-blue transcode-worker frontend nginx
