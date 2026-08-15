@@ -32,18 +32,6 @@
   gap: var(--space-4);
 }
 
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--divider);
-  border-radius: var(--radius-card);
-  background: var(--bg-surface);
-  text-decoration: none;
-  color: var(--text-primary);
-  transition: var(--transition-base);
-}
 .card:hover {
   border-color: var(--divider-gold);
   box-shadow: var(--glow-gold);
@@ -78,55 +66,6 @@
   margin-top: auto;
 }
 
-/* ───── Бейджи типа + статуса ───── */
-.badge {
-  font-family: var(--font-t4);
-  font-size: var(--text-label);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--divider);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-.badgeType {
-  border-color: var(--divider-gold);
-  color: var(--accent);
-}
-
-.chip {
-  font-family: var(--font-t4);
-  font-size: var(--text-label);
-  letter-spacing: 0.5px;
-  padding: 1px var(--space-2);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--divider);
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.chipAccepted {
-  border-color: var(--divider-gold-strong);
-  color: var(--accent-bright);
-}
-.chipReturned {
-  border-color: var(--blood);
-  color: var(--blood-bright);
-}
-.chipSoon {
-  border-color: var(--color-more);
-  color: var(--color-more-yar);
-}
-.chipLate {
-  border-color: var(--divider);
-  color: var(--text-muted);
-}
-/* «N на проверке» — акцент для админа: непроверенные сдачи требуют действия. */
-.chipUnreviewed {
-  border-color: var(--color-more);
-  background: color-mix(in srgb, var(--color-more) 14%, transparent);
-  color: var(--color-more-yar);
-}
 
 /* Строка прогресса задачи в админском списке «сдали X из Y» + бейдж проверки. */
 .progressRow {

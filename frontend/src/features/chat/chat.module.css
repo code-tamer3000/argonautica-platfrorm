@@ -428,10 +428,7 @@
   font-variant-numeric: tabular-nums; color: var(--accent); line-height: 1;
 }
 
-.empty {
-  flex: 1; display: flex; align-items: center; justify-content: center; text-align: center;
-  color: var(--text-muted); padding: var(--space-8);
-}
+/* Пустое состояние «выберите чат» — components/EmptyState size="block". */
 
 /* --- Вложения / стикеры --- */
 .attachments { display: flex; flex-wrap: wrap; gap: var(--space-2); }

@@ -3,6 +3,7 @@ import { useAdminUsers, useCreateUser, useDeleteUser, usePatchAdminUser } from '
 import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { Badge } from '../../components/Badge'
 import { toast } from '../../stores/toast'
 import type { CreateUserResult } from '../../api/admin'
 import type { AdminUserOut } from '../../lib/types'
@@ -121,9 +122,9 @@ export function AdminUsers() {
                 <div className={styles.listTitle}>{user.display_name}</div>
                 <div className={styles.listMeta}>@{user.username}</div>
               </div>
-              <span className={user.role === 'admin' ? styles.badgePublished : styles.badgeDraft}>
+              <Badge tone={user.role === 'admin' ? 'accent' : 'neutral'}>
                 {user.is_observer ? 'наблюдатель' : user.role}
-              </span>
+              </Badge>
             </div>
             <div className={styles.listActions}>
               <Button variant="outline" onClick={() => handleEditOpen(user)}>

@@ -47,6 +47,7 @@
 - `POST /users` — server generates a one-time password, returns it **once**, sets `must_change_password=true`.
 - `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, …). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive).
 - Bulk account creation runbook and the password-delivery bot: [OPERATIONS in archive] and [TELEGRAM_BOT.md](TELEGRAM_BOT.md).
+- **First admin (chicken-and-egg):** `POST /users` requires an admin already logged in, so the very first account on a fresh stack can't come from it. `backend/scripts/bootstrap_admin.py` is the one exception — run inside the backend container (`python -m scripts.bootstrap_admin <username>`): creates the user with `role=admin` if new (one-time password printed once), or promotes it in place if it already exists. Idempotent, safe to rerun. `make local-up` runs it automatically for `admin` on the local stack.
 
 ## Authorization — threat #1
 

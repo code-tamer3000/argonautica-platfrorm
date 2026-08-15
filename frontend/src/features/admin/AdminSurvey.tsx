@@ -10,6 +10,7 @@ import {
 } from '../../api/survey'
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
+import { Badge } from '../../components/Badge'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import cabin from '../cabin/cabin.module.css'
@@ -242,15 +243,15 @@ export function AdminSurvey() {
                 </div>
                 <div className={styles.listActions}>
                   {r.completed_at ? (
-                    <span className={styles.badgePublished}>
+                    <Badge tone="accent">
                       Сдал · {formatDatetime(r.completed_at)}
-                    </span>
+                    </Badge>
                   ) : r.invited ? (
-                    <span className={styles.badgeDraft}>Ждём анкету</span>
+                    <Badge>Ждём анкету</Badge>
                   ) : null}
-                  <span className={r.has_gift ? styles.badgePublished : styles.badgeDraft}>
+                  <Badge tone={r.has_gift ? 'accent' : 'neutral'}>
                     {r.has_gift ? 'Книга привязана' : 'Книги нет'}
-                  </span>
+                  </Badge>
                   <Button
                     variant="outline"
                     disabled={uploading === r.user_id}
@@ -299,7 +300,7 @@ function AnswerCard({ row, questions }: { row: SurveyRow; questions: SurveyQuest
         {row.publish_consent && (
           <>
             {' '}
-            <span className={styles.badgePublished}>Разрешил публикацию</span>
+            <Badge tone="accent">Разрешил публикацию</Badge>
           </>
         )}
       </span>

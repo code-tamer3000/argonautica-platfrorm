@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useRooms } from '../../api/rooms'
+import { EmptyState } from '../../components/EmptyState'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useUiStore } from '../../stores/ui'
 import { ChatPane } from './ChatPane'
@@ -62,7 +63,7 @@ export function ChatLayout({ autoOpen }: Props = {}) {
               />
             </div>
           ) : (
-            <div className={styles.empty}>Выберите чат, чтобы начать общение</div>
+            <EmptyState size="block">Выберите чат, чтобы начать общение</EmptyState>
           )}
         </div>
       )}

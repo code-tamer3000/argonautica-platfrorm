@@ -817,13 +817,12 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    subgraph dev["Локально (dev)"]
-        DC["docker/docker-compose.yml<br/>postgres + redis + minio + transcode-worker,<br/>порты наружу"]
-        DH["backend (uvicorn) и frontend (vite) на хосте"]
+    subgraph dev["Локально (make local-up)"]
+        DC["docker/docker-compose.prod.yml, проект platform-local<br/>DOMAIN=localhost/MEDIA_DOMAIN=media.localhost<br/>собранный SPA + nginx + MinIO, один backend, bot выключен"]
     end
 
     subgraph tst["Тесты (make)"]
-        TC["docker-compose.test.yaml, проект argonautica-test<br/>образы версий прода, состояние в tmpfs<br/>api-контейнер из прод-Dockerfile, запуск one-off"]
+        TC["docker/docker-compose.test.yaml, проект argonautica-test<br/>образы версий прода, состояние в tmpfs<br/>api-контейнер из прод-Dockerfile, запуск one-off"]
     end
 
     subgraph srv["Один сервер 193.233.245.210"]

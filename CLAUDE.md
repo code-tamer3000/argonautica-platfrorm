@@ -16,8 +16,15 @@ Stack: FastAPI, PostgreSQL, Redis (pub/sub), React/Vite, MinIO, Nginx, Docker Co
 | Apply migrations  | `make migrate-test`         |
 | New migration     | `make migration m="<name>"` |
 | Test env up/down  | `make up-test` / `make down-test` |
+| Local prod-like stack² up/down | `make local-up` / `make local-down` (`local-reset` wipes data) |
 
 ¹ `test-frontend` currently runs typecheck only (`tsc --noEmit`) — no frontend test runner exists yet.
+² `make local-up` runs the actual `docker/docker-compose.prod.yml` locally (project `platform-local`,
+  `DOMAIN=localhost`/`MEDIA_DOMAIN=media.localhost` from `.env`): built SPA + nginx edge + MinIO behind
+  it, single backend (no blue-green), bot always off. Browser/Playwright needs a locally-trusted cert —
+  one-time `mkcert -install` then regenerate `docker/nginx/certs/*` (see comment above `local-up` in
+  Makefile). `dev.sh` (host uvicorn --reload + vite dev, no nginx/TLS) is gone — `make local-up` is now
+  the only local run mode, prod-like from the start.
 
 Hard rules:
 - NEVER run pytest, alembic, npm, or vite directly. Always via `make` targets — they
@@ -26,8 +33,9 @@ Hard rules:
 - NEVER touch `docker/docker-compose.prod.yml`, `docker/deploy.sh`, `.env`, or `docker/nginx/certs/`.
 - If a `make` target fails for environment reasons (not code reasons), stop and report — do not improvise workarounds.
 
-> Current reality (not yet Dockerized): `make` wraps the host backend venv
-> (`backend/.venv`) and the dev compose stack (`docker/docker-compose.yml`).
+> `make` is fully Dockerized: test/lint targets drive `docker/docker-compose.test.yaml`
+> (one-off container from the prod Dockerfile), `local-*` targets drive the real
+> `docker/docker-compose.prod.yml`. No host venv, no host node_modules.
 
 ## Architecture facts (one line each; details in docs/)
 
@@ -66,6 +74,7 @@ Hard rules:
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
 | docs/ARCHITECTURE.md       | Mermaid diagrams: stack, per-domain ER, key flows, environments (human layer, NOT a contract) |
 | docs/DECISIONS.md          | ADR log: why each non-obvious decision was made, what breaks if changed (🔒 = frozen) |
+| docs/TASK_PROTOCOL.md      | task contract: template, size calibrator, interrogation rule, Linear directions |
 
 Do not read the whole docs/ directory. Pick from the index. Historical/vision docs are in docs/archive/.
 
@@ -74,6 +83,27 @@ They never override DATA_MODEL.md or the feature docs — those stay the contrac
 Before "simplifying" something that looks over-engineered, check DECISIONS.md first.
 
 New feature docs: fold into the closest core domain file if <50 lines AND a natural home exists; otherwise a standalone docs/<DOMAIN>.md added to this index.
+
+## Task workflow
+
+Tasks live in **Linear** (team `ArgonauticaPlatform`, `ARG-*`) — that is the source of
+truth for scope. The repo never stores a second copy of a spec.
+
+| Skill | Does | Never does |
+|-------|------|------------|
+| `/idea` | raw dictated thought → interrogation → one Linear issue per protocol | write code |
+| `/slice` | oversized issue → 2–6 sub-issues, each one session / one PR | write code |
+| `/work ARG-NN` | issue → implementation → verification → PR → Done | reformulate or re-slice the issue |
+
+Hard rules:
+- **One task — one context — one PR.** If a feature does not fit in one context, it is
+  sliced wrong; that is a missing planning step, not a tool limit. Stop and `/slice`.
+- `/work` refuses an issue that lacks the protocol sections «Границы» / «Готово, когда»,
+  or that fails the size calibrator in docs/TASK_PROTOCOL.md.
+- Discovering mid-task that the task is bigger than it looked → do NOT push through.
+  Commit what is green, note the remainder on the issue, open a follow-up.
+- Ask the user only where different answers produce different work; everything else is a
+  documented assumption (see «Assumptions» in the protocol).
 
 ## Git & PR rules
 
@@ -93,3 +123,4 @@ New feature docs: fold into the closest core domain file if <50 lines AND a natu
 - Do not mock PostgreSQL or Redis in integration tests — the test compose provides real ones.
 - Frontend has no test runner yet; the gate is `tsc --noEmit`. When vitest is added, cover components with logic (skip snapshot-only tests).
 - `make migration` autogenerate re-reports 4 phantom index diffs — see docs/DATA_MODEL.md "Migrations gotchas"; NEVER commit those index drops/recreates.
+- A task that changes UI is not done until the agent opened the result (Playwright MCP against `make local-up`) and looked at it — clicked through, screenshot, checked console errors. Don't report a UI change as working from reading the diff alone.

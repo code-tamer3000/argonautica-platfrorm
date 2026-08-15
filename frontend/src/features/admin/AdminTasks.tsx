@@ -14,6 +14,7 @@ import { useUsers, useUsersMap } from '../../api/users'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
+import { Badge } from '../../components/Badge'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
 
@@ -335,8 +336,8 @@ function ProgressPanel({ taskId }: { taskId: number }) {
         <div className={styles.listItem} key={a.assignment_id}>
           <div className={styles.listItemMain}>
             <span className={styles.listTitle}>{nameOf(a.user_id)}</span>
-            <span className={styles.badgeDraft}>{STATUS_LABEL[a.status] ?? a.status}</span>
-            {a.late && <span className={styles.badgeDraft}>сдано позже</span>}
+            <Badge>{STATUS_LABEL[a.status] ?? a.status}</Badge>
+            {a.late && <Badge>сдано позже</Badge>}
             <span className={styles.listMeta}>сдач: {a.submission_count}</span>
           </div>
         </div>
@@ -363,7 +364,7 @@ function TaskRow({
       <div className={styles.taskItemRow}>
         <div className={styles.listItemMain}>
           <span className={styles.listTitle}>{task.title}</span>
-          <span className={styles.badgeDraft}>{TYPE_LABEL[task.type]}</span>
+          <Badge>{TYPE_LABEL[task.type]}</Badge>
           <span className={styles.listMeta}>
             сдано {task.submitted_count} · принято {task.accepted_count}
             {task.assignee_count != null ? ` из ${task.assignee_count}` : ''}
