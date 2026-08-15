@@ -20,6 +20,12 @@ _hasher = PasswordHasher()
 ACCESS_TOKEN_TYPE = "access"
 REFRESH_TOKEN_TYPE = "refresh"
 
+# Допуск на расхождение часов при проверке временных claim'ов (iat/exp/nbf), RFC 7519 §4.1.
+# Без него шаг системного времени вперёд на одну секунду (NTP-коррекция после долгого
+# аптайма, миграция VPS) делает свежевыданный токен «ещё не действительным» — юзера
+# выкидывает с 401 на ровном месте. 60 c против access-TTL в 15 минут — не дыра.
+CLOCK_SKEW_LEEWAY = timedelta(seconds=60)
+
 
 # --- Пароли (argon2) ---
 
@@ -89,4 +95,5 @@ def decode_token(token: str) -> dict[str, Any]:
         token,
         settings.jwt_secret,
         algorithms=[settings.jwt_algorithm],
+        leeway=CLOCK_SKEW_LEEWAY,
     )
