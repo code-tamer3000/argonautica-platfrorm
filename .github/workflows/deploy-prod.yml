@@ -69,6 +69,16 @@ jobs:
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "cd /opt/platform/docker && docker compose -f docker-compose.prod.yml --env-file ../.env up -d --force-recreate --no-deps nginx && sleep 2 && docker compose -f docker-compose.prod.yml --env-file ../.env exec -T nginx nginx -t"
 
+      # Визитка живёт своим compose-проектом (docs/DEPLOY.md → Marketing site), поэтому
+      # deploy.sh её не трогает — и это правильно. Но подъём здесь идемпотентен: если
+      # контейнер уже работает и конфиг не менялся, шаг ничего не делает; если контейнер
+      # снесли или в репо поправили docker/argonautica-site/nginx.conf — он вернётся с
+      # актуальным конфигом. Контент сайта лежит вне репо и не перезаписывается.
+      - name: Ensure the marketing site is up (own compose project)
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "cd /opt/platform && docker compose -p argonautica-site -f docker/argonautica-site.compose.yml up -d"
+
       - name: Smoke-check prod through the edge
         run: |
           for url in https://platform.argonautica-systems.ru/api/health https://argonautica-systems.ru/; do

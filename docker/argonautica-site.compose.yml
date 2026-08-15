@@ -1,0 +1,36 @@
+# Визитка argonautica-systems.ru — отдельный compose-проект (`-p argonautica-site`).
+#
+# Почему не в docker-compose.prod.yml: это чужой по жизненному циклу сайт (своя вёрстка,
+# свой релизный ритм, к платформе отношения не имеет), и он НЕ должен ни падать, ни
+# пересоздаваться на blue-green выкате платформы. Отдельный проект = deploy.sh его не
+# видит и не трогает.
+#
+# Наружу ничего не публикует: TLS/HTTP/3 терминирует прод-nginx и проксирует сюда по
+# имени `argonautica-site` через внешнюю сеть `gateway` (та же, через которую живёт
+# стенд). Если этот контейнер лежит — apex отдаёт 502, а платформа не страдает:
+# в шаблоне прод-nginx апстрим резолвится лениво (resolver + переменная).
+#
+# Управление (на сервере, из /opt/platform):
+#   docker compose -p argonautica-site -f docker/argonautica-site.compose.yml up -d
+#   docker compose -p argonautica-site -f docker/argonautica-site.compose.yml logs -f
+#
+# Контент сайта лежит ВНЕ репозитория платформы (`/root/argonautica-site` на сервере) —
+# сюда он монтируется read-only. Путь переопределяется переменной SITE_ROOT.
+services:
+  site:
+    image: nginx:alpine
+    container_name: argonautica-site
+    volumes:
+      - ${SITE_ROOT:-/root/argonautica-site}:/usr/share/nginx/html:ro
+      - ./argonautica-site/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      gateway:
+        # Явный алиас: прод-nginx проксирует именно на `argonautica-site`. Имя сервиса
+        # здесь `site`, поэтому без алиаса резолв держался бы только на container_name.
+        aliases:
+          - argonautica-site
+    restart: unless-stopped
+
+networks:
+  gateway:
+    external: true
