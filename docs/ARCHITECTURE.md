@@ -825,7 +825,7 @@ flowchart TB
         TC["docker/docker-compose.test.yaml, проект argonautica-test<br/>образы версий прода, состояние в tmpfs<br/>api-контейнер из прод-Dockerfile, запуск one-off"]
     end
 
-    subgraph srv["Один сервер 193.233.245.210"]
+    subgraph srv["Один сервер 45.151.102.255"]
         subgraph stg["staging — /opt/platform-staging"]
             SN["nginx :8443 TCP и UDP"]
             SB["backend (один, без blue-green)"]
