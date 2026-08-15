@@ -54,3 +54,25 @@ jobs:
         run: |
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "cd /opt/platform && bash docker/deploy.sh"
+
+      # nginx резолвит имена апстримов из upstream{} ОДИН РАЗ и кэширует IP; `nginx -s
+      # reload` в deploy.sh их не обновляет. Новый цвет поднимается с новым IP, поэтому
+      # после переключения nginx стучится по адресу мёртвого контейнера и отдаёт 502 на
+      # ВЕСЬ /api/ и /ws — до ручного пересоздания. Проверено на выкате 15.08 15:32 UTC:
+      # blue поднялся на 172.18.0.10, nginx после reload ходил в 172.18.0.5
+      # («connect() failed (113: No route to host)»).
+      # deploy-staging.sh это уже лечит --force-recreate; прод-скрипт трогать нельзя
+      # (docs/DEPLOY.md → «Do NOT touch»), поэтому пересоздаём отсюда. Пересоздание
+      # заодно ре-рендерит шаблон через envsubst — правки конфига доезжают тем же шагом.
+      - name: Recreate nginx (it caches upstream IPs; reload does not refresh them)
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
+            "cd /opt/platform/docker && docker compose -f docker-compose.prod.yml --env-file ../.env up -d --force-recreate --no-deps nginx && sleep 2 && docker compose -f docker-compose.prod.yml --env-file ../.env exec -T nginx nginx -t"
+
+      - name: Smoke-check prod through the edge
+        run: |
+          for url in https://platform.argonautica-systems.ru/api/health https://argonautica-systems.ru/; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url")
+            echo "$url -> $code"
+            [ "$code" = "200" ] || { echo "::error::$url ответил $code"; exit 1; }
+          done
