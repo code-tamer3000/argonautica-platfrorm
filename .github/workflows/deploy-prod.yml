@@ -30,8 +30,25 @@ jobs:
             --exclude='frontend/node_modules/' \
             --exclude='backend/.venv/' \
             --exclude='docker/nginx/certs/' \
+            --exclude='docker/nginx/active_backend.conf' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/platform/
+
+      # active_backend.conf — это СОСТОЯНИЕ сервера (какой цвет сейчас в проде), а не
+      # код: его правит deploy.sh на каждом выкате. Раньше он ехал вместе с репо, где
+      # зашит backend-blue, поэтому rsync затирал указатель ПЕРЕД запуском deploy.sh —
+      # тот считал активным blue при живом green и «выкатывал» green, то есть
+      # пересоздавал контейнер, обслуживающий трафик (502 на /api, пока он не healthy).
+      # Blue-green превращался в деплой с даунтаймом. Теперь файл исключён из основного
+      # rsync, а сюда доезжает ТОЛЬКО если на сервере его ещё нет (--ignore-existing) —
+      # это первый деплой на чистую машину, где иначе docker создал бы каталог на месте
+      # bind-mount'а и уронил nginx.
+      - name: Seed active_backend.conf on a fresh server (never overwrite)
+        run: |
+          rsync -az --ignore-existing \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            docker/nginx/active_backend.conf \
+            ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/platform/docker/nginx/
 
       - name: Blue-green deploy
         run: |
