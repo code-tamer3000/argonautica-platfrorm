@@ -33,8 +33,9 @@ Hard rules:
 - NEVER touch `docker/docker-compose.prod.yml`, `docker/deploy.sh`, `.env`, or `docker/nginx/certs/`.
 - If a `make` target fails for environment reasons (not code reasons), stop and report — do not improvise workarounds.
 
-> Current reality (not yet Dockerized): `make` wraps the host backend venv
-> (`backend/.venv`) and the dev compose stack (`docker/docker-compose.yml`).
+> `make` is fully Dockerized: test/lint targets drive `docker/docker-compose.test.yaml`
+> (one-off container from the prod Dockerfile), `local-*` targets drive the real
+> `docker/docker-compose.prod.yml`. No host venv, no host node_modules.
 
 ## Architecture facts (one line each; details in docs/)
 
