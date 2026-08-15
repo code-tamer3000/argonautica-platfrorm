@@ -108,10 +108,16 @@ services:
     networks:
       # `default` обязателен явно, раз список не пуст — иначе backend/frontend/minio
       # станут недостижимы для этого контейнера.
-      - default
+      default: {}
       # Мост к прод-compose-проекту (docker), создан один раз вручную
       # (`docker network create gateway`), объявлен `external` в обоих compose-файлах.
-      - gateway
+      # Свой alias ОБЯЗАТЕЛЕН: сервис в обоих compose называется `nginx`, поэтому
+      # дефолтный DNS-алиас (= имя сервиса) на общей сети `gateway` коллизирует между
+      # прод- и staging-nginx. `staging_nginx` — то самое имя, на которое проксирует
+      # прод (см. docker/nginx/templates/default.conf.template).
+      gateway:
+        aliases:
+          - staging_nginx
     restart: unless-stopped
 
 networks:
