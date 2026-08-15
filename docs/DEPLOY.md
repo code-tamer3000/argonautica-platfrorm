@@ -15,6 +15,7 @@
 
 - Only **nginx** is exposed (80/443). Postgres/Redis/MinIO live in the docker network with no host ports. Everything in Docker Compose.
 - **Blue-green** (zero-downtime): two backend copies (`blue`/`green`) share one Postgres/Redis/MinIO. nginx flips traffic. Stateful services are never duplicated.
+- **`docker/nginx/active_backend.conf` is server state, not code.** It records which color currently serves prod, and `deploy.sh` rewrites it on every deploy. The tracked copy is only a **seed for a fresh server** (and the file `make local-up` needs locally) — `deploy-prod.yml` therefore excludes it from the main `rsync --delete` and pushes it separately with `--ignore-existing`. Without that exclusion the sync resets the pointer to the committed color *before* `deploy.sh` reads it, so the script mistakes the live color for the idle one and **recreates the container that is serving traffic** — a 502 window on `/api/` instead of zero-downtime, with the prod color pinned to one side forever. Symptom in the deploy log: `>> active=<X>, deploying → <Y>` where `<Y>` is the color that was actually already live.
 
 ## The one rule that constrains schema work
 
