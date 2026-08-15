@@ -20,6 +20,8 @@ import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { IconBook, IconSend } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import { Badge } from '../../components/Badge'
+import { Chip, type ChipKind } from '../../components/Chip'
 import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
@@ -45,10 +47,10 @@ const TRACK_STATUS_LABEL: Record<string, string> = {
 
 const commentTime = (iso: string) => format(new Date(iso), 'd MMM, HH:mm', { locale: ru })
 
-function trackChipClass(status: string): string {
-  if (status === 'accepted') return `${styles.chip} ${styles.chipAccepted}`
-  if (status === 'returned') return `${styles.chip} ${styles.chipReturned}`
-  return styles.chip
+function trackChipKind(status: string): ChipKind {
+  if (status === 'accepted') return 'accepted'
+  if (status === 'returned') return 'returned'
+  return 'neutral'
 }
 
 export function TaskDetail() {
@@ -84,14 +86,14 @@ export function TaskDetail() {
     <div className={styles.viewer}>
       <div className={styles.viewerHead}>
         <div className={styles.headChips}>
-          <span className={`${styles.badge} ${styles.badgeType}`}>{TYPE_LABEL[task.type]}</span>
+          <Badge tone="accent">{TYPE_LABEL[task.type]}</Badge>
           {task.my_status === 'accepted' && (
-            <span className={`${styles.chip} ${styles.chipAccepted}`}>Принята</span>
+            <Chip kind="accepted">Принята</Chip>
           )}
           {task.my_status === 'returned' && (
-            <span className={`${styles.chip} ${styles.chipReturned}`}>Возвращена на доработку</span>
+            <Chip kind="returned">Возвращена на доработку</Chip>
           )}
-          {task.deadline_soon && <span className={`${styles.chip} ${styles.chipSoon}`}>Подходит срок</span>}
+          {task.deadline_soon && <Chip kind="soon">Подходит срок</Chip>}
         </div>
         <h1 className={styles.articleTitle}>{task.title}</h1>
         {task.deadline_at && (
@@ -137,10 +139,10 @@ export function TaskDetail() {
           {myTrack && (
             <div className={styles.myStatusRow}>
               <span className={styles.myStatusLabel}>Статус:</span>
-              <span className={trackChipClass(myTrack.status)}>
+              <Chip kind={trackChipKind(myTrack.status)}>
                 {TRACK_STATUS_LABEL[myTrack.status] ?? myTrack.status}
-              </span>
-              {myTrack.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
+              </Chip>
+              {myTrack.late && <Chip kind="late">Сдано позже</Chip>}
             </div>
           )}
           {/* Выпускник свою сдачу видит, но дослать/переслать уже не может. */}
@@ -296,10 +298,10 @@ function TrackCard({
         <Avatar name={name} url={submitter?.avatar_url} size={32} />
         <span className={styles.trackName}>{name}</span>
         <div className={styles.trackChips}>
-          <span className={trackChipClass(track.status)}>
+          <Chip kind={trackChipKind(track.status)}>
             {TRACK_STATUS_LABEL[track.status] ?? track.status}
-          </span>
-          {track.late && <span className={`${styles.chip} ${styles.chipLate}`}>Сдано позже</span>}
+          </Chip>
+          {track.late && <Chip kind="late">Сдано позже</Chip>}
         </div>
       </div>
 

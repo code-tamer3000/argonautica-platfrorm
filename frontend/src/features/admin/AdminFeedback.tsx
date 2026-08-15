@@ -5,6 +5,7 @@ import { useCreateRoom } from '../../api/rooms'
 import type { FeedbackKind, FeedbackOut } from '../../lib/types'
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
+import { Badge } from '../../components/Badge'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import cabin from '../cabin/cabin.module.css'
@@ -96,9 +97,9 @@ export function AdminFeedback() {
       <div className={styles.pageHeader}>
         <h1>Обращения</h1>
         {data && data.unresolved_count > 0 && (
-          <span className={styles.badgeDraft}>
+          <Badge>
             Не разобрано: {data.unresolved_count}
-          </span>
+          </Badge>
         )}
       </div>
 
@@ -133,9 +134,9 @@ export function AdminFeedback() {
             <div className={styles.listItem} key={item.id}>
               <div className={styles.listItemMain} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 'var(--space-1)' }}>
                 <span className={styles.listMeta}>
-                  <span className={item.kind === 'bug' ? styles.badgeDraft : styles.badgePublished}>
+                  <Badge tone={item.kind === 'bug' ? 'neutral' : 'accent'}>
                     {KIND_LABEL[item.kind]}
-                  </span>
+                  </Badge>
                   {' '}
                   {item.user_name ?? `#${item.user_id}`} · {formatDatetime(item.created_at)}
                 </span>
@@ -144,7 +145,7 @@ export function AdminFeedback() {
                 </span>
                 {item.resolved_at && (
                   <span className={styles.crumbs}>
-                    <span className={styles.badgePublished}>{RESOLVED_LABEL[item.kind]}</span>
+                    <Badge tone="accent">{RESOLVED_LABEL[item.kind]}</Badge>
                     {' · '}
                     <button
                       type="button"

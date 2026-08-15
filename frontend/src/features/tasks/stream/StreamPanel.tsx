@@ -172,7 +172,7 @@ function WaitingNote({ stream }: { stream: StreamOut }) {
     return (
       <div className={styles.nodeCard}>
         <h4>Ждём подгруппу</h4>
-        <p className={styles.empty}>
+        <p className={styles.note}>
           Свой текст вы сдали. В вашей подгруппе ({myNode?.label}) ещё не сдали:{' '}
           {pending.map(name).join(', ')}. Как только сдадут все, откроются их тексты и
           можно будет согласовать общую фразу.
@@ -184,7 +184,7 @@ function WaitingNote({ stream }: { stream: StreamOut }) {
   if (waiting.length === 0) {
     return (
       <div className={styles.nodeCard}>
-        <p className={styles.empty}>Свою часть вы сдали. Ждём остальных.</p>
+        <p className={styles.note}>Свою часть вы сдали. Ждём остальных.</p>
       </div>
     )
   }
@@ -192,7 +192,7 @@ function WaitingNote({ stream }: { stream: StreamOut }) {
   return (
     <div className={styles.nodeCard}>
       <h4>Ждём соседей</h4>
-      <p className={styles.empty}>
+      <p className={styles.note}>
         Свой текст вы сдали. Чтобы двигаться дальше, нужны фразы:{' '}
         {waiting.map((n) => n.label).join(', ')}. Как только они договорятся, вы
         увидите их формулировки и сможете переписать свой текст.
@@ -278,11 +278,11 @@ function NodeCard({
         <blockquote className={styles.phrase}>
           {node.phrase}
           {node.approved_by_admin && (
-            <span className={styles.badge}>решение админа</span>
+            <span className={styles.mark}>решение админа</span>
           )}
         </blockquote>
       ) : (
-        <p className={styles.empty}>
+        <p className={styles.note}>
           {roomId != null
             ? 'Фраза ещё не утверждена — переходите в комнату, чтобы обсудить её с подгруппой.'
             : 'Фраза ещё не утверждена или пока не открыта вам.'}

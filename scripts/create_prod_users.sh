@@ -6,11 +6,11 @@
 # Идемпотентно: уже заведённые логины пропускаются.
 #
 # Использование (из корня репо на проде, где поднят стек):
-#   ./create_prod_users.sh              # берёт ./users.md
-#   ./create_prod_users.sh path/to.md   # другой файл со списком ников
+#   ./scripts/create_prod_users.sh              # берёт ./users.md
+#   ./scripts/create_prod_users.sh path/to.md   # другой файл со списком ников
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Docker Compose v2 (прод) / v1 — на всякий случай.

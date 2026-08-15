@@ -28,7 +28,7 @@ export function UserTextsModal({
       {isLoading ? (
         <Spinner />
       ) : !data || data.length === 0 ? (
-        <p className={styles.empty}>
+        <p className={styles.note}>
           Тексты этого участника вам пока не открыты — они раскрываются по мере
           слияния подгрупп.
         </p>

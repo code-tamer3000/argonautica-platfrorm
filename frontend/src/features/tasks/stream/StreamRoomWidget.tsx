@@ -64,7 +64,7 @@ export function StreamRoomWidget({
               {node.phrase ? (
                 <blockquote className={styles.phrase}>{node.phrase}</blockquote>
               ) : (
-                <p className={styles.empty}>
+                <p className={styles.note}>
                   {node.ready
                     ? 'Подгруппа ещё не договорилась о фразе.'
                     : 'Ждём, пока все в подгруппе сдадут свой текст.'}

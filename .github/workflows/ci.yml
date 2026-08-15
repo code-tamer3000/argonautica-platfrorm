@@ -4,7 +4,7 @@ name: CI
 # в develop и main. Линт/типы/тесты идут ТОЛЬКО через make-цели — единственный
 # санкционированный вход (CLAUDE.md: «NEVER run pytest/ruff/mypy/vite directly»).
 #
-# make сам поднимает весь стек из docker-compose.test.yaml (postgres/redis/minio
+# make сам поднимает весь стек из docker/docker-compose.test.yaml (postgres/redis/minio
 # + one-off `api`-контейнер из прод-Dockerfile). Раннеру нужны только Docker и
 # make — НИ host-python, НИ host-node тут не нужны, всё живёт в контейнерах.
 on:

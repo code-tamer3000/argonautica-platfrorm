@@ -3,6 +3,8 @@ import { useCreateFeedback } from '../../api/feedback'
 import { useFaqItems } from '../../api/faq'
 import type { FeedbackKind } from '../../lib/types'
 import { Button } from '../../components/Button'
+import { EmptyState } from '../../components/EmptyState'
+import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { IconChevronRight } from '../../components/icons'
 import { toast } from '../../stores/toast'
@@ -12,6 +14,8 @@ const KIND_LABEL: Record<FeedbackKind, string> = {
   improvement: 'Предложить улучшение',
   bug: 'Сообщить об ошибке',
 }
+
+const KIND_OPTIONS = (['improvement', 'bug'] as const).map((k) => ({ value: k, label: KIND_LABEL[k] }))
 
 const KIND_PLACEHOLDER: Record<FeedbackKind, string> = {
   improvement: 'Опишите, что и как стоит улучшить…',
@@ -42,20 +46,7 @@ function FeedbackForm() {
 
   return (
     <form className={styles.form} onSubmit={handleSubmit}>
-      <div className={styles.segmented} role="tablist">
-        {(['improvement', 'bug'] as const).map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={kind === k}
-            className={kind === k ? styles.segActive : styles.seg}
-            onClick={() => setKind(k)}
-          >
-            {KIND_LABEL[k]}
-          </button>
-        ))}
-      </div>
+      <Segmented label="Тип обращения" options={KIND_OPTIONS} value={kind} onChange={setKind} />
       <textarea
         className={styles.textarea}
         rows={5}
@@ -79,7 +70,7 @@ function FaqSection() {
 
   if (isLoading) return <Spinner />
   if (!items || items.length === 0) {
-    return <p className={styles.empty}>Пока нет ответов на частые вопросы.</p>
+    return <EmptyState>Пока нет ответов на частые вопросы.</EmptyState>
   }
 
   return (

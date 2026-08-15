@@ -16,35 +16,8 @@
   line-height: 1.5;
   max-width: 60ch;
 }
-.empty { font-size: var(--text-ui); color: var(--text-ghost); }
 
-/* --- Переключатель подразделов --- */
-.segmented {
-  display: flex;
-  gap: var(--space-2);
-  background: var(--bg);
-  border: 1px solid var(--divider);
-  border-radius: var(--radius-btn);
-  padding: 4px;
-  flex-wrap: wrap;
-}
-.seg, .segActive {
-  flex: 1;
-  min-width: fit-content;
-  padding: var(--space-2) var(--space-3);
-  border: none;
-  border-radius: var(--radius-btn);
-  font-family: var(--font-t4);
-  font-size: var(--text-ui);
-  cursor: pointer;
-  background: transparent;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-.segActive {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
-  color: var(--text-primary);
-}
+/* Переключатель подразделов — components/Segmented. */
 
 .addBtn { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--space-2); }
 
@@ -91,12 +64,6 @@
   padding: 0 var(--space-2) var(--space-2);
 }
 
-.card {
-  background: var(--bg-surface);
-  border: 1px solid var(--divider);
-  border-radius: var(--radius-card);
-  padding: var(--space-3) var(--space-4);
-}
 .cardHead {
   display: flex;
   align-items: center;

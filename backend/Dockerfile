@@ -2,7 +2,7 @@
 # в рантайме контейнера только uvicorn (blue+green не должны гонять alembic параллельно).
 #
 # Multi-stage: `base` = the full prod image content; `test` = base + pinned dev
-# tooling (used only by docker-compose.test.yaml, build target: test); `runtime`
+# tooling (used only by docker/docker-compose.test.yaml, build target: test); `runtime`
 # is the DEFAULT (last) stage so target-less builds (prod/staging compose) resolve
 # to the clean prod image and never to `test`.
 FROM python:3.12-slim AS base
@@ -46,7 +46,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=5 \
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 # --- test: hermetic test/CI image = prod base + PINNED dev tooling ------------
-# Built on demand (docker-compose.test.yaml, target: test). NOT the final stage,
+# Built on demand (docker/docker-compose.test.yaml, target: test). NOT the final stage,
 # so a target-less build never ships pytest/ruff/mypy into prod.
 FROM base AS test
 USER root

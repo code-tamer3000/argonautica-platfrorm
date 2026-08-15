@@ -10,6 +10,7 @@ import { useUsersMap } from '../../api/users'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
+import { Chip } from '../../components/Chip'
 import { toast } from '../../stores/toast'
 import styles from './tasks.module.css'
 
@@ -110,14 +111,14 @@ function PairCard({
       {isAdmin && (
         <div className={styles.cardChips}>
           {pair.members.map((m) => (
-            <span key={m.user_id} className={styles.chip}>
+            <Chip key={m.user_id}>
               {nameOf(m.user_id)}:{' '}
               {m.cross_task_id != null ? (
                 <Link to={`/tasks/${m.cross_task_id}`}>задача выдана</Link>
               ) : (
                 'ещё не выдал'
               )}
-            </span>
+            </Chip>
           ))}
         </div>
       )}

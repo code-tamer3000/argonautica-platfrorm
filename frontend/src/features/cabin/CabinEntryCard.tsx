@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { IconChevronRight } from '../../components/icons'
+import { cardClass } from '../../components/Card'
 import type { CabinEntryOut, CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS } from './cabinFields'
 import styles from './cabin.module.css'
@@ -133,7 +134,7 @@ export function CabinEntryCard({
   const preview = rows.find((r) => r.f.kind !== 'strength')?.value
 
   return (
-    <article className={styles.card}>
+    <article className={cardClass({ compact: true })}>
       <header className={styles.cardHead}>
         <button
           type="button"
