@@ -59,7 +59,9 @@ The apex domain is **not** the platform — it's the static marketing однос
 
 Server-side video transcoding (see [FILES.md](FILES.md) "Video transcode") needs a **worker process** running the same backend image (ffmpeg is already in `backend/Dockerfile`). It is a `transcode-worker` service in all three composes (dev, staging, prod), reusing the `&backend` anchor — same image/env/deps, no host ports, healthcheck disabled (not an HTTP server).
 
-**`deploy.sh` does not touch it** (it is a singleton pulling from the Redis queue, outside blue-green), so after a deploy that changes the backend image it keeps running the *old* image until restarted by hand:
+**`deploy.sh` does not touch it** (it is a singleton pulling from the Redis queue, outside blue-green), so on its own it would keep running the *old* image after every deploy. Since 16.08.2026 `deploy-prod.yml` restarts it as its own step after the script and **fails the deploy** if the container is not running afterwards (previously this was a manual step nobody could see was skipped — the class of bug that only shows up as "staging transcodes video, prod doesn't"). No `--force-recreate`: compose recreates only when the image ID actually changed, so an in-flight transcode is not cut off on a deploy that did not touch the backend image.
+
+By hand (fresh server, rollback, or debugging):
 
 ```bash
 cd /opt/platform && docker compose -f docker/docker-compose.prod.yml --env-file .env up -d --no-deps transcode-worker

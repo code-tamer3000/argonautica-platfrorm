@@ -54,6 +54,50 @@ async def test_expired_access_token_rejected(
     assert resp.status_code == 401
 
 
+async def test_small_clock_skew_tolerated(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Токен, выданный «чуть в будущем», принимается (CLOCK_SKEW_LEEWAY).
+
+    Регрессия: без leeway шаг часов вперёд на секунду ронял валидацию iat
+    (ImmatureSignatureError -> 401) у уже залогиненного юзера.
+    """
+    user = await make_user()
+    now = datetime.now(UTC)
+    skewed = jwt.encode(
+        {
+            "sub": str(user.id),
+            "type": "access",
+            "iat": now + timedelta(seconds=30),
+            "exp": now + timedelta(minutes=15),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    resp = await client.get("/api/auth/me", headers=auth_headers(skewed))
+    assert resp.status_code == 200, resp.text
+
+
+async def test_large_clock_skew_still_rejected(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Допуск узкий: токен из далёкого будущего по-прежнему не проходит."""
+    user = await make_user()
+    now = datetime.now(UTC)
+    forged = jwt.encode(
+        {
+            "sub": str(user.id),
+            "type": "access",
+            "iat": now + timedelta(hours=1),
+            "exp": now + timedelta(hours=2),
+        },
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+    resp = await client.get("/api/auth/me", headers=auth_headers(forged))
+    assert resp.status_code == 401
+
+
 async def test_me_returns_current_user(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

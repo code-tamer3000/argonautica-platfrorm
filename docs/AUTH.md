@@ -28,6 +28,10 @@
 - **Access token** — short-lived, stateless, sent as `Authorization: Bearer <token>`.
 - **Refresh token** — carries a `jti`; the `jti` is whitelisted in Redis so it can be revoked (logout a device, ban). See Redis uses in [DATA_MODEL.md](DATA_MODEL.md).
 - TTLs from config: `JWT_ACCESS_TTL_MINUTES`, `JWT_REFRESH_TTL_DAYS`.
+- **Clock skew:** time claims (`iat`/`exp`/`nbf`) are validated with a 60-second leeway
+  (`CLOCK_SKEW_LEEWAY` in `app/core/security.py`, RFC 7519 §4.1). Without it a one-second
+  forward step of the system clock (NTP correction, VPS migration) makes a just-issued
+  token "not yet valid" and logs the user out with a 401.
 - Passwords hashed with **argon2** (`argon2-cffi`), never plaintext; transparent rehash on login when params change.
 
 ## Endpoints (`/api/auth`)
