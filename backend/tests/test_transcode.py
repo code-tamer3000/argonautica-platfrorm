@@ -226,6 +226,53 @@ async def test_fast_path_skips_transcode(
         assert row.thumb_key is not None
 
 
+# --- вариант вышел тяжелее оригинала → берём оригинал ------------------------
+
+
+async def test_variant_heavier_than_source_is_discarded(
+    client: AsyncClient, make_user: MakeUser, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Перекодировали, а стало тяжелее — раздутый вариант не берём, отдаём оригинал.
+
+    Регрессия: `serving_key()` смотрит только на статус 'done', поэтому вариант любого
+    размера уезжал клиенту. На проде так вышло у 4 видео из 70 (худшее 1.4 МБ → 2.6 МБ):
+    исходник уже был сжат агрессивнее нашего CRF 23.
+
+    ffmpeg тут подменён — реальным файлом такой исход не воспроизвести детерминированно,
+    а проверяем мы ветку сравнения размеров, а не сам кодек.
+    """
+    from app.services import transcode as tr
+
+    def _fat_output(src: str, dst: str) -> None:
+        with open(dst, "wb") as fh:
+            fh.write(Path(src).read_bytes() * 3)  # заведомо тяжелее исходника
+
+    monkeypatch.setattr(tr, "_run_ffmpeg_720p", _fat_output)
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    source = (ASSETS / "needs_transcode.mp4").read_bytes()
+    asset = await _upload_video(client, headers, source)
+
+    processed = await process_one_job()
+    assert processed == asset["id"]
+
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as session:
+        row = await session.get(MediaAsset, asset["id"])
+        assert row is not None
+        assert row.transcode_status == "done"
+        # Вариантом остаётся оригинал, копия под video/720/ не создаётся.
+        assert row.variant_key == row.storage_key
+        assert row.variant_mime == row.mime_type
+        assert serving_key(row) == row.storage_key
+        # И отдаём ровно исходные байты, а не раздутые.
+        client_s3 = _server_client()
+        served = client_s3.get_object(Bucket=row.bucket, Key=serving_key(row))["Body"].read()
+        assert len(served) == len(source)
+
+
 # --- провал: битый файл → ретраи → failed, оригинал цел ---------------------
 
 
