@@ -55,6 +55,37 @@ jobs:
           ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} \
             "cd /opt/platform && bash docker/deploy.sh"
 
+      # transcode-worker — singleton вне blue-green (тянет задачи из Redis-очереди, второй
+      # такой же дрался бы за те же видео), поэтому deploy.sh его сознательно не трогает.
+      # Побочный эффект: он остаётся на СТАРОМ образе после каждого выката, пока его не
+      # поднимут руками — то есть правки транскода на прод не доезжают вовсе. А если
+      # контейнера нет совсем, авария молчит: загрузка видео проходит, деплой зелёный,
+      # видео просто копятся в очереди и пользователю отдаётся тяжёлый оригинал.
+      # На стенде этого класса багов нет — deploy-staging.sh делает `up -d` на весь стек.
+      # Без --force-recreate: compose пересоздаст контейнер, только если сменился image ID
+      # (deploy.sh пересобирает platform-backend:latest шагом раньше), иначе это no-op и
+      # текущее транскодирование не обрывается на середине.
+      - name: Restart the video transcode worker (deploy.sh leaves it on the old image)
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} bash -s <<'EOF'
+          set -euo pipefail
+          cd /opt/platform/docker
+          DC="docker compose -f docker-compose.prod.yml --env-file ../.env"
+          $DC up -d --no-deps transcode-worker
+          # ps -a: контейнер, упавший сразу после старта, в обычный `ps -q` уже не попадает —
+          # без -a шаг сказал бы «не создан» вместо того, чтобы показать логи падения.
+          cid="$($DC ps -a -q transcode-worker)"
+          [ -n "$cid" ] || { echo "::error::transcode-worker не создан — видео не будут транскодироваться"; exit 1; }
+          sleep 3
+          running="$(docker inspect -f '{{.State.Running}}' "$cid")"
+          echo "transcode-worker running=$running ($cid)"
+          if [ "$running" != true ]; then
+            echo "::error::transcode-worker не работает — видео будут копиться в очереди"
+            docker logs --tail 50 "$cid" 2>&1 || true
+            exit 1
+          fi
+          EOF
+
       # nginx резолвит имена апстримов из upstream{} ОДИН РАЗ и кэширует IP; `nginx -s
       # reload` в deploy.sh их не обновляет. Новый цвет поднимается с новым IP, поэтому
       # после переключения nginx стучится по адресу мёртвого контейнера и отдаёт 502 на
