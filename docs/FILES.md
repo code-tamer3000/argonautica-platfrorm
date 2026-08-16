@@ -107,6 +107,52 @@ re-checks, but a doomed file no longer costs a full upload first.
 JSON печатается с пробелами после двоеточий). По собранным цифрам — отдельная задача с фиксами (напр. асинхронная
 генерация превью после ответа, `proxy_buffering off` на GET-медиа, tune presign).
 
+## Снимок инфраструктуры (`GET /api/metrics/system`)
+
+Соседний измерительный слой: не «где теряется время в медиа», а «что с инфраструктурой
+прямо сейчас». Источники уже были в системе, но никем не читались. Только админу; сбор —
+`app/services/system_metrics.py`, считается на лету при запросе (гейджей мало, запрос
+редкий — фонового сборщика нет).
+
+Блоки ответа:
+
+- `transcode_queue` — `pending` (LLEN `transcode:pending`), `inflight` (размер
+  `transcode:inflight`), **`stale`** (забраны дольше `transcode_claim_timeout_seconds`
+  назад — воркер упал/завис; раньше выводилось глазами из логов), `retrying`
+  (`transcode:attempts` > 1), `oldest_claim_age_seconds`. Только чтение — механику
+  очереди эндпоинт не трогает.
+- `presence` — `online_users` (SCARD `presence:online`, общее по всем воркерам) и
+  `ws_connections_this_process` (локальный реестр `ws/manager.py`; при N воркерах это
+  доля одного процесса, отсюда имя).
+- `db_pool` — `size` / `checked_in` / `checked_out` / `overflow` / `max_overflow` + сырой
+  `status()`. **`pool_size` в `app/db/session.py` не задан** — работает дефолт SQLAlchemy
+  (5 + 10 overflow), поле `size_is_sqlalchemy_default: true` это фиксирует. Крутить его
+  без цифр не нужно, но видеть обязательно: упёршийся пул выглядит как «внезапно всё
+  встало» и ничем другим себя не проявляет.
+- `redis` — `ping_ms` (round-trip) и память из `INFO memory`.
+- `disk` — `total/used/free_bytes`, `used_percent` и `growth_bytes_per_hour` по разнице с
+  предыдущим снимком (базовая точка в Redis `metrics:system:disk`, сдвигается не чаще
+  5 минут; пока базы нет — `null`, а не выдуманный ноль). Путь — `METRICS_DISK_PATH`
+  (дефолт `/`): том MinIO в бэкенд-контейнер не смонтирован, но лежит на той же ФС
+  docker-хоста, так что свободное место — общий пул.
+
+Сбой отдельного источника отдаётся как `{"error": ...}` внутри своего блока, снимок всё
+равно приходит: диагностика нужна ровно тогда, когда часть инфраструктуры лежит.
+Порогов и алертов здесь нет — только цифры.
+
+**nginx `log_format api_perf`** — те же тайминги, что у `media_perf`, но на API-локации
+(`location /api/`): `req_time` (весь запрос) против `upstream_time` (сколько думал
+бэкенд) — это и есть разделение «медленный бэкенд» vs «медленная сеть», которого раньше
+не было нигде, кроме медиа. Плюс `proto=$server_protocol` — доля HTTP/3. Пишется в
+stdout: `docker logs <nginx> | grep api_perf` (у контейнера нет тома под
+`/var/log/nginx`, файл умер бы вместе с контейнером и не ротируется). Дефолтный
+access.log не отключён, поэтому API-запрос даёт две строки — обычную и `api_perf`.
+Формат стабилен, на него завязан этот грепанье.
+
+⚠️ `docker/deploy.sh` **не применяет** изменения nginx — нужно ручное пересоздание
+контейнера/`nginx -s reload` (известное ограничение, ARG-22). Без этого шага `api_perf`
+на сервере не появится, остальное (эндпоинт) работает.
+
 ## Backfill (one-off)
 
 Older images uploaded before thumbnails have `thumb_key = NULL`. `backend/scripts/backfill_thumbnails.py` regenerates them (idempotent, batched, images only; videos are client-posters). Runbook in the archived OPERATIONS §4.

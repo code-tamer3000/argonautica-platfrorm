@@ -8,6 +8,11 @@ stdout (`docker logs | grep '"metric":"media"'`) и копит перценти�
 Приём открыт любому активному пользователю (шлёт метрики только со своих операций);
 свод — только админам. Значения клиентские, не доверенные: наблюдение, не контроль.
 См. docs/FILES.md «Сбор метрик».
+
+Здесь же живёт `GET /api/metrics/system` — снимок инфраструктурных гейджей «сейчас»
+(очередь транскода, онлайн, пул БД, Redis, диск). Сбор — в
+`app/services/system_metrics.py`, это уже не про медиа, но тот же измерительный слой
+и тот же префикс.
 """
 from typing import Annotated, Any
 
@@ -19,6 +24,7 @@ from app.core.metrics import log_media_metric, record_step, summarize
 from app.models.user import User
 from app.schemas.metrics import MetricsBatch
 from app.services.ratelimit import enforce_rate_limit
+from app.services.system_metrics import collect_snapshot
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -78,3 +84,18 @@ async def media_metrics_summary(
         "enabled": settings.media_metrics_enabled,
         "steps": await summarize(),
     }
+
+
+@router.get("/system")
+async def system_metrics_snapshot(
+    _admin: Annotated[User, Depends(require_admin)],
+) -> dict[str, Any]:
+    """Снимок инфраструктурных гейджей «сейчас» (админ): очередь транскода, онлайн,
+    пул соединений к БД, память и latency Redis, свободное место под медиа.
+
+    Считается на лету при запросе — фонового сборщика нет (гейджей мало, запрос редкий).
+    Сбой отдельного источника отдаётся как `{"error": ...}` внутри его блока, снимок всё
+    равно приходит: диагностика нужна ровно тогда, когда что-то лежит. См.
+    `app/services/system_metrics.py` и docs/FILES.md «Снимок инфраструктуры».
+    """
+    return await collect_snapshot()
