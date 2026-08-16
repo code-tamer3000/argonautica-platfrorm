@@ -11,12 +11,16 @@
 """
 import logging
 import mimetypes
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from io import BytesIO
 from uuid import uuid4
 
 import boto3
+import botocore.auth
 from botocore.client import BaseClient, Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
@@ -45,6 +49,17 @@ _PRESIGN_EXPIRES = PRESIGN_EXPIRES
 # = стабильный URL = браузер реально кэширует байты (Cache-Control на nginx). Для ~20
 # доверенных участников суточная ссылка приемлема (SigV4 позволяет до 7 дней).
 PRESIGN_GET_EXPIRES = 86_400  # 24 часа
+
+# Окно округления момента подписи GET-URL. В пределах окна один объект = один и тот же
+# URL байт в байт → браузерный HTTP-кэш попадает (nginx уже отдаёт immutable). Окно =
+# глубина кэша: сутки покрывают «зашёл утром и вечером» одной кэш-записью. Плата — ссылка
+# живёт дольше (см. PRESIGN_GET_EXPIRES + PRESIGN_GET_WINDOW ниже), это осознанный выбор
+# для ~20 доверенных участников, см. ARG-75.
+PRESIGN_GET_WINDOW = 86_400  # 24 часа
+
+# Лок сериализует временный патч botocore.auth.get_current_datetime (см. _frozen_signing_clock):
+# подпись должна быть однопоточной операцией, иначе конкурентные вызовы увидят чужое время.
+_SIGN_CLOCK_LOCK = threading.Lock()
 
 # Превью: даунскейл до квадрата THUMB_MAX_PX по длинной стороне, WebP. Хватает для
 # ленты и лайтбокса-заглушки; оригинал грузится только по клику.
@@ -100,26 +115,63 @@ def presigned_put_url(
     return url
 
 
+def _presign_window_start(now: datetime, window: int = PRESIGN_GET_WINDOW) -> datetime:
+    """Floor момента подписи вниз до окна (naive UTC — так его ждёт botocore)."""
+    if now.tzinfo is not None:
+        now = now.astimezone(UTC).replace(tzinfo=None)
+    epoch = int(now.timestamp())
+    floored = epoch - (epoch % window)
+    return datetime.fromtimestamp(floored, tz=UTC).replace(tzinfo=None)
+
+
+@contextmanager
+def _frozen_signing_clock(at: datetime) -> Iterator[None]:
+    """Подменяет botocore.auth.get_current_datetime на фиксированный момент `at`.
+
+    boto3 не даёт публичного способа задать момент подписи GET-URL — X-Amz-Date всегда
+    берётся из botocore.auth.get_current_datetime() внутри SigV4Auth.add_auth. Патч —
+    единственный способ добиться округлённой (а значит стабильной по байтам) подписи без
+    переписывания SigV4 самостоятельно. Лок сериализует: подмена глобальна для модуля.
+    """
+    with _SIGN_CLOCK_LOCK:
+        original = botocore.auth.get_current_datetime
+        botocore.auth.get_current_datetime = lambda remove_tzinfo=True: at
+        try:
+            yield
+        finally:
+            botocore.auth.get_current_datetime = original
+
+
 def presigned_get_url(
     bucket: str,
     key: str,
     expires: int = PRESIGN_GET_EXPIRES,
     download_name: str | None = None,
 ) -> str:
-    """Короткоживущий URL для чтения (GET). MinIO поддерживает range-запросы (перемотка видео).
+    """URL для чтения (GET). MinIO поддерживает range-запросы (перемотка видео).
+
+    Момент подписи округляется вниз до PRESIGN_GET_WINDOW: два вызова для одного объекта
+    в пределах окна дают идентичный URL байт в байт — это и включает браузерный HTTP-кэш
+    (см. PRESIGN_GET_WINDOW). Срок жизни подписи (`ExpiresIn`) отсчитывается от округлённого
+    момента, поэтому берём `expires + PRESIGN_GET_WINDOW`: клиент, получивший ссылку в
+    последнюю секунду окна, всё равно имеет полный `expires` в запасе.
 
     `download_name` задаёт `Content-Disposition: attachment` — браузер СКАЧИВАЕТ файл
     (а не открывает инлайн). Кросс-доменный html-атрибут `download` игнорируется, поэтому
-    скачивание форсим на стороне хранилища через подписанный response-параметр.
+    скачивание форсим на стороне хранилища через подписанный response-параметр. Значение
+    ОБЯЗАНО быть одинаковым для одного объекта в разных вызовах — оно входит в подпись,
+    разное значение = разный URL = кэш-промах.
     """
     params: dict[str, str] = {"Bucket": bucket, "Key": key}
     if download_name is not None:
         params["ResponseContentDisposition"] = f'attachment; filename="{download_name}"'
-    url: str = _presign_client().generate_presigned_url(
-        ClientMethod="get_object",
-        Params=params,
-        ExpiresIn=expires,
-    )
+    at = _presign_window_start(datetime.now(UTC))
+    with _frozen_signing_clock(at):
+        url: str = _presign_client().generate_presigned_url(
+            ClientMethod="get_object",
+            Params=params,
+            ExpiresIn=expires + PRESIGN_GET_WINDOW,
+        )
     return url
 
 
@@ -494,6 +546,15 @@ def serving_key(asset: MediaAsset) -> str:
     return asset.storage_key
 
 
+def attachment_download_name(asset: MediaAsset) -> str | None:
+    """`download_name` для `presigned_get_url` — файлы (pdf/doc/zip) форсят скачивание,
+    картинки/видео остаются инлайн. Один источник истины: значение входит в подпись
+    URL, расхождение между вызывающими развело бы один объект по двум кэш-записям."""
+    if asset.kind != "file":
+        return None
+    return asset.storage_key.rsplit("/", 1)[-1]
+
+
 def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
     """Вложение с готовыми presigned-URL (отдаваемый объект + превью). Подпись локальна.
 
@@ -502,9 +563,9 @@ def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
     У картинок дополнительно `preview_url` (средний дериват для лайтбокса, если он есть);
     `url` при этом остаётся оригиналом — он нужен для скачивания.
     """
-    # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн.
-    download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
-    url = presigned_get_url(asset.bucket, serving_key(asset), download_name=download_name)
+    url = presigned_get_url(
+        asset.bucket, serving_key(asset), download_name=attachment_download_name(asset)
+    )
     thumb_url = (
         presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
     )

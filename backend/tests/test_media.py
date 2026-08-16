@@ -4,6 +4,10 @@ MinIO), presigned round-trip, авторизация чтения и владе�
 Round-trip ходит в реально поднятый MinIO (localhost:9000). Бакеты создаём фикстурой
 (lifespan в тестах не запускается).
 """
+from datetime import UTC, datetime
+from urllib.parse import parse_qs, urlsplit
+
+import botocore.auth
 import httpx
 import pytest
 from httpx import AsyncClient
@@ -11,7 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import MediaAsset
 from app.models.user import User
-from app.services.media import ensure_buckets
+from app.services.media import (
+    PRESIGN_GET_EXPIRES,
+    PRESIGN_GET_WINDOW,
+    attachment_download_name,
+    build_attachment_out,
+    ensure_buckets,
+    presigned_get_url,
+)
 
 from .conftest import (
     AddMembership,
@@ -690,3 +701,116 @@ async def test_video_poster_key_from_other_user_ignored(
     ).json()
     url_out = (await client.get(f"/api/media/{asset['id']}", headers=a_headers)).json()
     assert url_out["thumb_url"] is None
+
+
+# --- стабильный presigned-URL (ARG-75) --------------------------------------
+#
+# Момент подписи округляется вниз до PRESIGN_GET_WINDOW: сеть не нужна (generate_presigned_url
+# — локальная операция), поэтому эти тесты не трогают MinIO. Время подменяем monkeypatch'ем
+# datetime внутри app.services.media (freezegun/time-machine в проекте нет).
+
+
+class _FrozenDateTime(datetime):
+    """Подмена datetime.now() внутри app.services.media на фиксированный момент."""
+
+    _frozen: "datetime"
+
+    @classmethod
+    def now(cls, tz=None):  # type: ignore[override]
+        return cls._frozen if tz is None else cls._frozen.astimezone(tz)
+
+
+def _freeze(monkeypatch: pytest.MonkeyPatch, at: datetime) -> None:
+    frozen = type("_Frozen", (_FrozenDateTime,), {"_frozen": at})
+    monkeypatch.setattr("app.services.media.datetime", frozen)
+
+
+def _query(url: str) -> dict[str, str]:
+    parts = parse_qs(urlsplit(url).query)
+    return {k: v[0] for k, v in parts.items()}
+
+
+def test_presigned_get_url_stable_within_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Два вызова в пределах одних суток UTC → идентичный URL байт в байт — это и есть
+    вся починка: браузерный HTTP-кэш ключуется полным URL, промах был структурным."""
+    day_start = datetime(2026, 8, 16, 0, 0, 0, tzinfo=UTC)
+
+    _freeze(monkeypatch, day_start.replace(hour=0, minute=0, second=1))
+    url_a = presigned_get_url("chat-media", "2026/08/obj.jpg")
+
+    _freeze(monkeypatch, day_start.replace(hour=23, minute=59, second=59))
+    url_b = presigned_get_url("chat-media", "2026/08/obj.jpg")
+
+    assert url_a == url_b
+
+
+def test_presigned_get_url_changes_across_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Подпись в следующих сутках UTC → другой URL (округление реально скользит, а не
+    залипает на одном значении навсегда)."""
+    _freeze(monkeypatch, datetime(2026, 8, 16, 23, 59, 59, tzinfo=UTC))
+    url_a = presigned_get_url("chat-media", "2026/08/obj.jpg")
+
+    _freeze(monkeypatch, datetime(2026, 8, 17, 0, 0, 1, tzinfo=UTC))
+    url_b = presigned_get_url("chat-media", "2026/08/obj.jpg")
+
+    assert url_a != url_b
+
+
+def test_presigned_get_url_expiry_covers_full_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ссылка, подписанная в последнюю секунду окна, живёт от РЕАЛЬНОГО момента выдачи
+    не меньше PRESIGN_GET_EXPIRES — иначе клиент, получивший ссылку под конец окна,
+    терял бы доступ раньше, чем сейчас (было ровно 24 ч от выдачи, вне зависимости от
+    округления)."""
+    real_now = datetime(2026, 8, 16, 23, 59, 59, tzinfo=UTC)
+    _freeze(monkeypatch, real_now)
+
+    url = presigned_get_url("chat-media", "2026/08/obj.jpg")
+    q = _query(url)
+
+    signed_at = datetime.strptime(q["X-Amz-Date"], "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    expires_in = int(q["X-Amz-Expires"])
+    expiration = signed_at.timestamp() + expires_in
+    remaining_from_real_now = expiration - real_now.timestamp()
+
+    assert remaining_from_real_now >= PRESIGN_GET_EXPIRES
+    assert expires_in == PRESIGN_GET_EXPIRES + PRESIGN_GET_WINDOW
+
+
+def test_presigned_get_url_download_name_changes_signature() -> None:
+    """`download_name` входит в подпись через ResponseContentDisposition — разное
+    значение обязано давать разный URL (иначе один объект «скачать» vs «открыть»
+    делили бы кэш-запись и путали браузер)."""
+    url_inline = presigned_get_url("chat-media", "2026/08/obj.bin")
+    url_download = presigned_get_url(
+        "chat-media", "2026/08/obj.bin", download_name="report.pdf"
+    )
+    assert url_inline != url_download
+
+
+def test_attachment_download_name_matches_across_call_sites() -> None:
+    """Один источник истины для download_name (см. ARG-75: раньше выражение было
+    продублировано в media.py и api/media.py — расхождение развело бы URL одного
+    объекта по двум кэш-записям)."""
+    file_asset = MediaAsset(
+        id=1, bucket="chat-media", storage_key="2026/08/uuid.pdf", kind="file",
+        mime_type="application/pdf", size=10, created_by=1,
+    )
+    image_asset = MediaAsset(
+        bucket="chat-media", storage_key="2026/08/uuid.jpg", kind="image",
+        mime_type="image/jpeg", size=10, created_by=1,
+    )
+    assert attachment_download_name(file_asset) == "uuid.pdf"
+    assert attachment_download_name(image_asset) is None
+
+    out_a = build_attachment_out(file_asset)
+    out_b = build_attachment_out(file_asset)
+    assert out_a.url == out_b.url
+
+
+def test_frozen_signing_clock_does_not_leak() -> None:
+    """После presigned_get_url botocore.auth.get_current_datetime обязан быть
+    оригинальной функцией — иначе патч утёк бы в остальной код (регрессия «патч
+    протёк» на конкурентные вызовы вне presigned_get_url)."""
+    original = botocore.auth.get_current_datetime
+    presigned_get_url("chat-media", "2026/08/obj.jpg")
+    assert botocore.auth.get_current_datetime is original
