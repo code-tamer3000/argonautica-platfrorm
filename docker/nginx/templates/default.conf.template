@@ -233,6 +233,16 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 3600s;
+        # Тело запроса НЕ буферизуем — стримим в staging-nginx по мере приёма, как в
+        # прод-блоке MinIO ниже. Со включённой (дефолтной) буферизацией шлюз сначала
+        # складывал presigned-PUT целиком в /var/cache/nginx/client_temp и только
+        # потом начинал отдавать его дальше: заливка видео на стенд «висела» после
+        # 100% прогресс-бара, а большие файлы (лимит аплоада — 5 ГБ) грозили забить
+        # диск, общий с продом. Проверено замером: PUT 20 МБ на прод-медиадомен
+        # отдаёт ответ MinIO сразу, тот же PUT на staging-домен сначала целиком
+        # уезжал во временный файл (`a client request body is buffered to a
+        # temporary file` в error.log на каждой заливке).
+        proxy_request_buffering off;
     }
 }
 
