@@ -31,6 +31,7 @@ from app.services.media import (
     PRESIGN_EXPIRES,
     PRESIGN_GET_EXPIRES,
     assert_media_access,
+    attachment_download_name,
     build_storage_key,
     generate_image_preview,
     generate_image_thumbnail,
@@ -265,10 +266,10 @@ async def get_media_url(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
     await assert_media_access(session, asset, current_user)
 
-    # Файлы (pdf/doc/zip) — форсим скачивание; картинки/видео — инлайн (рендер в <img>/<video>).
     # Видео с готовым транскодом отдаём вариантом (H.264 720p faststart), иначе оригинал.
-    download_name = asset.storage_key.rsplit("/", 1)[-1] if asset.kind == "file" else None
-    url = presigned_get_url(asset.bucket, serving_key(asset), download_name=download_name)
+    url = presigned_get_url(
+        asset.bucket, serving_key(asset), download_name=attachment_download_name(asset)
+    )
     thumb_url = (
         presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
     )
