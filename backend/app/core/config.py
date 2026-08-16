@@ -113,6 +113,13 @@ class Settings(BaseSettings):
     # TTL агрегатов метрик в Redis (сутки): скользящее окно наблюдения.
     media_metrics_ttl_seconds: int = 86_400
 
+    # --- Метрики HTTP (docs/API_CONVENTIONS.md «Наблюдаемость») ---
+    # Время ответа и статусы по шаблонам роутов + структурный лог со сквозным
+    # request_id. Собирает ObservabilityMiddleware; при False middleware остаётся
+    # в цепочке (request_id продолжает выдаваться), но в Redis ничего не пишется.
+    http_metrics_enabled: bool = True
+    http_metrics_ttl_seconds: int = 86_400
+
     @model_validator(mode="after")
     def _default_public_endpoint(self) -> "Settings":
         # Браузеру нужен публичный адрес MinIO (напр. localhost:9000), а не

@@ -24,6 +24,7 @@ from app.api.stream import router as stream_router
 from app.api.survey import router as survey_router
 from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
+from app.core.observability import ObservabilityMiddleware
 from app.core.redis import close_redis, redis_client
 from app.db.session import SessionLocal
 from app.services.media import ensure_buckets
@@ -51,6 +52,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Platform API", lifespan=lifespan)
+
+# Наблюдаемость — самым внешним слоем, чтобы в замер попадало всё время обработки,
+# включая работу зависимостей и сериализацию ответа (docs/API_CONVENTIONS.md).
+app.add_middleware(ObservabilityMiddleware)
 
 app.include_router(auth_router)
 app.include_router(admin_router)

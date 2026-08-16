@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Response, status
 
 from app.api.deps import get_current_active_user, require_admin
 from app.core.config import settings
-from app.core.metrics import log_media_metric, record_step, summarize
+from app.core.metrics import log_media_metric, record_step, summarize, summarize_http
 from app.models.user import User
 from app.schemas.metrics import MetricsBatch
 from app.services.ratelimit import enforce_rate_limit
@@ -63,6 +63,22 @@ async def ingest_media_metrics(
             await record_step(item.op, item.kind, "client", step, ms)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/http")
+async def http_metrics_summary(
+    _admin: Annotated[User, Depends(require_admin)],
+) -> dict[str, Any]:
+    """Свод по HTTP-запросам (админ): перцентили времени ответа и статусы.
+
+    `{enabled, routes: {"GET:/api/rooms/{room_id}/messages": {count, avg_ms, p50, p90,
+    p99, statuses, error_rate}}, scenarios: {"room_open": {...}}}`. Разрез — шаблон
+    роута, не подставленный путь. Собирает ObservabilityMiddleware.
+    """
+    return {
+        "enabled": settings.http_metrics_enabled,
+        **await summarize_http(),
+    }
 
 
 @router.get("/media")
