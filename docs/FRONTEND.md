@@ -65,6 +65,48 @@ Installable (Add to Home Screen; no stores). Web App Manifest (name, icons, `dis
 
 **Mobile keyboard / viewport** (`lib/viewport.ts`). `#root`/`body` are `position: fixed` at `--app-height` (= `visualViewport.height`), so the composer sits flush above the on-screen keyboard and iOS's focus-scroll can't drag the layer up (any window/ancestor scroll is pinned back to 0). `--app-height` and the `html[data-kb='open']` flag update on `visualViewport` resize; **keyboard-open is detected by comparing the current viewport height against the largest height seen (the keyboard-free baseline), not against `root.clientHeight`** — on Android the layout viewport shrinks with the keyboard too, so a `clientHeight` comparison stayed ≈0 and never fired (the bottom tab-bar then stayed over the composer). `data-kb='open'` hides the bottom nav (`translateY(100%)`) and drops its `padding-bottom` reserve so the composer is flush. On mobile the composer `textarea` `max-height` is smaller (120px) so a long message scrolls internally instead of pushing the send button off-screen, and while `data-kb='open'` the personal-journal `DailyJournalForm` bar and the typing indicator are hidden — on a short screen they ate the height the composer needed and pushed its bottom under the keyboard (DMs have neither bar, hence the journal-only bug). Note: iOS renders a native accessory bar (↑↓ / «Готово») above the keyboard for form fields; it can't be removed by any web means (contenteditable doesn't drop it either on current iOS), so we don't try — the layout just keeps the input fully visible above it.
 
+## Клиентский RUM (ARG-80)
+
+Серверные метрики (ARG-79) видят только своё время ответа; «долго грузится» с телефона
+ими не разложить. Клиентский слой (`lib/metrics.ts`, тот же модуль, что и метрики медиа,
+та же очередь + батч + `keepalive`) добавляет четыре измерения. Всё best-effort:
+недоступный приёмник, отсутствующий API браузера или ошибка сбора не роняют ни один экран.
+
+- **Первый экран** — один трейс на загрузку приложения из Navigation Timing:
+  `dns`, `tcp`, `tls`, `ttfb`, `dom_interactive` + `lcp` через `PerformanceObserver`
+  (нет LCP — трейс уходит без него, а не теряется). Разделитель, ради которого всё
+  сделано: **`ttfb` = канал плюс сервер, `frontend` = `lcp − ttfb` = сам фронт**
+  (`frontend` считается на приёме). Разрезы: **холодный/тёплый заход**
+  (`navigator.serviceWorker.controller === null` — оболочка ещё не из кэша SW),
+  **тип сети** (`effectiveType`) и **версия сборки** (`__BUILD_VERSION__`, define в
+  `vite.config.ts`, переопределяется `BUILD_VERSION` в окружении сборки; без неё цифры
+  до и после релиза смешиваются в кашу). Трейс уходит через 5с после `load` или раньше,
+  если вкладку свернули.
+- **Открытие комнаты** — `beginRoomOpen` в `api/messages.ts` (первая страница истории)
+  → `noteRoomHistoryLoaded` (длительность запроса + `ttfb` из Resource Timing) →
+  `noteRoomRendered` в `ChatPane` по кадру после того, как лента отрисована свежими
+  данными. Завязка на `dataUpdatedAt`, а не на «есть сообщения»: лента сперва рисуется
+  из восстановленного кэша (`queryPersist`), и иначе трейс закрывался бы до ответа.
+  Лента, пришедшая только из кэша (запроса не было), не меряется вовсе.
+- **Байты медиа за заход в комнату** — сумма `transferSize` из Resource Timing по
+  image/video/audio за 3с после захода, с меткой `first`/`repeat` (список посещённых
+  комнат — в `sessionStorage`). Отданное из кэша даёт `transferSize === 0`, поэтому
+  просадка суммы на повторном заходе и есть метрика попадания в кэш медиа (ARG-75).
+  Окно замера отматывается на 1с назад: при заходе с перезагрузкой картинки уходят в
+  сеть в том же кадре, что и монтирование.
+- **Упавший экран** — `error` и `unhandledrejection`: сообщение (≤500), стек (≤4000),
+  роут (`location.pathname`, без query) и версия сборки. Пользовательского контента нет;
+  не больше 10 записей за сессию, отправка сразу (экран мог упасть совсем).
+
+Приём — `POST /api/metrics/client` (любой активный пользователь, всегда 204). Свод —
+`GET /api/metrics/client` (админ): `{enabled, first_screen: {"cold:4g:lcp": {...}},
+scenarios: {"room_open:ttfb": {...}}, bytes: {"first:image": {count, sum_bytes,
+avg_bytes}}, errors: {counts, recent}}`. Перцентили — метки бакетов гистограммы Redis
+(`metrics:client:*`), как у медиа и HTTP. Флаги: `CLIENT_METRICS_ENABLED`,
+`CLIENT_METRICS_TTL_SECONDS`, `CLIENT_ERRORS_KEEP`. Сырые события — JSON-строки с
+`"metric":"client"` в логе бэкенда; поля проходят белый список (`log_client_metric`),
+как структурный лог запросов. Значения клиентские и не доверенные: только наблюдение.
+
 ## Open question
 
 Token storage (httpOnly-cookie + CSRF vs. in-memory access). Currently access lives in memory; the API client drives refresh. See [AUTH.md](AUTH.md).

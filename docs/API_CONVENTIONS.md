@@ -45,6 +45,7 @@
 - **Route template, never the concrete path** — `/api/rooms/{room_id}/messages`, so key cardinality does not grow with the number of rooms. Requests matching no route collapse into `<unmatched>`.
 - **Named scenarios** (`_SCENARIOS` in `core/metrics.py`): `login`, `room_open`, `kb_feed`, `dynamics_journal` — percentiles tracked separately from the general mass.
 - `GET /api/metrics/http` (admin) → `{enabled, routes: {...}, scenarios: {...}}` with count, avg, p50/p90/p99, status classes and `error_rate`. Switch: `HTTP_METRICS_ENABLED`; TTL: `HTTP_METRICS_TTL_SECONDS`.
+- **The client half** is `POST /api/metrics/client` (ingest, any active user, always 204) + `GET /api/metrics/client` (admin summary): first-screen percentiles split by cold/warm start and network type, the `room_open` client scenario, media bytes per room visit, and crashed screens. Client values are untrusted observation only, and the same field whitelist applies (`log_client_metric`). Details in [FRONTEND.md](FRONTEND.md) «Клиентский RUM».
 
 ## Testing
 
