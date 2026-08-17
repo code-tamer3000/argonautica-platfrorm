@@ -1,0 +1,19 @@
+# Скрейп-конфиг VictoriaMetrics (формат Prometheus, промскрейп встроен в single-node).
+# Интервал 30с и ретенция 15д (задаётся флагом --retentionPeriod в compose-фрагменте) —
+# обоснование объёма и цены в задаче ARG-82 (Linear).
+#
+# Оба цвета blue-green — только один активен за nginx в моменте, но скрейпить оба
+# безопасно и надёжнее, чем отслеживать, какой сейчас active: тот факт живёт в
+# docker/nginx/active_backend.conf, это состояние деплоя, а не метрик, и дублировать
+# его сюда означало бы держать два места правды. Неактивный цвет просто не получает
+# трафика — его гистограммы пустые, а не отсутствующие.
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - backend-blue:8000
+          - backend-green:8000

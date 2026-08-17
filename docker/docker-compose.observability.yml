@@ -1,0 +1,31 @@
+# Наблюдаемость: VictoriaMetrics single-node поверх агрегатов Redis, отдаваемых
+# бэкендом на GET /metrics (docs/DEPLOY.md «Наблюдаемость», ARG-82).
+#
+# НЕ отдельный compose-проект. Поднимается ДОПОЛНИТЕЛЬНЫМ `-f`-файлом поверх
+# docker-compose.prod.yml, тем же project name («docker») — так сервис попадает в
+# ту же docker-сеть и видит backend-blue/backend-green по имени:
+#
+#   docker compose -f docker/docker-compose.prod.yml -f docker/docker-compose.observability.yml \
+#     --env-file .env up -d victoriametrics
+#
+# Порт публикуется ТОЛЬКО на loopback (127.0.0.1:8428) — с внешнего адреса недоступен.
+# Grafana ставится локально (не на сервер, см. Linear ARG-82 «Зачем») и подключается
+# через SSH-туннень: `ssh -L 8428:127.0.0.1:8428 <сервер>`, datasource — http://localhost:8428.
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.131.0
+    container_name: victoriametrics
+    command:
+      - "--storageDataPath=/storage"
+      - "--retentionPeriod=15d"
+      - "--httpListenAddr=:8428"
+      - "--promscrape.config=/etc/victoriametrics/scrape.yml"
+    volumes:
+      - vm_data:/storage
+      - ./victoriametrics/scrape.yml:/etc/victoriametrics/scrape.yml:ro
+    ports:
+      - "127.0.0.1:8428:8428"
+    restart: unless-stopped
+
+volumes:
+  vm_data:

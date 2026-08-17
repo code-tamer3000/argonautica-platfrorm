@@ -2,7 +2,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.admin import router as admin_router
@@ -24,6 +24,7 @@ from app.api.stream import router as stream_router
 from app.api.survey import router as survey_router
 from app.api.tasks import router as tasks_router
 from app.api.users import router as users_router
+from app.core.metrics import render_prometheus
 from app.core.observability import ObservabilityMiddleware
 from app.core.redis import close_redis, redis_client
 from app.db.session import SessionLocal
@@ -83,3 +84,15 @@ app.include_router(ws_router)
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Экспорт в формате Prometheus для VictoriaMetrics (ARG-82).
+
+    Без `/api`-префикса и без auth-зависимости намеренно: нужен только скрейперу
+    внутри docker-сети, а не пользователям приложения. Наружу не публикуется —
+    backend-контейнеры не объявляют host-портов (только nginx их проксирует, и
+    `/metrics` в его локациях нет), см. docs/DEPLOY.md «Наблюдаемость».
+    """
+    return Response(content=await render_prometheus(), media_type="text/plain; version=0.0.4")
