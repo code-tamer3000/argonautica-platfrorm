@@ -7,6 +7,7 @@ from app.models.cabin import CabinEntry
 from app.models.calendar import CalendarEvent
 from app.models.faq import FaqItem
 from app.models.feedback import Feedback
+from app.models.intake import Intake
 from app.models.journal import (
     JournalCredit,
     JournalPardon,
@@ -49,6 +50,7 @@ __all__ = [
     "CalendarEvent",
     "FaqItem",
     "Feedback",
+    "Intake",
     "JournalPardon",
     "JournalCredit",
     "JournalProgram",

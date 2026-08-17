@@ -36,9 +36,23 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
 | graduated_at | TIMESTAMPTZ | NULL | экспедиция пройдена: set on survey submit, never cleared. Dynamics hidden, Tasks collapse to submitted, Рубка read-only. See [SURVEY.md](SURVEY.md) |
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
+| intake_id | BIGINT | FK intakes, NULL | cohort the user belongs to; drives the Dynamics 28-day window start. NULL for now — mandatory + admin picker land with the admin CRUD subtask |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
+
+## intakes
+Cohort of participants sharing a Dynamics 28-day window start date. Not the same as a
+`stream` (Tasks tournament mechanic, `tasks.type='stream'`) or a `group` (`rooms.type='group'`) —
+those names were already taken. One historical intake (`starts_on = 2026-06-02`) is seeded by
+migration and every existing user is backfilled onto it. Creation/editing beyond that seed has
+no API yet — lands with the admin CRUD subtask.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| starts_on | DATE | NOT NULL, UNIQUE | Dynamics window start for every user in this intake |
+| created_at | TIMESTAMPTZ | NOT NULL | |
 
 ## rooms
 One entity for three space types; differences are behavior in code, not structure. See [ROOMS.md](ROOMS.md).
@@ -513,6 +527,7 @@ Short-lived realtime state lives only in Redis. This is the single list of Redis
 ## Relations map
 
 ```
+users --> intakes                      (intake_id nullable; cohort → Dynamics window start)
 users --< room_members >-- rooms
 users --< messages (sender) >-- rooms
 messages --+ (thread_root_id -> messages.id, self-FK to root)
