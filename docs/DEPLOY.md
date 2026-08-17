@@ -149,6 +149,49 @@ curl -sSI --http2 https://<host>/ | grep -i alt-svc
 docker run --rm ymuski/curl-http3 curl -sSI --http3-only https://<host>/   # expect: HTTP/3 200
 ```
 
+## Наблюдаемость: VictoriaMetrics (ARG-82)
+
+Бэкенд отдаёт `GET /metrics` в формате Prometheus, рендеря его прямо из тех же
+Redis-агрегатов (`metrics:*`), что читает админский свод `/api/metrics/*`
+(`backend/app/core/metrics.py` → `render_prometheus()`) — цифры совпадают по
+построению, скрейп на любой из воркеров/цветов blue-green даёт одну и ту же картину.
+`/metrics` **не публикуется наружу**: backend-контейнеры не объявляют host-портов
+(наружу торчит только nginx, а в его локациях `/metrics` нет) — топология сама
+закрывает доступ, отдельного правила файрвола не требуется.
+
+Хранилище — **VictoriaMetrics single-node** (не Prometheus + Grafana: на проде
+свободно ~250 МБ без свопа, Prometheus+Grafana туда не влезают, см. Assumptions в
+ARG-82). Grafana **на сервер не ставится** — только локально, через SSH-туннель.
+
+**Фрагмент — отдельные файлы, `docker-compose.prod.yml` не редактируется:**
+`docker/docker-compose.observability.yml` (сервис `victoriametrics`) +
+`docker/victoriametrics/scrape.yml` (конфиг скрейпа, интервал 30с, ретенция 15д).
+
+Развёртывание на прод (руками, агент это не делает — см. CLAUDE.md «не трогать
+`docker-compose.prod.yml`»):
+
+```bash
+cd /opt/platform
+docker compose -f docker/docker-compose.prod.yml -f docker/docker-compose.observability.yml \
+  --env-file .env up -d victoriametrics
+```
+
+Тот же **project name** (`docker`), что у прод-стека — обязательно, иначе сервис
+попадёт в свою собственную сеть и не увидит `backend-blue`/`backend-green` по имени.
+Порт публикуется только на `127.0.0.1:8428` — с публичного адреса недоступен ни он,
+ни сам `/metrics` бэкенда (проверить с хоста: `curl http://<публичный-IP>:8428` и
+`curl http://<публичный-IP>/metrics` — оба должны падать/не отвечать).
+
+**Доступ к данным — SSH-туннель**, Grafana только локально:
+
+```bash
+ssh -L 8428:127.0.0.1:8428 <прод-сервер>   # алиас: platform-new
+```
+
+В локальной Grafana datasource Prometheus → `http://localhost:8428` (VictoriaMetrics
+совместим по протоколу scrape и по PromQL). Панели — предмет ARG-18, здесь только
+подключение к хранилищу.
+
 ## Backups
 
 `docker/backup.sh` (cron, daily) — `pg_dump | gzip` → MinIO bucket `backups`, 30-day retention. Runbook in archived DEPLOY §6.

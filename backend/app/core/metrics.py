@@ -34,6 +34,7 @@ from typing import Any, cast
 
 from app.core.config import settings
 from app.core.redis import redis_client
+from app.services.system_metrics import collect_snapshot
 
 # Отдельный логгер: свой хендлер в stdout, propagate=False — не зависим от того,
 # сконфигурирован ли root-логгер, и не задваиваем строки. Идемпотентно (модуль
@@ -497,3 +498,213 @@ async def summarize_client() -> dict[str, Any]:
         "bytes": await _summarize_client_bytes(),
         "errors": await _summarize_client_errors(),
     }
+
+
+# ─────────────────────────── Экспорт в формате Prometheus (ARG-82) ───────────────────────────
+#
+# `GET /metrics` (backend/app/main.py) рендерит текущие агрегаты Redis построчно в
+# формате Prometheus exposition, а не из in-memory `prometheus_client`: бэкенд поднят
+# как `uvicorn --workers 2` плюс blue-green, у in-memory реестра скрейп попадал бы на
+# случайный воркер и показывал половину цифр. Redis общий для всех воркеров и обоих
+# цветов — рендерим прямо из него, тем же путём, что и админский свод выше, поэтому
+# цифры сходятся с ним по построению.
+#
+# Бакеты гистограмм в Redis НЕ кумулятивны (HINCRBY бьёт только в один подходящий
+# бакет) — Prometheus требует кумулятивные `_bucket{le=...}`. Кумулятивную сумму
+# считаем здесь, при рендере; границы (`_BUCKET_BOUNDS_MS`) остаются те же, что и в
+# существующих сводах — цифры сравнимы с уже накопленными.
+
+
+def _prom_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def _prom_labels(labels: dict[str, str]) -> str:
+    if not labels:
+        return ""
+    pairs = ",".join(f'{k}="{_prom_escape(v)}"' for k, v in labels.items())
+    return f"{{{pairs}}}"
+
+
+def _prom_histogram_lines(
+    name: str, labels: dict[str, str], hist: dict[str, str]
+) -> list[str]:
+    """Кумулятивные `_bucket`/`_sum`/`_count` строки Prometheus из бакет-гистограммы Redis."""
+    per_bucket: dict[float, int] = {}
+    overflow = 0
+    for label, raw in hist.items():
+        if label in ("count", "sum_ms"):
+            continue
+        try:
+            n = int(raw)
+        except ValueError:
+            continue
+        if label.startswith("<="):
+            bound = float(label[2:])
+            per_bucket[bound] = per_bucket.get(bound, 0) + n
+        elif label.startswith(">"):
+            overflow += n
+
+    lines: list[str] = []
+    cumulative = 0
+    for bound in _BUCKET_BOUNDS_MS:
+        cumulative += per_bucket.get(float(bound), 0)
+        lines.append(f"{name}_bucket{_prom_labels({**labels, 'le': str(bound)})} {cumulative}")
+    cumulative += overflow
+    lines.append(f"{name}_bucket{_prom_labels({**labels, 'le': '+Inf'})} {cumulative}")
+    lines.append(f"{name}_sum{_prom_labels(labels)} {float(hist.get('sum_ms', 0.0))}")
+    lines.append(f"{name}_count{_prom_labels(labels)} {int(hist.get('count', 0))}")
+    return lines
+
+
+async def _prom_histograms_by_prefix(
+    name: str, prefix: str, label_names: tuple[str, ...]
+) -> list[str]:
+    """Гистограммы Prometheus для всех ключей с общим префиксом.
+
+    Часть ключа после префикса разбирается на `label_names` разбиением по `:`
+    (последняя метка забирает остаток — так шаблоны роутов с `/` внутри не режутся).
+    """
+    header = [f"# HELP {name} Distribution in milliseconds.", f"# TYPE {name} histogram"]
+    lines: list[str] = []
+    for key in await _scan_keys(f"{prefix}*"):
+        hist = cast(dict[str, str], await redis_client.hgetall(key))
+        if not hist:
+            continue
+        parts = key.removeprefix(prefix).split(":", len(label_names) - 1)
+        if len(parts) != len(label_names):
+            continue
+        labels = dict(zip(label_names, parts, strict=True))
+        lines.extend(_prom_histogram_lines(name, labels, hist))
+    return header + lines if lines else []
+
+
+async def _prom_http_status_counters() -> list[str]:
+    name = "http_requests_total"
+    header = [f"# HELP {name} HTTP responses by status class.", f"# TYPE {name} counter"]
+    lines: list[str] = []
+    for key in await _scan_keys(f"{_HTTP_STATUS_PREFIX}*"):
+        counts = cast(dict[str, str], await redis_client.hgetall(key))
+        method, _, route = key.removeprefix(_HTTP_STATUS_PREFIX).partition(":")
+        for status_class, raw in counts.items():
+            try:
+                n = int(raw)
+            except ValueError:
+                continue
+            labels = {"method": method, "route": route, "status_class": status_class}
+            lines.append(f"{name}{_prom_labels(labels)} {n}")
+    return header + lines if lines else []
+
+
+async def _prom_client_bytes_counters() -> list[str]:
+    bytes_name = "client_download_bytes_total"
+    count_name = "client_download_events_total"
+    header = [
+        f"# HELP {bytes_name} Bytes downloaded by clients, by visit/kind.",
+        f"# TYPE {bytes_name} counter",
+        f"# HELP {count_name} Client download events, by visit/kind.",
+        f"# TYPE {count_name} counter",
+    ]
+    lines: list[str] = []
+    for key in await _scan_keys(f"{_CLIENT_BYTES_PREFIX}*"):
+        row = cast(dict[str, str], await redis_client.hgetall(key))
+        if not row:
+            continue
+        visit, _, kind = key.removeprefix(_CLIENT_BYTES_PREFIX).partition(":")
+        labels = _prom_labels({"visit": visit, "kind": kind})
+        lines.append(f"{bytes_name}{labels} {int(row.get('sum_bytes', 0))}")
+        lines.append(f"{count_name}{labels} {int(row.get('count', 0))}")
+    return header + lines if lines else []
+
+
+async def _prom_client_error_counters() -> list[str]:
+    name = "client_errors_total"
+    header = [f"# HELP {name} Crashed client screens, by build/route.", f"# TYPE {name} counter"]
+    counts = cast(dict[str, str], await redis_client.hgetall(_CLIENT_ERRORS_KEY))
+    if not counts:
+        return []
+    lines: list[str] = []
+    for field, raw in counts.items():
+        try:
+            n = int(raw)
+        except ValueError:
+            continue
+        build, _, route = field.partition(" ")
+        lines.append(f"{name}{_prom_labels({'build': build, 'route': route})} {n}")
+    return header + lines if lines else []
+
+
+def _prom_gauge_lines(name: str, prefix: str, obj: Any) -> list[str]:
+    """Плоские `_gauge` строки Prometheus из вложенного dict числовых значений.
+
+    Ключи вложенности склеиваются `_` в имя метрики (`system_redis_ping_ms`); нечисловые
+    и булевы листья (строки статуса, флаги) пропускаются — Prometheus гейджи это числа.
+    """
+    lines: list[str] = []
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            lines.extend(_prom_gauge_lines(name, f"{prefix}_{key}" if prefix else key, value))
+        return lines
+    if isinstance(obj, bool) or not isinstance(obj, (int, float)):
+        return []
+    metric_name = f"{name}_{prefix}" if prefix else name
+    return [f"{metric_name} {obj}"]
+
+
+async def _prom_system_gauges() -> list[str]:
+    snapshot = await collect_snapshot()
+    snapshot.pop("ts", None)
+    lines = _prom_gauge_lines("system", "", snapshot)
+    if not lines:
+        return []
+    return [
+        "# HELP system Infrastructure snapshot gauges "
+        "(transcode queue, presence, redis, disk, db pool).",
+        "# TYPE system gauge",
+        *lines,
+    ]
+
+
+async def render_prometheus() -> str:
+    """Текст в формате Prometheus exposition из текущих агрегатов Redis.
+
+    Один проход по всем существующим сериям (HTTP, медиа, клиентский RUM, инфра-
+    гейджи) — ничего нового не собирается, только переформатируется то, что уже
+    копят `record_*`/`collect_snapshot`. См. `GET /metrics` в `app/main.py`.
+    """
+    blocks: list[list[str]] = []
+    if settings.http_metrics_enabled:
+        blocks.append(
+            await _prom_histograms_by_prefix(
+                "http_request_duration_ms", _HTTP_DUR_PREFIX, ("method", "route")
+            )
+        )
+        blocks.append(await _prom_http_status_counters())
+        blocks.append(
+            await _prom_histograms_by_prefix(
+                "http_scenario_duration_ms", _HTTP_SCENARIO_PREFIX, ("scenario",)
+            )
+        )
+    if settings.media_metrics_enabled:
+        blocks.append(
+            await _prom_histograms_by_prefix(
+                "media_step_duration_ms", "metrics:media:", ("source", "op", "kind", "step")
+            )
+        )
+    if settings.client_metrics_enabled:
+        blocks.append(
+            await _prom_histograms_by_prefix(
+                "client_nav_duration_ms", _CLIENT_NAV_PREFIX, ("visit", "net", "step")
+            )
+        )
+        blocks.append(
+            await _prom_histograms_by_prefix(
+                "client_scenario_duration_ms", _CLIENT_SCENARIO_PREFIX, ("scenario", "step")
+            )
+        )
+        blocks.append(await _prom_client_bytes_counters())
+        blocks.append(await _prom_client_error_counters())
+    blocks.append(await _prom_system_gauges())
+
+    lines = [line for block in blocks for line in block]
+    return "\n".join(lines) + "\n" if lines else ""
