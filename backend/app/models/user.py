@@ -70,6 +70,12 @@ class User(Base):
     survey_gift_asset_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("media_assets.id")
     )
+    # Набор (когорта), к которому привязан пользователь — задаёт дату старта окна
+    # Динамики. Nullable на этом шаге; обязательность и выбор при создании — в
+    # подзадаче с админкой.
+    intake_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("intakes.id")
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"
