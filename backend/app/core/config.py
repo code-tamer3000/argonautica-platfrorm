@@ -120,6 +120,13 @@ class Settings(BaseSettings):
     http_metrics_enabled: bool = True
     http_metrics_ttl_seconds: int = 86_400
 
+    # --- Снимок инфраструктуры (GET /api/metrics/system) ---
+    # Путь, по которому меряем свободное место. Том MinIO (minio_data) в бэкенд-контейнер
+    # не смонтирован, но лежит на той же файловой системе docker-хоста — свободное место
+    # общее, поэтому дефолт `/` даёт верную картину «сколько осталось всем». Если медиа
+    # когда-нибудь уедет на отдельный диск, путь переопределяется METRICS_DISK_PATH.
+    metrics_disk_path: str = "/"
+
     @model_validator(mode="after")
     def _default_public_endpoint(self) -> "Settings":
         # Браузеру нужен публичный адрес MinIO (напр. localhost:9000), а не
