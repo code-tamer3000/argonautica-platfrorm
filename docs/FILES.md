@@ -18,8 +18,9 @@ Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_ass
 
 ## Read flow (presigned-GET)
 
-- `GET /api/media/{id}` — after `assert_media_access`, return a presigned-GET (TTL 24h for caching; SigV4 allows up to 7 days). Video supports HTTP range (seek).
+- `GET /api/media/{id}` — after `assert_media_access`, return a presigned-GET (TTL 24h from issue, `PRESIGN_GET_EXPIRES`; SigV4 allows up to 7 days). Video supports HTTP range (seek).
 - **Access (`assert_media_access`)** grants when the caller: owns the asset; is a member of a room whose message links it; the asset is attached to a **published** KB item; or the asset belongs to a task visible to the caller (common → all; individual → assignee/admin). Avatars and stickers are visible to any participant (no per-asset check). See [KB.md](KB.md), [TASKS.md](TASKS.md).
+- **Stable URL, ordinary browser cache (ARG-75).** `presigned_get_url` (`services/media.py`) rounds the signing moment down to `PRESIGN_GET_WINDOW` (24h, floor to UTC day) before calling boto3 — two calls for the same object within the window produce a byte-identical URL. That fixes the actual cache miss: nginx already serves `Cache-Control: private, max-age=86400, immutable`, but the browser's HTTP cache keys on the full URL *including query*, and `X-Amz-Date`/`X-Amz-Signature` used to change on every feed render, so the cache never hit — structurally, regardless of headers. boto3 has no public hook for the signing moment (`X-Amz-Date` comes from `botocore.auth.get_current_datetime()` inside `SigV4Auth.add_auth`), so the module temporarily patches that function under a lock for the duration of one `generate_presigned_url` call (`_frozen_signing_clock`). Because SigV4's `ExpiresIn` is counted from the (rounded) signing moment, `ExpiresIn = PRESIGN_GET_EXPIRES + PRESIGN_GET_WINDOW` (48h) — a client that receives the link in the last second of the window still gets a full 24h before it expires; this is the traded-off cost, an expired-or-revoked link can now be live for up to 48h instead of 24h. `download_name` (`ResponseContentDisposition`) is part of the signature too — it MUST be identical across calls for the same object, or the object gets two different cache entries; the single source of truth is `attachment_download_name()`, used by both `build_attachment_out` and `GET /api/media/{id}`.
 
 ## Thumbnails (best-effort; failure never blocks upload)
 
@@ -41,7 +42,7 @@ Every uploaded video is transcoded in the background to a streaming-friendly H.2
 
 **Flow.** On confirm, a video row is created with `transcode_status='processing'` and enqueued (Redis list, `after_commit` so the worker never sees a not-yet-committed row). The message is sent immediately; recipients see the attachment in a **processing** state (client poster + spinner). The worker (a separate process, one job at a time — ffmpeg saturates cores) pulls the job → downloads the original from MinIO → `ffprobe` → transcodes (or fast-path) → uploads the variant + poster → updates the row (`variant_key`, `variant_mime`, `thumb_key`, `transcode_status='done'`) → publishes `attachment.updated` to the chat room(s) holding the video (see [MESSAGES.md](MESSAGES.md)). The client swaps processing → playable in place.
 
-**ffmpeg spec.** `libx264 -preset veryfast -crf 23`, AAC 128k, `-movflags +faststart` (moov atom up front → playback starts before full download), `-vf scale=-2:min(720,ih)` (never upscale, even width for libx264). **Fast-path:** if `ffprobe` shows the source is already H.264 + AAC + faststart + height ≤ 720, transcoding is skipped and `variant_key = storage_key` (the original is served as-is); a poster is still generated. **Guardrails:** source size ≤ `TRANSCODE_MAX_SOURCE_BYTES` (4 GB), duration ≤ `TRANSCODE_MAX_DURATION_SECONDS` (3 h), and each ffmpeg run has a hard timeout (`TRANSCODE_FFMPEG_TIMEOUT_SECONDS`, 90 min). A **timeout** counts as a failed attempt and is retried; a **size/duration breach** is terminal on the first attempt (see Retries below).
+**ffmpeg spec.** `libx264 -preset veryfast -crf 23`, AAC 128k, `-movflags +faststart` (moov atom up front → playback starts before full download), `-vf scale=-2:min(720,ih)` (never upscale, even width for libx264). **Fast-path:** if `ffprobe` shows the source is already H.264 + AAC + faststart + height ≤ 720, transcoding is skipped and `variant_key = storage_key` (the original is served as-is); a poster is still generated. **Heavier-variant guard:** if the transcode runs but the result is **not smaller** than the source, the variant is discarded (never uploaded) and `variant_key = storage_key` too, with `variant_mime` set to the source's mime — same rule as image previews, which are dropped when the derivative comes out heavier. Sources already compressed harder than CRF 23 otherwise produced a *bigger* file that was still served: on prod this hit 4 videos out of 70, worst 1.4 MB → 2.6 MB. **Guardrails:** source size ≤ `TRANSCODE_MAX_SOURCE_BYTES` (4 GB), duration ≤ `TRANSCODE_MAX_DURATION_SECONDS` (3 h), and each ffmpeg run has a hard timeout (`TRANSCODE_FFMPEG_TIMEOUT_SECONDS`, 90 min). A **timeout** counts as a failed attempt and is retried; a **size/duration breach** is terminal on the first attempt (see Retries below).
 
 These four settings are coupled — changing the duration cap alone just moves the failure:
 a longer video must still finish inside the ffmpeg timeout, and the claim timeout must
@@ -105,6 +106,52 @@ re-checks, but a doomed file no longer costs a full upload first.
 стабилен — на него завязан этот грепанье (grep по `"metric"` ловит все события; сам
 JSON печатается с пробелами после двоеточий). По собранным цифрам — отдельная задача с фиксами (напр. асинхронная
 генерация превью после ответа, `proxy_buffering off` на GET-медиа, tune presign).
+
+## Снимок инфраструктуры (`GET /api/metrics/system`)
+
+Соседний измерительный слой: не «где теряется время в медиа», а «что с инфраструктурой
+прямо сейчас». Источники уже были в системе, но никем не читались. Только админу; сбор —
+`app/services/system_metrics.py`, считается на лету при запросе (гейджей мало, запрос
+редкий — фонового сборщика нет).
+
+Блоки ответа:
+
+- `transcode_queue` — `pending` (LLEN `transcode:pending`), `inflight` (размер
+  `transcode:inflight`), **`stale`** (забраны дольше `transcode_claim_timeout_seconds`
+  назад — воркер упал/завис; раньше выводилось глазами из логов), `retrying`
+  (`transcode:attempts` > 1), `oldest_claim_age_seconds`. Только чтение — механику
+  очереди эндпоинт не трогает.
+- `presence` — `online_users` (SCARD `presence:online`, общее по всем воркерам) и
+  `ws_connections_this_process` (локальный реестр `ws/manager.py`; при N воркерах это
+  доля одного процесса, отсюда имя).
+- `db_pool` — `size` / `checked_in` / `checked_out` / `overflow` / `max_overflow` + сырой
+  `status()`. **`pool_size` в `app/db/session.py` не задан** — работает дефолт SQLAlchemy
+  (5 + 10 overflow), поле `size_is_sqlalchemy_default: true` это фиксирует. Крутить его
+  без цифр не нужно, но видеть обязательно: упёршийся пул выглядит как «внезапно всё
+  встало» и ничем другим себя не проявляет.
+- `redis` — `ping_ms` (round-trip) и память из `INFO memory`.
+- `disk` — `total/used/free_bytes`, `used_percent` и `growth_bytes_per_hour` по разнице с
+  предыдущим снимком (базовая точка в Redis `metrics:system:disk`, сдвигается не чаще
+  5 минут; пока базы нет — `null`, а не выдуманный ноль). Путь — `METRICS_DISK_PATH`
+  (дефолт `/`): том MinIO в бэкенд-контейнер не смонтирован, но лежит на той же ФС
+  docker-хоста, так что свободное место — общий пул.
+
+Сбой отдельного источника отдаётся как `{"error": ...}` внутри своего блока, снимок всё
+равно приходит: диагностика нужна ровно тогда, когда часть инфраструктуры лежит.
+Порогов и алертов здесь нет — только цифры.
+
+**nginx `log_format api_perf`** — те же тайминги, что у `media_perf`, но на API-локации
+(`location /api/`): `req_time` (весь запрос) против `upstream_time` (сколько думал
+бэкенд) — это и есть разделение «медленный бэкенд» vs «медленная сеть», которого раньше
+не было нигде, кроме медиа. Плюс `proto=$server_protocol` — доля HTTP/3. Пишется в
+stdout: `docker logs <nginx> | grep api_perf` (у контейнера нет тома под
+`/var/log/nginx`, файл умер бы вместе с контейнером и не ротируется). Дефолтный
+access.log не отключён, поэтому API-запрос даёт две строки — обычную и `api_perf`.
+Формат стабилен, на него завязан этот грепанье.
+
+⚠️ `docker/deploy.sh` **не применяет** изменения nginx — нужно ручное пересоздание
+контейнера/`nginx -s reload` (известное ограничение, ARG-22). Без этого шага `api_perf`
+на сервере не появится, остальное (эндпоинт) работает.
 
 ## Backfill (one-off)
 

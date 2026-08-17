@@ -4,7 +4,16 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // Dev: проксируем REST и WS на бэкенд (uvicorn на :8000), чтобы не упираться в CORS
 // и одинаково ходить на /api и /ws как в проде за nginx.
+// Версия сборки для клиентских метрик (docs/FRONTEND.md «Клиентский RUM»): без неё
+// цифры до и после релиза смешиваются и тренд бессмыслен. Берём BUILD_VERSION из
+// окружения сборки, иначе — отметку времени сборки.
+const buildVersion =
+  process.env.BUILD_VERSION ?? new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')
+
 export default defineConfig({
+  define: {
+    __BUILD_VERSION__: JSON.stringify(buildVersion),
+  },
   plugins: [
     react(),
     VitePWA({

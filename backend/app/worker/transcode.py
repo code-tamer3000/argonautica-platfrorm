@@ -71,7 +71,7 @@ async def process_one_job() -> int | None:
     attempt = await q.bump_attempts(asset_id)
     try:
         result = await run_in_threadpool(
-            transcode_asset, asset.bucket, asset.storage_key
+            transcode_asset, asset.bucket, asset.storage_key, asset.mime_type
         )
     except TranscodeError as exc:
         # Отказ по гардрейлу (слишком длинное/большое) детерминирован — повтор упрётся

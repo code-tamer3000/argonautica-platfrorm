@@ -18,6 +18,18 @@ log_format media_perf 'media_perf method=$request_method status=$status '
                       'upstream_time=$upstream_response_time '
                       'uri=$uri';
 
+# Лог API-запросов с теми же таймингами (измерительный слой, ARG-81). До этого тайминги
+# были включены ТОЛЬКО на медиа-локациях, поэтому по остальному трафику нельзя было
+# отличить «медленный бэкенд» от «медленной сети»: разница $request_time (весь запрос,
+# включая передачу клиенту) и $upstream_response_time (сколько думал бэкенд) — это ровно
+# то разделение. $server_protocol даёт долю HTTP/3 (ARG-24): значения HTTP/1.1 / HTTP/2.0
+# / HTTP/3.0. Грепать: `docker logs <nginx> | grep api_perf`. Формат стабилен — на него
+# завязан разбор в docs/FILES.md.
+log_format api_perf 'api_perf method=$request_method status=$status '
+                    'bytes=$body_bytes_sent req_time=$request_time '
+                    'upstream_time=$upstream_response_time '
+                    'proto=$server_protocol uri=$uri';
+
 # Активный backend (blue/green). Файл переписывает docker/deploy.sh + `nginx -s reload`.
 # Апстрим-блок backend с `keepalive 32` — там же (переживает переключение цвета).
 include /etc/nginx/active_backend.conf;
@@ -116,6 +128,12 @@ server {
 
     location /api/ {
         proxy_pass http://backend;
+        # Тайминги API-запросов — см. log_format api_perf выше. Пишем в stdout, а не в
+        # файл (как media_perf): у nginx-контейнера нет тома под /var/log/nginx, файл
+        # умрёт вместе с контейнером и не ротируется, а `docker logs` — то место, где
+        # эти строки реально читают. Дефолтный access.log остаётся как есть, поэтому
+        # API-запрос даёт две строки: обычную combined и api_perf с таймингами.
+        access_log /dev/stdout api_perf;
         # keepalive-пул апстрима работает только по HTTP/1.1 с очищенным
         # заголовком Connection (иначе nginx закрывает соединение после ответа).
         proxy_http_version 1.1;
@@ -210,6 +228,16 @@ server {
     # уронило бы весь nginx, включая прод-vhost.
     resolver 127.0.0.11 valid=10s;
 
+    # Этот блок — единственная точка входа на стенд (прод-гейтвей терминирует TLS и
+    # для staging-домена). Без снятия лимита здесь nginx применяет дефолтный 1МБ ко
+    # ВСЕМ телам запросов, включая presigned-PUT в MinIO, которые проксируются насквозь
+    # в staging-nginx — там свой location уже отдаёт `client_max_body_size 0`, но до
+    # него запрос не долетает. Голосовые/картинки/видео крупнее ~1МБ падали с 413 ещё
+    # на этом гейтвее (обнаружено при замере ARG-75). Реальную проверку типа/размера
+    # всё равно делает бэкенд при confirm — здесь лимита нет так же, как в двух других
+    # location этого файла, отдающих chat-media/kb-media напрямую.
+    client_max_body_size 0;
+
     location / {
         set $staging_upstream http://staging_nginx:80;
         proxy_pass $staging_upstream;
@@ -223,6 +251,16 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 3600s;
+        # Тело запроса НЕ буферизуем — стримим в staging-nginx по мере приёма, как в
+        # прод-блоке MinIO ниже. Со включённой (дефолтной) буферизацией шлюз сначала
+        # складывал presigned-PUT целиком в /var/cache/nginx/client_temp и только
+        # потом начинал отдавать его дальше: заливка видео на стенд «висела» после
+        # 100% прогресс-бара, а большие файлы (лимит аплоада — 5 ГБ) грозили забить
+        # диск, общий с продом. Проверено замером: PUT 20 МБ на прод-медиадомен
+        # отдаёт ответ MinIO сразу, тот же PUT на staging-домен сначала целиком
+        # уезжал во временный файл (`a client request body is buffered to a
+        # temporary file` в error.log на каждой заливке).
+        proxy_request_buffering off;
     }
 }
 

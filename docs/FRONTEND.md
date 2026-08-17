@@ -54,13 +54,58 @@ The chat is built to survive bad networks — nothing typed or sent is lost. All
 
 Installable (Add to Home Screen; no stores). Web App Manifest (name, icons, `display: standalone`), Service Worker, HTTPS. Built with `vite-plugin-pwa` in **injectManifest** mode: the custom `src/sw.ts` gets the Workbox precache injected AND adds the `push`/`notificationclick` handlers for native notifications. Update UX unchanged (`registerType: 'prompt'`, `useRegisterSW`, `SKIP_WAITING` message from the update banner). Assets: apple-touch-icon, favicon, 192/512 icons.
 
-**Media runtime cache** (`sw.ts` + `lib/mediaCache.ts`). Media is served from the app's own origin (`/chat-media/`, `/kb-media/`) via **presigned** URLs, so `X-Amz-Date`/`X-Amz-Signature` differ on every feed render — the browser cache keys on the full URL including query and therefore **never** hit (one 11 MB photo measured 182 MB of traffic on prod; nginx's `Cache-Control: immutable` was correct but useless). The SW registers a `CacheFirst` route for those paths whose `cacheKeyWillBeUsed` plugin rewrites the key to `origin + pathname` — the pathname carries the object uuid, so it is unique, immutable and **stable across signatures**, which is the whole fix. Cache `arg-media-v1`, capped by `workbox-expiration` (60 entries / 7 days / `purgeOnQuotaError`). **Images only**, and any request carrying a `Range` header is passed through untouched: video streams by range and a CacheFirst over it would break seeking (and would blow the phone's quota). The route therefore requires `destination === 'image'` **or** an image extension in the path (the lightbox pulls its image through `fetch`, whose destination is `''`). Logout (`features/auth/api.ts`) deletes the cache — media is private and the device may be shared; the delete is best-effort so a missing Cache API can't break logout.
+**Media cache, two layers (ARG-75 + ARG-16).**
+
+- **Layer 1 — ordinary browser HTTP cache**, works for **all** media kinds on **every** origin including `MEDIA_DOMAIN`. The backend now rounds the presigned-GET signing moment down to a 24h window (`PRESIGN_GET_WINDOW`, `services/media.py`, see [FILES.md](FILES.md)), so repeat requests for the same object within the window get a byte-identical URL — the browser cache, which keys on the full URL including query, finally hits. nginx's `Cache-Control: private, max-age=86400, immutable` was always correct; it just had nothing to key on before. No SW/Cache Storage involved, so this layer benefits video/audio too (though 206-range responses cache poorly in Chrome/Firefox's HTTP cache — the gain there is partial; full range/segment delivery is [ARG-77]).
+- **Layer 2 — SW `CacheFirst`** (`sw.ts` + `lib/mediaCache.ts`), same-origin only, **images only**. Predates layer 1 (ARG-16) and is kept as a second line of defense: it keys on `origin + pathname` (dropping query entirely, so it doesn't even need a stable presigned URL) and isn't capped by the 24h window. Cache `arg-media-v1`, capped by `workbox-expiration` (60 entries / 7 days / `purgeOnQuotaError`). Any request carrying a `Range` header is passed through untouched — video streams by range and a CacheFirst over it would break seeking (and would blow the phone's quota); the route requires `destination === 'image'` **or** an image extension in the path (the lightbox pulls its image through `fetch`, whose destination is `''`). Logout (`features/auth/api.ts`) deletes the cache — media is private and the device may be shared; the delete is best-effort so a missing Cache API can't break logout.
 
 **Lightbox preview derivative.** Attachments carry `preview_url` (WebP ~1600px) next to `thumb_url` and `url`. The feed renders `thumb_url`, the lightbox opens `preview_url ?? url`, and downloads always use `url` (the original). The fallback is load-bearing: `preview_url` is `null` for legacy rows, non-images and failed generation. The lightbox's progress logic is unchanged — photos still stream the whole blob with a % bar (`useImageDownload`), video still plays natively with a buffer indicator.
 
 **Native push (Web Push / VAPID)** is live. `src/lib/push.ts` handles permission + `pushManager.subscribe` + posting the subscription to the backend; the profile "Уведомления" section is the master toggle + per-kind toggles (persisted to `users.settings["notifications"]`). `sw.ts` shows the notification and, on click, focuses/navigates the app. iOS requires the PWA be installed (Add to Home Screen) — the profile UI warns when it isn't. `sw.ts` is typechecked separately (`tsconfig.sw.json`, WebWorker lib). See [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 **Mobile keyboard / viewport** (`lib/viewport.ts`). `#root`/`body` are `position: fixed` at `--app-height` (= `visualViewport.height`), so the composer sits flush above the on-screen keyboard and iOS's focus-scroll can't drag the layer up (any window/ancestor scroll is pinned back to 0). `--app-height` and the `html[data-kb='open']` flag update on `visualViewport` resize; **keyboard-open is detected by comparing the current viewport height against the largest height seen (the keyboard-free baseline), not against `root.clientHeight`** — on Android the layout viewport shrinks with the keyboard too, so a `clientHeight` comparison stayed ≈0 and never fired (the bottom tab-bar then stayed over the composer). `data-kb='open'` hides the bottom nav (`translateY(100%)`) and drops its `padding-bottom` reserve so the composer is flush. On mobile the composer `textarea` `max-height` is smaller (120px) so a long message scrolls internally instead of pushing the send button off-screen, and while `data-kb='open'` the personal-journal `DailyJournalForm` bar and the typing indicator are hidden — on a short screen they ate the height the composer needed and pushed its bottom under the keyboard (DMs have neither bar, hence the journal-only bug). Note: iOS renders a native accessory bar (↑↓ / «Готово») above the keyboard for form fields; it can't be removed by any web means (contenteditable doesn't drop it either on current iOS), so we don't try — the layout just keeps the input fully visible above it.
+
+## Клиентский RUM (ARG-80)
+
+Серверные метрики (ARG-79) видят только своё время ответа; «долго грузится» с телефона
+ими не разложить. Клиентский слой (`lib/metrics.ts`, тот же модуль, что и метрики медиа,
+та же очередь + батч + `keepalive`) добавляет четыре измерения. Всё best-effort:
+недоступный приёмник, отсутствующий API браузера или ошибка сбора не роняют ни один экран.
+
+- **Первый экран** — один трейс на загрузку приложения из Navigation Timing:
+  `dns`, `tcp`, `tls`, `ttfb`, `dom_interactive` + `lcp` через `PerformanceObserver`
+  (нет LCP — трейс уходит без него, а не теряется). Разделитель, ради которого всё
+  сделано: **`ttfb` = канал плюс сервер, `frontend` = `lcp − ttfb` = сам фронт**
+  (`frontend` считается на приёме). Разрезы: **холодный/тёплый заход**
+  (`navigator.serviceWorker.controller === null` — оболочка ещё не из кэша SW),
+  **тип сети** (`effectiveType`) и **версия сборки** (`__BUILD_VERSION__`, define в
+  `vite.config.ts`, переопределяется `BUILD_VERSION` в окружении сборки; без неё цифры
+  до и после релиза смешиваются в кашу). Трейс уходит через 5с после `load` или раньше,
+  если вкладку свернули.
+- **Открытие комнаты** — `beginRoomOpen` в `api/messages.ts` (первая страница истории)
+  → `noteRoomHistoryLoaded` (длительность запроса + `ttfb` из Resource Timing) →
+  `noteRoomRendered` в `ChatPane` по кадру после того, как лента отрисована свежими
+  данными. Завязка на `dataUpdatedAt`, а не на «есть сообщения»: лента сперва рисуется
+  из восстановленного кэша (`queryPersist`), и иначе трейс закрывался бы до ответа.
+  Лента, пришедшая только из кэша (запроса не было), не меряется вовсе.
+- **Байты медиа за заход в комнату** — сумма `transferSize` из Resource Timing по
+  image/video/audio за 3с после захода, с меткой `first`/`repeat` (список посещённых
+  комнат — в `sessionStorage`). Отданное из кэша даёт `transferSize === 0`, поэтому
+  просадка суммы на повторном заходе и есть метрика попадания в кэш медиа (ARG-75).
+  Окно замера отматывается на 1с назад: при заходе с перезагрузкой картинки уходят в
+  сеть в том же кадре, что и монтирование.
+- **Упавший экран** — `error` и `unhandledrejection`: сообщение (≤500), стек (≤4000),
+  роут (`location.pathname`, без query) и версия сборки. Пользовательского контента нет;
+  не больше 10 записей за сессию, отправка сразу (экран мог упасть совсем).
+
+Приём — `POST /api/metrics/client` (любой активный пользователь, всегда 204). Свод —
+`GET /api/metrics/client` (админ): `{enabled, first_screen: {"cold:4g:lcp": {...}},
+scenarios: {"room_open:ttfb": {...}}, bytes: {"first:image": {count, sum_bytes,
+avg_bytes}}, errors: {counts, recent}}`. Перцентили — метки бакетов гистограммы Redis
+(`metrics:client:*`), как у медиа и HTTP. Флаги: `CLIENT_METRICS_ENABLED`,
+`CLIENT_METRICS_TTL_SECONDS`, `CLIENT_ERRORS_KEEP`. Сырые события — JSON-строки с
+`"metric":"client"` в логе бэкенда; поля проходят белый список (`log_client_metric`),
+как структурный лог запросов. Значения клиентские и не доверенные: только наблюдение.
 
 ## Open question
 

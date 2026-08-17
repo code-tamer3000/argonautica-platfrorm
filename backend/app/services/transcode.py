@@ -223,12 +223,17 @@ class TranscodeResult:
     duration: int | None
 
 
-def transcode_asset(bucket: str, storage_key: str) -> TranscodeResult:
+def transcode_asset(
+    bucket: str, storage_key: str, source_mime: str | None = None
+) -> TranscodeResult:
     """Полный прогон над одним видео-объектом. Бросает TranscodeError → джоба ретраится.
 
     Шаги: скачать → гардрейлы (размер/длительность) → ffprobe → fast-path ИЛИ ffmpeg
     720p → залить вариант → постер → залить постер. Оригинал в MinIO не трогаем.
     fast-path: variant_key = storage_key (отдаём тот же объект, он уже совместим).
+
+    `source_mime` — mime оригинала: нужен, только когда вариант отбракован по размеру
+    и под `variant_mime` уезжает исходный объект (иначе там всегда `VARIANT_MIME`).
     """
     if not storage_key:
         raise TranscodeError("empty storage_key")
@@ -259,17 +264,29 @@ def transcode_asset(bucket: str, storage_key: str) -> TranscodeResult:
             )
 
         client = _server_client()
+        variant_mime = VARIANT_MIME
         if _needs_transcode(probe):
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
                 dst_path = tmp.name
             _run_ffmpeg_720p(src_path, dst_path)
-            variant_key = build_variant_key(storage_key)
-            with open(dst_path, "rb") as fh:
-                client.put_object(
-                    Bucket=bucket, Key=variant_key,
-                    Body=fh, ContentType=VARIANT_MIME,
-                )
-            poster_src = dst_path
+            if os.path.getsize(dst_path) >= size:
+                # Перекодировали, но легче не стало: исходник уже сжат агрессивнее
+                # нашего CRF 23. Отдавать раздутый вариант — терять трафик на ровном
+                # месте (на проде так вышло у 4 видео из 70, худшее 1.4 МБ → 2.6 МБ).
+                # Ведём себя как с картинками: дериват тяжелее оригинала не берём
+                # (см. preview_key в models/media.py) — вариантом остаётся оригинал,
+                # он уже проверен ffprobe'ом и играбелен.
+                variant_key = storage_key
+                variant_mime = source_mime or VARIANT_MIME
+                poster_src = src_path
+            else:
+                variant_key = build_variant_key(storage_key)
+                with open(dst_path, "rb") as fh:
+                    client.put_object(
+                        Bucket=bucket, Key=variant_key,
+                        Body=fh, ContentType=VARIANT_MIME,
+                    )
+                poster_src = dst_path
         else:
             # Fast-path: исходник уже совместим — отдаём его же как вариант, ffmpeg не
             # гоняем. Постер всё равно снимаем (для ленты/processing-плейсхолдера).
@@ -287,7 +304,7 @@ def transcode_asset(bucket: str, storage_key: str) -> TranscodeResult:
 
         return TranscodeResult(
             variant_key=variant_key,
-            variant_mime=VARIANT_MIME,
+            variant_mime=variant_mime,
             poster_key=poster_key,
             duration=probe.duration,
         )
