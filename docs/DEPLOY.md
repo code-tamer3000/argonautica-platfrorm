@@ -192,6 +192,40 @@ ssh -L 8428:127.0.0.1:8428 <прод-сервер>   # алиас: platform-new
 совместим по протоколу scrape и по PromQL). Панели — предмет ARG-18, здесь только
 подключение к хранилищу.
 
+### Дашборд (ARG-18)
+
+JSON-модель дашборда и provisioning-конфиг лежат в репозитории, а не только в чьём-то
+браузере: `docker/grafana/dashboards/platform-overview.json` (сами панели) +
+`docker/grafana/provisioning/` (datasource и автозагрузка дашборда). Датасорс в
+provisioning указывает на `http://localhost:8428` — рассчитан на то, что и SSH-туннель,
+и сама Grafana подняты на одной машине оператора.
+
+Поднять локальную Grafana с этими файлами (после того как туннель из раздела выше уже
+открыт):
+
+```bash
+docker run -d --name grafana --network host \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+  -v "$(pwd)/docker/grafana/provisioning:/etc/grafana/provisioning:ro" \
+  -v "$(pwd)/docker/grafana/dashboards:/etc/grafana/dashboards:ro" \
+  grafana/grafana:11.4.0
+```
+
+`--network host` — самый простой способ достучаться до туннеля на `localhost:8428` с
+Linux-хоста. На Docker Desktop (Mac/Windows), где `--network host` не работает,
+замените `url` в `docker/grafana/provisioning/datasources/victoriametrics.yaml` на
+`http://host.docker.internal:8428` и пробросьте порт `-p 3000:3000` вместо
+`--network host`. Открыть `http://localhost:3000` — дашборд «Argonautica — состояние
+платформы» подхватится автоматически из provisioning, без ручного импорта.
+
+Известный пробел (осознанно вне границ ARG-18, см. задачу «Границы»): CPU, память и
+сеть по сервисам/хосту, а также «когда сервис последний раз перезапускался» —
+`GET /metrics` их не отдаёт, потому что их вообще никто не собирает (нет node-exporter
+или cAdvisor рядом с VictoriaMetrics). «Живой ли сервис» на дашборде показано только
+как `up{job="backend"}` — доступность backend-blue/backend-green по скрейпу; nginx,
+Postgres, Redis, MinIO в это не включены. Если эти цифры понадобятся — заводить как
+отдельную задачу сбора (`/idea`), не дорисовывать здесь на месте.
+
 ## Backups
 
 `docker/backup.sh` (cron, daily) — `pg_dump | gzip` → MinIO bucket `backups`, 30-day retention. Runbook in archived DEPLOY §6.

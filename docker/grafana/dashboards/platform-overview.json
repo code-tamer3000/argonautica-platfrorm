@@ -1,0 +1,240 @@
+{
+  "id": null,
+  "uid": "platform-overview",
+  "title": "Argonautica — состояние платформы",
+  "description": "Один экран для вопроса «всё ли в порядке» (ARG-18). Источник — VictoriaMetrics поверх GET /metrics бэкенда (ARG-82). Каждая панель отвечает на один заранее названный вопрос из задачи; чего не собирается — не показано (см. docs/DEPLOY.md «Наблюдаемость», раздел про известные пробелы).",
+  "tags": ["argonautica", "observability"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["30s", "1m", "5m"],
+    "time_options": ["6h", "24h", "2d", "7d", "30d"]
+  },
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    { "id": 1, "type": "row", "title": "Обзор", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": [] },
+
+    {
+      "id": 10, "type": "stat", "title": "Бэкенд жив? (blue/green)",
+      "description": "up{job=\"backend\"} по инстансу. 1 = скрейп успешен, 0 = инстанс не отвечает. Покрывает только backend-blue/backend-green — nginx/postgres/redis/minio сюда не скрейпятся (см. пробел в docs/DEPLOY.md).",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "targets": [
+        { "expr": "up{job=\"backend\"}", "legendFormat": "{{instance}}", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value_and_name", "colorMode": "background", "graphMode": "none" }
+    },
+    {
+      "id": 11, "type": "stat", "title": "Онлайн сейчас",
+      "description": "Пользователей в presence:online (ARG-81).",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "targets": [{ "expr": "system_presence_online_users", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value", "graphMode": "area" }
+    },
+    {
+      "id": 12, "type": "stat", "title": "Диск под медиа: занято",
+      "description": "system_disk_used_percent — свободное место под медиа (ARG-81).",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "targets": [{ "expr": "system_disk_used_percent", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "max": 100, "min": 0,
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 75 }, { "color": "red", "value": 90 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value", "graphMode": "area", "colorMode": "value" }
+    },
+    {
+      "id": 13, "type": "stat", "title": "Диск: прогноз до заполнения",
+      "description": "free_bytes / growth_bytes_per_hour — часов до конца места на текущей скорости роста. Пусто, пока нет базовой точки (см. app/services/system_metrics.py).",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "targets": [{ "expr": "system_disk_free_bytes / system_disk_growth_bytes_per_hour", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h", "noValue": "нет данных / место не растёт",
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0 }, { "color": "red", "value": 0 }] }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "textMode": "value", "graphMode": "none" }
+    },
+
+    { "id": 2, "type": "row", "title": "Скорость ответа: перцентили по ключевым сценариям", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 }, "panels": [] },
+
+    {
+      "id": 20, "type": "timeseries", "title": "Логин",
+      "description": "p50/p90/p99 для /api/auth/login (сценарий login, ARG-79).",
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(http_scenario_duration_ms_bucket{scenario=\"login\"}[$__rate_interval])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, sum(rate(http_scenario_duration_ms_bucket{scenario=\"login\"}[$__rate_interval])) by (le))", "legendFormat": "p90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(http_scenario_duration_ms_bucket{scenario=\"login\"}[$__rate_interval])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 21, "type": "timeseries", "title": "Открытие комнаты",
+      "description": "p50/p90/p99 для /api/rooms/{room_id}/messages (сценарий room_open).",
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(http_scenario_duration_ms_bucket{scenario=\"room_open\"}[$__rate_interval])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, sum(rate(http_scenario_duration_ms_bucket{scenario=\"room_open\"}[$__rate_interval])) by (le))", "legendFormat": "p90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(http_scenario_duration_ms_bucket{scenario=\"room_open\"}[$__rate_interval])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 22, "type": "timeseries", "title": "Лента КБ",
+      "description": "p50/p90/p99 для /api/kb/items (сценарий kb_feed).",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(http_scenario_duration_ms_bucket{scenario=\"kb_feed\"}[$__rate_interval])) by (le))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, sum(rate(http_scenario_duration_ms_bucket{scenario=\"kb_feed\"}[$__rate_interval])) by (le))", "legendFormat": "p90", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(http_scenario_duration_ms_bucket{scenario=\"kb_feed\"}[$__rate_interval])) by (le))", "legendFormat": "p99", "refId": "C" }
+      ]
+    },
+    {
+      "id": 23, "type": "timeseries", "title": "Загрузка медиа (upload, полное время)",
+      "description": "p50/p90/p99 клиентского шага total для op=upload (media_step_duration_ms, ARG-80). Разрез по kind (image/video) — легенда.",
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum(rate(media_step_duration_ms_bucket{op=\"upload\",step=\"total\"}[$__rate_interval])) by (le, kind))", "legendFormat": "p50 {{kind}}", "refId": "A" },
+        { "expr": "histogram_quantile(0.9, sum(rate(media_step_duration_ms_bucket{op=\"upload\",step=\"total\"}[$__rate_interval])) by (le, kind))", "legendFormat": "p90 {{kind}}", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(media_step_duration_ms_bucket{op=\"upload\",step=\"total\"}[$__rate_interval])) by (le, kind))", "legendFormat": "p99 {{kind}}", "refId": "C" }
+      ]
+    },
+
+    { "id": 3, "type": "row", "title": "Ошибки: сервер и клиент раздельно", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "panels": [] },
+
+    {
+      "id": 30, "type": "timeseries", "title": "Серверные ошибки (5xx) по роуту",
+      "description": "Растёт ли и по каким роутам — http_requests_total{status_class=\"5xx\"} (ARG-79).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(http_requests_total{status_class=\"5xx\"}[$__rate_interval])) by (route)", "legendFormat": "{{route}}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 31, "type": "timeseries", "title": "Клиентские падения экрана",
+      "description": "client_errors_total по роуту фронта — упавшие экраны (ARG-80). Клиентские значения не доверенные, только наблюдение.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(client_errors_total[$__rate_interval])) by (route)", "legendFormat": "{{route}}", "refId": "A" }
+      ]
+    },
+
+    { "id": 4, "type": "row", "title": "Очередь обработки видео", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 }, "panels": [] },
+
+    {
+      "id": 40, "type": "timeseries", "title": "Очередь: длина и застрявшие",
+      "description": "system_transcode_queue_{pending,inflight,stale,retrying} (ARG-81). stale = джобы забраны воркером дольше claim-таймаута — признак зависшего воркера.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "system_transcode_queue_pending", "legendFormat": "ждут", "refId": "A" },
+        { "expr": "system_transcode_queue_inflight", "legendFormat": "в работе", "refId": "B" },
+        { "expr": "system_transcode_queue_stale", "legendFormat": "застряли", "refId": "C" },
+        { "expr": "system_transcode_queue_retrying", "legendFormat": "с повторами", "refId": "D" }
+      ]
+    },
+    {
+      "id": 41, "type": "timeseries", "title": "Очередь: возраст самой старой claim",
+      "description": "Сколько уже держит воркер самую старую джобу в работе — растёт к таймауту, если воркер завис.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "system_transcode_queue_oldest_claim_age_seconds", "legendFormat": "возраст", "refId": "A" },
+        { "expr": "system_transcode_queue_claim_timeout_seconds", "legendFormat": "таймаут", "refId": "B" }
+      ]
+    },
+
+    { "id": 5, "type": "row", "title": "Диск под медиа", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 }, "panels": [] },
+
+    {
+      "id": 50, "type": "timeseries", "title": "Занято места, %",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "system_disk_used_percent", "legendFormat": "занято", "refId": "A" }]
+    },
+    {
+      "id": 51, "type": "timeseries", "title": "Скорость роста",
+      "description": "system_disk_growth_bytes_per_hour — байт/час; отрицательное значение = место освобождается.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [{ "expr": "system_disk_growth_bytes_per_hour / 3600", "legendFormat": "рост", "refId": "A" }]
+    },
+
+    { "id": 6, "type": "row", "title": "Попадание в кэш медиа", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 }, "panels": [] },
+
+    {
+      "id": 60, "type": "timeseries", "title": "Трафик: первый заход против повторного",
+      "description": "client_download_bytes_total{visit} по типу медиа (ARG-80). Регресс кэша виден как рост доли visit=repeat относительно visit=first.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 42 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "drawStyle": "line", "fillOpacity": 10, "stacking": { "mode": "normal" } } }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(rate(client_download_bytes_total[$__rate_interval])) by (visit, kind)", "legendFormat": "{{visit}}:{{kind}}", "refId": "A" }
+      ]
+    },
+
+    { "id": 7, "type": "row", "title": "Инфраструктура: пул БД и Redis (что уже собирается для «нагрузки»)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 50 }, "panels": [] },
+
+    {
+      "id": 70, "type": "timeseries", "title": "Пул соединений Postgres",
+      "description": "checked_out растёт к size+max_overflow — признак того, что пул забит (ARG-81). CPU/память процесса backend сюда НЕ входят — не собираются (см. docs/DEPLOY.md, известный пробел).",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 51 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "expr": "system_db_pool_checked_out", "legendFormat": "занято", "refId": "A" },
+        { "expr": "system_db_pool_size + system_db_pool_max_overflow", "legendFormat": "потолок (size+overflow)", "refId": "B" }
+      ]
+    },
+    {
+      "id": 71, "type": "timeseries", "title": "Redis: латентность и память",
+      "description": "system_redis_ping_ms и used_memory — best-effort индикатор проблем на стороне Redis.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 51 },
+      "datasource": { "type": "prometheus", "uid": "victoriametrics" },
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [
+        { "matcher": { "id": "byName", "options": "ping" }, "properties": [{ "id": "unit", "value": "ms" }] },
+        { "matcher": { "id": "byName", "options": "память" }, "properties": [{ "id": "unit", "value": "bytes" }] }
+      ] },
+      "targets": [
+        { "expr": "system_redis_ping_ms", "legendFormat": "ping", "refId": "A" },
+        { "expr": "system_redis_used_memory_bytes", "legendFormat": "память", "refId": "B" }
+      ]
+    }
+  ]
+}

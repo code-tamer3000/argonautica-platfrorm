@@ -1,0 +1,12 @@
+# Provisioning дашбордов для локальной Grafana оператора (ARG-18): подхватывает
+# JSON-модели из docker/grafana/dashboards без ручного импорта через UI.
+apiVersion: 1
+
+providers:
+  - name: platform
+    folder: Argonautica
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
