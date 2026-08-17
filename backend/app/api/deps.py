@@ -12,6 +12,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.context import set_current_user_id
 from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.db.session import get_session
 from app.models.user import User
@@ -45,6 +46,8 @@ async def get_current_user(
     user = await session.get(User, int(sub))
     if user is None:
         raise _CREDENTIALS_ERROR
+    # С этого момента запрос опознан — лог наблюдаемости сможет назвать пользователя.
+    set_current_user_id(user.id)
     return user
 
 
