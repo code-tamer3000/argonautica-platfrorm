@@ -5,10 +5,9 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.journal import JournalPardon
 
-from .conftest import MakeUser, auth_headers, login
+from .conftest import DEFAULT_INTAKE_OFFSET_DAYS, MakeUser, auth_headers, login
 
 
 def _user_in(payload: dict, user_id: int) -> dict:
@@ -30,7 +29,7 @@ async def test_non_admin_cannot_credit(
     resp = await client.post(
         "/api/admin/dynamics/credit",
         headers=auth_headers(tokens["access_token"]),
-        json={"user_id": user.id, "date": settings.journal_program_start.isoformat()},
+        json={"user_id": user.id, "date": (date.today() - timedelta(days=1)).isoformat()},
     )
     assert resp.status_code == 403
 
@@ -43,9 +42,9 @@ async def test_admin_credit_and_uncredit_day(
     admin_tokens = await login(client, admin.username, "adminpass123")
 
     # Берём вчера — прошедший день, гарантированно в пределах программы и окна отрисовки
-    # (WINDOW_PAST=5). program_start в тестовой среде заведомо раньше вчера.
+    # (WINDOW_PAST=5): набор участника стартовал DEFAULT_INTAKE_OFFSET_DAYS дней назад.
     day = date.today() - timedelta(days=1)
-    assert settings.journal_program_start <= day
+    assert DEFAULT_INTAKE_OFFSET_DAYS > 1
     headers = auth_headers(admin_tokens["access_token"])
 
     # Зачесть день -> статус becomes 'credited', просрочка снимается.
@@ -86,7 +85,7 @@ async def test_credit_pardoned_day_refunds_whale(
     admin_tokens = await login(client, admin.username, "adminpass123")
 
     day = date.today() - timedelta(days=1)
-    assert settings.journal_program_start <= day
+    assert DEFAULT_INTAKE_OFFSET_DAYS > 1
 
     # Участник потратил кита на этот день.
     session.add(JournalPardon(user_id=participant.id, date=day))
@@ -128,3 +127,52 @@ async def test_credit_future_day_rejected(
         json={"user_id": participant.id, "date": future.isoformat(), "credited": True},
     )
     assert resp.status_code == 400
+
+
+async def test_window_follows_user_intake(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Участники разных наборов в один календарный день видят разное окно.
+
+    Регрессия на ARG-88: раньше начало 28-дневного окна было общим для всех
+    (глобальная константа / самое раннее задание), и у набора с другой датой
+    старта прогресс и просрочка считались не от его дня первого.
+    """
+    early_start = date.today() - timedelta(days=10)
+    late_start = date.today() - timedelta(days=3)
+
+    admin = await make_user(role="admin", password="adminpass123")
+    early = await make_user(role="participant", intake_starts_on=early_start)
+    late = await make_user(role="participant", intake_starts_on=late_start)
+
+    # Личная динамика: окно начинается от даты набора участника, не от общей.
+    for user, expected_start, expected_overdue in (
+        (early, early_start, 10),
+        (late, late_start, 3),
+    ):
+        tokens = await login(client, user.username, "initpass123")
+        resp = await client.get(
+            "/api/dynamics/my-stats", headers=auth_headers(tokens["access_token"])
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["program_start"] == expected_start.isoformat()
+        # Записей в дневнике нет — просрочен каждый прошедший день окна.
+        assert len(body["overdue_dates"]) == expected_overdue
+
+    # Админ-обзор: та же разница в один и тот же календарный день.
+    admin_tokens = await login(client, admin.username, "adminpass123")
+    overview = await client.get(
+        "/api/admin/dynamics", headers=auth_headers(admin_tokens["access_token"])
+    )
+    assert overview.status_code == 200, overview.text
+    payload = overview.json()
+    early_row = _user_in(payload, early.id)
+    late_row = _user_in(payload, late.id)
+    assert early_row["overdue_count"] == 10
+    assert late_row["overdue_count"] == 3
+
+    # День, попадающий в окно раннего набора и лежащий до старта позднего.
+    between = date.today() - timedelta(days=4)
+    assert _day_status(early_row, between) == "missed"
+    assert _day_status(late_row, between) == "before_start"
