@@ -302,3 +302,198 @@ async def summarize_http() -> dict[str, Any]:
         row["error_rate"] = round(counts.get("5xx", 0) / total, 4) if total else 0.0
 
     return {"routes": routes, "scenarios": await _summarize_prefix(_HTTP_SCENARIO_PREFIX)}
+
+
+# ─────────────────────────── Клиентский RUM ───────────────────────────
+#
+# Что меряет браузер и зачем (docs/FRONTEND.md «Клиентский RUM»):
+#   * загрузка приложения — Navigation Timing (dns/tcp/tls/ttfb/dom_interactive) + LCP.
+#     Разделитель, ради которого всё делается: `ttfb` = канал плюс сервер,
+#     `frontend` = `lcp − ttfb` = собственно фронт. Разрезы — холодный/тёплый заход
+#     и тип сети, плюс версия сборки (без неё цифры до и после релиза смешиваются);
+#   * открытие комнаты — запрос истории → первый байт → отрисовка списка;
+#   * сумма `transferSize` по типам медиа на первом и повторном заходе в комнату —
+#     так видно, работает ли браузерный кэш медиа (ARG-75) или сломался молча;
+#   * упавший экран — сообщение, стек, роут, версия сборки. Без пользовательского текста.
+#
+# Значения клиентские и не доверенные: только наблюдение. Всё best-effort — приём
+# метрик не имеет права ронять ни один экран.
+
+_CLIENT_NAV_PREFIX = "metrics:client:nav:"
+_CLIENT_SCENARIO_PREFIX = "metrics:client:scenario:"
+_CLIENT_BYTES_PREFIX = "metrics:client:bytes:"
+_CLIENT_ERRORS_KEY = "metrics:client:errors"
+_CLIENT_ERRORS_RECENT_KEY = "metrics:client:errors:recent"
+
+# Белый список полей клиентского лога — как у структурного лога запросов: приватность
+# обеспечивается механикой, а не аккуратностью автора. Текста сообщений, имён файлов и
+# прочего пользовательского контента здесь просто нет входа.
+_ALLOWED_CLIENT_LOG_FIELDS = frozenset(
+    {
+        "metric",
+        "kind",
+        "build",
+        "cold",
+        "net",
+        "route",
+        "visit",
+        "total_ms",
+        "steps",
+        "bytes",
+        "message",
+        "stack",
+        "user_id",
+        "ts",
+    }
+)
+
+
+def log_client_metric(payload: dict[str, Any]) -> None:
+    """Записать одно клиентское событие JSON-строкой (`"metric":"client"`).
+
+    Best-effort и через белый список полей — как `log_structured` для запросов.
+    """
+    try:
+        record = {"metric": "client"}
+        record.update({k: v for k, v in payload.items() if k in _ALLOWED_CLIENT_LOG_FIELDS})
+        record["ts"] = datetime.now(UTC).isoformat()
+        metrics_logger.info(json.dumps(record, ensure_ascii=False, default=str))
+    except Exception:  # noqa: BLE001 — метрика не важнее запроса
+        pass
+
+
+def _client_label(value: str | None, default: str = "unknown") -> str:
+    """Безопасная метка для ключа Redis: без двоеточий, короткая, непустая.
+
+    Значения приходят от клиента — они не должны ни ломать разбор ключа, ни плодить
+    ключи без предела (поэтому же на приёме ограничена длина полей).
+    """
+    if not value:
+        return default
+    return value.replace(":", "_")[:32]
+
+
+async def record_client_nav(cold: bool | None, net: str | None, step: str, ms: float) -> None:
+    """Учесть один шаг загрузки приложения в разрезе холодный/тёплый + тип сети."""
+    if not settings.client_metrics_enabled:
+        return
+    visit = "cold" if cold else "warm" if cold is not None else "unknown"
+    key = f"{_CLIENT_NAV_PREFIX}{visit}:{_client_label(net)}:{_client_label(step)}"
+    await _record_hist(key, ms, settings.client_metrics_ttl_seconds)
+
+
+async def record_client_scenario(scenario: str, step: str, ms: float) -> None:
+    """Учесть шаг клиентского сценария (напр. `room_open` → `ttfb`/`render`/`total`)."""
+    if not settings.client_metrics_enabled:
+        return
+    key = f"{_CLIENT_SCENARIO_PREFIX}{_client_label(scenario)}:{_client_label(step)}"
+    await _record_hist(key, ms, settings.client_metrics_ttl_seconds)
+
+
+async def record_client_bytes(visit: str, kind: str, size: int) -> None:
+    """Учесть скачанные байты одного типа ресурса за заход в комнату.
+
+    `visit` — `first`/`repeat` (первый или повторный заход в ту же комнату),
+    `kind` — image/video/audio/other. Копим count и sum_bytes: сравнение среднего
+    на первом и повторном заходе и есть метрика попадания в кэш медиа.
+    """
+    if not settings.client_metrics_enabled:
+        return
+    key = f"{_CLIENT_BYTES_PREFIX}{_client_label(visit)}:{_client_label(kind)}"
+    try:
+        pipe = redis_client.pipeline()
+        pipe.hincrby(key, "count", 1)
+        pipe.hincrby(key, "sum_bytes", int(size))
+        pipe.expire(key, settings.client_metrics_ttl_seconds)
+        await pipe.execute()
+    except Exception:  # noqa: BLE001 — метрика не важнее запроса
+        pass
+
+
+async def record_client_error(build: str | None, route: str | None, message: str) -> None:
+    """Учесть упавший экран: счётчик по «версия сборки + роут» + кольцо последних.
+
+    Кольцо (`client_errors_keep`) нужно, чтобы в своде было видно не только «сколько»,
+    но и «что именно» — иначе за цифрой пришлось бы лезть в логи контейнера.
+    """
+    if not settings.client_metrics_enabled:
+        return
+    try:
+        field = f"{_client_label(build, 'unknown')} {_client_label(route, '/')}"
+        ttl = settings.client_metrics_ttl_seconds
+        pipe = redis_client.pipeline()
+        pipe.hincrby(_CLIENT_ERRORS_KEY, field, 1)
+        pipe.expire(_CLIENT_ERRORS_KEY, ttl)
+        pipe.lpush(
+            _CLIENT_ERRORS_RECENT_KEY,
+            json.dumps(
+                {
+                    "ts": datetime.now(UTC).isoformat(),
+                    "build": build,
+                    "route": route,
+                    "message": message,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        pipe.ltrim(_CLIENT_ERRORS_RECENT_KEY, 0, settings.client_errors_keep - 1)
+        pipe.expire(_CLIENT_ERRORS_RECENT_KEY, ttl)
+        await pipe.execute()
+    except Exception:  # noqa: BLE001 — метрика не важнее запроса
+        pass
+
+
+async def _summarize_client_bytes() -> dict[str, Any]:
+    """Свод по скачанным байтам: `{"first:image": {count, sum_bytes, avg_bytes}}`."""
+    out: dict[str, Any] = {}
+    for key in await _scan_keys(f"{_CLIENT_BYTES_PREFIX}*"):
+        row = cast(dict[str, str], await redis_client.hgetall(key))
+        if not row:
+            continue
+        count = int(row.get("count", 0))
+        total = int(row.get("sum_bytes", 0))
+        out[key.removeprefix(_CLIENT_BYTES_PREFIX)] = {
+            "count": count,
+            "sum_bytes": total,
+            "avg_bytes": round(total / count) if count else 0,
+        }
+    return dict(sorted(out.items()))
+
+
+async def _summarize_client_errors() -> dict[str, Any]:
+    """Свод по упавшим экранам: счётчики «сборка + роут» и последние записи."""
+    try:
+        counts = {
+            field: int(n)
+            for field, n in cast(
+                dict[str, str], await redis_client.hgetall(_CLIENT_ERRORS_KEY)
+            ).items()
+        }
+        raw = cast(
+            list[str], await redis_client.lrange(_CLIENT_ERRORS_RECENT_KEY, 0, -1)
+        )
+    except Exception:  # noqa: BLE001 — свод не важнее доступности админки
+        return {"counts": {}, "recent": []}
+    recent: list[dict[str, Any]] = []
+    for line in raw:
+        try:
+            recent.append(json.loads(line))
+        except ValueError:
+            continue
+    return {"counts": dict(sorted(counts.items())), "recent": recent}
+
+
+async def summarize_client() -> dict[str, Any]:
+    """Свод клиентского RUM для GET /api/metrics/client (админ).
+
+    `{first_screen, scenarios, bytes, errors}`: перцентили первого экрана в разрезе
+    холодный/тёплый и тип сети, тайминги сценариев, байты по типам медиа, ошибки.
+    """
+    if not settings.client_metrics_enabled:
+        return {"first_screen": {}, "scenarios": {}, "bytes": {}, "errors": {}}
+    return {
+        "first_screen": await _summarize_prefix(_CLIENT_NAV_PREFIX),
+        "scenarios": await _summarize_prefix(_CLIENT_SCENARIO_PREFIX),
+        "bytes": await _summarize_client_bytes(),
+        "errors": await _summarize_client_errors(),
+    }

@@ -127,6 +127,15 @@ class Settings(BaseSettings):
     # когда-нибудь уедет на отдельный диск, путь переопределяется METRICS_DISK_PATH.
     metrics_disk_path: str = "/"
 
+    # --- Клиентские метрики RUM (docs/FRONTEND.md «Клиентский RUM») ---
+    # Браузер шлёт на POST /api/metrics/client трейс загрузки приложения
+    # (Navigation Timing + LCP), трейс открытия комнаты, сумму скачанных байт по
+    # типам медиа и упавшие экраны. При False приём отвечает 204 и ничего не пишет.
+    client_metrics_enabled: bool = True
+    client_metrics_ttl_seconds: int = 86_400
+    # Сколько последних клиентских ошибок держать в Redis для свода (кольцевой буфер).
+    client_errors_keep: int = 50
+
     @model_validator(mode="after")
     def _default_public_endpoint(self) -> "Settings":
         # Браузеру нужен публичный адрес MinIO (напр. localhost:9000), а не

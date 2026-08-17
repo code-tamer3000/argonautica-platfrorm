@@ -6,6 +6,7 @@ import {
   type InfiniteData,
 } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
+import { beginRoomOpen, noteRoomHistoryLoaded } from '../lib/metrics'
 import type { JournalSection, MessageOut, ReadStateOut, RefKind } from '../lib/types'
 import { roomsKey } from './rooms'
 import { appendMessage } from './cache'
@@ -19,10 +20,16 @@ const PAGE = 40
 export function useMessages(roomId: number) {
   return useInfiniteQuery({
     queryKey: messagesKey(roomId),
-    queryFn: ({ pageParam }) => {
+    queryFn: async ({ pageParam }) => {
       const q = new URLSearchParams({ limit: String(PAGE) })
       if (pageParam) q.set('before', String(pageParam))
-      return http.get<MessageOut[]>(`/api/rooms/${roomId}/messages?${q.toString()}`)
+      const path = `/api/rooms/${roomId}/messages?${q.toString()}`
+      // Первая страница = сценарий «открытие комнаты» (RUM): запрос → первый байт →
+      // отрисовка (её закрывает ChatPane). Подгрузка старых страниц не в счёт.
+      if (!pageParam) beginRoomOpen(roomId)
+      const data = await http.get<MessageOut[]>(path)
+      if (!pageParam) noteRoomHistoryLoaded(roomId, path)
+      return data
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>

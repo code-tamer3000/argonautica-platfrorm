@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
 import { AuthProvider } from './features/auth/AuthContext'
+import { initClientRum } from './lib/metrics'
 import { setupViewport } from './lib/viewport'
 import { persistQueryCache, restoreQueryCache } from './lib/queryPersist'
 import { applyThemeAtBoot } from './stores/theme'
@@ -15,6 +16,10 @@ applyThemeAtBoot()
 
 // Держим высоту приложения равной видимой области (с учётом клавиатуры на мобиле).
 setupViewport()
+
+// Клиентские метрики: первый экран (Navigation Timing + LCP) и перехват упавших
+// экранов. Включаем до монтирования — иначе ошибка на старте не оставит следа.
+initClientRum()
 
 const queryClient = new QueryClient({
   defaultOptions: {

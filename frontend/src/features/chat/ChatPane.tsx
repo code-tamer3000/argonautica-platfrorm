@@ -5,6 +5,7 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import { noteRoomRendered, sampleRoomResources } from '../../lib/metrics'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
@@ -91,6 +92,22 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     onEdit: (msg) => setEditingId(msg.id),
     onRepost: handleRepost,
   })
+
+  // RUM: закрыть трейс «открытие комнаты», когда лента реально отрисована (ждём
+  // кадр — до него список ещё не на экране), и посчитать, сколько байт медиа
+  // скачал этот заход в комнату (первый против повторного — метрика кэша медиа).
+  // Завязываемся на dataUpdatedAt, а не на «есть сообщения»: при заходе в комнату
+  // лента сперва рисуется из восстановленного кэша (queryPersist), и трейс закрылся
+  // бы ДО того, как пришла свежая история. Лишние вызовы безвредны — трейс без
+  // запроса истории no-op.
+  const historyReady = !query.isFetching && messages.length > 0 ? query.dataUpdatedAt : 0
+  useEffect(() => {
+    if (!historyReady) return
+    const frame = requestAnimationFrame(() => noteRoomRendered(roomId))
+    return () => cancelAnimationFrame(frame)
+  }, [historyReady, roomId])
+
+  useEffect(() => sampleRoomResources(roomId), [roomId])
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
