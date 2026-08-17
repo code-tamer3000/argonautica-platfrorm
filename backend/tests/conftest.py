@@ -7,10 +7,11 @@ Event loop — session-scoped, чтобы глобальные async engine/redi
 """
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -18,9 +19,16 @@ from app.core.redis import redis_client
 from app.core.security import hash_password
 from app.db.session import SessionLocal, engine
 from app.main import app
+from app.models.intake import Intake
 from app.models.room import Room, RoomMember
 from app.models.user import User
 from app.ws.pubsub import stop_listener
+
+# Окно Динамики (28 дней) считается от даты старта НАБОРА пользователя. В тестах
+# дата всегда относительная: набор по умолчанию стартовал неделю назад, поэтому
+# «вчера» гарантированно внутри окна в любой календарный день, и суите не грозит
+# дата-бомба (ARG-70).
+DEFAULT_INTAKE_OFFSET_DAYS = 7
 
 MakeUser = Callable[..., Awaitable[User]]
 MakeRoom = Callable[..., Awaitable[Room]]
@@ -62,9 +70,25 @@ async def session() -> AsyncIterator[AsyncSession]:
         yield s
 
 
+async def get_or_create_intake(session: AsyncSession, starts_on: date) -> Intake:
+    """Набор с указанной датой старта (`intakes.starts_on` UNIQUE — переиспользуем)."""
+    intake = await session.scalar(select(Intake).where(Intake.starts_on == starts_on))
+    if intake is None:
+        intake = Intake(starts_on=starts_on)
+        session.add(intake)
+        await session.commit()
+        await session.refresh(intake)
+    return intake
+
+
 @pytest_asyncio.fixture
 async def make_user(session: AsyncSession) -> MakeUser:
-    """Фабрика seed-юзеров. Уникальный username, пароль уже захеширован argon2."""
+    """Фабрика seed-юзеров. Уникальный username, пароль уже захеширован argon2.
+
+    Пользователь всегда попадает в набор: по умолчанию — стартовавший
+    `DEFAULT_INTAKE_OFFSET_DAYS` дней назад. `intake_starts_on` задаёт свою дату,
+    чтобы проверять участников разных наборов в один календарный день.
+    """
 
     async def _make(
         *,
@@ -77,8 +101,15 @@ async def make_user(session: AsyncSession) -> MakeUser:
         can_access_cabin: bool = False,
         is_observer: bool = False,
         graduated_at: datetime | None = None,
+        intake_starts_on: date | None = None,
     ) -> User:
+        intake = await get_or_create_intake(
+            session,
+            intake_starts_on
+            or date.today() - timedelta(days=DEFAULT_INTAKE_OFFSET_DAYS),
+        )
         user = User(
+            intake_id=intake.id,
             username=username or f"u_{uuid.uuid4().hex[:12]}",
             display_name="Test User",
             email=email,

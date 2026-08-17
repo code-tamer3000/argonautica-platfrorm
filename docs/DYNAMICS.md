@@ -20,8 +20,13 @@ is **closed** when every section of the задание active on that day is sub
   structure that was in effect **that** day — editing/adding a задание effective from a future
   date **never re-scores past days**.
 - **Progress is continuous** across задания: streak / overdue run over the whole timeline;
-  only the section set changes at a boundary. `program_start` = earliest задание `starts_on`
-  (falls back to `settings.journal_program_start`).
+  only the section set changes at a boundary.
+- `program_start` — the start of a participant's own 28-day window — comes from **their набор**
+  (`users.intake_id` → `intakes.starts_on`), not from any global constant: participants of
+  parallel наборы see different progress/overdue on the same calendar day. Задания only decide
+  *which sections* a day requires; they no longer decide *when* anyone's window starts. A user
+  with no набор (the column is nullable until the admin-side subtask) falls back to the earliest
+  задание `starts_on`, and to today if there is no задание at all.
 - A **section** has: `key` (stable slug `[a-z0-9_]+`, used in the message marker), `emoji`,
   `label`, `heading`, `placeholder`, `input_type` (`text` = multiline body under a fixed
   heading; `title` = single-line where the entered text becomes the heading, e.g. `film`).
