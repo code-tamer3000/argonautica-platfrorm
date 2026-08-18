@@ -2,7 +2,7 @@
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete, exists, func, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ from app.models.intake import Intake
 from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.plan import Plan
 from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
@@ -44,6 +45,7 @@ from app.schemas.journal import (
     JournalProgramOut,
     JournalProgramUpdate,
 )
+from app.schemas.plan import PlanCreateRequest, PlanOut, PlanUpdateRequest
 from app.schemas.push import (
     AdminBroadcastRequest,
     NotifPrefsOverviewOut,
@@ -139,6 +141,73 @@ async def create_intake(
     )
 
 
+@router.get("/plans", response_model=list[PlanOut])
+async def list_plans(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[Plan]:
+    """Все тарифы (включая неактивные — админ должен видеть их, чтобы включить обратно)."""
+    stmt = select(Plan).order_by(Plan.price)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+@router.post("/plans", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
+async def create_plan(
+    body: PlanCreateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Plan:
+    """Создать тариф. Бот-воронка (ARG-92) читает активные тарифы напрямую из БД."""
+    plan = Plan(
+        name=body.name,
+        price=body.price,
+        description=body.description,
+        is_active=body.is_active,
+    )
+    session.add(plan)
+    await session.flush()
+    await session.refresh(plan)
+    return plan
+
+
+@router.patch("/plans/{plan_id}", response_model=PlanOut)
+async def update_plan(
+    plan_id: int,
+    body: PlanUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Plan:
+    """Частичное обновление тарифа — цена/название меняются без редеплоя бота."""
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Тариф не найден")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(plan, field, value)
+    await session.flush()
+    await session.refresh(plan)
+    return plan
+
+
+@router.delete("/plans/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_plan(
+    plan_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Удалить тариф. 409, если на него ещё ссылаются участники/заявки.
+
+    В этом случае деактивируй тариф вместо удаления.
+    """
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Тариф не найден")
+    await session.delete(plan)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Тариф уже выбран участником — деактивируй вместо удаления",
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/users", response_model=list[AdminUserOut])
 async def list_users(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -180,6 +249,8 @@ async def create_user(
     """
     if await session.get(Intake, body.intake_id) is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Набор не найден")
+    if body.plan_id is not None and await session.get(Plan, body.plan_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Тариф не найден")
     one_time_password = generate_one_time_password()
     user = User(
         username=body.username,
@@ -187,6 +258,7 @@ async def create_user(
         email=body.email,
         role=body.role,
         intake_id=body.intake_id,
+        plan_id=body.plan_id,
         password_hash=hash_password(one_time_password),
         must_change_password=True,
     )

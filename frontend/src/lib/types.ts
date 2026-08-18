@@ -422,6 +422,17 @@ export interface FeedbackListOut {
   unresolved_count: number
 }
 
+// --- Тарифы бота-воронки приёма (ARG-92) ---
+export interface PlanOut {
+  id: number
+  name: string
+  price: number
+  description: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
 // --- Поддержка: частые вопросы (FAQ) ---
 export interface FaqItemOut {
   id: number

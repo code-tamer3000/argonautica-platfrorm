@@ -11,6 +11,11 @@
 #     снаружи идёт ЧЕРЕЗ прод-nginx (сеть `gateway`, см. docker-compose.prod.yml и
 #     docs/DEPLOY.md → Staging). TLS терминирует прод-nginx под свой сертификат;
 #   - НЕТ сервиса bot (прод-бот на long-polling с тем же токеном сломался бы от 2-го поллера);
+#   - ЕСТЬ сервис intake-bot (scripts/intake_bot.py, ARG-92) — бот-воронка приёма/оплаты
+#     на СВОЁМ Telegram-токене (TELEGRAM_INTAKE_BOT_TOKEN), свой getUpdates-поллер, поэтому
+#     конфликта с прод-ботом нет и запрет выше на него не распространяется (см. ADR-029,
+#     docs/TELEGRAM_BOT.md). Пусто в TELEGRAM_INTAKE_BOT_TOKEN — контейнер просто падает
+#     при старте (SystemExit), это ожидаемо для окружений без выданного тестового токена;
 #   - свой (упрощённый, HTTP-only) nginx-шаблон (docker/nginx-staging).
 #
 # Первый запуск / bootstrap — см. шапку docker/deploy-staging.sh.
@@ -86,6 +91,16 @@ services:
     command: ["python", "-m", "app.worker.transcode"]
     healthcheck:
       disable: true   # не HTTP-сервер — healthcheck из Dockerfile тут неприменим
+
+  # Бот-воронка приёма и оплаты (ARG-92, backend/scripts/intake_bot.py). Свой Telegram-
+  # токен (TELEGRAM_INTAKE_BOT_TOKEN) → свой getUpdates-поллер → не конфликтует с
+  # прод-ботом (см. комментарий про "НЕТ сервиса bot" выше и ADR-029). Не участвует в
+  # blue-green — стенду он и не нужен.
+  intake-bot:
+    <<: *backend
+    command: ["python", "-m", "scripts.intake_bot"]
+    healthcheck:
+      disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
 
   frontend:
     build:
