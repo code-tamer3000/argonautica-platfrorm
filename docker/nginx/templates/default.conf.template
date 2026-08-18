@@ -62,7 +62,7 @@ ssl_protocols TLSv1.2 TLSv1.3;
 server {
     listen 80;
     listen [::]:80;
-    server_name ${DOMAIN} ${MEDIA_DOMAIN} ${STAGING_DOMAIN};
+    server_name ${DOMAIN} ${MEDIA_DOMAIN} ${STAGING_DOMAIN} ${METRICS_DOMAIN};
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
@@ -261,6 +261,49 @@ server {
         # уезжал во временный файл (`a client request body is buffered to a
         # temporary file` в error.log на каждой заливке).
         proxy_request_buffering off;
+    }
+}
+
+# --- Метрики: metrics.<домен> → локальная Grafana в том же compose-проекте ---
+# Grafana (docker/docker-compose.observability.yml) не публикует хостовый порт —
+# единственный вход снаружи через этот блок. Basic auth здесь, а не в Grafana,
+# потому что весь дашборд закрыт целиком (не отдельные ручки) и htpasswd проще
+# ротировать, чем встроенный пользователь Grafana. Пароль в htpasswd генерируется
+# на сервере, файл НЕ коммитится (см. docker/nginx/htpasswd/).
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    # HTTP/3 (QUIC). reuseport — только в catch-all выше (одна пара адрес:порт).
+    listen 443 quic;
+    listen [::]:443 quic;
+    server_name ${METRICS_DOMAIN};
+
+    ssl_certificate     /etc/nginx/certs/${METRICS_DOMAIN}.crt;
+    ssl_certificate_key /etc/nginx/certs/${METRICS_DOMAIN}.key;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+
+    auth_basic "metrics";
+    auth_basic_user_file /etc/nginx/htpasswd/metrics.htpasswd;
+
+    # Ленивый резолв (как в блоке стенда): если grafana временно не поднята, это не
+    # должно мешать (пере)запуску прод-nginx для остальных доменов.
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $grafana_upstream http://grafana:3000;
+        proxy_pass $grafana_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 

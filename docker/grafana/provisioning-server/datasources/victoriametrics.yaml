@@ -1,0 +1,14 @@
+# Datasource для СЕРВЕРНОЙ Grafana (docker-compose.observability.yml, сервис grafana),
+# в отличие от docker/grafana/provisioning/ (локальная Grafana оператора через SSH-туннель,
+# см. docs/DEPLOY.md «Наблюдаемость»). Внутри одного docker-compose-проекта VictoriaMetrics
+# доступна по имени сервиса, не через localhost/туннель.
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: false
