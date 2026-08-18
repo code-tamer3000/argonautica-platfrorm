@@ -163,10 +163,13 @@ Redis-агрегатов (`metrics:*`), что читает админский �
 протокол scrape/PromQL).
 
 **С 2026-08-18** (после апгрейда сервера до 4 ГБ RAM) **Grafana ставится и на сервер**,
-за прод-nginx на поддомене `${METRICS_DOMAIN}` (`metrics.argonautica-systems.ru`) с
-basic auth. До этого (ARG-82) Grafana сознательно держали только локально — на 2 ГБ без
-свопа (~250 МБ свободно) Prometheus/Grafana не влезали; это ограничение снято. Локальный
-путь через SSH-туннель (ниже) остаётся рабочим как запасной, не обязателен.
+за прод-nginx на поддомене `${METRICS_DOMAIN}` (`metrics.argonautica-systems.ru`).
+Авторизация — только встроенный логин Grafana (`GF_AUTH_ANONYMOUS_ENABLED=false`,
+`GF_SECURITY_ADMIN_PASSWORD` в `.env`), без basic auth перед ней: один админ, второй
+слой добавлял бы только лишний логин без реального выигрыша в защите. До этого (ARG-82)
+Grafana сознательно держали только локально — на 2 ГБ без свопа (~250 МБ свободно)
+Prometheus/Grafana не влезали; это ограничение снято. Локальный путь через SSH-туннель
+(ниже) остаётся рабочим как запасной, не обязателен.
 
 **Фрагмент — отдельные файлы, `docker-compose.prod.yml` не редактируется по составу
 сервисов** (только окружение/volume у `nginx`, см. ниже): `docker/docker-compose.observability.yml`
@@ -186,17 +189,6 @@ docker compose -p docker -f docker/docker-compose.prod.yml -f docker/docker-comp
 по имени. `victoriametrics` публикует порт только на `127.0.0.1:8428` (для SSH-туннеля
 ниже) — с публичного адреса недоступен; `grafana` вообще не публикует host-порт, вход
 только через nginx.
-
-**Basic auth перед Grafana** — `docker/nginx/htpasswd/metrics.htpasswd`, генерируется
-на сервере и НЕ коммитится (`.gitignore`):
-
-```bash
-mkdir -p /opt/platform/docker/nginx/htpasswd
-docker run --rm httpd:2.4-alpine htpasswd -Bbn <логин> '<пароль>' \
-  > /opt/platform/docker/nginx/htpasswd/metrics.htpasswd
-docker compose -p docker -f docker/docker-compose.prod.yml --env-file .env \
-  up -d --force-recreate --no-deps nginx
-```
 
 **TLS для `${METRICS_DOMAIN}`** — тот же webroot-путь через `:80` прода, что у стенда;
 скрипт продления `docker/nginx/renew-metrics-cert.sh` (аналог `renew-staging-cert.sh`),
