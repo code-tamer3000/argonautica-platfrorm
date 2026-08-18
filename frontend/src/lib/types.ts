@@ -326,6 +326,8 @@ export interface UserDynamicsOut {
   active_today: boolean
   journal_today: boolean
   recent_days: RecentDay[]
+  /** Набор участника — по нему админский обзор группирует карточки. */
+  intake_id: number | null
   // Экспедиция пройдена: строка заморожена на дне выпуска и помечена бейджем,
   // в сводных счётчиках такой участник не учитывается.
   graduated_at: string | null

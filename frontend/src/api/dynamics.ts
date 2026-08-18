@@ -22,10 +22,22 @@ export function usePardon() {
   })
 }
 
-export function useAdminDynamics() {
+/**
+ * Обзор Динамики для админа. `intakeId` режет выдачу (и сводку) по набору на
+ * сервере; `undefined` — все наборы сразу. `enabled: false` — пока неизвестно,
+ * какой набор активен (список наборов ещё грузится): без этого ушёл бы лишний
+ * запрос за всеми наборами.
+ */
+export function useAdminDynamics(intakeId?: number, enabled = true) {
   return useQuery({
-    queryKey: adminDynamicsKey,
-    queryFn: () => http.get<AdminDynamicsOut>('/api/admin/dynamics'),
+    enabled,
+    queryKey: [...adminDynamicsKey, intakeId ?? 'all'] as const,
+    queryFn: () =>
+      http.get<AdminDynamicsOut>(
+        intakeId === undefined
+          ? '/api/admin/dynamics'
+          : `/api/admin/dynamics?intake_id=${intakeId}`,
+      ),
     refetchInterval: 60_000,
   })
 }
@@ -39,8 +51,10 @@ export function useAdminCreditDay() {
         date: vars.date,
         credited: vars.credited,
       }),
-    onSuccess: (data) => {
-      qc.setQueryData(adminDynamicsKey, data)
+    onSuccess: () => {
+      // Ответ ручки зачёта — всегда полная выдача без фильтра, а на экране может
+      // быть выбран набор: класть его в кэш отфильтрованного ключа нельзя.
+      qc.invalidateQueries({ queryKey: adminDynamicsKey })
     },
   })
 }

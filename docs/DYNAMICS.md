@@ -53,7 +53,10 @@ Homework entries are ordinary **`messages` in the participant's personal diary r
 - `POST /api/dynamics/pardon` — pardon a missed day (limit 3).
 - `GET /api/dynamics/structure` — the задание active today (sections for the widget/composer).
 - `GET /api/rooms/{id}/journal-days` — `{date: [section keys]}` map for a month (keys ordered by the задание active that day).
-- Admin dynamics: `GET /api/admin/dynamics` (summary across all participants), `POST /api/admin/dynamics/credit` (grant/revoke a day).
+- Admin dynamics: `GET /api/admin/dynamics` (summary + per-participant rows), `POST /api/admin/dynamics/credit` (grant/revoke a day).
+  - `intake_id` (repeatable query param) narrows the overview to one or more наборы; without it — all наборы at once. The **summary counters are computed over the same filtered set**, so they always describe exactly the rows on screen. Each row carries `intake_id` for grouping.
+  - The admin UI defaults to the **active набор** (the one with the greatest `starts_on`, same criterion as «Пользователи»); «Все наборы» shows everyone grouped by набор, plus a «Без набора» section for users with `intake_id = NULL`.
+  - `POST /api/admin/dynamics/credit` always answers with the **unfiltered** overview; the client therefore invalidates its cache instead of writing that body into a filtered cache entry.
 - Admin structure: `GET/POST /api/admin/journal/programs`, `PATCH/DELETE /api/admin/journal/programs/{id}` (create/edit/delete задания; can't delete the earliest; `starts_on` unique).
 
 ## Related
