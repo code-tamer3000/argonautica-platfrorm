@@ -1,8 +1,16 @@
+import { useState } from 'react'
+import { useAdminIntakes } from '../../api/admin'
 import { useAdminCreditDay, useAdminDynamics } from '../../api/dynamics'
 import { Avatar } from '../../components/Avatar'
 import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import type { DayStatus, DynamicsSummary, RecentDay, UserDynamicsOut } from '../../lib/types'
+import type {
+  DayStatus,
+  DynamicsSummary,
+  IntakeOut,
+  RecentDay,
+  UserDynamicsOut,
+} from '../../lib/types'
 import styles from './admin.module.css'
 import dynStyles from './dynamics.module.css'
 
@@ -33,6 +41,15 @@ const STATUS_TEXT: Record<string, string> = {
 // Дни, которые админ может переключать вручную: пропущенный — зачесть; помилованный
 // (потрачен кит) — зачесть с возвратом кита; зачтённый — снять зачёт. Остальные не трогаем.
 const TOGGLABLE: ReadonlySet<DayStatus> = new Set<DayStatus>(['missed', 'pardoned', 'credited'])
+
+/** `YYYY-MM-DD` → «2 июня 2026». Дата набора — календарная, без часовых поясов. */
+function intakeDate(startsOn: string): string {
+  return new Date(`${startsOn}T00:00:00`).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
 
 const MONTHS_SHORT = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
 
@@ -200,7 +217,18 @@ function UserCard({
 // ─── Основной компонент ───────────────────────────────────────────────────────
 
 export function AdminDynamics() {
-  const { data, isLoading } = useAdminDynamics()
+  const { data: intakes = [], isLoading: intakesLoading } = useAdminIntakes()
+  // Наборы приходят свежими сверху: активный — тот, что стартует последним.
+  const activeIntake: IntakeOut | undefined = intakes[0]
+
+  // null — фильтр не трогали: показываем активный набор. 'all' — все наборы.
+  const [intakeFilter, setIntakeFilter] = useState<number | 'all' | null>(null)
+  const selectedIntake: number | 'all' = intakeFilter ?? activeIntake?.id ?? 'all'
+
+  const { data, isLoading } = useAdminDynamics(
+    selectedIntake === 'all' ? undefined : selectedIntake,
+    !intakesLoading,
+  )
   const creditDay = useAdminCreditDay()
 
   const handleToggleDay = (userId: number, day: RecentDay) => {
@@ -209,7 +237,8 @@ export function AdminDynamics() {
     creditDay.mutate({ userId, date: day.date, credited: day.status !== 'credited' })
   }
 
-  if (isLoading) return <div className="center grow"><Spinner /></div>
+  // Ждём наборы: до них неизвестно, какой набор активен и чем фильтровать.
+  if (intakesLoading || isLoading) return <div className="center grow"><Spinner /></div>
 
   const users = data?.users ?? []
   const summary = data?.summary
@@ -222,6 +251,19 @@ export function AdminDynamics() {
     if (b.overdue_count !== a.overdue_count) return b.overdue_count - a.overdue_count
     return b.streak - a.streak
   })
+
+  const renderCard = (u: UserDynamicsOut) => (
+    <UserCard
+      key={u.user_id}
+      u={u}
+      busy={creditDay.isPending}
+      onToggleDay={handleToggleDay}
+    />
+  )
+
+  // В режиме «все наборы» карточки группируем по набору (свежие сверху) — иначе
+  // это снова плоский список, из которого не видно, кто откуда.
+  const orphans = sorted.filter((u) => u.intake_id === null)
 
   return (
     <div className={styles.page}>
@@ -237,22 +279,63 @@ export function AdminDynamics() {
         Кликните по пропущенному дню, чтобы зачесть его вручную (по зачтённому — снять). Зачёт помилованного дня вернёт участнику потраченного кита.
       </p>
 
+      {intakes.length > 0 && (
+        <div className={styles.formRow} style={{ maxWidth: 420 }}>
+          <label htmlFor="dyn_intake_filter">Набор</label>
+          <select
+            id="dyn_intake_filter"
+            className={styles.input}
+            value={String(selectedIntake)}
+            onChange={(e) =>
+              setIntakeFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
+            }
+          >
+            {intakes.map((intake) => (
+              <option key={intake.id} value={intake.id}>
+                {intakeDate(intake.starts_on)}
+                {intake.id === activeIntake?.id ? ' — активный' : ''} ({intake.user_count})
+              </option>
+            ))}
+            <option value="all">Все наборы</option>
+          </select>
+        </div>
+      )}
+
       {summary && <Dashboard s={summary} total={summary.total_participants} />}
 
       {users.length === 0 && (
-        <p style={{ color: 'var(--text-secondary)' }}>Участников пока нет.</p>
+        <p style={{ color: 'var(--text-secondary)' }}>
+          {selectedIntake === 'all'
+            ? 'Участников пока нет.'
+            : 'В этом наборе пока нет участников.'}
+        </p>
       )}
 
-      <div className={dynStyles.grid}>
-        {sorted.map((u) => (
-          <UserCard
-            key={u.user_id}
-            u={u}
-            busy={creditDay.isPending}
-            onToggleDay={handleToggleDay}
-          />
-        ))}
-      </div>
+      {selectedIntake !== 'all' ? (
+        <div className={dynStyles.grid}>{sorted.map(renderCard)}</div>
+      ) : (
+        <>
+          {intakes.map((intake) => {
+            const groupUsers = sorted.filter((u) => u.intake_id === intake.id)
+            if (groupUsers.length === 0) return null
+            return (
+              <section key={intake.id}>
+                <h2 className={styles.sectionTitle}>
+                  Набор от {intakeDate(intake.starts_on)}
+                  {intake.id === activeIntake?.id ? ' — активный' : ''}
+                </h2>
+                <div className={dynStyles.grid}>{groupUsers.map(renderCard)}</div>
+              </section>
+            )
+          })}
+          {orphans.length > 0 && (
+            <section>
+              <h2 className={styles.sectionTitle}>Без набора</h2>
+              <div className={dynStyles.grid}>{orphans.map(renderCard)}</div>
+            </section>
+          )}
+        </>
+      )}
     </div>
   )
 }

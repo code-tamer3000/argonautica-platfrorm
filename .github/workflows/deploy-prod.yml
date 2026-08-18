@@ -30,6 +30,7 @@ jobs:
             --exclude='frontend/node_modules/' \
             --exclude='backend/.venv/' \
             --exclude='docker/nginx/certs/' \
+            --exclude='docker/nginx/htpasswd/' \
             --exclude='docker/nginx/active_backend.conf' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/platform/

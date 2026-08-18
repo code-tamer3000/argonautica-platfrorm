@@ -2,7 +2,7 @@
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete, exists, func, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,9 +22,11 @@ from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
 from app.models.feedback import Feedback
+from app.models.intake import Intake
 from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.plan import Plan
 from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
@@ -35,6 +37,7 @@ from app.schemas.feedback import (
     FeedbackOut,
     FeedbackResolveRequest,
 )
+from app.schemas.intake import IntakeCreateRequest, IntakeOut
 from app.schemas.journal import (
     AdminCreditRequest,
     AdminDynamicsOut,
@@ -42,6 +45,7 @@ from app.schemas.journal import (
     JournalProgramOut,
     JournalProgramUpdate,
 )
+from app.schemas.plan import PlanCreateRequest, PlanOut, PlanUpdateRequest
 from app.schemas.push import (
     AdminBroadcastRequest,
     NotifPrefsOverviewOut,
@@ -66,7 +70,13 @@ from app.services.survey_form import question_form
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
-_PATCHABLE_FIELDS = {"can_create_groups", "can_access_cabin", "is_observer", "role"}
+_PATCHABLE_FIELDS = {
+    "can_create_groups",
+    "can_access_cabin",
+    "is_observer",
+    "role",
+    "intake_id",
+}
 
 # Весь роутер под require_admin — каждый запрос проверяет роль на сервере (п.1).
 router = APIRouter(
@@ -76,13 +86,152 @@ router = APIRouter(
 )
 
 
+@router.get("/intakes", response_model=list[IntakeOut])
+async def list_intakes(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[IntakeOut]:
+    """Наборы, свежие сверху. Первый в списке — активный (максимальная starts_on).
+
+    `user_count` считаем здесь, чтобы админка показывала и пустые наборы (только что
+    созданный набор ещё никого не содержит, но выбрать его при заведении юзера надо).
+    """
+    counts = (
+        select(User.intake_id.label("intake_id"), func.count().label("cnt"))
+        .where(User.intake_id.is_not(None))
+        .group_by(User.intake_id)
+        .subquery()
+    )
+    rows = await session.execute(
+        select(Intake, func.coalesce(counts.c.cnt, 0))
+        .outerjoin(counts, counts.c.intake_id == Intake.id)
+        .order_by(Intake.starts_on.desc())
+    )
+    return [
+        IntakeOut(
+            id=intake.id,
+            starts_on=intake.starts_on,
+            created_at=intake.created_at,
+            user_count=user_count,
+        )
+        for intake, user_count in rows.all()
+    ]
+
+
+@router.post("/intakes", response_model=IntakeOut, status_code=status.HTTP_201_CREATED)
+async def create_intake(
+    body: IntakeCreateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeOut:
+    """Создать набор. Дата старта уникальна — два набора в один день бессмысленны."""
+    intake = Intake(starts_on=body.starts_on)
+    session.add(intake)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Набор с такой датой старта уже существует",
+        ) from exc
+    await session.refresh(intake)  # created_at приходит из server_default
+    return IntakeOut(
+        id=intake.id,
+        starts_on=intake.starts_on,
+        created_at=intake.created_at,
+        user_count=0,
+    )
+
+
+@router.get("/plans", response_model=list[PlanOut])
+async def list_plans(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[Plan]:
+    """Все тарифы (включая неактивные — админ должен видеть их, чтобы включить обратно)."""
+    stmt = select(Plan).order_by(Plan.price)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+@router.post("/plans", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
+async def create_plan(
+    body: PlanCreateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Plan:
+    """Создать тариф. Бот-воронка (ARG-92) читает активные тарифы напрямую из БД."""
+    plan = Plan(
+        name=body.name,
+        price=body.price,
+        description=body.description,
+        is_active=body.is_active,
+    )
+    session.add(plan)
+    await session.flush()
+    await session.refresh(plan)
+    return plan
+
+
+@router.patch("/plans/{plan_id}", response_model=PlanOut)
+async def update_plan(
+    plan_id: int,
+    body: PlanUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Plan:
+    """Частичное обновление тарифа — цена/название меняются без редеплоя бота."""
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Тариф не найден")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(plan, field, value)
+    await session.flush()
+    await session.refresh(plan)
+    return plan
+
+
+@router.delete("/plans/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_plan(
+    plan_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Удалить тариф. 409, если на него ещё ссылаются участники/заявки.
+
+    В этом случае деактивируй тариф вместо удаления.
+    """
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Тариф не найден")
+    await session.delete(plan)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Тариф уже выбран участником — деактивируй вместо удаления",
+        ) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/users", response_model=list[AdminUserOut])
 async def list_users(
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[User]:
-    """Список пользователей с admin-полями (включая can_create_groups)."""
-    result = await session.execute(select(User).order_by(User.display_name))
-    return list(result.scalars().all())
+    intake_id: Annotated[int | None, Query()] = None,
+) -> list[AdminUserOut]:
+    """Список пользователей с admin-полями. `intake_id` фильтрует по набору.
+
+    Дату старта набора отдаём рядом с юзером, чтобы админка группировала список,
+    не сопоставляя его со вторым запросом на клиенте.
+    """
+    stmt = (
+        select(User, Intake.starts_on)
+        .outerjoin(Intake, Intake.id == User.intake_id)
+        .order_by(User.display_name)
+    )
+    if intake_id is not None:
+        stmt = stmt.where(User.intake_id == intake_id)
+    rows = await session.execute(stmt)
+    return [
+        AdminUserOut.model_validate(user).model_copy(
+            update={"intake_starts_on": starts_on}
+        )
+        for user, starts_on in rows.all()
+    ]
 
 
 @router.post(
@@ -94,13 +243,22 @@ async def create_user(
     body: AdminCreateUserRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> AdminCreateUserResponse:
-    """Создать юзера. Сервер генерит одноразовый пароль и отдаёт его ОДИН раз."""
+    """Создать юзера. Сервер генерит одноразовый пароль и отдаёт его ОДИН раз.
+
+    Набор обязателен: от его `starts_on` считается окно Динамики участника.
+    """
+    if await session.get(Intake, body.intake_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Набор не найден")
+    if body.plan_id is not None and await session.get(Plan, body.plan_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Тариф не найден")
     one_time_password = generate_one_time_password()
     user = User(
         username=body.username,
         display_name=body.display_name,
         email=body.email,
         role=body.role,
+        intake_id=body.intake_id,
+        plan_id=body.plan_id,
         password_hash=hash_password(one_time_password),
         must_change_password=True,
     )
@@ -145,6 +303,16 @@ async def update_user(
     grant_cabin = changes.get("can_access_cabin") is True and not user.can_access_cabin
     # Наблюдатель и админ взаимоисключаемы: у админа полный доступ, наблюдатель —
     # пассивный. Итоговое (с учётом переданных полей) состояние не должно быть «и то, и то».
+    # Перевод в другой набор двигает окно Динамики — набор обязан существовать.
+    # Отвязать участника от набора через PATCH нельзя: набор обязателен (см. create_user).
+    if "intake_id" in changes:
+        new_intake_id = changes["intake_id"]
+        if new_intake_id is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Участника нельзя оставить без набора"
+            )
+        if await session.get(Intake, new_intake_id) is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Набор не найден")
     final_role = changes.get("role", user.role)
     final_observer = changes.get("is_observer", user.is_observer)
     if final_role == "admin" and final_observer:
@@ -329,9 +497,14 @@ async def delete_user(
 @router.get("/dynamics", response_model=AdminDynamicsOut)
 async def admin_dynamics(
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[list[int] | None, Query()] = None,
 ) -> AdminDynamicsOut:
-    """Сводка + динамика ДЗ всех участников для администратора."""
-    return await get_all_dynamics(session)
+    """Сводка + динамика ДЗ участников. `intake_id` (можно несколько) режет по набору(ам).
+
+    Без параметра — все наборы сразу. Сводные счётчики считаются по той же выборке,
+    что и список: фильтр по набору меняет и её.
+    """
+    return await get_all_dynamics(session, intake_id)
 
 
 @router.post("/dynamics/credit", response_model=AdminDynamicsOut)

@@ -31,6 +31,7 @@ dist/
 # TLS-серты (self-signed локально / боевые на сервере) — никогда в git.
 docker/nginx/certs/
 docker/nginx-staging/certs/
+docker/nginx/htpasswd/
 
 # dev.sh — PID-файлы и логи локального окружения
 .dev/
@@ -45,3 +46,4 @@ docker/nginx-staging/certs/
 # Массовое заведение аккаунтов — выгрузка логинов/паролей (секреты) и список ников.
 credentials_*.txt
 users.md
+/OldBot/*

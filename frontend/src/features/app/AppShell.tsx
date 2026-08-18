@@ -25,6 +25,7 @@ import { AdminTasks } from '../admin/AdminTasks'
 import { AdminCalendar } from '../admin/AdminCalendar'
 import { AdminStickers } from '../admin/AdminStickers'
 import { AdminUsers } from '../admin/AdminUsers'
+import { AdminPlans } from '../admin/AdminPlans'
 import { AdminFeedback } from '../admin/AdminFeedback'
 import { AdminSurvey } from '../admin/AdminSurvey'
 import { AdminFaq } from '../admin/AdminFaq'
@@ -278,6 +279,7 @@ export function AppShell() {
               <Route path="calendar" element={<AdminCalendar />} />
               <Route path="stickers" element={<AdminStickers />} />
               <Route path="users" element={<AdminUsers />} />
+              <Route path="plans" element={<AdminPlans />} />
               <Route path="feedback" element={<AdminFeedback />} />
               <Route path="survey" element={<AdminSurvey />} />
               <Route path="faq" element={<AdminFaq />} />

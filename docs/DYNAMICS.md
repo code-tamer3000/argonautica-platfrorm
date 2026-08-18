@@ -20,8 +20,14 @@ is **closed** when every section of the задание active on that day is sub
   structure that was in effect **that** day — editing/adding a задание effective from a future
   date **never re-scores past days**.
 - **Progress is continuous** across задания: streak / overdue run over the whole timeline;
-  only the section set changes at a boundary. `program_start` = earliest задание `starts_on`
-  (falls back to `settings.journal_program_start`).
+  only the section set changes at a boundary.
+- `program_start` — the start of a participant's own 28-day window — comes from **their набор**
+  (`users.intake_id` → `intakes.starts_on`), not from any global constant: participants of
+  parallel наборы see different progress/overdue on the same calendar day. Задания only decide
+  *which sections* a day requires; they no longer decide *when* anyone's window starts. `POST
+  /api/admin/users` requires an intake, so every account created through the admin panel has one;
+  the column stays nullable for historical rows, and such a user falls back to the earliest
+  задание `starts_on`, and to today if there is no задание at all.
 - A **section** has: `key` (stable slug `[a-z0-9_]+`, used in the message marker), `emoji`,
   `label`, `heading`, `placeholder`, `input_type` (`text` = multiline body under a fixed
   heading; `title` = single-line where the entered text becomes the heading, e.g. `film`).
@@ -47,7 +53,10 @@ Homework entries are ordinary **`messages` in the participant's personal diary r
 - `POST /api/dynamics/pardon` — pardon a missed day (limit 3).
 - `GET /api/dynamics/structure` — the задание active today (sections for the widget/composer).
 - `GET /api/rooms/{id}/journal-days` — `{date: [section keys]}` map for a month (keys ordered by the задание active that day).
-- Admin dynamics: `GET /api/admin/dynamics` (summary across all participants), `POST /api/admin/dynamics/credit` (grant/revoke a day).
+- Admin dynamics: `GET /api/admin/dynamics` (summary + per-participant rows), `POST /api/admin/dynamics/credit` (grant/revoke a day).
+  - `intake_id` (repeatable query param) narrows the overview to one or more наборы; without it — all наборы at once. The **summary counters are computed over the same filtered set**, so they always describe exactly the rows on screen. Each row carries `intake_id` for grouping.
+  - The admin UI defaults to the **active набор** (the one with the greatest `starts_on`, same criterion as «Пользователи»); «Все наборы» shows everyone grouped by набор, plus a «Без набора» section for users with `intake_id = NULL`.
+  - `POST /api/admin/dynamics/credit` always answers with the **unfiltered** overview; the client therefore invalidates its cache instead of writing that body into a filtered cache entry.
 - Admin structure: `GET/POST /api/admin/journal/programs`, `PATCH/DELETE /api/admin/journal/programs/{id}` (create/edit/delete задания; can't delete the earliest; `starts_on` unique).
 
 ## Related

@@ -36,7 +36,79 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
 | graduated_at | TIMESTAMPTZ | NULL | экспедиция пройдена: set on survey submit, never cleared. Dynamics hidden, Tasks collapse to submitted, Рубка read-only. See [SURVEY.md](SURVEY.md) |
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
+| intake_id | BIGINT | FK intakes, NULL | cohort the user belongs to; drives the Dynamics 28-day window start. Mandatory in `POST /api/admin/users`; column stays nullable for historical rows (expand/contract) |
+| plan_id | BIGINT | FK plans, NULL | tariff the participant signed up under (intake bot, [INTAKE_BOT.md](INTAKE_BOT.md)). Optional — manual admin provisioning doesn't require a plan |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
+
+## intakes
+Cohort of participants sharing a Dynamics 28-day window start date. Not the same as a
+`stream` (Tasks tournament mechanic, `tasks.type='stream'`) or a `group` (`rooms.type='group'`) —
+those names were already taken. One historical intake (`starts_on = 2026-06-02`) is seeded by
+migration and every existing user is backfilled onto it.
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| starts_on | DATE | NOT NULL, UNIQUE | Dynamics window start for every user in this intake |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+There is no explicit open/closed status: the **active** intake is simply the one with the
+largest `starts_on`. Admin API (all under `require_admin`):
+
+- `GET /api/admin/intakes` → intakes newest-first (`starts_on` DESC), each with `user_count`.
+  The first row is the active intake.
+- `POST /api/admin/intakes` `{starts_on}` → 201 with the created intake; 409 when a intake
+  with that date already exists (`starts_on` is UNIQUE).
+- `GET /api/admin/users?intake_id=<id>` filters users by intake; every `AdminUserOut` carries
+  `intake_id` and the denormalized `intake_starts_on` so the admin list groups without a join
+  on the client.
+- `POST /api/admin/users` requires `intake_id` (400 if it does not exist); `PATCH
+  /api/admin/users/{id}` accepts `intake_id` to move a participant between intakes (explicit
+  `null` is rejected — a participant may not be left without an intake).
+
+Editing `starts_on` and deleting an intake have no API on purpose — see ARG-89.
+
+## plans
+Tariff of the expedition: name, price, description, active flag. Read by the intake bot
+directly from the DB (no HTTP round-trip — same pattern as `scripts/telegram_bot.py`
+reading `users` directly), so price/name edits apply without a bot redeploy. See
+[INTAKE_BOT.md](INTAKE_BOT.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| name | TEXT | NOT NULL | |
+| price | INTEGER | NOT NULL | rubles, whole number |
+| description | TEXT | NOT NULL, default `''` | shown behind the bot's «Подробнее» button |
+| is_active | BOOLEAN | NOT NULL, default true | false hides it from the bot without deleting history |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
+
+Full CRUD under `require_admin`: `GET/POST /api/admin/plans`, `PATCH/DELETE
+/api/admin/plans/{id}`. Deleting a plan still referenced by `users.plan_id` or
+`intake_applications.plan_id` 409s — deactivate instead.
+
+## intake_applications
+Funnel state for the intake/payment bot (ARG-92): one row per Telegram chat (`tg_id`
+unique). Postgres, not sqlite/Redis — the funnel must survive a container restart
+(Redis is only for the ephemeral "awaiting a support question" flag, per ADR-013). No
+admin API — internal to `scripts/intake_bot.py`. See [INTAKE_BOT.md](INTAKE_BOT.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| tg_id | BIGINT | NOT NULL, UNIQUE | Telegram user id (== chat id in a private chat) |
+| tg_username | TEXT | NULL | refreshed on every `/start` |
+| tg_first_name | TEXT | NULL | |
+| tg_last_name | TEXT | NULL | |
+| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_receipt` → `payment_review` → `confirmed` |
+| about | TEXT | NULL | the applicant's one-message self-description |
+| plan_id | BIGINT | FK plans, NULL | set once the applicant picks a tariff |
+| receipt_file_id | TEXT | NULL | Telegram `file_id` of the payment receipt (photo or PDF) |
+| receipt_kind | TEXT | NULL | `'photo'` \| `'document'` |
+| user_id | BIGINT | FK users, NULL | set once the platform account is created (final step) |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
 
@@ -513,6 +585,7 @@ Short-lived realtime state lives only in Redis. This is the single list of Redis
 ## Relations map
 
 ```
+users --> intakes                      (intake_id nullable; cohort → Dynamics window start)
 users --< room_members >-- rooms
 users --< messages (sender) >-- rooms
 messages --+ (thread_root_id -> messages.id, self-FK to root)

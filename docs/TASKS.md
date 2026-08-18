@@ -164,3 +164,8 @@ WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submissi
 ## Frontend note
 
 Task create/edit (admin) and participant submission share `components/MediaComposer.tsx` (markdown textarea + upload-with-progress + pending chips). See [FRONTEND.md](FRONTEND.md).
+
+Recipient pickers in `AdminTasks.tsx` (individual / pair / stream) read `GET /api/admin/users`,
+not the public `GET /api/users`: the list is scoped to the **active intake** (latest `starts_on`)
+by default, with a «Набор получателей» selector to switch to another intake or «Все наборы».
+Server-side task creation is unchanged — the filter only narrows what the admin sees.

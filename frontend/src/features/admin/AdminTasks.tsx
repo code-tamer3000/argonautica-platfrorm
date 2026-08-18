@@ -10,7 +10,7 @@ import {
   type TaskWithStatusOut,
 } from '../../api/tasks'
 import { useKbItems } from '../../api/kb'
-import { useUsers, useUsersMap } from '../../api/users'
+import { useAdminIntakes, useAdminUsers, useAdminUsersMap } from '../../api/admin'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
@@ -23,6 +23,15 @@ const TYPE_LABEL: Record<TaskType, string> = {
   individual: 'Индивидуальная',
   pair: 'Парная',
   stream: 'Поток',
+}
+
+/** `YYYY-MM-DD` → «2 июня 2026». Дата набора календарная, без часовых поясов. */
+function intakeDate(startsOn: string): string {
+  return new Date(`${startsOn}T00:00:00`).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -84,13 +93,60 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   )
 
   const { data: kbItems = [] } = useKbItems()
-  const { data: users = [] } = useUsers()
+
+  // Получателей берём из admin-ручки: она умеет фильтровать по набору. Публичный
+  // /api/users здесь не годится — он без фильтров и нужен другим фичам как есть.
+  const { data: intakes = [] } = useAdminIntakes()
+  // Наборы приходят свежими сверху: активный — тот, что стартует последним.
+  const activeIntake = intakes[0]
+  // null — фильтр не трогали: по умолчанию только активный набор. 'all' — все наборы.
+  const [intakeFilter, setIntakeFilter] = useState<number | 'all' | null>(null)
+  const selectedIntake: number | 'all' = intakeFilter ?? activeIntake?.id ?? 'all'
+  const { data: users = [] } = useAdminUsers(
+    selectedIntake === 'all' ? undefined : selectedIntake,
+  )
+  // Имена резолвим по всем наборам: уже выбранный человек не должен превратиться
+  // в «#12», если фильтр переключили на другой набор.
+  const allUsers = useAdminUsersMap()
   const participants = users.filter((u) => u.role !== 'admin')
 
-  // Пары: в них могут участвовать и админы, поэтому берём всех. Уже занятых в паре
-  // не предлагаем (один человек — максимум в одной паре задания).
+  // Пары: в них могут участвовать и админы, поэтому к отфильтрованному по набору
+  // списку добавляем админов — у них intake_id пустой, и фильтр выкинул бы их совсем.
+  // Уже занятых в паре не предлагаем (один человек — максимум в одной паре задания).
+  const pairCandidates = [
+    ...users,
+    ...[...allUsers.values()].filter((u) => u.role === 'admin' && !users.some((x) => x.id === u.id)),
+  ]
   const takenInPairs = new Set(pairs.flat())
-  const nameOf = (uid: number) => users.find((u) => u.id === uid)?.display_name ?? `#${uid}`
+  const nameOf = (uid: number) =>
+    allUsers.get(uid)?.display_name ?? users.find((u) => u.id === uid)?.display_name ?? `#${uid}`
+
+  // Выбранные вне текущего фильтра — их чекбоксов на экране нет, поэтому показываем
+  // счётчиком, чтобы «выбрал → переключил набор → потерял» не выглядело как пропажа.
+  const hiddenSelected = (ids: number[]) => ids.filter((id) => !users.some((u) => u.id === id))
+
+  const needsPeople = !editing && (type === 'individual' || type === 'pair' || type === 'stream')
+  const intakeFilterRow = needsPeople && intakes.length > 0 && (
+    <div className={styles.formRow}>
+      <label htmlFor="task_intake_filter">Набор получателей</label>
+      <select
+        id="task_intake_filter"
+        className={styles.input}
+        value={String(selectedIntake)}
+        onChange={(e) =>
+          setIntakeFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
+        }
+      >
+        {intakes.map((intake) => (
+          <option key={intake.id} value={intake.id}>
+            {intakeDate(intake.starts_on)}
+            {intake.id === activeIntake?.id ? ' — активный' : ''} ({intake.user_count})
+          </option>
+        ))}
+        <option value="all">Все наборы</option>
+      </select>
+    </div>
+  )
 
   function toggleStreamer(id: number) {
     setStreamers((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -218,6 +274,8 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
         </select>
       </label>
 
+      {intakeFilterRow}
+
       {!editing && type === 'individual' && (
         <div className={styles.formRow}>
           <label>Кому назначить</label>
@@ -232,8 +290,15 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
                 {u.display_name}
               </label>
             ))}
-            {participants.length === 0 && <p className={styles.mediaEmpty}>Нет участников</p>}
+            {participants.length === 0 && (
+              <p className={styles.mediaEmpty}>В этом наборе нет участников</p>
+            )}
           </div>
+          {hiddenSelected(assignees).length > 0 && (
+            <p className={styles.mediaEmpty}>
+              Ещё выбрано из других наборов: {hiddenSelected(assignees).map(nameOf).join(', ')}
+            </p>
+          )}
         </div>
       )}
 
@@ -254,6 +319,8 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
           </div>
           <p className={styles.mediaEmpty}>
             Выбрано: {streamers.length}. Сетку (пары → четвёрки → …) построит сервер.
+            {hiddenSelected(streamers).length > 0 &&
+              ` Из других наборов: ${hiddenSelected(streamers).map(nameOf).join(', ')}.`}
           </p>
         </div>
       )}
@@ -285,7 +352,7 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
               onChange={(e) => setDraftA(e.target.value ? Number(e.target.value) : '')}
             >
               <option value="">— участник —</option>
-              {users
+              {pairCandidates
                 .filter((u) => !takenInPairs.has(u.id) && u.id !== draftB)
                 .map((u) => (
                   <option key={u.id} value={u.id}>{u.display_name}</option>
@@ -297,7 +364,7 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
               onChange={(e) => setDraftB(e.target.value ? Number(e.target.value) : '')}
             >
               <option value="">— партнёр —</option>
-              {users
+              {pairCandidates
                 .filter((u) => !takenInPairs.has(u.id) && u.id !== draftA)
                 .map((u) => (
                   <option key={u.id} value={u.id}>{u.display_name}</option>
@@ -324,8 +391,10 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
 
 function ProgressPanel({ taskId }: { taskId: number }) {
   const { data: assignments = [] } = useAdminAssignments(taskId)
-  const { data: users = [] } = useUsers()
-  const nameOf = (uid: number) => users.find((u) => u.id === uid)?.display_name ?? `Участник #${uid}`
+  // Сводку по набору не фильтруем: задание уже создано с конкретными получателями,
+  // и имена нужны для всех, включая участников прошлых наборов.
+  const users = useAdminUsersMap()
+  const nameOf = (uid: number) => users.get(uid)?.display_name ?? `Участник #${uid}`
 
   if (assignments.length === 0) {
     return <p className={styles.mediaEmpty}>Нет назначений</p>
@@ -390,7 +459,7 @@ function TaskRow({
 // и резолвит имена; пустой набор подсвечиваем как явную ошибку выдачи.
 function AssigneeLine({ taskId }: { taskId: number }) {
   const { data: assignments = [], isLoading } = useAdminAssignments(taskId)
-  const users = useUsersMap()
+  const users = useAdminUsersMap()
 
   if (isLoading) return null
   if (assignments.length === 0) {

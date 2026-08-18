@@ -1,0 +1,14 @@
+# Datasource для ЛОКАЛЬНОЙ Grafana оператора (ARG-18). На сервере Grafana не живёт
+# (см. docs/DEPLOY.md «Наблюдаемость», ARG-82) — URL рассчитан на то, что VictoriaMetrics
+# доступна через `ssh -L 8428:127.0.0.1:8428 <сервер>` на этой же машине, где запущен
+# сам контейнер Grafana (`--network host`, см. инструкцию в docs/DEPLOY.md).
+apiVersion: 1
+
+datasources:
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://localhost:8428
+    isDefault: true
+    editable: false
