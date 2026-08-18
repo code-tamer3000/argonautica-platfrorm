@@ -1,0 +1,23 @@
+# Превью визитки (фичер-ветка, не main) — preview.argonautica-systems.ru.
+# Тот же паттерн, что docker/argonautica-site.compose.yml (отдельный compose-проект,
+# deploy.sh его не видит и не трогает), другой контент-путь и другое имя/алиас в
+# сети `gateway`, чтобы не конфликтовать с боевой визиткой.
+#
+# Управление (на сервере, из /opt/platform):
+#   docker compose -p argonautica-site-preview -f docker/argonautica-site-preview.compose.yml up -d
+services:
+  site:
+    image: nginx:alpine
+    container_name: argonautica-site-preview
+    volumes:
+      - ${PREVIEW_SITE_ROOT:-/root/argonautica-site-preview}:/usr/share/nginx/html:ro
+      - ./argonautica-site/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      gateway:
+        aliases:
+          - argonautica-site-preview
+    restart: unless-stopped
+
+networks:
+  gateway:
+    external: true
