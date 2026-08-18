@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { http } from '../lib/apiClient'
 import type { AdminUserOut, IntakeOut, UserOut } from '../lib/types'
 import { usersKey } from './users'
@@ -45,6 +46,19 @@ export function useAdminUsers(intakeId?: number) {
           : `/api/admin/users?intake_id=${intakeId}`,
       ),
   })
+}
+
+/**
+ * Все участники (без фильтра по набору) в виде `id → участник`. Нужен там, где надо
+ * показать имя уже назначенного человека, даже если его набор сейчас отфильтрован.
+ */
+export function useAdminUsersMap(): Map<number, AdminUserOut> {
+  const { data } = useAdminUsers()
+  return useMemo(() => {
+    const m = new Map<number, AdminUserOut>()
+    for (const u of data ?? []) m.set(u.id, u)
+    return m
+  }, [data])
 }
 
 /** Наборы, свежие сверху: первый в списке — активный (максимальная starts_on). */
