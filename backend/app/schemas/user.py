@@ -19,6 +19,9 @@ class AdminCreateUserRequest(BaseModel):
     email: str | None = None  # str, не EmailStr — не тащим email-validator
     role: Role = "participant"
     intake_id: int
+    # Тариф, по которому участник пришёл (бот-воронка ARG-92). Опционален: ручное
+    # заведение через админку по-прежнему не требует тарифа.
+    plan_id: int | None = None
 
 
 class AdminCreateUserResponse(BaseModel):

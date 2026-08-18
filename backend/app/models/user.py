@@ -76,6 +76,9 @@ class User(Base):
     intake_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("intakes.id")
     )
+    # Тариф, по которому участник пришёл (бот-воронка ARG-92). Nullable: ручное
+    # заведение через админку по-прежнему не требует тарифа.
+    plan_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("plans.id"))
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

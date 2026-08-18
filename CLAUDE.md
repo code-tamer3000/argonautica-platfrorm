@@ -71,6 +71,7 @@ Hard rules:
 | docs/SURVEY.md             | выпускная анкета: гейт платформы, вопросы, подарок-PDF     |
 | docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
+| docs/INTAKE_BOT.md         | intake/payment bot: anketa → tariff → receipt → approval, plans CRUD |
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
 | docs/ARCHITECTURE.md       | Mermaid diagrams: stack, per-domain ER, key flows, environments (human layer, NOT a contract) |
 | docs/DECISIONS.md          | ADR log: why each non-obvious decision was made, what breaks if changed (🔒 = frozen) |
