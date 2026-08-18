@@ -285,6 +285,17 @@ export interface AdminUserOut {
   is_active: boolean
   graduated_at: string | null
   created_at: string
+  intake_id: number | null
+  /** Дата старта набора (YYYY-MM-DD) — приходит рядом с юзером для группировки. */
+  intake_starts_on: string | null
+}
+
+/** Набор (когорта): дата старта задаёт начало 28-дневного окна Динамики. */
+export interface IntakeOut {
+  id: number
+  starts_on: string
+  created_at: string
+  user_count: number
 }
 
 // --- Динамика (прогресс ДЗ) ---

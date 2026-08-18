@@ -24,8 +24,9 @@ is **closed** when every section of the задание active on that day is sub
 - `program_start` — the start of a participant's own 28-day window — comes from **their набор**
   (`users.intake_id` → `intakes.starts_on`), not from any global constant: participants of
   parallel наборы see different progress/overdue on the same calendar day. Задания only decide
-  *which sections* a day requires; they no longer decide *when* anyone's window starts. A user
-  with no набор (the column is nullable until the admin-side subtask) falls back to the earliest
+  *which sections* a day requires; they no longer decide *when* anyone's window starts. `POST
+  /api/admin/users` requires an intake, so every account created through the admin panel has one;
+  the column stays nullable for historical rows, and such a user falls back to the earliest
   задание `starts_on`, and to today if there is no задание at all.
 - A **section** has: `key` (stable slug `[a-z0-9_]+`, used in the message marker), `emoji`,
   `label`, `heading`, `placeholder`, `input_type` (`text` = multiline body under a fixed

@@ -15,7 +15,11 @@ async def test_non_admin_cannot_create_user(
     resp = await client.post(
         "/api/admin/users",
         headers=auth_headers(tokens["access_token"]),
-        json={"username": "newbie", "display_name": "Newbie"},
+        json={
+            "username": "newbie",
+            "display_name": "Newbie",
+            "intake_id": user.intake_id,
+        },
     )
     assert resp.status_code == 403
 
@@ -31,7 +35,11 @@ async def test_admin_create_user_and_forced_password_change(
     created = await client.post(
         "/api/admin/users",
         headers=auth_headers(admin_tokens["access_token"]),
-        json={"username": new_username, "display_name": "TG User"},
+        json={
+            "username": new_username,
+            "display_name": "TG User",
+            "intake_id": admin.intake_id,
+        },
     )
     assert created.status_code == 201
     body = created.json()
@@ -91,7 +99,11 @@ async def test_duplicate_username_conflict(
     resp = await client.post(
         "/api/admin/users",
         headers=auth_headers(tokens["access_token"]),
-        json={"username": existing.username, "display_name": "Dup"},
+        json={
+            "username": existing.username,
+            "display_name": "Dup",
+            "intake_id": admin.intake_id,
+        },
     )
     assert resp.status_code == 409
 
