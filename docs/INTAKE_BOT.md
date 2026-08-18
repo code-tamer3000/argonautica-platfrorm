@@ -21,9 +21,13 @@ awaiting_about → submitted → choosing_plan → awaiting_receipt → payment_
    button.
 3. Admin taps **«Принять»** → `status=choosing_plan`; bot shows tariffs as buttons, read
    from the `plans` table **at request time** (not hardcoded — an admin price edit applies
-   immediately, no bot redeploy). Each tariff has two buttons: **«Подробнее»** (shows
-   `plans.description`, then **«Назад»** back to the list) and a separate **«Выбрать»**
-   (viewing details never blocks picking).
+   immediately, no bot redeploy). **One button per tariff** («Вода — 12 000 ₽») opening a
+   description screen: title, price, `plans.description`, and a single row of
+   **«⬅️ Назад»** / **«✅ Перейти к оплате»**. List ⇄ description ⇄ back all happen in
+   **one message** via `editMessageText` — the chat never fills with stale copies of the
+   menu (ARG-94). If that message is gone (user deleted it), the bot silently falls back to
+   sending a new one. A tap on a screen that is stale relative to `app.status` changes
+   nothing and answers with an alert («Этот шаг уже пройден»).
 4. Pick a tariff → `status=awaiting_receipt`; bot sends payment details (the `accepted`
    text with `{price}` substituted for the chosen tariff's price) and asks for a receipt.
 5. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
@@ -41,17 +45,20 @@ awaiting_about → submitted → choosing_plan → awaiting_receipt → payment_
 7. In-between statuses show `wait_decision` / `wait_payment_check` (idle waiting on the
    *other* party) if the applicant sends something out of turn.
 
-After `confirmed`, the chat becomes **service mode**: only **«Задать вопрос»** (forward to
-admin DM + deliver the reply back — same mechanism as the access bot's support channel)
-and **«Сменить пароль»** (re-issue a fresh one-time password, same helper as
-`scripts/telegram_bot.py`'s password reset) remain available.
+After `confirmed`, the chat becomes **service mode**: **«Сменить пароль»** (re-issue a
+fresh one-time password, same helper as `scripts/telegram_bot.py`'s password reset) as an
+inline button, plus `/question` (forward to admin DM + deliver the reply back — same
+mechanism as the access bot's support channel), same as at every other step.
 
-**«Задать вопрос» is available from the very first message**, not just in service mode — a
-"💬 Задать вопрос" button is attached to every outgoing message's keyboard, at every funnel
-step. It sets an ephemeral Redis flag (`intakebot:await_q:{tg_id}`, distinct prefix from
-the access bot's `bot:await_q:*` — separate service, separate Redis namespace) and takes
-priority over whatever the funnel step would otherwise do with the applicant's next
-message.
+**«Задать вопрос» is available at every funnel step**, not just in service mode — as the
+**`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
+both set by the service at startup, not by hand in BotFather). It is deliberately *not* an
+inline button any more (ARG-94): a per-message "💬 Задать вопрос" row competed with the
+buttons that actually belong to the current step. The command sets an ephemeral Redis flag
+(`intakebot:await_q:{tg_id}`, distinct prefix from the access bot's `bot:await_q:*` —
+separate service, separate Redis namespace) and takes priority over whatever the funnel
+step would otherwise do with the applicant's next message. The old `svc_q` callback is
+still handled so buttons in already-sent chats keep working.
 
 ## Data model
 
