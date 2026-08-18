@@ -176,3 +176,58 @@ async def test_window_follows_user_intake(
     between = date.today() - timedelta(days=4)
     assert _day_status(early_row, between) == "missed"
     assert _day_status(late_row, between) == "before_start"
+
+
+async def test_admin_overview_filters_by_intake(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """`GET /api/admin/dynamics?intake_id=` отдаёт только участников набора.
+
+    ARG-90: обзор был плоским списком по всем наборам сразу, из-за чего прогресс
+    текущего набора нельзя было увидеть отдельно. Сводка обязана считаться по той
+    же выборке, что и список, иначе счётчики врут про «своих».
+    """
+    early_start = date.today() - timedelta(days=10)
+    late_start = date.today() - timedelta(days=3)
+
+    admin = await make_user(role="admin", password="adminpass123")
+    early = await make_user(role="participant", intake_starts_on=early_start)
+    late = await make_user(role="participant", intake_starts_on=late_start)
+    headers = auth_headers(
+        (await login(client, admin.username, "adminpass123"))["access_token"]
+    )
+
+    # Без фильтра — оба участника, и у каждого проставлен свой набор.
+    resp = await client.get("/api/admin/dynamics", headers=headers)
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    ids = {u["user_id"] for u in payload["users"]}
+    assert {early.id, late.id} <= ids
+    assert _user_in(payload, early.id)["intake_id"] == early.intake_id
+    assert _user_in(payload, late.id)["intake_id"] == late.intake_id
+
+    # Фильтр по позднему набору: его участник есть, участник другого набора — нет.
+    # Проверяем принадлежность, а не точный список: БД сюиты общая, и другие тесты
+    # могли завести своих участников в набор с той же датой старта.
+    resp = await client.get(
+        f"/api/admin/dynamics?intake_id={late.intake_id}", headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert {u["intake_id"] for u in payload["users"]} == {late.intake_id}
+    ids = {u["user_id"] for u in payload["users"]}
+    assert late.id in ids and early.id not in ids
+    # Сводка считается по той же выборке, что и список (выпускники в неё не входят).
+    ongoing = [u for u in payload["users"] if u["graduated_at"] is None]
+    assert payload["summary"]["total_participants"] == len(ongoing)
+
+    # Несколько наборов сразу — участники обоих в выдаче, посторонних наборов нет.
+    resp = await client.get(
+        f"/api/admin/dynamics?intake_id={late.intake_id}&intake_id={early.intake_id}",
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    ids = {u["user_id"] for u in payload["users"]}
+    assert {early.id, late.id} <= ids
+    assert {u["intake_id"] for u in payload["users"]} == {early.intake_id, late.intake_id}

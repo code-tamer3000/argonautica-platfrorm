@@ -425,9 +425,14 @@ async def delete_user(
 @router.get("/dynamics", response_model=AdminDynamicsOut)
 async def admin_dynamics(
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[list[int] | None, Query()] = None,
 ) -> AdminDynamicsOut:
-    """Сводка + динамика ДЗ всех участников для администратора."""
-    return await get_all_dynamics(session)
+    """Сводка + динамика ДЗ участников. `intake_id` (можно несколько) режет по набору(ам).
+
+    Без параметра — все наборы сразу. Сводные счётчики считаются по той же выборке,
+    что и список: фильтр по набору меняет и её.
+    """
+    return await get_all_dynamics(session, intake_id)
 
 
 @router.post("/dynamics/credit", response_model=AdminDynamicsOut)

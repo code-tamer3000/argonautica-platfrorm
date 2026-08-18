@@ -1,5 +1,6 @@
 """Динамика — прогресс ежедневных ДЗ. Пользовательская часть + утилиты для admin."""
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated
@@ -622,19 +623,22 @@ async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
         await session.delete(existing)
         await session.flush()
 
-async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
-    """Сводка + статистика всех участников для страницы Динамика в панели."""
+async def get_all_dynamics(
+    session: AsyncSession, intake_ids: Sequence[int] | None = None
+) -> AdminDynamicsOut:
+    """Сводка + статистика участников для страницы Динамика в панели.
+
+    `intake_ids` ограничивает выдачу набором(ами): и список, и сводные счётчики
+    считаются только по этим участникам. `None` — все наборы сразу.
+    """
     timeline = await load_timeline(session)
     intake_starts = await load_intake_starts(session)
 
+    stmt = select(User).where(User.role == "participant")
+    if intake_ids is not None:
+        stmt = stmt.where(User.intake_id.in_(list(intake_ids)))
     participants = list(
-        (
-            await session.execute(
-                select(User).where(User.role == "participant").order_by(User.display_name)
-            )
-        )
-        .scalars()
-        .all()
+        (await session.execute(stmt.order_by(User.display_name))).scalars().all()
     )
 
     if not participants:
@@ -745,6 +749,7 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
                 journal_today=journal_today,
                 recent_days=recent,
                 graduated_at=user.graduated_at,
+                intake_id=user.intake_id,
             )
         )
 
