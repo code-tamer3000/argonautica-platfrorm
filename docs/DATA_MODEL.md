@@ -36,7 +36,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
 | graduated_at | TIMESTAMPTZ | NULL | экспедиция пройдена: set on survey submit, never cleared. Dynamics hidden, Tasks collapse to submitted, Рубка read-only. See [SURVEY.md](SURVEY.md) |
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
-| intake_id | BIGINT | FK intakes, NULL | cohort the user belongs to; drives the Dynamics 28-day window start. NULL for now — mandatory + admin picker land with the admin CRUD subtask |
+| intake_id | BIGINT | FK intakes, NULL | cohort the user belongs to; drives the Dynamics 28-day window start. Mandatory in `POST /api/admin/users`; column stays nullable for historical rows (expand/contract) |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
@@ -45,14 +45,29 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 Cohort of participants sharing a Dynamics 28-day window start date. Not the same as a
 `stream` (Tasks tournament mechanic, `tasks.type='stream'`) or a `group` (`rooms.type='group'`) —
 those names were already taken. One historical intake (`starts_on = 2026-06-02`) is seeded by
-migration and every existing user is backfilled onto it. Creation/editing beyond that seed has
-no API yet — lands with the admin CRUD subtask.
+migration and every existing user is backfilled onto it.
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
 | starts_on | DATE | NOT NULL, UNIQUE | Dynamics window start for every user in this intake |
 | created_at | TIMESTAMPTZ | NOT NULL | |
+
+There is no explicit open/closed status: the **active** intake is simply the one with the
+largest `starts_on`. Admin API (all under `require_admin`):
+
+- `GET /api/admin/intakes` → intakes newest-first (`starts_on` DESC), each with `user_count`.
+  The first row is the active intake.
+- `POST /api/admin/intakes` `{starts_on}` → 201 with the created intake; 409 when a intake
+  with that date already exists (`starts_on` is UNIQUE).
+- `GET /api/admin/users?intake_id=<id>` filters users by intake; every `AdminUserOut` carries
+  `intake_id` and the denormalized `intake_starts_on` so the admin list groups without a join
+  on the client.
+- `POST /api/admin/users` requires `intake_id` (400 if it does not exist); `PATCH
+  /api/admin/users/{id}` accepts `intake_id` to move a participant between intakes (explicit
+  `null` is rejected — a participant may not be left without an intake).
+
+Editing `starts_on` and deleting an intake have no API on purpose — see ARG-89.
 
 ## rooms
 One entity for three space types; differences are behavior in code, not structure. See [ROOMS.md](ROOMS.md).

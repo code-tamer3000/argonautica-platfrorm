@@ -50,6 +50,7 @@ from app.models.cabin import CabinEntry
 from app.models.calendar import CalendarEvent
 from app.models.faq import FaqItem
 from app.models.feedback import Feedback
+from app.models.intake import Intake
 from app.models.journal import JournalCredit, JournalPardon
 from app.models.kb import KbCategory, KbItem
 from app.models.message import Message, PinnedMessage
@@ -68,6 +69,23 @@ def days_ago(n: int, hour: int = 12) -> datetime:
 
 async def main() -> None:
     async with SessionLocal() as s:
+        # ------------------------------------------------------------------ intakes
+        # Два набора, чтобы в админке было видно группировку и переключение фильтра:
+        # текущий (активный, максимальная starts_on) и прошлый — с выпускниками.
+        intakes: dict[str, Intake] = {}
+        for key, starts_on in (
+            ("current", days_ago(14).date()),
+            ("previous", days_ago(60).date()),
+        ):
+            intake = (
+                await s.execute(select(Intake).where(Intake.starts_on == starts_on))
+            ).scalar_one_or_none()
+            if intake is None:
+                intake = Intake(starts_on=starts_on)
+                s.add(intake)
+                await s.flush()
+            intakes[key] = intake
+
         # ------------------------------------------------------------------ users
         users_spec = [
             dict(username="admin1", display_name="Марина Соколова", role="admin"),
@@ -88,11 +106,13 @@ async def main() -> None:
                 username="olga_v",
                 display_name="Ольга Васильева",
                 survey_required=True,
+                intake="previous",
             ),
             dict(
                 username="pavel_n",
                 display_name="Павел Новиков",
                 graduated_at=days_ago(10),
+                intake="previous",
             ),
             dict(
                 username="tatiana_l",
@@ -118,6 +138,7 @@ async def main() -> None:
                 is_observer=spec.get("is_observer", False),
                 survey_required=spec.get("survey_required", False),
                 graduated_at=spec.get("graduated_at"),
+                intake_id=intakes[spec.get("intake", "current")].id,
                 bio="Демо-участник экспедиции.",
             )
             s.add(u)
