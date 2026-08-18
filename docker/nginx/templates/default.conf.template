@@ -309,8 +309,7 @@ server {
 # --- Превью визитки: preview.argonautica-systems.ru ---
 # Билд фичер-ветки сайта (не main), тот же паттерн отдельного контейнера
 # `argonautica-site-preview` (nginx:alpine) в сети `gateway`, что и боевая
-# визитка выше. Basic Auth — превью незакрытых фич не должно индексироваться
-# и не предназначено для публичных глаз.
+# визитка выше. Без авторизации — открыт публично.
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
@@ -326,9 +325,6 @@ server {
     add_header X-Frame-Options SAMEORIGIN always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
     add_header Alt-Svc 'h3=":443"; ma=86400' always;
-
-    auth_basic "preview";
-    auth_basic_user_file /etc/nginx/certs/preview.htpasswd;
 
     resolver 127.0.0.11 valid=10s;
 
