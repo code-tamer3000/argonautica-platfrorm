@@ -118,10 +118,14 @@ services:
       # Поддомен стенда — проксируется этим же nginx (см. docs/DEPLOY.md → Staging),
       # отдельного порта у стенда больше нет.
       STAGING_DOMAIN: ${STAGING_DOMAIN}
+      # Поддомен метрик (Grafana, docker-compose.observability.yml) — basic auth
+      # в htpasswd ниже, см. docs/DEPLOY.md → «Наблюдаемость».
+      METRICS_DOMAIN: ${METRICS_DOMAIN}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/active_backend.conf:/etc/nginx/active_backend.conf:ro
       - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/htpasswd:/etc/nginx/htpasswd:ro
       - certbot_webroot:/var/www/certbot
     networks:
       # Без явного списка сервис получил бы ТОЛЬКО перечисленные сети — `default`

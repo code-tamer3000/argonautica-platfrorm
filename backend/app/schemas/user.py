@@ -1,5 +1,5 @@
 """Pydantic-схемы пользователей."""
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,12 +8,20 @@ Role = Literal["participant", "admin"]
 
 
 class AdminCreateUserRequest(BaseModel):
-    """Вход для POST /api/admin/users. Пароль НЕ принимаем — сервер генерит сам."""
+    """Вход для POST /api/admin/users. Пароль НЕ принимаем — сервер генерит сам.
+
+    `intake_id` обязателен: участник без набора не имеет точки отсчёта окна Динамики.
+    В БД колонка остаётся nullable (исторические записи), обязательность — на уровне API.
+    """
 
     username: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
     email: str | None = None  # str, не EmailStr — не тащим email-validator
     role: Role = "participant"
+    intake_id: int
+    # Тариф, по которому участник пришёл (бот-воронка ARG-92). Опционален: ручное
+    # заведение через админку по-прежнему не требует тарифа.
+    plan_id: int | None = None
 
 
 class AdminCreateUserResponse(BaseModel):
@@ -37,6 +45,8 @@ class AdminUpdateUserRequest(BaseModel):
     can_access_cabin: bool | None = None
     is_observer: bool | None = None
     role: Role | None = None
+    # Перевод участника в другой набор — двигает начало его окна Динамики.
+    intake_id: int | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -109,3 +119,7 @@ class AdminUserOut(BaseModel):
     is_active: bool = True
     graduated_at: datetime | None = None
     created_at: datetime
+    # Набор участника: id + дата старта (денормализована, чтобы админка группировала
+    # список без второго запроса). NULL — историческая запись без набора.
+    intake_id: int | None = None
+    intake_starts_on: date | None = None

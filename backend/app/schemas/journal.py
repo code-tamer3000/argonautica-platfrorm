@@ -37,6 +37,9 @@ class UserDynamicsOut(BaseModel):
     active_today: bool
     journal_today: bool
     recent_days: list[RecentDay]
+    # Набор участника — по нему админка группирует обзор Динамики (nullable:
+    # пользователь мог остаться без набора, см. docs/DATA_MODEL.md).
+    intake_id: int | None = None
     # Экспедиция пройдена: строка остаётся в списке, но заморожена на дне выпуска
     # и помечена отдельно (в сводных счётчиках такой участник не учитывается).
     graduated_at: datetime | None = None

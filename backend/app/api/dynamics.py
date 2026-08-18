@@ -1,5 +1,6 @@
 """Динамика — прогресс ежедневных ДЗ. Пользовательская часть + утилиты для admin."""
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta, timezone
 from typing import Annotated
@@ -11,8 +12,8 @@ from sqlalchemy.orm import selectinload
 from typing_extensions import TypedDict
 
 from app.api.deps import get_current_active_user, require_ongoing_participant
-from app.core.config import settings
 from app.db.session import get_session
+from app.models.intake import Intake
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
 from app.models.message import Message
 from app.models.room import Room
@@ -109,10 +110,6 @@ def required_keys_for(day: date, timeline: Timeline) -> frozenset[str]:
     return version.keys if version else frozenset()
 
 
-def _timeline_start(timeline: Timeline) -> date:
-    """Начало программы = старт самого раннего задания (fallback — настройка)."""
-    return timeline[0].starts_on if timeline else settings.journal_program_start
-
 # Журнальный день считается по московскому времени, но с дедлайном в 03:00 МСК:
 # запись, сделанная в 00:00–02:59 МСК, засчитывается за ПРЕДЫДУЩИЙ день, и до 03:00
 # журнал показывает вчерашнюю дату как «сегодня». Технически это эквивалентно
@@ -143,6 +140,45 @@ def _platform_day(dt: datetime) -> date:
 def _platform_today() -> date:
     """Текущий платформенный день. День завершается в 03:00 Москвы."""
     return _platform_day(datetime.now(UTC))
+
+
+def _timeline_start(timeline: Timeline) -> date:
+    """Запасное начало окна для пользователя без набора.
+
+    Набор (`users.intake_id`) — источник правды для даты старта; колонка nullable
+    до подзадачи с админкой, поэтому для «бесхозного» пользователя откатываемся на
+    старт самого раннего задания, а при пустой шкале — на сегодня (окно ещё не
+    началось, просрочек нет).
+    """
+    return timeline[0].starts_on if timeline else _platform_today()
+
+
+async def load_intake_starts(session: AsyncSession) -> dict[int, date]:
+    """Карта {id набора: дата старта} — точка отсчёта окна Динамики для его участников."""
+    rows = await session.execute(select(Intake.id, Intake.starts_on))
+    return {intake_id: starts_on for intake_id, starts_on in rows.all()}
+
+
+def program_start_for(
+    user: User, intake_starts: dict[int, date], timeline: Timeline
+) -> date:
+    """Начало 28-дневного окна конкретного пользователя = дата старта его набора."""
+    if user.intake_id is not None and user.intake_id in intake_starts:
+        return intake_starts[user.intake_id]
+    return _timeline_start(timeline)
+
+
+async def load_program_start(
+    session: AsyncSession, user: User, timeline: Timeline
+) -> date:
+    """`program_start_for` для одного пользователя (без выборки всех наборов)."""
+    if user.intake_id is not None:
+        starts_on = await session.scalar(
+            select(Intake.starts_on).where(Intake.id == user.intake_id)
+        )
+        if starts_on is not None:
+            return starts_on
+    return _timeline_start(timeline)
 
 
 def _calc_closed_days(messages: list[tuple[date, str | None]]) -> dict[date, set[str]]:
@@ -304,7 +340,7 @@ async def get_my_stats(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MyDynamicsOut:
     timeline = await load_timeline(session)
-    program_start = _timeline_start(timeline)
+    program_start = await load_program_start(session, current_user, timeline)
     room_id = await _personal_room_id(session, current_user.id)
     messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
     pardons = await _load_pardons(session, current_user.id)
@@ -329,7 +365,7 @@ async def use_pardon(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MyDynamicsOut:
     timeline = await load_timeline(session)
-    program_start = _timeline_start(timeline)
+    program_start = await load_program_start(session, current_user, timeline)
     today = _platform_today()
 
     if body.date >= today:
@@ -542,16 +578,18 @@ async def credit_day(
     session: AsyncSession, user_id: int, day: date, granted_by: int
 ) -> None:
     """Зачесть админом день пользователю (идемпотентно)."""
-    program_start = _timeline_start(await load_timeline(session))
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+
+    # Окно считаем от набора именно этого пользователя — «раньше начала программы»
+    # у участников разных наборов наступает в разные даты.
+    program_start = await load_program_start(session, user, await load_timeline(session))
     today = _platform_today()
     if day < program_start:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "День раньше начала программы")
     if day > today:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя зачесть будущий день")
-
-    user = await session.get(User, user_id)
-    if user is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
 
     existing = await session.scalar(
         select(JournalCredit).where(
@@ -585,19 +623,22 @@ async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
         await session.delete(existing)
         await session.flush()
 
-async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
-    """Сводка + статистика всех участников для страницы Динамика в панели."""
-    timeline = await load_timeline(session)
-    program_start = _timeline_start(timeline)
+async def get_all_dynamics(
+    session: AsyncSession, intake_ids: Sequence[int] | None = None
+) -> AdminDynamicsOut:
+    """Сводка + статистика участников для страницы Динамика в панели.
 
+    `intake_ids` ограничивает выдачу набором(ами): и список, и сводные счётчики
+    считаются только по этим участникам. `None` — все наборы сразу.
+    """
+    timeline = await load_timeline(session)
+    intake_starts = await load_intake_starts(session)
+
+    stmt = select(User).where(User.role == "participant")
+    if intake_ids is not None:
+        stmt = stmt.where(User.intake_id.in_(list(intake_ids)))
     participants = list(
-        (
-            await session.execute(
-                select(User).where(User.role == "participant").order_by(User.display_name)
-            )
-        )
-        .scalars()
-        .all()
+        (await session.execute(stmt.order_by(User.display_name))).scalars().all()
     )
 
     if not participants:
@@ -613,6 +654,12 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
         )
 
     user_ids = [u.id for u in participants]
+    # У каждого участника своё начало окна — дата старта его набора. Сообщения
+    # тянем от самого раннего из них, дальше режем по каждому пользователю.
+    start_by_user = {
+        u.id: program_start_for(u, intake_starts, timeline) for u in participants
+    }
+    earliest_start = min(start_by_user.values())
     today = _platform_today()
     today_start = datetime(today.year, today.month, today.day, tzinfo=UTC)
 
@@ -624,9 +671,11 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
     )
     room_by_user: dict[int, int] = {created_by: room_id for created_by, room_id in room_rows.all()}
 
-    # Журнальные сообщения из личных каналов с начала программы.
+    # Журнальные сообщения из личных каналов с начала самого раннего из наборов.
     room_ids = list(room_by_user.values())
-    since_dt = datetime(program_start.year, program_start.month, program_start.day, tzinfo=UTC)
+    since_dt = datetime(
+        earliest_start.year, earliest_start.month, earliest_start.day, tzinfo=UTC
+    )
     msg_rows = await session.execute(
         select(Room.created_by, Message.created_at, Message.content)
         .join(Room, Room.id == Message.room_id)
@@ -676,14 +725,15 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
         messages = msgs_by_user.get(user.id, [])
         pardons = pardons_by_user.get(user.id, [])
         credits = credits_by_user.get(user.id, [])
+        user_start = start_by_user[user.id]
         per_day = _calc_closed_days(messages)
         # Выпускник: считаем его путь по состоянию на день выпуска — что он делал,
         # видно целиком, но экспедиция для него закончилась и дальше не «идёт».
         graduated_on = _platform_day(user.graduated_at) if user.graduated_at else None
         as_of = graduated_on or today
-        stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+        stats = _calc_stats(per_day, pardons, user_start, timeline, credits, today=as_of)
         recent = _recent_days(
-            stats["closed_days"], stats["pardoned"], program_start, set(credits), today=as_of
+            stats["closed_days"], stats["pardoned"], user_start, set(credits), today=as_of
         )
         journal_today = graduated_on is None and today in stats["closed_days"]
         users_out.append(
@@ -699,6 +749,7 @@ async def get_all_dynamics(session: AsyncSession) -> AdminDynamicsOut:
                 journal_today=journal_today,
                 recent_days=recent,
                 graduated_at=user.graduated_at,
+                intake_id=user.intake_id,
             )
         )
 

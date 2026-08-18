@@ -7,6 +7,8 @@ from app.models.cabin import CabinEntry
 from app.models.calendar import CalendarEvent
 from app.models.faq import FaqItem
 from app.models.feedback import Feedback
+from app.models.intake import Intake
+from app.models.intake_application import IntakeApplication
 from app.models.journal import (
     JournalCredit,
     JournalPardon,
@@ -17,6 +19,7 @@ from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.notification import Notification
+from app.models.plan import Plan
 from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
@@ -49,6 +52,9 @@ __all__ = [
     "CalendarEvent",
     "FaqItem",
     "Feedback",
+    "Intake",
+    "IntakeApplication",
+    "Plan",
     "JournalPardon",
     "JournalCredit",
     "JournalProgram",

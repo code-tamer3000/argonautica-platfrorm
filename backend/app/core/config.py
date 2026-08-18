@@ -3,7 +3,6 @@
 Единственный источник конфигурации. Значения берутся из переменных окружения
 (см. `.env.example`). Секреты — только в `.env` (в .gitignore), никогда в git.
 """
-from datetime import date
 from functools import lru_cache
 
 from pydantic import model_validator
@@ -70,11 +69,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_ttl_minutes: int = 15
     jwt_refresh_ttl_days: int = 30
-
-    # --- Динамика (отсчёт ДЗ) ---
-    # День, с которого считаются пропуски. До него — история не учитывается.
-    # Формат: YYYY-MM-DD. Переопределяется через JOURNAL_PROGRAM_START=2026-07-10 в .env.
-    journal_program_start: date = date(2026, 7, 3)
 
     # --- Задачи ---
     # «Горит» дедлайн, если до него осталось не больше стольких дней (считается на

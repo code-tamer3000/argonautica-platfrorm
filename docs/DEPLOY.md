@@ -30,7 +30,7 @@
 | `develop` | Staging | same host, `/opt/platform-staging`, **`https://staging.argonautica-systems.ru`**, isolated compose project behind the prod gateway | push → `Deploy → staging` → `deploy-staging.sh` |
 | PR (any) | — | — | CI: ruff + mypy + pytest (`ci.yml`) |
 
-- Staging is isolated (separate compose project, own network/volumes/`.env`/`JWT_SECRET`), no blue-green, **no `bot` service** (a second long-poller on the prod token would break the prod bot — see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)).
+- Staging is isolated (separate compose project, own network/volumes/`.env`/`JWT_SECRET`), no blue-green, **no `bot` service** (a second long-poller on the prod token would break the prod bot — see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)). Staging *does* run `intake-bot` (ARG-92, `backend/scripts/intake_bot.py`) — a separate intake/payment funnel bot on its **own** Telegram token, so it doesn't touch the prod bot's `getUpdates` poller; the two are unrelated services.
 - **Gateway, not a second port:** staging-nginx publishes nothing to the host — it's an internal HTTP (no TLS) reverse proxy in front of the stand's own backend/frontend/MinIO. The **prod** nginx owns a `server_name ${STAGING_DOMAIN}` block on the standard `:443` and proxies into it. The two compose projects reach each other over an `external: true` docker network named `gateway`, created once by hand (`docker network create gateway`) and declared in both `docker-compose.prod.yml` and `docker-compose.staging.yml`. `proxy_pass` on the prod side uses a `resolver 127.0.0.11` + `set $staging_upstream ...` so prod nginx doesn't fail to (re)start if the staging container happens to be down.
 - **Domain & TLS:** staging answers only on `staging.argonautica-systems.ru` (access by raw IP is closed by the prod catch-all `default_server`). A-record → `45.151.102.255` (same host as prod, same port `:443` — one gateway serves both, routed by SNI/Host, not by port). Real **Let's Encrypt** cert, issued/renewed via **webroot through prod's `:80`** (prod nginx already serves `/.well-known/acme-challenge/` from the shared `docker_certbot_webroot` volume), same as before — but the cert itself now lives with **prod**, in `docker/nginx/certs/${STAGING_DOMAIN}.{crt,key}`, since prod-nginx is the one terminating TLS for the staging domain. The **host** certbot (v0.40) is broken, so issuance/renewal run in the `certbot/certbot` **container**. Renewal + delivery: `docker/nginx/renew-staging-cert.sh` (installed on the server as `/opt/platform/renew-staging-cert.sh`, cron twice-daily) renews, copies the cert into `docker/nginx/certs/`, and **recreates prod nginx** (not staging nginx).
 - **`MINIO_PUBLIC_ENDPOINT` no longer carries a port** (`https://staging.argonautica-systems.ru`). Now that staging sits behind the standard `:443`, the signed Host matches what staging-nginx forwards with plain `Host $host` — the old `Host $http_host` port-preservation hack (needed only for the nonstandard `:8443`) is gone.
@@ -159,38 +159,93 @@ Redis-агрегатов (`metrics:*`), что читает админский �
 (наружу торчит только nginx, а в его локациях `/metrics` нет) — топология сама
 закрывает доступ, отдельного правила файрвола не требуется.
 
-Хранилище — **VictoriaMetrics single-node** (не Prometheus + Grafana: на проде
-свободно ~250 МБ без свопа, Prometheus+Grafana туда не влезают, см. Assumptions в
-ARG-82). Grafana **на сервер не ставится** — только локально, через SSH-туннель.
+Хранилище — **VictoriaMetrics single-node** (не Prometheus — компактнее, тот же
+протокол scrape/PromQL).
 
-**Фрагмент — отдельные файлы, `docker-compose.prod.yml` не редактируется:**
-`docker/docker-compose.observability.yml` (сервис `victoriametrics`) +
-`docker/victoriametrics/scrape.yml` (конфиг скрейпа, интервал 30с, ретенция 15д).
+**С 2026-08-18** (после апгрейда сервера до 4 ГБ RAM) **Grafana ставится и на сервер**,
+за прод-nginx на поддомене `${METRICS_DOMAIN}` (`metrics.argonautica-systems.ru`) с
+basic auth. До этого (ARG-82) Grafana сознательно держали только локально — на 2 ГБ без
+свопа (~250 МБ свободно) Prometheus/Grafana не влезали; это ограничение снято. Локальный
+путь через SSH-туннель (ниже) остаётся рабочим как запасной, не обязателен.
 
-Развёртывание на прод (руками, агент это не делает — см. CLAUDE.md «не трогать
-`docker-compose.prod.yml`»):
+**Фрагмент — отдельные файлы, `docker-compose.prod.yml` не редактируется по составу
+сервисов** (только окружение/volume у `nginx`, см. ниже): `docker/docker-compose.observability.yml`
+(сервисы `victoriametrics` + `grafana`) + `docker/victoriametrics/scrape.yml` (конфиг
+скрейпа, интервал 30с, ретенция 15д).
+
+Развёртывание на прод:
 
 ```bash
 cd /opt/platform
-docker compose -f docker/docker-compose.prod.yml -f docker/docker-compose.observability.yml \
-  --env-file .env up -d victoriametrics
+docker compose -p docker -f docker/docker-compose.prod.yml -f docker/docker-compose.observability.yml \
+  --env-file .env up -d victoriametrics grafana
 ```
 
-Тот же **project name** (`docker`), что у прод-стека — обязательно, иначе сервис
-попадёт в свою собственную сеть и не увидит `backend-blue`/`backend-green` по имени.
-Порт публикуется только на `127.0.0.1:8428` — с публичного адреса недоступен ни он,
-ни сам `/metrics` бэкенда (проверить с хоста: `curl http://<публичный-IP>:8428` и
-`curl http://<публичный-IP>/metrics` — оба должны падать/не отвечать).
+Тот же **project name** (`docker`), что у прод-стека — обязательно, иначе сервисы
+попадут в свою собственную сеть и не увидят `backend-blue`/`backend-green`/друг друга
+по имени. `victoriametrics` публикует порт только на `127.0.0.1:8428` (для SSH-туннеля
+ниже) — с публичного адреса недоступен; `grafana` вообще не публикует host-порт, вход
+только через nginx.
 
-**Доступ к данным — SSH-туннель**, Grafana только локально:
+**Basic auth перед Grafana** — `docker/nginx/htpasswd/metrics.htpasswd`, генерируется
+на сервере и НЕ коммитится (`.gitignore`):
+
+```bash
+mkdir -p /opt/platform/docker/nginx/htpasswd
+docker run --rm httpd:2.4-alpine htpasswd -Bbn <логин> '<пароль>' \
+  > /opt/platform/docker/nginx/htpasswd/metrics.htpasswd
+docker compose -p docker -f docker/docker-compose.prod.yml --env-file .env \
+  up -d --force-recreate --no-deps nginx
+```
+
+**TLS для `${METRICS_DOMAIN}`** — тот же webroot-путь через `:80` прода, что у стенда;
+скрипт продления `docker/nginx/renew-metrics-cert.sh` (аналог `renew-staging-cert.sh`),
+cron на сервере. Первичная выдача — тем же `certbot/certbot` контейнером с `certonly`
+(см. `renew-staging-cert.sh` для точного паттерна volume/webroot), затем nginx recreate.
+
+**Доступ к сырым данным в обход Grafana — SSH-туннель**, если нужно потыкать PromQL
+локально:
 
 ```bash
 ssh -L 8428:127.0.0.1:8428 <прод-сервер>   # алиас: platform-new
 ```
 
-В локальной Grafana datasource Prometheus → `http://localhost:8428` (VictoriaMetrics
-совместим по протоколу scrape и по PromQL). Панели — предмет ARG-18, здесь только
-подключение к хранилищу.
+### Дашборд (ARG-18)
+
+JSON-модель дашборда и provisioning-конфиг лежат в репозитории, а не только в чьём-то
+браузере: `docker/grafana/dashboards/platform-overview.json` (сами панели, общие для
+серверной и локальной Grafana). Provisioning **раздвоен** только из-за разного адреса
+datasource: `docker/grafana/provisioning-server/` (datasource `http://victoriametrics:8428`
+по имени сервиса — монтируется в серверный контейнер `grafana`) vs
+`docker/grafana/provisioning/` (datasource `http://localhost:8428` — для локальной
+Grafana оператора через SSH-туннель, инструкция ниже). Не путать при правке панелей —
+менять только `docker/grafana/dashboards/platform-overview.json`, он общий.
+
+Локальная Grafana (опционально, вместо/в дополнение к серверной), после того как
+туннель из раздела выше уже открыт:
+
+```bash
+docker run -d --name grafana --network host \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true -e GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+  -v "$(pwd)/docker/grafana/provisioning:/etc/grafana/provisioning:ro" \
+  -v "$(pwd)/docker/grafana/dashboards:/etc/grafana/dashboards:ro" \
+  grafana/grafana:11.4.0
+```
+
+`--network host` — самый простой способ достучаться до туннеля на `localhost:8428` с
+Linux-хоста. На Docker Desktop (Mac/Windows), где `--network host` не работает,
+замените `url` в `docker/grafana/provisioning/datasources/victoriametrics.yaml` на
+`http://host.docker.internal:8428` и пробросьте порт `-p 3000:3000` вместо
+`--network host`. Открыть `http://localhost:3000` — дашборд «Argonautica — состояние
+платформы» подхватится автоматически из provisioning, без ручного импорта.
+
+Известный пробел (осознанно вне границ ARG-18, см. задачу «Границы»): CPU, память и
+сеть по сервисам/хосту, а также «когда сервис последний раз перезапускался» —
+`GET /metrics` их не отдаёт, потому что их вообще никто не собирает (нет node-exporter
+или cAdvisor рядом с VictoriaMetrics). «Живой ли сервис» на дашборде показано только
+как `up{job="backend"}` — доступность backend-blue/backend-green по скрейпу; nginx,
+Postgres, Redis, MinIO в это не включены. Если эти цифры понадобятся — заводить как
+отдельную задачу сбора (`/idea`), не дорисовывать здесь на месте.
 
 ## Backups
 

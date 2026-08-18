@@ -9,8 +9,14 @@
 #     --env-file .env up -d victoriametrics
 #
 # Порт публикуется ТОЛЬКО на loopback (127.0.0.1:8428) — с внешнего адреса недоступен.
-# Grafana ставится локально (не на сервер, см. Linear ARG-82 «Зачем») и подключается
-# через SSH-туннень: `ssh -L 8428:127.0.0.1:8428 <сервер>`, datasource — http://localhost:8428.
+#
+# Grafana (с 2026-08-18, после апгрейда сервера до 4 ГБ RAM — см. docs/DEPLOY.md
+# «Наблюдаемость») живёт ТУТ ЖЕ, в том же compose-проекте, и наружу видна только через
+# прод-nginx на поддомене ${METRICS_DOMAIN} с basic auth (docker/nginx/templates/
+# default.conf.template). Сама Grafana host-порт не публикует — единственный вход
+# снаружи через nginx. Локальный SSH-туннель (`ssh -L 8428:127.0.0.1:8428 <сервер>` +
+# локальная Grafana на localhost:8428) остаётся рабочим как запасной путь, но больше
+# не единственный.
 services:
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.131.0
@@ -27,5 +33,24 @@ services:
       - "127.0.0.1:8428:8428"
     restart: unless-stopped
 
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana
+    depends_on:
+      - victoriametrics
+    environment:
+      GF_SERVER_ROOT_URL: https://${METRICS_DOMAIN}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Basic auth перед nginx уже закрывает вход — этот пароль вторая линия
+      # (сама Grafana), задаётся в .env, дефолт admin/admin НЕ используется.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning-server:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    restart: unless-stopped
+
 volumes:
   vm_data:
+  grafana_data:

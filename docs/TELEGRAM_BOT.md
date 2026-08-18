@@ -2,6 +2,7 @@
 
 > Source: docs/archive/{PLATFORM_SPEC.md §4.18, DECISIONS.md, OPERATIONS.md §2, DATA_MODEL.md}, restructured 2026-07-06.
 > Service `bot` (`backend/scripts/telegram_bot.py`), same image as backend. Not a web part — a long-polling worker.
+> There is a second, unrelated bot service, `intake-bot` — the intake/payment funnel (anketa → tariff → receipt → account), on its own token. See [INTAKE_BOT.md](INTAKE_BOT.md).
 
 The way into a closed platform (no web signup) and a support channel to the admin. Accounts are pre-created by the admin (see [AUTH.md](AUTH.md)); login = Telegram `@username`.
 
