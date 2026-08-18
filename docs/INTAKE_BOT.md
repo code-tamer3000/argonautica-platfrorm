@@ -65,6 +65,35 @@ still handled so buttons in already-sent chats keep working.
 `plans` (admin CRUD), `intake_applications` (funnel state, no admin API — internal to the
 bot), `users.plan_id` — see [DATA_MODEL.md](DATA_MODEL.md).
 
+`intake_applications.tg_id` is **unique**: one Telegram account = one application, ever.
+`intake_applications.user_id → users.id` has **no `ON DELETE`**, so the account created at
+`confirmed` cannot be deleted while its application still points at it. Whenever both go
+away, the order is fixed: **application first, then the user** (see `/reset` below, and
+`delete_user` in `app.api.admin`).
+
+## Resetting a run (`/reset`, staging only)
+
+Because `tg_id` is unique and the login is the applicant's `@username`, a Telegram account
+can walk the funnel exactly once — the next `/start` resumes the stuck status, and even a
+manual `DELETE` of the application leaves the login taken. `/reset` (ARG-95) removes both
+so the same account can run the funnel again from scratch:
+
+- Accepted **only** from the admin DM (`TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`). `/reset`
+  resets the admin's own application, `/reset @username` the named applicant's. Sent from
+  anywhere else it does nothing and answers nothing.
+- Gated by `INTAKE_BOT_ALLOW_RESET` (`1`/`true`/`yes`/`on`), set **only** in
+  `docker/docker-compose.staging.yml`. Off by default and on prod: the command replies
+  that reset is unavailable on this environment and touches no data.
+- What it removes: the `intake_applications` row, then — if it had a `user_id` — the
+  platform user via the admin `delete_user` (rooms, messages, media are already handled
+  there; a user owning shared content still blocks deletion and the admin is told why),
+  then the applicant's ephemeral Redis keys (`intakebot:await_q:*`, `intakebot:pwd:*`).
+  An application with no `user_id` (run never reached `confirmed`) is not an error.
+- The admin gets back what was deleted: the application's status and the platform login,
+  or an explicit "nothing to reset" when there is no such application.
+- Deliberately **not** in `setMyCommands` — it is a service command, not a funnel step.
+- Scope: one applicant at a time. No bulk "wipe the stand", no web/admin UI.
+
 ## Placeholder texts
 
 `bot_texts.md` keys (`start`, `ask_about`, `submitted`, `accepted`, `need_receipt`,
@@ -85,7 +114,8 @@ temporary placeholder; final copy is a separate follow-up.
 - Admin chat = the task author's personal DM (`TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`), not a
   group chat — obtained the standard way (message the bot `/start` from that account first,
   read the chat id from `docker logs`).
-- Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`, `TELEGRAM_PROXY`
+- Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`,
+  `INTAKE_BOT_ALLOW_RESET` (staging only, see `/reset`), `TELEGRAM_PROXY`
   (shared with the access bot), `PLATFORM_URL` (shared — on staging this should point at
   `https://staging.argonautica-systems.ru`).
 - Not part of blue-green, no `:8000` healthcheck (long-poller, not an HTTP server) — same

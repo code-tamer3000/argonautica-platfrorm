@@ -36,10 +36,10 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.admin import create_user
+from app.api.admin import create_user, delete_user
 from app.core.redis import redis_client
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import SessionLocal
@@ -62,6 +62,11 @@ PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://staging.argonautica-syste
 TELEGRAM_PROXY = os.environ.get("TELEGRAM_PROXY", "").strip() or None
 _admin_raw = os.environ.get("TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID", "").strip()
 ADMIN_CHAT_ID: int | None = int(_admin_raw) if _admin_raw.lstrip("-").isdigit() else None
+# Сброс прогона воронки (ARG-95) — только там, где явно разрешено env-флагом. По
+# умолчанию (и на проде) выключен: команда отвечает, что недоступна, и ничего не делает.
+ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 RATE_LIMIT = 3
@@ -131,6 +136,13 @@ CB_ASK_QUESTION = "svc_q"
 CB_CHANGE_PASSWORD = "svc_pw"
 
 TEXT_STEP_DONE = "Этот шаг уже пройден."
+
+# --- /reset (ARG-95, служебная команда админского DM) --------------------------
+
+TEXT_RESET_DISABLED = (
+    "🚫 Сброс прогона на этом окружении недоступен (INTAKE_BOT_ALLOW_RESET выключен)."
+)
+TEXT_RESET_USAGE = "Формат: <code>/reset</code> или <code>/reset @username</code>"
 
 
 def _user_tag(tg_username: str | None, tg_id: int) -> str:
@@ -740,6 +752,113 @@ async def _deliver_admin_reply(client: httpx.AsyncClient, reply_to_msg_id: int, 
     await _send(client, ADMIN_CHAT_ID, "✅ Ответ доставлен участнику.")  # type: ignore[arg-type]
 
 
+# --- /reset: сброс прогона воронки (ARG-95) -----------------------------------
+
+
+def _reset_actor() -> User:
+    """«От чьего имени» вызывается admin-хендлер `delete_user`.
+
+    У бота нет учётки на платформе, а `delete_user` использует actor'а ровно для
+    одной проверки — «не удаляй сам себя». Транзиентный объект с несуществующим id
+    (BIGSERIAL начинается с 1) её проходит и в сессию не попадает.
+    """
+    return User(id=0)
+
+
+async def _find_application_by_username(
+    session: AsyncSession, username: str
+) -> IntakeApplication | None:
+    return (
+        await session.execute(
+            select(IntakeApplication).where(
+                func.lower(IntakeApplication.tg_username) == username.lower()
+            )
+        )
+    ).scalars().first()
+
+
+async def _reset_application(
+    session: AsyncSession, app: IntakeApplication
+) -> tuple[str, str | None]:
+    """Удалить заявку и созданного ей пользователя. Возвращает (статус, логин|None).
+
+    Порядок обязателен: сначала заявка, потом пользователь — `intake_applications.user_id`
+    ссылается на `users.id` без ON DELETE, обратный порядок упрётся в FK.
+    """
+    status = app.status
+    user_id = app.user_id
+    tg_id = app.tg_id
+
+    username: str | None = None
+    if user_id is not None:
+        user = await session.get(User, user_id)
+        username = user.username if user is not None else None
+
+    await session.delete(app)
+    await session.flush()
+
+    if user_id is not None and username is not None:
+        await delete_user(user_id, _reset_actor(), session)
+
+    await redis_client.delete(f"intakebot:await_q:{tg_id}")
+    await redis_client.delete(f"intakebot:pwd:{tg_id}")
+    return status, username
+
+
+async def _handle_reset(
+    client: httpx.AsyncClient, session: AsyncSession, chat_id: int, text: str, tg_id: int
+) -> None:
+    """Служебная команда админского DM: снести прогон, чтобы пройти воронку заново.
+
+    В `setMyCommands` намеренно не попадает — участнику её в меню видеть незачем.
+    Из любого другого чата не делает и не отвечает ничего.
+    """
+    if ADMIN_CHAT_ID is None or chat_id != ADMIN_CHAT_ID:
+        return
+    if not ALLOW_RESET:
+        await _send(client, chat_id, TEXT_RESET_DISABLED)
+        return
+
+    parts = text.split()
+    target = parts[1].lstrip("@") if len(parts) > 1 else None
+    if len(parts) > 2 or (target is not None and not target):
+        await _send(client, chat_id, TEXT_RESET_USAGE)
+        return
+
+    if target is None:
+        app = await _find_application(session, tg_id)
+        who = "для этого чата"
+    else:
+        app = await _find_application_by_username(session, target)
+        who = f"для @{html.escape(target)}"
+
+    if app is None:
+        await _send(client, chat_id, f"Заявки {who} не найдено — сбрасывать нечего.")
+        return
+
+    tag = _user_tag(app.tg_username, app.tg_id)
+    try:
+        status, username = await _reset_application(session, app)
+    except HTTPException as exc:
+        await session.rollback()
+        await _send(
+            client, chat_id,
+            f"⚠️ Не удалось сбросить {html.escape(tag)}: {html.escape(str(exc.detail))}",
+        )
+        return
+
+    user_line = (
+        f"пользователь платформы <code>{html.escape(username)}</code> удалён"
+        if username
+        else "пользователь платформы не создавался"
+    )
+    await _send(
+        client, chat_id,
+        f"🧹 Сброшено: заявка {html.escape(tag)} (статус <code>{html.escape(status)}</code>), "
+        f"{user_line}. Redis-состояние очищено — можно проходить воронку заново.",
+    )
+
+
 # --- Сообщения -----------------------------------------------------------------
 
 
@@ -789,6 +908,12 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     from_user = message.get("from") or {}
     tg_id = from_user.get("id", chat_id)
     tg_username = from_user.get("username")
+
+    # Служебный сброс прогона (ARG-95) — раньше ветки ответа админа: /reset может
+    # прийти и реплаем, и это всё равно команда, а не ответ участнику.
+    if text.startswith("/reset"):
+        await _handle_reset(client, session, chat_id, text, tg_id)
+        return
 
     # Ответ админа reply на пересланный вопрос → доставить участнику.
     if ADMIN_CHAT_ID is not None and chat_id == ADMIN_CHAT_ID:

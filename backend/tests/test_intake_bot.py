@@ -1,4 +1,4 @@
-"""Экран выбора тарифа в боте приёма (ARG-94).
+"""Бот приёма: экран выбора тарифа (ARG-94) и служебный /reset (ARG-95).
 
 Бот — не HTTP-приложение, поэтому Telegram-транспорт подменён фейком (записывает
 вызовы Bot API), а Postgres — настоящий: статусы заявки проверяем в БД.
@@ -10,15 +10,19 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.intake_application import (
+    STATUS_AWAITING_ABOUT,
     STATUS_AWAITING_RECEIPT,
     STATUS_CHOOSING_PLAN,
+    STATUS_CONFIRMED,
     STATUS_PAYMENT_REVIEW,
     IntakeApplication,
 )
 from app.models.plan import Plan
+from app.models.user import User
 
 
 def _load_bot() -> ModuleType:
@@ -291,3 +295,140 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.refresh(app)
     assert app.status == STATUS_PAYMENT_REVIEW
     assert app.plan_id == plan.id and app.receipt_file_id == "receipt-1"
+
+
+# --- /reset: сброс прогона воронки (ARG-95) -----------------------------------
+
+
+async def make_confirmed_application(session: AsyncSession) -> IntakeApplication:
+    """Заявка в `confirmed` с реально созданным пользователем платформы."""
+    from datetime import date
+
+    from tests.conftest import get_or_create_intake
+
+    await get_or_create_intake(session, date(2026, 3, 1))
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN)
+    app.plan_id = plan.id
+    created = await intake_bot._create_platform_user(session, app)
+    assert created is not None
+    user = await session.scalar(
+        select(User).where(User.username == created[0])
+    )
+    assert user is not None
+    app.user_id = user.id
+    app.status = STATUS_CONFIRMED
+    await session.commit()
+    return app
+
+
+def admin_message(text: str, chat_id: int, tg_id: int | None = None) -> dict[str, Any]:
+    return {
+        "chat": {"id": chat_id},
+        "text": text,
+        "from": {"id": tg_id if tg_id is not None else chat_id},
+    }
+
+
+async def test_reset_removes_application_user_and_redis_state(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_002
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "ALLOW_RESET", True)
+    app = await make_confirmed_application(session)
+    tg_id, username, user_id = app.tg_id, app.tg_username, app.user_id
+    assert username is not None
+    await intake_bot.redis_client.set(f"intakebot:await_q:{tg_id}", "1")
+    await intake_bot.redis_client.set(f"intakebot:pwd:{tg_id}", "3")
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message(f"/reset @{username}", admin_chat)
+    )
+    await session.commit()
+
+    assert await intake_bot._find_application(session, tg_id) is None
+    assert await session.get(User, user_id) is None
+    assert await intake_bot.redis_client.get(f"intakebot:await_q:{tg_id}") is None
+    assert await intake_bot.redis_client.get(f"intakebot:pwd:{tg_id}") is None
+    reply = client.payload("sendMessage")["text"]
+    assert username in reply and STATUS_CONFIRMED in reply
+
+    # Тот же аккаунт проходит воронку заново — /start заводит новую заявку.
+    await intake_bot._handle_message(
+        client, session,
+        {"chat": {"id": tg_id}, "text": "/start", "from": {"id": tg_id, "username": username}},
+    )
+    await session.commit()
+    fresh = await intake_bot._find_application(session, tg_id)
+    assert fresh is not None and fresh.status == STATUS_AWAITING_ABOUT
+
+
+async def test_reset_without_argument_targets_own_application(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Без аргумента сбрасывается заявка самого админа, чужая не трогается."""
+    app = await make_application(session)
+    other = await make_application(session)
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", app.tg_id)
+    monkeypatch.setattr(intake_bot, "ALLOW_RESET", True)
+    client = FakeClient()
+
+    await intake_bot._handle_message(client, session, admin_message("/reset", app.tg_id))
+    await session.commit()
+
+    assert await intake_bot._find_application(session, app.tg_id) is None
+    assert await intake_bot._find_application(session, other.tg_id) is not None
+
+
+async def test_reset_from_participant_chat_does_nothing(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    app = await make_application(session)
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_003)
+    monkeypatch.setattr(intake_bot, "ALLOW_RESET", True)
+    client = FakeClient()
+
+    await intake_bot._handle_message(client, session, admin_message("/reset", app.tg_id))
+    await session.commit()
+
+    assert await intake_bot._find_application(session, app.tg_id) is not None
+    assert client.methods() == []
+
+
+async def test_reset_is_refused_when_flag_is_off(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_004
+    app = await make_application(session)
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "ALLOW_RESET", False)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message(f"/reset @{app.tg_username}", admin_chat)
+    )
+    await session.commit()
+
+    assert await intake_bot._find_application(session, app.tg_id) is not None
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_RESET_DISABLED
+
+
+async def test_reset_reports_missing_application(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_005
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "ALLOW_RESET", True)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message("/reset @no-such-user", admin_chat)
+    )
+
+    assert "не найдено" in client.payload("sendMessage")["text"]
+
+
+def test_reset_is_not_in_bot_commands() -> None:
+    assert "reset" not in [c["command"] for c in intake_bot.BOT_COMMANDS]
