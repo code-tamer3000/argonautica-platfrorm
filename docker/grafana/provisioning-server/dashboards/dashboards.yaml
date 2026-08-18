@@ -1,0 +1,13 @@
+# Provisioning дашбордов для СЕРВЕРНОЙ Grafana (см. datasources/victoriametrics.yaml
+# в этой же папке) — тот же принцип, что у локальной (docker/grafana/provisioning/),
+# отдельная копия только из-за разного datasource url.
+apiVersion: 1
+
+providers:
+  - name: platform
+    folder: Argonautica
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
