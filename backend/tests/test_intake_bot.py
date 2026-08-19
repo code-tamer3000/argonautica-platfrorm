@@ -571,7 +571,9 @@ async def test_info_reports_intake_plans_and_payment_details(
 ) -> None:
     admin_chat = 999_006
     monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
-    intake = await get_or_create_intake(session, date(2026, 9, 1))
+    # Далёкая дата — гарантированно max(starts_on) среди всех intakes, которые уже
+    # насажали другие тесты в общую (не откатываемую между тестами) БД.
+    intake = await get_or_create_intake(session, date(2099, 1, 1))
     plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 15000)
     inactive = await make_plan(session, f"Скрытый-{random.randint(100, 999)}", 5000)
     inactive.is_active = False
@@ -590,8 +592,13 @@ async def test_info_reports_intake_plans_and_payment_details(
 async def test_info_warns_when_no_intake_or_plans(
     session: AsyncSession, monkeypatch: Any
 ) -> None:
+    """Другие тесты в сессии уже насажали intakes/plans в общую тестовую БД (она не
+    откатывается между тестами) — «нет данных» подделываем через сами запросы, а не
+    надеемся на пустые таблицы."""
     admin_chat = 999_007
     monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "_current_intake", lambda _session: _none())
+    monkeypatch.setattr(intake_bot, "_active_plans", lambda _session: _empty_list())
     client = FakeClient()
 
     await intake_bot._handle_message(client, session, admin_message("/info", admin_chat))
@@ -599,6 +606,14 @@ async def test_info_warns_when_no_intake_or_plans(
     reply = client.payload("sendMessage")["text"]
     assert "Активного набора нет" in reply
     assert "Активных тарифов нет" in reply
+
+
+async def _none() -> None:
+    return None
+
+
+async def _empty_list() -> list[Any]:
+    return []
 
 
 async def test_info_from_participant_chat_does_nothing(
