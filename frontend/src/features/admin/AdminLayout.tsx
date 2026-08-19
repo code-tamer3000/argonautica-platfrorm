@@ -1,11 +1,9 @@
-import { Navigate, NavLink, Outlet } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { NavLink, Outlet } from 'react-router-dom'
 import styles from './admin.module.css'
 
+// Проверка role === 'admin' живёт в RequireAccess (см. features/app/routes.tsx,
+// запись "/admin") — этот компонент отвечает только за subnav и Outlet.
 export function AdminLayout() {
-  const { user } = useAuth()
-  if (user?.role !== 'admin') return <Navigate to="/" replace />
-
   return (
     <div className={styles.adminLayout}>
       <nav className={styles.adminNav}>
