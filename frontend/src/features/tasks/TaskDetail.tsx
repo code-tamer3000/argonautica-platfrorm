@@ -22,6 +22,7 @@ import { IconBook, IconSend } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { Chip, type ChipKind } from '../../components/Chip'
+import { PageHeader } from '../../components/PageHeader'
 import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
@@ -84,6 +85,7 @@ export function TaskDetail() {
 
   return (
     <div className={styles.viewer}>
+      <PageHeader title={task.title} />
       <div className={styles.viewerHead}>
         <div className={styles.headChips}>
           <Badge tone="accent">{TYPE_LABEL[task.type]}</Badge>
@@ -95,7 +97,6 @@ export function TaskDetail() {
           )}
           {task.deadline_soon && <Chip kind="soon">Подходит срок</Chip>}
         </div>
-        <h1 className={styles.articleTitle}>{task.title}</h1>
         {task.deadline_at && (
           <div className={styles.articleMeta}>Дедлайн: {dateTimeMsk(task.deadline_at)}</div>
         )}

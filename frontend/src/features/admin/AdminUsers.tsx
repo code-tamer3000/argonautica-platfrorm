@@ -11,6 +11,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
 import type { CreateUserResult } from '../../api/admin'
 import type { AdminUserOut, IntakeOut } from '../../lib/types'
@@ -203,8 +204,7 @@ export function AdminUsers() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Пользователи</h1>
+      <PageHeader title="Пользователи">
         <div className={styles.listActions}>
           <Button variant="outline" onClick={() => { setIntakeStartsOn(todayIso()); setIntakeOpen(true) }}>
             Новый набор
@@ -213,7 +213,7 @@ export function AdminUsers() {
             Создать пользователя
           </Button>
         </div>
-      </div>
+      </PageHeader>
 
       <div className={styles.formRow} style={{ maxWidth: 420 }}>
         <label htmlFor="intake_filter">Набор</label>

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAdminBroadcast } from '../../api/adminBroadcast'
 import { useNotifPrefsOverview, type UserNotifPrefs } from '../../api/adminNotifPrefs'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
@@ -90,6 +91,7 @@ export function AdminBroadcast() {
 
   return (
     <div className={styles.page}>
+      <PageHeader title="Рассылка" />
       <h2 className={styles.sectionTitle}>Отправить уведомление всем</h2>
       <form onSubmit={handleSubmit} className={styles.form}>
         <label className={styles.label}>

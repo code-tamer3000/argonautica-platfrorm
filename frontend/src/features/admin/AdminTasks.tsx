@@ -15,6 +15,7 @@ import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
 
@@ -571,10 +572,9 @@ export function AdminTasks() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Задачи</h1>
+      <PageHeader title="Задачи">
         <Button onClick={() => setCreateOpen(true)}>Создать</Button>
-      </div>
+      </PageHeader>
 
       {items.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
 

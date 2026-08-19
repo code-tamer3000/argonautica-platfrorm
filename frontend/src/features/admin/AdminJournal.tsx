@@ -10,6 +10,7 @@ import {
 import type { JournalProgram } from '../../lib/types'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
@@ -276,10 +277,9 @@ export function AdminJournal() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Структура дневника</h1>
+      <PageHeader title="Дневник">
         <Button onClick={() => setCreateOpen(true)}>Новое задание</Button>
-      </div>
+      </PageHeader>
 
       <p className={styles.mediaEmpty}>
         Задание — версия структуры дневника, действующая с даты старта. День

@@ -1,6 +1,4 @@
 .page { display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-8); overflow-y: auto; }
-.pageHeader { display: flex; align-items: center; justify-content: space-between; }
-.pageHeader h1 { font-family: var(--font-t1); color: var(--text-primary); }
 .sectionTitle { font-family: var(--font-t2); font-size: var(--text-h3); color: var(--text-primary); margin: var(--space-4) 0 var(--space-2); }
 .sectionToggle { display: flex; align-items: center; gap: var(--space-2); background: none; border: none; cursor: pointer; padding: 0; margin: var(--space-4) 0 var(--space-2); font-family: var(--font-t2); font-size: var(--text-h3); color: var(--text-primary); text-align: left; }
 .sectionToggle:hover { color: var(--accent); }
@@ -72,23 +70,33 @@
 .stickerImg { width: 48px; height: 48px; object-fit: contain; border: 1px solid var(--divider); border-radius: var(--radius-btn); }
 .oneTimePass { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-3); font-family: monospace; font-size: var(--text-ui); color: var(--text-primary); word-break: break-all; }
 .copyRow { display: flex; gap: var(--space-3); align-items: center; }
-.adminLayout { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-.adminNav { display: flex; gap: var(--space-2); padding: var(--space-3) var(--space-8); border-bottom: 1px solid var(--divider); background: var(--bg-surface); flex-shrink: 0; }
-.adminNavLink { padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); color: var(--text-secondary); text-decoration: none; font-size: var(--text-ui); font-family: var(--font-t4); }
+/* ───── Боковое меню админки: вертикальное, сгруппированное по этапу пути ───── */
+.adminLayout { display: flex; flex: 1; min-height: 0; overflow: hidden; position: relative; }
+.adminNav { display: flex; flex-direction: column; gap: var(--space-5); width: 220px; flex: none; padding: var(--space-5) var(--space-3); border-right: 1px solid var(--divider); background: var(--bg-surface); overflow-y: auto; }
+.adminNavGroup { display: flex; flex-direction: column; gap: var(--space-1); }
+.adminNavGroupTitle { padding: 0 var(--space-3); margin-bottom: var(--space-1); font-size: 0.7rem; text-transform: uppercase; letter-spacing: var(--ls-label-sm); color: var(--text-ghost); }
+.adminNavLink { padding: var(--space-2) var(--space-3); border-radius: var(--radius-btn); color: var(--text-secondary); text-decoration: none; font-size: var(--text-ui); font-family: var(--font-t4); }
 .adminNavLink:hover { background: var(--divider); color: var(--text-primary); }
-.adminNavActive { padding: var(--space-2) var(--space-4); border-radius: var(--radius-btn); color: var(--text-primary); text-decoration: none; font-size: var(--text-ui); font-family: var(--font-t4); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.adminNavActive { padding: var(--space-2) var(--space-3); border-radius: var(--radius-btn); color: var(--text-primary); text-decoration: none; font-size: var(--text-ui); font-family: var(--font-t4); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.adminContent { flex: 1; min-width: 0; overflow-y: auto; }
+.adminNavToggle { display: none; }
 
-/* ───── Мобила: узкие поля, прокручиваемый подраздел-навбар ───── */
+/* ───── Мобила: узкие поля, меню сворачивается за бургер ───── */
 @media (max-width: 768px) {
   .page { padding: var(--space-4); gap: var(--space-4); }
-  .adminNav {
-    padding: var(--space-2) var(--space-3);
-    overflow-x: auto; flex-wrap: nowrap;
-    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  .adminLayout { flex-direction: column; }
+  .adminNavToggle {
+    display: flex; align-items: center; gap: var(--space-2);
+    padding: var(--space-3) var(--space-4); border: none; border-bottom: 1px solid var(--divider);
+    background: var(--bg-surface); color: var(--text-primary);
+    font-family: var(--font-t4); font-size: var(--text-ui); cursor: pointer;
   }
-  .adminNav::-webkit-scrollbar { display: none; }
-  .adminNavLink, .adminNavActive { white-space: nowrap; flex: 0 0 auto; }
-  .pageHeader { flex-wrap: wrap; gap: var(--space-3); }
+  .adminNav {
+    display: none;
+    width: 100%; max-height: 60vh;
+    border-right: none; border-bottom: 1px solid var(--divider);
+  }
+  .adminNavOpen { display: flex; }
 
   /* Строка списка: заголовок сверху, действия снизу отдельным рядом — иначе
      3-4 кнопки в один ряд с заголовком «схлопываются» и выглядят смазанно. */
