@@ -19,7 +19,12 @@ function trimTrailingPunct(url: string): { url: string; trailing: string } {
   return { url: url.slice(0, url.length - trailing.length), trailing }
 }
 
-function tokenize(text: string, keyPrefix: string, mentionClass?: string): ReactNode[] {
+function tokenize(
+  text: string,
+  keyPrefix: string,
+  mentionClass?: string,
+  navigate?: (path: string) => void,
+): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let i = 0
@@ -29,10 +34,35 @@ function tokenize(text: string, keyPrefix: string, mentionClass?: string): React
     if (match[1]) {
       // URL
       const { url, trailing } = trimTrailingPunct(match[1])
+      // Ссылка на этот же домен (например, на статью БЗ или задание) открывается
+      // внутри приложения — иначе в установленном PWA клик выкидывает в системный
+      // браузер вместо перехода на нужный экран.
+      let internalPath: string | null = null
+      try {
+        const parsed = new URL(url, window.location.origin)
+        if (parsed.origin === window.location.origin) {
+          internalPath = `${parsed.pathname}${parsed.search}${parsed.hash}`
+        }
+      } catch {
+        // не абсолютный/невалидный URL — оставляем внешней ссылкой ниже
+      }
       out.push(
-        <a key={`${keyPrefix}-l${i++}`} href={url} target="_blank" rel="noopener noreferrer nofollow">
-          {url}
-        </a>,
+        internalPath && navigate ? (
+          <a
+            key={`${keyPrefix}-l${i++}`}
+            href={internalPath}
+            onClick={(e) => {
+              e.preventDefault()
+              navigate(internalPath!)
+            }}
+          >
+            {url}
+          </a>
+        ) : (
+          <a key={`${keyPrefix}-l${i++}`} href={url} target="_blank" rel="noopener noreferrer nofollow">
+            {url}
+          </a>
+        ),
       )
       if (trailing) out.push(trailing)
     } else {
@@ -53,12 +83,16 @@ function tokenize(text: string, keyPrefix: string, mentionClass?: string): React
  * Текст сообщения → React-узлы: переносы строк сохранены, «голые» ссылки кликабельны,
  * @упоминания подсвечены (класс передаёт вызывающий, т.к. стили — в CSS-модуле чата).
  */
-export function renderMessageText(text: string, mentionClass?: string): ReactNode {
+export function renderMessageText(
+  text: string,
+  mentionClass?: string,
+  navigate?: (path: string) => void,
+): ReactNode {
   const lines = text.split('\n')
   return lines.map((line, i) => (
     <Fragment key={i}>
       {i > 0 && <br />}
-      {tokenize(line, `${i}`, mentionClass)}
+      {tokenize(line, `${i}`, mentionClass, navigate)}
     </Fragment>
   ))
 }

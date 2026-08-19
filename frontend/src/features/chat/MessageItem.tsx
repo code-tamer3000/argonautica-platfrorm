@@ -90,8 +90,8 @@ function MessageItemInner({
     [markdown, msg.content],
   )
   const contentParts = useMemo(
-    () => (!markdown && msg.content ? renderMessageText(msg.content, styles.mention) : null),
-    [markdown, msg.content],
+    () => (!markdown && msg.content ? renderMessageText(msg.content, styles.mention, navigate) : null),
+    [markdown, msg.content, navigate],
   )
 
   const isEditing = editingId === msg.id
