@@ -14,6 +14,7 @@ import {
   IconUser,
 } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import { useUiStore } from '../../stores/ui'
 import { ChatLayout } from '../chat/ChatLayout'
 import { CalendarView } from '../calendar/CalendarView'
 import { CabinScreen } from '../cabin/CabinScreen'
@@ -60,10 +61,18 @@ function RootRedirect() {
 
 // «/news» резолвит новостную комнату и уводит на её реальный адрес — сегмент
 // зависит от типа комнаты (канал живёт в /diaries, всё остальное — в /chats).
+// Новостной канал больше не singleton (ARG-104) — один на поток. Для admin, у
+// которого выбран «текущий поток» (см. AdminLayout/stores/ui.ts), резолвим ИМЕННО
+// его новости; иначе (обычный участник — его rooms и так только его поток, или
+// admin без выбора) берём первый найденный.
 function NewsRedirect() {
   const { data: rooms } = useRooms()
+  const { isAdmin } = useAccessContext()
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   if (!rooms) return <div className="center grow"><Spinner /></div>
-  const news = rooms.find((r) => r.is_news)
+  const news = (isAdmin && currentIntakeId != null
+    ? rooms.find((r) => r.is_news && r.intake_id === currentIntakeId)
+    : undefined) ?? rooms.find((r) => r.is_news)
   if (!news) return <Navigate to="/chats" replace />
   const segment = news.type === 'channel' ? 'diaries' : 'chats'
   return <Navigate to={`/${segment}/${news.id}`} replace />

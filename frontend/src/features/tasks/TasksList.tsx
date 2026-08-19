@@ -16,6 +16,7 @@ import { Badge } from '../../components/Badge'
 import { Chip, type ChipKind } from '../../components/Chip'
 import { cardClass } from '../../components/Card'
 import { dayLabel } from '../../lib/format'
+import { useUiStore } from '../../stores/ui'
 import styles from './tasks.module.css'
 
 const TYPE_LABEL: Record<TaskType, string> = {
@@ -136,8 +137,18 @@ export function TasksList() {
   const { data, isLoading } = useTasks()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  // «Текущий поток» (ARG-104): для admin этот экран не гейтится сервером вообще
+  // (полный доступ) — сужаем отображение тем же общим контекстом, что и
+  // /admin/tasks, см. AppShell.CurrentIntakeSwitcher. Индивидуальные/парные/
+  // потоковые задачи всегда intake_id=NULL (видимость на назначении, не потоке) —
+  // фильтр их не трогает.
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const intakeFiltered = isAdmin && currentIntakeId != null
 
-  const items = data?.items ?? []
+  const allItems = data?.items ?? []
+  const items = intakeFiltered
+    ? allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
+    : allItems
 
   // Участник — по своему статусу: активные vs выполненные (принятые).
   const mine = items.filter((t) => t.my_status !== 'accepted')
@@ -160,9 +171,17 @@ export function TasksList() {
         <h1 className={styles.pageTitle}>Задачи</h1>
       </div>
 
+      {intakeFiltered && (
+        <p className="muted" style={{ padding: '0 var(--space-4)' }}>
+          Фильтр по текущему потоку — показаны не все задачи
+        </p>
+      )}
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
-      {!isLoading && items.length === 0 && (
+      {!isLoading && allItems.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>Задач пока нет</div>
+      )}
+      {!isLoading && allItems.length > 0 && items.length === 0 && (
+        <div className="center muted" style={{ padding: 40 }}>В этом потоке задач нет</div>
       )}
 
       {isAdmin ? (

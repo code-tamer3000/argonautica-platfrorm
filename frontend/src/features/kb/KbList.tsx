@@ -9,6 +9,7 @@ import { cardClass } from '../../components/Card'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
 import type { KbItemOut } from '../../lib/types'
+import { useUiStore } from '../../stores/ui'
 import styles from './kb.module.css'
 
 // Секция «Без категории» после всех именованных категорий.
@@ -25,9 +26,16 @@ export function KbList() {
   const { data: categories } = useKbCategories()
   const { user } = useAuth()
   const [search, setSearch] = useState('')
+  // «Текущий поток» (ARG-104): для admin этот экран (в отличие от участника) не
+  // гейтится сервером вообще (полный доступ) — сужаем отображение тем же общим
+  // контекстом, что и /admin/kb, см. AppShell.CurrentIntakeSwitcher.
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const intakeFiltered = user?.role === 'admin' && currentIntakeId != null
 
   const items = (data ?? []).filter(
-    (item) => item.title.toLowerCase().includes(search.toLowerCase()),
+    (item) =>
+      item.title.toLowerCase().includes(search.toLowerCase()) &&
+      (!intakeFiltered || item.intake_id == null || item.intake_id === currentIntakeId),
   )
 
   // Группируем по категориям (порядок — из sort_order категорий),
@@ -69,6 +77,11 @@ export function KbList() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+      {intakeFiltered && (
+        <p className="muted" style={{ padding: '0 var(--space-4)' }}>
+          Фильтр по текущему потоку — показаны не все материалы
+        </p>
+      )}
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && items.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>
