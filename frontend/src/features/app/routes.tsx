@@ -1,6 +1,8 @@
+import { differenceInCalendarDays } from 'date-fns'
 import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
 import { Navigate, Route } from 'react-router-dom'
 import { useRooms } from '../../api/rooms'
+import { useAuth } from '../auth/AuthContext'
 import {
   IconBook,
   IconCalendar,
@@ -17,6 +19,7 @@ import { Spinner } from '../../components/Spinner'
 import { useUiStore } from '../../stores/ui'
 import { ChatLayout } from '../chat/ChatLayout'
 import { CalendarView } from '../calendar/CalendarView'
+import { CohortPending } from './CohortPending'
 import { CabinScreen } from '../cabin/CabinScreen'
 import { KbList } from '../kb/KbList'
 import { KbViewer } from '../kb/KbViewer'
@@ -49,6 +52,20 @@ function withSuspense(LazyComponent: ComponentType) {
         <LazyComponent />
       </Suspense>
     )
+  }
+}
+
+// Набор ещё не начался (ARG-106): подменяет Рубку/Календарь заглушкой «до старта
+// осталось N дней», пока `today < intake.starts_on`. По календарным дням, без учёта
+// времени старта — см. Assumptions задачи. Не влияет на видимость пункта нава
+// (isRouteVisible/Access) — раздел просто открывается сам в день старта.
+function withCohortGate(Component: ComponentType) {
+  return function CohortGated() {
+    const { user } = useAuth()
+    const startsOn = user?.intake_starts_on ?? null
+    const pending = !!startsOn && differenceInCalendarDays(new Date(startsOn), new Date()) > 0
+    if (pending) return <CohortPending startsOn={startsOn!} />
+    return <Component />
   }
 }
 
@@ -143,11 +160,11 @@ export const routes: RouteEntry[] = [
     isNavActive: ({ pathname, newsRoomId }) =>
       (pathname.startsWith('/chats') || pathname.startsWith('/diaries')) &&
       !(newsRoomId != null && openRoomIdFrom(pathname) === newsRoomId),
-    Component: () => <ChatLayout tab="chats" />,
+    Component: withCohortGate(() => <ChatLayout tab="chats" />),
     children: [
-      { path: '/chats/:roomId', Component: () => <ChatLayout tab="chats" /> },
-      { path: '/diaries', Component: () => <ChatLayout tab="channels" /> },
-      { path: '/diaries/:roomId', Component: () => <ChatLayout tab="channels" /> },
+      { path: '/chats/:roomId', Component: withCohortGate(() => <ChatLayout tab="chats" />) },
+      { path: '/diaries', Component: withCohortGate(() => <ChatLayout tab="channels" />) },
+      { path: '/diaries/:roomId', Component: withCohortGate(() => <ChatLayout tab="channels" />) },
     ],
   },
   {
@@ -185,7 +202,7 @@ export const routes: RouteEntry[] = [
     label: 'Календарь',
     icon: IconCalendar,
     access: { kind: 'observerBlocked' },
-    Component: CalendarView,
+    Component: withCohortGate(CalendarView),
   },
   {
     path: '/genkeys',

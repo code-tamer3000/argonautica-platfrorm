@@ -7,6 +7,8 @@ Project events (dates, titles, descriptions). An event is either **project-wide*
 
 > **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no calendar access: the whole `/api/calendar` router is behind `require_participant` → 403.
 
+> **Cohort not started yet** (`today < intake.starts_on`, ARG-106): the Calendar screen is replaced client-side with a "N days until start" placeholder — same frontend-only gate as Рубка, see [ROOMS.md](ROOMS.md) and [DATA_MODEL.md](DATA_MODEL.md) "Cohort-pending gate". No API-level block; the participant can still be a room-scoped event's room member.
+
 ## Endpoints
 
 - CRUD **admin only**: `POST/PATCH/DELETE /api/calendar/events` (validates `ends_at >= starts_at`).

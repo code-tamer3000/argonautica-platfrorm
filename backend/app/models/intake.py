@@ -1,7 +1,7 @@
 """Набор: когорта участников с общей датой старта 28-дневного окна Динамики."""
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, func
+from sqlalchemy import BigInteger, Date, DateTime, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -21,6 +21,11 @@ class Intake(Base):
     # api/dynamics.py). Отдельная величина от 28-дневного окна ДЗ — совпадение дат
     # у исторического набора случайно.
     ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    # Текст приветственного поп-апа при первом входе (ARG-106) — тот же текст, что
+    # уходит новостным постом при провижининге (`NEWS_BODY` в
+    # scripts/provision_second_intake.py). NULL = поп-ап не показывается (старые
+    # наборы, заведённые до этой фичи).
+    welcome_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

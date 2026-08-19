@@ -86,6 +86,11 @@ class UserOut(BaseModel):
     # Рубка — только чтение. См. app/services/graduation.py.
     graduated_at: datetime | None = None
     settings: dict[str, Any] = {}
+    # Набор участника (ARG-106): дата старта — для гейта Рубки/Календаря на клиенте
+    # (`today < intake_starts_on`); приветственный текст — для поп-апа при первом
+    # входе. NULL/NULL — участник без набора или набор без текста (старые наборы).
+    intake_starts_on: date | None = None
+    intake_welcome_message: str | None = None
 
 
 class PublicUserOut(BaseModel):

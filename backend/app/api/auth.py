@@ -17,6 +17,7 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_session
+from app.models.intake import Intake
 from app.models.media import MediaAsset
 from app.models.user import User
 from app.schemas.auth import (
@@ -118,6 +119,16 @@ async def _me_out(session: AsyncSession, user: User) -> UserOut:
     if user.avatar_media_id is not None:
         urls = await presign_asset_urls(session, {user.avatar_media_id})
         out.avatar_url = urls.get(user.avatar_media_id)
+    if user.intake_id is not None:
+        intake = (
+            await session.execute(
+                select(Intake.starts_on, Intake.welcome_message).where(
+                    Intake.id == user.intake_id
+                )
+            )
+        ).one_or_none()
+        if intake is not None:
+            out.intake_starts_on, out.intake_welcome_message = intake
     return out
 
 

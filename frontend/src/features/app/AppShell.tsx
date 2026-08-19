@@ -10,6 +10,7 @@ import { wsClient } from '../../lib/wsClient'
 import { useUiStore } from '../../stores/ui'
 import { ConnectionBanner } from './ConnectionBanner'
 import { NotificationBell } from './NotificationBell'
+import { WelcomePopup } from './WelcomePopup'
 import { ProfileMenu } from './ProfileMenu'
 import { RequireAccess, isRouteVisible, useAccessContext } from './RequireAccess'
 import { routes } from './routes'
@@ -239,6 +240,7 @@ export function AppShell() {
           </Routes>
         </main>
       </div>
+      {!isObserver && <WelcomePopup />}
       <Toasts />
     </div>
   )
