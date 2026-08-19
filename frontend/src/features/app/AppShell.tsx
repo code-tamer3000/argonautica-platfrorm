@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { useAdminIntakes } from '../../api/admin'
 import { useRooms } from '../../api/rooms'
 import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
@@ -17,40 +16,6 @@ import { routes } from './routes'
 import { useNavBadges } from './useNavBadges'
 import styles from './appshell.module.css'
 
-/** `YYYY-MM-DD` → «2 июня 2026». */
-function intakeDate(startsOn: string): string {
-  return new Date(`${startsOn}T00:00:00`).toLocaleDateString('ru-RU', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  })
-}
-
-// Селектор «текущий поток» (ARG-104): раньше жил только внутри /admin
-// (AdminLayout) — виден и переключаем оттуда же, а его эффект (фильтрация
-// Задачи/КБ/Чаты, целевой поток репоста) читается из общего стора ВЕЗДЕ, в т.ч.
-// вне /admin. По многочисленным жалобам вынесен в шапку целиком: должен быть
-// виден и переключаем с любого экрана, не только из админки.
-function CurrentIntakeSwitcher() {
-  const { data: intakes = [] } = useAdminIntakes()
-  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const setCurrentIntakeId = useUiStore((s) => s.setAdminCurrentIntakeId)
-  if (intakes.length === 0) return null
-  return (
-    <select
-      className={styles.intakeSwitcher}
-      value={currentIntakeId ?? 'all'}
-      onChange={(e) => setCurrentIntakeId(e.target.value === 'all' ? null : Number(e.target.value))}
-      title="Текущий поток — фильтрует Задачи/КБ/Чаты и целевой поток репоста в новости"
-    >
-      <option value="all">Все потоки</option>
-      {intakes.map((intake) => (
-        <option key={intake.id} value={intake.id}>
-          Поток от {intakeDate(intake.starts_on)}
-        </option>
-      ))}
-    </select>
-  )
-}
-
 export function AppShell() {
   const location = useLocation()
   const badges = useNavBadges()
@@ -59,8 +24,9 @@ export function AppShell() {
 
   // Для подсветки нава: /news резолвится в /chats/:id или /diaries/:id, и без
   // знания id новостной комнаты её адрес неотличим от обычной (см. routes.tsx).
-  // Новостной канал не singleton (ARG-104) — с выбранным потоком резолвим ИМЕННО
-  // его новости, иначе первый найденный (см. NewsRedirect в routes.tsx — та же логика).
+  // Новостной канал не singleton (ARG-104) — с выбранной в /admin/expeditions
+  // экспедицией резолвим ИМЕННО её новости, иначе первый найденный (см.
+  // NewsRedirect в routes.tsx — та же логика).
   const { data: rooms } = useRooms()
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const newsRoomId = useMemo(() => {
@@ -171,7 +137,6 @@ export function AppShell() {
           <span className={styles.brandStar} aria-hidden><StarSpark size={16} variant="icon" /></span>
         </span>
         <div className={styles.spacer} />
-        {accessCtx.isAdmin && <CurrentIntakeSwitcher />}
         {!isObserver && <NotificationBell />}
         <ProfileMenu />
       </header>

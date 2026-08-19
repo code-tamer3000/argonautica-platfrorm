@@ -26,9 +26,10 @@ export function KbList() {
   const { data: categories } = useKbCategories()
   const { user } = useAuth()
   const [search, setSearch] = useState('')
-  // «Текущий поток» (ARG-104): для admin этот экран (в отличие от участника) не
-  // гейтится сервером вообще (полный доступ) — сужаем отображение тем же общим
-  // контекстом, что и /admin/kb, см. AppShell.CurrentIntakeSwitcher.
+  // «Текущая экспедиция» (ARG-104): для admin этот экран не гейтится сервером
+  // вообще (полный доступ) — сужаем отображение тем же общим контекстом, что и
+  // /admin/kb. Выбирается ОДИН раз в /admin/expeditions (AdminExpeditions), здесь
+  // только читаем — без своего контрола/баннера, чтобы не плодить UI-шум.
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const intakeFiltered = user?.role === 'admin' && currentIntakeId != null
 
@@ -77,11 +78,6 @@ export function KbList() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      {intakeFiltered && (
-        <p className="muted" style={{ padding: '0 var(--space-4)' }}>
-          Фильтр по текущему потоку — показаны не все материалы
-        </p>
-      )}
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && items.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>

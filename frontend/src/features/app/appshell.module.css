@@ -52,14 +52,6 @@
 
 .spacer { flex: 1; }
 
-/* Селектор «текущий поток» (ARG-104) — в шапке, виден с любого экрана. */
-.intakeSwitcher {
-  background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn);
-  padding: var(--space-1) var(--space-2); color: var(--text-primary); font-size: var(--text-label-md);
-  max-width: 220px;
-}
-.intakeSwitcher:focus { outline: none; border-color: var(--accent); }
-
 .body        { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .sidenav     { position: relative; width: 200px; padding: var(--space-3) 0; border-right: 1px solid var(--divider); display: flex; flex-direction: column; gap: 2px; background: var(--bg-surface); flex-shrink: 0; }
 /* Контент ссылки лежит над glider'ом (z-index: 1). */

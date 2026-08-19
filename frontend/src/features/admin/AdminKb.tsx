@@ -472,11 +472,6 @@ export function AdminKb() {
         </div>
       </PageHeader>
 
-      {currentIntakeId != null && (
-        <p style={{ color: 'var(--text-secondary)' }}>
-          Фильтр по текущему потоку (см. переключатель выше) — показаны не все материалы.
-        </p>
-      )}
       {allItems.length > 0 && items.length === 0 && (
         <p className={styles.mediaEmpty}>В этом потоке материалов нет</p>
       )}

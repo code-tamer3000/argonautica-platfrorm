@@ -137,11 +137,11 @@ export function TasksList() {
   const { data, isLoading } = useTasks()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  // «Текущий поток» (ARG-104): для admin этот экран не гейтится сервером вообще
-  // (полный доступ) — сужаем отображение тем же общим контекстом, что и
-  // /admin/tasks, см. AppShell.CurrentIntakeSwitcher. Индивидуальные/парные/
-  // потоковые задачи всегда intake_id=NULL (видимость на назначении, не потоке) —
-  // фильтр их не трогает.
+  // «Текущая экспедиция» (ARG-104): для admin этот экран не гейтится сервером
+  // вообще (полный доступ) — сужаем отображение тем же общим контекстом, что и
+  // /admin/tasks. Индивидуальные/парные/потоковые задачи всегда intake_id=NULL
+  // (видимость на назначении, не потоке) — фильтр их не трогает. Выбирается ОДИН
+  // раз в /admin/expeditions, здесь только читаем — без своего контрола/баннера.
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const intakeFiltered = isAdmin && currentIntakeId != null
 
@@ -171,11 +171,6 @@ export function TasksList() {
         <h1 className={styles.pageTitle}>Задачи</h1>
       </div>
 
-      {intakeFiltered && (
-        <p className="muted" style={{ padding: '0 var(--space-4)' }}>
-          Фильтр по текущему потоку — показаны не все задачи
-        </p>
-      )}
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && allItems.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>Задач пока нет</div>
