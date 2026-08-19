@@ -43,7 +43,7 @@ export function LoginScreen() {
           </div>
           <div className={styles.divider} aria-hidden>
             <span className={styles.rule} />
-            <span className={styles.star}><StarSpark size={16} /></span>
+            <span className={styles.star}><StarSpark size={16} variant="icon" /></span>
             <span className={`${styles.rule} ${styles.ruleR}`} />
           </div>
         </div>

@@ -148,7 +148,7 @@ export function AppShell() {
         <span className={styles.brand}>
           <img className={styles.brandMark} src="/media/monogram.png" alt="" aria-hidden />
           <span className={styles.wordmark}>Аргонавтика</span>
-          <span className={styles.brandStar} aria-hidden><StarSpark size={12} /></span>
+          <span className={styles.brandStar} aria-hidden><StarSpark size={12} variant="icon" /></span>
         </span>
         <div className={styles.spacer} />
         {!isObserver && <NotificationBell />}
