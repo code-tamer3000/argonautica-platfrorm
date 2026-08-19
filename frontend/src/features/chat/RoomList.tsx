@@ -115,9 +115,28 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
     const pinned: RoomOut[] = []
     if (mine) pinned.push(mine)
 
+    let dms = filtered.filter((r) => r.type === 'dm')
+    let groups = filtered.filter((r) => r.type === 'group')
+    if (applyIntakeFilter) {
+      // dm/group не несут intake_id на самой комнате (гейтятся явным членством,
+      // не потоком, см. docs/ROOMS.md) — но admin здесь смотрит на них с точки
+      // зрения «что относится к этой экспедиции», поэтому резолвим поток стороны:
+      // для dm — собеседник, для группы — создатель.
+      dms = dms.filter((r) => {
+        const peerId = dmPeers[r.id] ?? r.peer_id
+        if (peerId == null) return true
+        const peerIntakeId = adminUsers.get(peerId)?.intake_id
+        return peerIntakeId == null || peerIntakeId === currentIntakeId
+      })
+      groups = groups.filter((r) => {
+        const ownerIntakeId = adminUsers.get(r.created_by)?.intake_id
+        return ownerIntakeId == null || ownerIntakeId === currentIntakeId
+      })
+    }
+
     return {
-      dms: filtered.filter((r) => r.type === 'dm'),
-      groups: filtered.filter((r) => r.type === 'group'),
+      dms,
+      groups,
       pinnedChannels: pinned,
       otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
     }
