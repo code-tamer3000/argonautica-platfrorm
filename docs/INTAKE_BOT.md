@@ -13,10 +13,12 @@ verbatim from `OldBot/bot_texts.md`.
 ## Funnel (`intake_applications.status`)
 
 ```
-awaiting_about → submitted → choosing_plan → awaiting_receipt → payment_review → confirmed
+awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_receipt →
+  payment_review → confirmed
 ```
 
-1. **`/start`** → bot asks the applicant to describe themselves in one message.
+1. **`/start`** → bot asks the applicant to describe themselves in one message
+   (`ask_about`, also the opening line of `start` — same string, see «Placeholder texts»).
 2. Reply → `status=submitted`; the anketa is forwarded to the admin DM with an **«Принять»**
    button.
 3. Admin taps **«Принять»** → `status=choosing_plan`; bot shows tariffs as buttons, read
@@ -28,22 +30,35 @@ awaiting_about → submitted → choosing_plan → awaiting_receipt → payment_
    menu (ARG-94). If that message is gone (user deleted it), the bot silently falls back to
    sending a new one. A tap on a screen that is stale relative to `app.status` changes
    nothing and answers with an alert («Этот шаг уже пройден»).
-4. Pick a tariff → `status=awaiting_receipt`; bot sends payment details (the `accepted`
-   text with `{price}` substituted for the chosen tariff's price) and asks for a receipt.
-5. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
+4. Pick a tariff → `status=awaiting_offer` (ARG-43): bot sends **«📄 Читать оферту»**
+   (a Telegram `web_app` button opening `{PLATFORM_URL}/oferta` — the one unauthenticated
+   route in the SPA, see [FRONTEND.md](FRONTEND.md)) and **«✅ Согласен, к оплате»**
+   (`callback_data=of:<app_id>`). Payment details are **not** sent yet.
+5. Tap **«✅ Согласен, к оплате»** → `intake_applications.offer_accepted_at` = now,
+   `offer_version` = the bot's `OFFER_VERSION` constant (bump it whenever the offer text
+   changes — the offer itself lives in git, `frontend/src/features/oferta/content/oferta.md`,
+   not in the DB), `status=awaiting_receipt`; **now** the bot sends payment details (the
+   `accepted` text with `{price}` substituted for the chosen tariff's price) and asks for a
+   receipt.
+6. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
    with a **«Подтвердить оплату»** button.
-6. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
+7. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
    environment** (see `PLATFORM_URL` — on staging, the staging domain): login = the
    applicant's Telegram `@username`, one-time password (`must_change_password=true`),
    `intake_id` = the current active intake ([DATA_MODEL.md](DATA_MODEL.md) `intakes`),
-   `plan_id` = the chosen tariff. Sends login/password + `PLATFORM_URL` to the applicant.
-   `status=confirmed`, `intake_applications.user_id` set.
+   `plan_id` = the chosen tariff. Right after the account is created, the bot assigns the
+   new user every `type='individual'` task tagged with this same `intake_id` (welcome
+   tasks provisioned ahead of time by `scripts/provision_second_intake.py`, with an empty
+   recipient list at creation — see that script and [TASKS.md](TASKS.md)). Sends
+   login/password + `PLATFORM_URL` to the applicant. `status=confirmed`,
+   `intake_applications.user_id` set.
    - If the applicant has no Telegram `@username` at this point, account creation is
      refused (login = username, must exist) — the admin gets an alert and the applicant is
      asked to set one; nothing else in the funnel is blocked, retry the same button once
      they have.
-7. In-between statuses show `wait_decision` / `wait_payment_check` (idle waiting on the
-   *other* party) if the applicant sends something out of turn.
+8. In-between statuses show `wait_decision` / `wait_payment_check` / the offer prompt again
+   (idle waiting on the *other* party, or on the applicant tapping «Согласен») if the
+   applicant sends something out of turn.
 
 After `confirmed`, the chat becomes **service mode**: **«Сменить пароль»** (re-issue a
 fresh one-time password, same helper as `scripts/telegram_bot.py`'s password reset) as an
@@ -85,7 +100,7 @@ so the same account can run the funnel again from scratch:
   `docker/docker-compose.staging.yml`. Off by default and on prod: the command replies
   that reset is unavailable on this environment and touches no data.
 - What it removes: the `intake_applications` row, then — if it had a `user_id` — the
-  platform user via the admin `delete_user` (rooms, messages, media are already handled
+  platform user via the admin `delete_user` (rooms, messages, media, task assignments are already handled
   there; a user owning shared content still blocks deletion and the admin is told why),
   then the applicant's ephemeral Redis keys (`intakebot:await_q:*`, `intakebot:pwd:*`).
   An application with no `user_id` (run never reached `confirmed`) is not an error.
@@ -126,4 +141,15 @@ temporary placeholder; final copy is a separate follow-up.
 - No real payment provider — payment is still eyeballed from the receipt by the admin.
   Provider integration is a separate, later task (ARG-63/ARG-32).
 - Staging-only account creation; the bot never provisions on prod.
-- Legal/offer texts (ARG-43) are out of scope.
+
+## Offer consent (ARG-43)
+
+- The offer text lives in git, not the DB — `frontend/src/features/oferta/content/oferta.md`,
+  rendered by `OfertaScreen` at the SPA's one public route, `/oferta` (added in `App.tsx`
+  ahead of `AuthGuard`; no API calls, no auth). It ships as-is; wording/legal review is a
+  content decision, not an engineering one.
+- The applicant reads it inside Telegram as a `web_app` inline button — no external link,
+  no PDF.
+- Consent is recorded on `intake_applications` (`offer_accepted_at`, `offer_version`)
+  **before** the funnel reveals payment details — see step 4–5 above. There is no path from
+  `choosing_plan` to `awaiting_receipt` that skips `awaiting_offer`.

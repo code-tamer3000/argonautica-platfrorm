@@ -1178,6 +1178,8 @@ async def create_submission(
         and datetime.now(UTC) > task.deadline_at
     ):
         assignment.late = True
+    if task.sets_display_name and body.body and body.body.strip():
+        current_user.display_name = body.body.strip()
     await session.flush()
     await session.refresh(submission)
 

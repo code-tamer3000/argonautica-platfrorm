@@ -69,10 +69,17 @@ class Task(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # мягкое удаление
     # Изоляция по потоку (ARG-96): проверяется только для type='common' (неявная
     # видимость — «видна любому активному участнику»); individual/pair/stream уже
-    # гейтятся явным назначением/членством и это поле в видимости не читают.
+    # гейтятся явным назначением/членством и это поле в видимости не читают. У
+    # individual-заданий тоже может быть проставлен — как метка «это задание набора
+    # X» для provisioning (см. scripts/provision_second_intake.py), не для видимости.
     # NULL = общая для всех потоков.
     intake_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("intakes.id")
+    )
+    # Сдача этой задачи переписывает users.display_name текстом сдачи (см.
+    # create_submission). Ничего не хардкодится по id/названию задания — только флаг.
+    sets_display_name: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
     )
 
 

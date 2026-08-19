@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -46,6 +47,7 @@ from app.db.session import SessionLocal
 from app.models.intake import Intake
 from app.models.intake_application import (
     STATUS_AWAITING_ABOUT,
+    STATUS_AWAITING_OFFER,
     STATUS_AWAITING_RECEIPT,
     STATUS_CHOOSING_PLAN,
     STATUS_CONFIRMED,
@@ -54,6 +56,7 @@ from app.models.intake_application import (
     IntakeApplication,
 )
 from app.models.plan import Plan
+from app.models.task import Task, TaskAssignment
 from app.models.user import User
 from app.schemas.user import AdminCreateUserRequest
 
@@ -76,15 +79,14 @@ QMAP_TTL_SEC = 7 * 24 * 3600
 
 # --- Тексты (OldBot/bot_texts.md, использованы как есть) -------------------------
 
+TEXT_ASK_ABOUT = "Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? ✦"
 TEXT_START = (
     "⚓️ <b>Экспедиция «Искусство посылания на Хер»</b>\n\n"
     "Путь Аргонавта: 28 дней, 5 миров, освобождение внимания и проявление своего "
     "Дела.\n\n"
-    "Чтобы попасть на борт — расскажи о себе одним сообщением: <b>кто ты, в какой "
-    "точке сейчас и что хочешь изменить.</b> 👇"
+    f"{TEXT_ASK_ABOUT}"
 )
 TEXT_NEED_START = "Чтобы начать — напиши /start."
-TEXT_ASK_ABOUT = "Расскажи о себе текстом — одним сообщением. ✦"
 TEXT_SUBMITTED = (
     "✦ <b>Заявка принята к рассмотрению.</b>\n\n"
     "Мы читаем каждую анкету лично. Как прочитаем — ответим. Жди весточку. ⚓️"
@@ -98,6 +100,13 @@ TEXT_ACCEPTED = (
     "После оплаты пришли сюда чек — PDF-файлом или скриншотом. Как получим — "
     "подтвердим место. ⚓️"
 )
+# Согласие с офертой (ARG-43) — экран между выбором тарифа и реквизитами.
+TEXT_OFFER_PROMPT = (
+    "Прежде чем перейти к оплате — прочитай оферту и подтверди согласие. 📄"
+)
+# Редакция принятой оферты (совпадает с «Редакция от …» в самом тексте оферты,
+# frontend/src/features/oferta/content/oferta.md) — поднимать при правке текста.
+OFFER_VERSION = "2026-08-19"
 TEXT_NEED_RECEIPT = (
     "Чтобы подтвердить место — пришли чек об оплате: PDF-файлом или скриншотом. 🧾"
 )
@@ -381,6 +390,20 @@ def _plan_details_keyboard(app_id: int, plan_id: int) -> dict[str, Any]:
     }
 
 
+def _offer_keyboard(app_id: int) -> dict[str, Any]:
+    """Экран согласия: WebApp-кнопка с текстом оферты + явное согласие.
+
+    Без нажатия «Согласен» заявитель не получает TEXT_ACCEPTED (реквизиты) —
+    см. `_handle_offer_accept`.
+    """
+    return {
+        "inline_keyboard": [
+            [{"text": "📄 Читать оферту", "web_app": {"url": f"{PLATFORM_URL}/oferta"}}],
+            [{"text": "✅ Согласен, к оплате", "callback_data": f"of:{app_id}"}],
+        ]
+    }
+
+
 def _service_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
@@ -405,6 +428,7 @@ async def _status_reminder(client: httpx.AsyncClient, chat_id: int, app: IntakeA
     reminders = {
         STATUS_AWAITING_ABOUT: TEXT_ASK_ABOUT,
         STATUS_SUBMITTED: TEXT_WAIT_DECISION,
+        STATUS_AWAITING_OFFER: TEXT_OFFER_PROMPT,
         STATUS_AWAITING_RECEIPT: TEXT_NEED_RECEIPT,
         STATUS_PAYMENT_REVIEW: TEXT_WAIT_PAYMENT_CHECK,
     }
@@ -501,7 +525,34 @@ async def _create_platform_user(
         plan_id=app.plan_id,
     )
     response = await create_user(body, session)
+    await _assign_intake_welcome_tasks(session, intake.id, response.id)
     return response.username, response.one_time_password
+
+
+async def _assign_intake_welcome_tasks(
+    session: AsyncSession, intake_id: int, user_id: int
+) -> None:
+    """Назначить новичку индивидуальные задания-приветствия его набора.
+
+    Заводятся provisioning-скриптом (scripts/provision_second_intake.py) с пустым
+    списком получателей — здесь список наполняется по мере регистрации. `intake_id`
+    у individual-заданий тут — метка «чьё это приветствие», видимость по-прежнему
+    решает исключительно назначение (task.py:70-73), поэтому 0 заявителей до сих пор
+    ничего никому не показывал.
+    """
+    tasks = (
+        await session.execute(
+            select(Task.id).where(
+                Task.type == "individual",
+                Task.intake_id == intake_id,
+                Task.deleted_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    for task_id in tasks:
+        session.add(TaskAssignment(task_id=task_id, user_id=user_id))
+    if tasks:
+        await session.flush()
 
 
 # --- Обработчики callback-кнопок ---------------------------------------------
@@ -591,9 +642,34 @@ async def _handle_plan_choose(client: httpx.AsyncClient, session: AsyncSession, 
         await _answer_callback(client, cb["id"], "Тариф больше не доступен", alert=True)
         return
     app.plan_id = plan.id
-    app.status = STATUS_AWAITING_RECEIPT
+    app.status = STATUS_AWAITING_OFFER
     await session.flush()
     await _answer_callback(client, cb["id"], f"Выбрано: {plan.name}")
+    chat_id, _ = context
+    await _send(client, chat_id, TEXT_OFFER_PROMPT, reply_markup=_offer_keyboard(app.id))
+
+
+async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
+    """«✅ Согласен, к оплате» — фиксирует согласие с офертой (ARG-43) и только
+    после этого открывает шаг присылки чека (реквизиты — в TEXT_ACCEPTED)."""
+    app_id = int(cb["data"].split(":", 1)[1])
+    app = await session.get(IntakeApplication, app_id)
+    context = _plan_screen_context(cb, app)
+    if app is None or context is None:
+        await _answer_callback(client, cb["id"])
+        return
+    if app.status != STATUS_AWAITING_OFFER:
+        await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
+        return
+    plan = await session.get(Plan, app.plan_id) if app.plan_id else None
+    if plan is None:
+        await _answer_callback(client, cb["id"], "Тариф больше не доступен", alert=True)
+        return
+    app.offer_accepted_at = datetime.now(UTC)
+    app.offer_version = OFFER_VERSION
+    app.status = STATUS_AWAITING_RECEIPT
+    await session.flush()
+    await _answer_callback(client, cb["id"], "Принято")
     chat_id, _ = context
     await _send(client, chat_id, TEXT_ACCEPTED.format(price=_price_str(plan.price)))
 
@@ -705,6 +781,8 @@ async def _handle_callback(client: httpx.AsyncClient, session: AsyncSession, cb:
         await _handle_plan_list(client, session, cb)
     elif data.startswith("pc:"):
         await _handle_plan_choose(client, session, cb)
+    elif data.startswith("of:"):
+        await _handle_offer_accept(client, session, cb)
     elif data.startswith("pay:"):
         await _handle_confirm_payment(client, session, cb)
     elif data == CB_ASK_QUESTION:
@@ -894,6 +972,8 @@ async def _handle_start(
         await _send(client, chat_id, TEXT_WAIT_DECISION)
     elif app.status == STATUS_CHOOSING_PLAN:
         await _send_plan_list(client, session, chat_id, app)
+    elif app.status == STATUS_AWAITING_OFFER:
+        await _send(client, chat_id, TEXT_OFFER_PROMPT, reply_markup=_offer_keyboard(app.id))
     elif app.status == STATUS_AWAITING_RECEIPT:
         await _send(client, chat_id, TEXT_NEED_RECEIPT)
     elif app.status == STATUS_PAYMENT_REVIEW:

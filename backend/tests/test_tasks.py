@@ -261,6 +261,54 @@ async def test_submission_lifecycle(
     assert acc.json()["status"] == "accepted"
 
 
+async def test_sets_display_name_task_renames_on_submit(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Провижининг-флаг (не в TaskCreate — только прямой INSERT, см. provision_second_intake.py):
+    сдача такого задания переписывает users.display_name текстом сдачи."""
+    from app.models.task import Task, TaskAssignment
+
+    admin = await make_user(role="admin")
+    user = await make_user()
+    user_h = await _headers(client, user)
+
+    task = Task(
+        type="individual", title="Придумай себе имя аргонавта",
+        created_by=admin.id, sets_display_name=True,
+    )
+    session.add(task)
+    await session.flush()
+    session.add(TaskAssignment(task_id=task.id, user_id=user.id))
+    await session.commit()
+
+    resp = await client.post(
+        f"/api/tasks/{task.id}/submissions", headers=user_h, json={"body": "  Капитан Крюк  "}
+    )
+    assert resp.status_code == 201, resp.text
+
+    await session.refresh(user)
+    assert user.display_name == "Капитан Крюк"
+
+
+async def test_regular_task_does_not_touch_display_name(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    task = await _create_task(
+        client, admin_h, type="individual", title="Обычное", assignee_ids=[user.id],
+    )
+    await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "Новое имя"}
+    )
+
+    me = await client.get("/api/auth/me", headers=user_h)
+    assert me.json()["display_name"] == user.display_name
+
+
 async def test_submission_must_carry_content(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
