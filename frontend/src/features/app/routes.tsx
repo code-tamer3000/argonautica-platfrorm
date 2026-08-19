@@ -23,8 +23,6 @@ import { TasksList } from '../tasks/TasksList'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
-import { AdminLayout } from '../admin/AdminLayout'
-import { ADMIN_DEFAULT_PATH, ADMIN_SECTIONS } from '../admin/sections'
 import type { NavBadges } from './useNavBadges'
 import { useAccessContext, type Access } from './RequireAccess'
 
@@ -35,6 +33,12 @@ const GeneKeysScreen = lazy(() =>
 )
 const KbBookReader = lazy(() =>
   import('../kb/book/KbBookReader').then((m) => ({ default: m.KbBookReader })),
+)
+// Админка: 13 экранов + их статические импорты — заметный вес, который не нужен
+// никому, кроме админа (наблюдатель её вообще не видит). Один lazy-чанк на всё
+// поддерево, а не дробление на 13 маленьких — см. AdminRoutes.tsx.
+const AdminRoutes = lazy(() =>
+  import('../admin/AdminRoutes').then((m) => ({ default: m.AdminRoutes })),
 )
 
 function withSuspense(LazyComponent: ComponentType) {
@@ -91,9 +95,8 @@ export interface RouteEntry {
   children?: RouteChild[]
   /**
    * Спецслучай — свой вложенный <Route>-поддерева со своим layout/<Outlet/>.
-   * Сейчас только у «/admin»: её 13 подмаршрутов остаются как есть (ARG-97 их не
-   * трогает), здесь только оборачиваются в RequireAccess вместо ручной проверки
-   * роли внутри AdminLayout.
+   * Сейчас только у «/admin»: её 13 подмаршрутов (ARG-97 их не трогает) живут в
+   * отдельном lazy-чанке (AdminRoutes.tsx), сюда попадает лишь Suspense-обёртка.
    */
   renderRoutes?: () => ReactNode
 }
@@ -190,12 +193,14 @@ export const routes: RouteEntry[] = [
     icon: IconSettings,
     access: { kind: 'adminOnly' },
     renderRoutes: () => (
-      <Route path="/admin" element={<AdminLayout />}>
-        {ADMIN_SECTIONS.map((section) => (
-          <Route key={section.path} path={section.path} element={<section.Component />} />
-        ))}
-        <Route index element={<Navigate to={ADMIN_DEFAULT_PATH} replace />} />
-      </Route>
+      <Route
+        path="/admin/*"
+        element={
+          <Suspense fallback={<div className="center grow"><Spinner /></div>}>
+            <AdminRoutes />
+          </Suspense>
+        }
+      />
     ),
   },
 ]
