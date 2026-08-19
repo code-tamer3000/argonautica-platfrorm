@@ -3,11 +3,11 @@ import { AdminBroadcast } from './AdminBroadcast'
 import { AdminCabin } from './AdminCabin'
 import { AdminCalendar } from './AdminCalendar'
 import { AdminDynamics } from './AdminDynamics'
+import { AdminExpeditions } from './AdminExpeditions'
 import { AdminFaq } from './AdminFaq'
 import { AdminFeedback } from './AdminFeedback'
 import { AdminJournal } from './AdminJournal'
 import { AdminKb } from './AdminKb'
-import { AdminPlans } from './AdminPlans'
 import { AdminStickers } from './AdminStickers'
 import { AdminSurvey } from './AdminSurvey'
 import { AdminTasks } from './AdminTasks'
@@ -32,7 +32,7 @@ export interface AdminSection {
 // (AdminLayout) и роуты (AppShell) строятся из этого массива — убрать раздел
 // отсюда значит убрать и пункт меню, и маршрут.
 export const ADMIN_SECTIONS: AdminSection[] = [
-  { path: 'plans', label: 'Тарифы', group: 'intake', Component: AdminPlans },
+  { path: 'expeditions', label: 'Экспедиции', group: 'intake', Component: AdminExpeditions },
   { path: 'survey', label: 'Анкета', group: 'intake', Component: AdminSurvey },
   { path: 'users', label: 'Пользователи', group: 'intake', Component: AdminUsers },
   { path: 'dynamics', label: 'Динамика', group: 'progress', Component: AdminDynamics },

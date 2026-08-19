@@ -644,12 +644,6 @@ export function AdminTasks() {
         <Button onClick={() => setCreateOpen(true)}>Создать</Button>
       </PageHeader>
 
-      {currentIntakeId != null && (
-        <p style={{ color: 'var(--text-secondary)' }}>
-          Фильтр по текущему потоку (см. переключатель выше) — показаны не все задачи.
-        </p>
-      )}
-
       {allItems.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
       {allItems.length > 0 && items.length === 0 && (
         <p className={styles.mediaEmpty}>В этом потоке задач нет</p>

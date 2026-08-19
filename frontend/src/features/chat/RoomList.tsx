@@ -71,11 +71,11 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const online = useUiStore((s) => s.online)
-  // «Текущий поток» (ARG-104): для admin список каналов admin видит БЕЗ серверного
-  // фильтра (полный доступ, см. assert_room_access) — этот селектор сужает его же
-  // отображение до выбранного потока + общих каналов, тот же контекст, что в
-  // Задачи/КБ (см. AdminLayout). Для остального участника ничего не меняет: его
-  // rooms и так уже отфильтрованы сервером до своего потока.
+  // «Текущая экспедиция» (ARG-104): для admin список каналов виден БЕЗ серверного
+  // фильтра (полный доступ, см. assert_room_access) — сужаем его же отображение до
+  // выбранной экспедиции + общих каналов, тот же контекст, что в Задачи/КБ. Для
+  // остального участника ничего не меняет: его rooms и так уже отфильтрованы
+  // сервером. Выбирается ОДИН раз в /admin/expeditions, здесь только читаем.
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const isAdmin = me?.role === 'admin'
   // Чужие личные дневники несут intake_id владельца НЕ на самой комнате (та колонка
@@ -87,7 +87,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
   const badges = useNavBadges()
 
-  const { dms, groups, pinnedChannels, otherChannels, intakeFiltered } = useMemo(() => {
+  const { dms, groups, pinnedChannels, otherChannels } = useMemo(() => {
     const list = rooms ?? []
     const needle = q.trim().toLowerCase()
     const filtered = needle
@@ -120,7 +120,6 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       groups: filtered.filter((r) => r.type === 'group'),
       pinnedChannels: pinned,
       otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
-      intakeFiltered: applyIntakeFilter,
     }
   }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers])
 
@@ -229,11 +228,6 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
         {tab === 'channels' && (
           <>
-            {intakeFiltered && (
-              <div className="muted" style={{ padding: '8px 16px', fontSize: 13 }}>
-                Фильтр по текущему потоку — показаны не все дневники
-              </div>
-            )}
             {rooms && channelsEmpty && (
               <div className="muted" style={{ padding: 16, fontSize: 14 }}>Дневников нет</div>
             )}
