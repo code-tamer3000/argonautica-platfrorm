@@ -27,6 +27,7 @@ import {
   Play,
   Plus,
   ListChecks,
+  Menu,
   Settings,
   Smile,
   Sticker,
@@ -53,6 +54,7 @@ export const IconDiary = (p: IconProps) => <NotebookPen {...DEFAULTS} {...p} />
 export const IconCalendar = (p: IconProps) => <Calendar {...DEFAULTS} {...p} />
 export const IconUser = (p: IconProps) => <User {...DEFAULTS} {...p} />
 export const IconSettings = (p: IconProps) => <Settings {...DEFAULTS} {...p} />
+export const IconMenu = (p: IconProps) => <Menu {...DEFAULTS} {...p} />
 export const IconPin = (p: IconProps) => <Pin {...DEFAULTS} {...p} />
 export const IconUsers = (p: IconProps) => <Users {...DEFAULTS} {...p} />
 export const IconBack = (p: IconProps) => <ArrowLeft {...DEFAULTS} {...p} />

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useCreatePack, useStickerpacks, useAddSticker } from '../../api/stickers'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import type { MediaAssetOut, StickerpackOut } from '../../lib/types'
@@ -146,10 +147,9 @@ export function AdminStickers() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Стикерпаки</h1>
+      <PageHeader title="Стикеры">
         <Button onClick={() => setCreateOpen(true)}>Создать пак</Button>
-      </div>
+      </PageHeader>
 
       <div className={styles.list}>
         {packs.map((pack) => (

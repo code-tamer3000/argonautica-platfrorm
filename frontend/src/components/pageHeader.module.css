@@ -1,0 +1,6 @@
+.pageHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+.pageHeaderTitle { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.pageHeaderTitle h1 { font-family: var(--font-t1); color: var(--text-primary); margin: 0; }
+.backBtn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 2.25rem; height: 2.25rem; border: none; background: transparent; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-btn); }
+.backBtn:hover { background: var(--divider); color: var(--text-primary); }
+.pageHeaderActions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }

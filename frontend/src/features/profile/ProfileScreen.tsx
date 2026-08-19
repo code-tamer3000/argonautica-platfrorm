@@ -4,6 +4,7 @@ import { usePatchMe } from '../../api/profile'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '../../components/icons'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { NotificationsSection } from './NotificationsSection'
@@ -206,6 +207,7 @@ export function ProfileScreen() {
 
   return (
     <div className={styles.page}>
+      <PageHeader title="Профиль" />
       {/* Шапка профиля */}
       <div className={styles.header}>
         <div className={styles.avatarWrap}>

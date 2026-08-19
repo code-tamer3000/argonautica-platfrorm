@@ -11,6 +11,7 @@ import { useRooms } from '../../api/rooms'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import styles from './admin.module.css'
 
 interface EventFormValues {
@@ -204,10 +205,9 @@ export function AdminCalendar() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Календарь</h1>
+      <PageHeader title="Календарь">
         <Button onClick={() => setCreateOpen(true)}>Создать событие</Button>
-      </div>
+      </PageHeader>
 
       <div className={styles.list}>
         {events.map((event) => (

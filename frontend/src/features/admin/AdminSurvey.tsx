@@ -11,6 +11,7 @@ import {
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import cabin from '../cabin/cabin.module.css'
@@ -152,12 +153,11 @@ export function AdminSurvey() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Выпускная анкета</h1>
+      <PageHeader title="Анкета">
         <span className={styles.listMeta}>
           Показана: {data.invited_count} · Сдали: {data.completed_count}
         </span>
-      </div>
+      </PageHeader>
 
       <div className={cabin.segmented} role="tablist">
         <button

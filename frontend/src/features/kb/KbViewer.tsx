@@ -4,6 +4,7 @@ import { MdAttachment } from './MdAttachment'
 import { KbComments } from './KbComments'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
 import { marked } from 'marked'
@@ -25,11 +26,12 @@ export function KbViewer() {
 
   return (
     <div className={styles.viewer}>
-      <div className={styles.viewerHead}>
+      <PageHeader title={item.title}>
         {user?.role === 'admin' && !item.published && (
           <Badge>Черновик</Badge>
         )}
-        <h1 className={styles.articleTitle}>{item.title}</h1>
+      </PageHeader>
+      <div className={styles.viewerHead}>
         <div className={styles.articleMeta}>
           Обновлено: {dayLabel(item.updated_at)}
         </div>

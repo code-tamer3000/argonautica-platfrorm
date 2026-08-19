@@ -18,6 +18,7 @@ import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { Attachment } from '../chat/Attachment'
 import styles from './admin.module.css'
 
@@ -394,15 +395,14 @@ export function AdminKb() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>База знаний</h1>
+      <PageHeader title="База знаний">
         <div className={styles.listActions}>
           <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
             Категории
           </Button>
           <Button onClick={() => setCreateOpen(true)}>Создать</Button>
         </div>
-      </div>
+      </PageHeader>
 
       <div className={styles.list}>
         {items.map((item) => (
