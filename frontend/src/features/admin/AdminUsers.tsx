@@ -2,7 +2,6 @@ import { useState } from 'react'
 import {
   useAdminIntakes,
   useAdminUsers,
-  useCreateIntake,
   useCreateUser,
   useDeleteUser,
   usePatchAdminUser,
@@ -11,6 +10,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
 import type { CreateUserResult } from '../../api/admin'
 import type { AdminUserOut, IntakeOut } from '../../lib/types'
@@ -23,12 +23,6 @@ function intakeDate(startsOn: string): string {
     month: 'long',
     year: 'numeric',
   })
-}
-
-function todayIso(): string {
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
 export function AdminUsers() {
@@ -45,7 +39,6 @@ export function AdminUsers() {
   )
   const { user: me } = useAuth()
   const createUser = useCreateUser()
-  const createIntake = useCreateIntake()
   const patchUser = usePatchAdminUser()
   const deleteUser = useDeleteUser()
 
@@ -56,10 +49,6 @@ export function AdminUsers() {
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'participant' | 'admin'>('participant')
   const [newUserIntake, setNewUserIntake] = useState<number | null>(null)
-
-  // Create intake modal
-  const [intakeOpen, setIntakeOpen] = useState(false)
-  const [intakeStartsOn, setIntakeStartsOn] = useState(todayIso())
 
   // OTP result modal
   const [otpResult, setOtpResult] = useState<CreateUserResult | null>(null)
@@ -107,23 +96,6 @@ export function AdminUsers() {
           setCreateOpen(false)
           // Чтобы новый участник не «пропал» — переключаемся на его набор.
           setIntakeFilter(newUserIntake)
-        },
-        onError: (err: unknown) => {
-          toast(err instanceof Error ? err.message : 'Ошибка', 'error')
-        },
-      },
-    )
-  }
-
-  function handleCreateIntake() {
-    if (!intakeStartsOn) return
-    createIntake.mutate(
-      { starts_on: intakeStartsOn },
-      {
-        onSuccess: (intake) => {
-          toast(`Набор от ${intakeDate(intake.starts_on)} создан`)
-          setIntakeOpen(false)
-          setIntakeFilter(intake.id)
         },
         onError: (err: unknown) => {
           toast(err instanceof Error ? err.message : 'Ошибка', 'error')
@@ -203,17 +175,13 @@ export function AdminUsers() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Пользователи</h1>
+      <PageHeader title="Пользователи">
         <div className={styles.listActions}>
-          <Button variant="outline" onClick={() => { setIntakeStartsOn(todayIso()); setIntakeOpen(true) }}>
-            Новый набор
-          </Button>
           <Button onClick={handleCreateOpen} disabled={intakes.length === 0}>
             Создать пользователя
           </Button>
         </div>
-      </div>
+      </PageHeader>
 
       <div className={styles.formRow} style={{ maxWidth: 420 }}>
         <label htmlFor="intake_filter">Набор</label>
@@ -237,7 +205,7 @@ export function AdminUsers() {
 
       {intakes.length === 0 && (
         <p style={{ color: 'var(--text-secondary)' }}>
-          Наборов пока нет — создайте первый, чтобы заводить участников.
+          Экспедиций пока нет — создайте первую в разделе «Экспедиции», чтобы заводить участников.
         </p>
       )}
 
@@ -245,10 +213,12 @@ export function AdminUsers() {
         const groupUsers = users.filter((u) => u.intake_id === intake.id)
         return (
           <section key={intake.id}>
-            <h2 className={styles.sectionTitle}>
-              Набор от {intakeDate(intake.starts_on)}
-              {intake.id === activeIntake?.id ? ' — активный' : ''}
-            </h2>
+            <div className={styles.pageHeader} style={{ margin: 'var(--space-4) 0 var(--space-2)' }}>
+              <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                Набор {intakeDate(intake.starts_on)} – {intakeDate(intake.ends_on)}
+                {intake.id === activeIntake?.id ? ' — активный' : ''}
+              </h2>
+            </div>
             <div className={styles.list}>
               {groupUsers.map(renderUser)}
               {groupUsers.length === 0 && (
@@ -266,39 +236,9 @@ export function AdminUsers() {
         </section>
       )}
 
-      {/* Create intake modal */}
-      {intakeOpen && (
-        <Modal title="Новый набор" onClose={() => setIntakeOpen(false)}>
-          <div className={styles.form}>
-            <div className={styles.formRow}>
-              <label htmlFor="intake_starts_on">Дата старта*</label>
-              <input
-                id="intake_starts_on"
-                className={styles.input}
-                type="date"
-                value={intakeStartsOn}
-                onChange={(e) => setIntakeStartsOn(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
-              От этой даты считается 28-дневное окно Динамики для всех участников набора.
-            </p>
-            <div className={styles.formActions}>
-              <Button variant="outline" onClick={() => setIntakeOpen(false)}>
-                Отмена
-              </Button>
-              <Button onClick={handleCreateIntake} disabled={createIntake.isPending || !intakeStartsOn}>
-                {createIntake.isPending ? 'Создаём…' : 'Создать набор'}
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
       {/* Create user modal */}
       {createOpen && (
-        <Modal title="Новый пользователь" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый пользователь" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label>Имя пользователя (username)*</label>
@@ -378,7 +318,7 @@ export function AdminUsers() {
 
       {/* OTP result modal */}
       {otpResult && (
-        <Modal title="Пользователь создан" onClose={() => setOtpResult(null)}>
+        <Modal title="Пользователь создан" onClose={() => setOtpResult(null)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
               Пользователь <strong>{otpResult.username}</strong> создан. Одноразовый пароль:
@@ -402,7 +342,7 @@ export function AdminUsers() {
 
       {/* Edit user modal */}
       {editUser && (
-        <Modal title={`Редактировать: ${editUser.display_name}`} onClose={() => setEditUser(null)}>
+        <Modal title={`Редактировать: ${editUser.display_name}`} onClose={() => setEditUser(null)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label htmlFor="edit_user_intake">Набор</label>

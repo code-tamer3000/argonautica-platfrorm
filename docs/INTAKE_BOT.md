@@ -13,50 +13,115 @@ verbatim from `OldBot/bot_texts.md`.
 ## Funnel (`intake_applications.status`)
 
 ```
-awaiting_about → submitted → choosing_plan → awaiting_receipt → payment_review → confirmed
+awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_receipt →
+  payment_review → confirmed
 ```
 
-1. **`/start`** → bot asks the applicant to describe themselves in one message.
+1. **`/start`** → bot asks the applicant to describe themselves in one message
+   (`ask_about`, also the opening line of `start` — same string, see «Placeholder texts»).
 2. Reply → `status=submitted`; the anketa is forwarded to the admin DM with an **«Принять»**
    button.
 3. Admin taps **«Принять»** → `status=choosing_plan`; bot shows tariffs as buttons, read
    from the `plans` table **at request time** (not hardcoded — an admin price edit applies
-   immediately, no bot redeploy). Each tariff has two buttons: **«Подробнее»** (shows
-   `plans.description`, then **«Назад»** back to the list) and a separate **«Выбрать»**
-   (viewing details never blocks picking).
-4. Pick a tariff → `status=awaiting_receipt`; bot sends payment details (the `accepted`
-   text with `{price}` substituted for the chosen tariff's price) and asks for a receipt.
-5. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
+   immediately, no bot redeploy). **One button per tariff** («Вода — 12 000 ₽») opening a
+   description screen: title, price, `plans.description`, and a single row of
+   **«⬅️ Назад»** / **«✅ Перейти к оплате»**. List ⇄ description ⇄ back all happen in
+   **one message** via `editMessageText` — the chat never fills with stale copies of the
+   menu (ARG-94). If that message is gone (user deleted it), the bot silently falls back to
+   sending a new one. A tap on a screen that is stale relative to `app.status` changes
+   nothing and answers with an alert («Этот шаг уже пройден»).
+4. Pick a tariff → `status=awaiting_offer` (ARG-43): bot sends **«📄 Читать оферту»**
+   (a Telegram `web_app` button opening `{PLATFORM_URL}/oferta` — the one unauthenticated
+   route in the SPA, see [FRONTEND.md](FRONTEND.md)) and **«✅ Согласен, к оплате»**
+   (`callback_data=of:<app_id>`). Payment details are **not** sent yet.
+5. Tap **«✅ Согласен, к оплате»** → `intake_applications.offer_accepted_at` = now,
+   `offer_version` = the bot's `OFFER_VERSION` constant (bump it whenever the offer text
+   changes — the offer itself lives in git, `frontend/src/features/oferta/content/oferta.md`,
+   not in the DB), `status=awaiting_receipt`; **now** the bot sends payment details (the
+   `accepted` text with `{price}` substituted for the chosen tariff's price) and asks for a
+   receipt.
+6. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
    with a **«Подтвердить оплату»** button.
-6. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
+7. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
    environment** (see `PLATFORM_URL` — on staging, the staging domain): login = the
    applicant's Telegram `@username`, one-time password (`must_change_password=true`),
    `intake_id` = the current active intake ([DATA_MODEL.md](DATA_MODEL.md) `intakes`),
-   `plan_id` = the chosen tariff. Sends login/password + `PLATFORM_URL` to the applicant.
-   `status=confirmed`, `intake_applications.user_id` set.
+   `plan_id` = the chosen tariff. Right after the account is created, the bot assigns the
+   new user every `type='individual'` task tagged with this same `intake_id` (welcome
+   tasks provisioned ahead of time by `scripts/provision_second_intake.py`, with an empty
+   recipient list at creation — see that script and [TASKS.md](TASKS.md)). Sends
+   login/password + `PLATFORM_URL` to the applicant. `status=confirmed`,
+   `intake_applications.user_id` set.
    - If the applicant has no Telegram `@username` at this point, account creation is
      refused (login = username, must exist) — the admin gets an alert and the applicant is
      asked to set one; nothing else in the funnel is blocked, retry the same button once
      they have.
-7. In-between statuses show `wait_decision` / `wait_payment_check` (idle waiting on the
-   *other* party) if the applicant sends something out of turn.
+8. In-between statuses show `wait_decision` / `wait_payment_check` / the offer prompt again
+   (idle waiting on the *other* party, or on the applicant tapping «Согласен») if the
+   applicant sends something out of turn.
 
-After `confirmed`, the chat becomes **service mode**: only **«Задать вопрос»** (forward to
-admin DM + deliver the reply back — same mechanism as the access bot's support channel)
-and **«Сменить пароль»** (re-issue a fresh one-time password, same helper as
-`scripts/telegram_bot.py`'s password reset) remain available.
+After `confirmed`, the chat becomes **service mode**: **«Сменить пароль»** (re-issue a
+fresh one-time password, same helper as `scripts/telegram_bot.py`'s password reset) as an
+inline button, plus `/question` (forward to admin DM + deliver the reply back — same
+mechanism as the access bot's support channel), same as at every other step.
 
-**«Задать вопрос» is available from the very first message**, not just in service mode — a
-"💬 Задать вопрос" button is attached to every outgoing message's keyboard, at every funnel
-step. It sets an ephemeral Redis flag (`intakebot:await_q:{tg_id}`, distinct prefix from
-the access bot's `bot:await_q:*` — separate service, separate Redis namespace) and takes
-priority over whatever the funnel step would otherwise do with the applicant's next
-message.
+**«Задать вопрос» is available at every funnel step**, not just in service mode — as the
+**`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
+both set by the service at startup, not by hand in BotFather). It is deliberately *not* an
+inline button any more (ARG-94): a per-message "💬 Задать вопрос" row competed with the
+buttons that actually belong to the current step. The command sets an ephemeral Redis flag
+(`intakebot:await_q:{tg_id}`, distinct prefix from the access bot's `bot:await_q:*` —
+separate service, separate Redis namespace) and takes priority over whatever the funnel
+step would otherwise do with the applicant's next message. The old `svc_q` callback is
+still handled so buttons in already-sent chats keep working.
 
 ## Data model
 
 `plans` (admin CRUD), `intake_applications` (funnel state, no admin API — internal to the
 bot), `users.plan_id` — see [DATA_MODEL.md](DATA_MODEL.md).
+
+`intake_applications.tg_id` is **unique**: one Telegram account = one application, ever.
+`intake_applications.user_id → users.id` has **no `ON DELETE`**, so the account created at
+`confirmed` cannot be deleted while its application still points at it. Whenever both go
+away, the order is fixed: **application first, then the user** (see `/reset` below, and
+`delete_user` in `app.api.admin`).
+
+## Resetting a run (`/reset`, staging only)
+
+Because `tg_id` is unique and the login is the applicant's `@username`, a Telegram account
+can walk the funnel exactly once — the next `/start` resumes the stuck status, and even a
+manual `DELETE` of the application leaves the login taken. `/reset` (ARG-95) removes both
+so the same account can run the funnel again from scratch:
+
+- Accepted **only** from the admin DM (`TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`). `/reset`
+  resets the admin's own application, `/reset @username` the named applicant's. Sent from
+  anywhere else it does nothing and answers nothing.
+- Gated by `INTAKE_BOT_ALLOW_RESET` (`1`/`true`/`yes`/`on`), set **only** in
+  `docker/docker-compose.staging.yml`. Off by default and on prod: the command replies
+  that reset is unavailable on this environment and touches no data.
+- What it removes: the `intake_applications` row, then — if it had a `user_id` — the
+  platform user via the admin `delete_user` (rooms, messages, media, task assignments are already handled
+  there; a user owning shared content still blocks deletion and the admin is told why),
+  then the applicant's ephemeral Redis keys (`intakebot:await_q:*`, `intakebot:pwd:*`).
+  An application with no `user_id` (run never reached `confirmed`) is not an error.
+- The admin gets back what was deleted: the application's status and the platform login,
+  or an explicit "nothing to reset" when there is no such application.
+- Deliberately **not** in `setMyCommands` — it is a service command, not a funnel step.
+- Scope: one applicant at a time. No bulk "wipe the stand", no web/admin UI.
+
+## Bot status (`/info`)
+
+Read-only admin command: which intake the bot will attach new users to, which plans it is
+currently offering applicants, and the payment card baked into `TEXT_ACCEPTED`.
+
+- Accepted only from the admin DM, same as `/reset`; from anywhere else it does nothing.
+- Reports the active intake (`intakes` row with the latest `starts_on` — same query the
+  funnel itself uses when it creates a user) or a warning that there is none, the active
+  (`is_active`) plans with their prices, or a warning that there are none, and the payment
+  details string (`PAYMENT_DETAILS`) shared with `TEXT_ACCEPTED`.
+- Registered via `setMyCommands` scoped to the admin chat only
+  (`BotCommandScopeChat`/`ADMIN_COMMANDS`) — shows up as a tappable command in the admin's
+  own chat menu without ever reaching `BOT_COMMANDS` (the global, participant-facing list).
 
 ## Placeholder texts
 
@@ -78,7 +143,8 @@ temporary placeholder; final copy is a separate follow-up.
 - Admin chat = the task author's personal DM (`TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`), not a
   group chat — obtained the standard way (message the bot `/start` from that account first,
   read the chat id from `docker logs`).
-- Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`, `TELEGRAM_PROXY`
+- Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`,
+  `INTAKE_BOT_ALLOW_RESET` (staging only, see `/reset`), `TELEGRAM_PROXY`
   (shared with the access bot), `PLATFORM_URL` (shared — on staging this should point at
   `https://staging.argonautica-systems.ru`).
 - Not part of blue-green, no `:8000` healthcheck (long-poller, not an HTTP server) — same
@@ -89,4 +155,15 @@ temporary placeholder; final copy is a separate follow-up.
 - No real payment provider — payment is still eyeballed from the receipt by the admin.
   Provider integration is a separate, later task (ARG-63/ARG-32).
 - Staging-only account creation; the bot never provisions on prod.
-- Legal/offer texts (ARG-43) are out of scope.
+
+## Offer consent (ARG-43)
+
+- The offer text lives in git, not the DB — `frontend/src/features/oferta/content/oferta.md`,
+  rendered by `OfertaScreen` at the SPA's one public route, `/oferta` (added in `App.tsx`
+  ahead of `AuthGuard`; no API calls, no auth). It ships as-is; wording/legal review is a
+  content decision, not an engineering one.
+- The applicant reads it inside Telegram as a `web_app` inline button — no external link,
+  no PDF.
+- Consent is recorded on `intake_applications` (`offer_accepted_at`, `offer_version`)
+  **before** the funnel reveals payment details — see step 4–5 above. There is no path from
+  `choosing_plan` to `awaiting_receipt` that skips `awaiting_offer`.

@@ -42,6 +42,26 @@ class Room(Base):
     is_news: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Изоляция по потоку (ARG-96): только для type='channel' (неявная видимость —
+    # «участник платформы видит все каналы»). NULL = общий для всех потоков.
+    # dm/group гейтятся явным членством и это поле игнорируют; новостной канал
+    # (is_news) НЕ бэкфиллится — остаётся кросс-поточным намеренно.
+    intake_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("intakes.id")
+    )
+
+
+class RoomPlan(Base):
+    """Канал доступен только перечисленным тарифам; пусто = всем тарифам потока."""
+
+    __tablename__ = "room_plans"
+
+    room_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("rooms.id"), primary_key=True
+    )
+    plan_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("plans.id"), primary_key=True
+    )
 
 
 class RoomMember(Base):

@@ -159,6 +159,12 @@ async def load_intake_starts(session: AsyncSession) -> dict[int, date]:
     return {intake_id: starts_on for intake_id, starts_on in rows.all()}
 
 
+async def load_intake_ends(session: AsyncSession) -> dict[int, date]:
+    """Карта {id набора: дата закрытия} — для заморозки статистики (ARG-96)."""
+    rows = await session.execute(select(Intake.id, Intake.ends_on))
+    return {intake_id: ends_on for intake_id, ends_on in rows.all()}
+
+
 def program_start_for(
     user: User, intake_starts: dict[int, date], timeline: Timeline
 ) -> date:
@@ -179,6 +185,20 @@ async def load_program_start(
         if starts_on is not None:
             return starts_on
     return _timeline_start(timeline)
+
+
+async def intake_window_closed(session: AsyncSession, intake_id: int | None) -> date | None:
+    """Дата закрытия окна набора, если она уже прошла (ARG-96), иначе None.
+
+    Без набора (intake_id is None) окно не закрывается — некуда: как и в
+    program_start_for, «бесхозный» пользователь просто не гейтится этим правилом.
+    """
+    if intake_id is None:
+        return None
+    ends_on = await session.scalar(select(Intake.ends_on).where(Intake.id == intake_id))
+    if ends_on is not None and _platform_today() > ends_on:
+        return ends_on
+    return None
 
 
 def _calc_closed_days(messages: list[tuple[date, str | None]]) -> dict[date, set[str]]:
@@ -341,12 +361,15 @@ async def get_my_stats(
 ) -> MyDynamicsOut:
     timeline = await load_timeline(session)
     program_start = await load_program_start(session, current_user, timeline)
+    window_closed_on = await intake_window_closed(session, current_user.intake_id)
     room_id = await _personal_room_id(session, current_user.id)
     messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
+    stats = _calc_stats(
+        per_day, pardons, program_start, timeline, credits, today=window_closed_on
+    )
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -355,6 +378,7 @@ async def get_my_stats(
         pardons_remaining=max(0, MAX_PARDONS - len(pardons)),
         today_progress=stats["today_cats"],
         program_start=program_start,
+        window_closed=window_closed_on is not None,
     )
 
 
@@ -364,6 +388,10 @@ async def use_pardon(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> MyDynamicsOut:
+    if await intake_window_closed(session, current_user.intake_id) is not None:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Окно набора закрыто — архив только для чтения"
+        )
     timeline = await load_timeline(session)
     program_start = await load_program_start(session, current_user, timeline)
     today = _platform_today()
@@ -633,6 +661,7 @@ async def get_all_dynamics(
     """
     timeline = await load_timeline(session)
     intake_starts = await load_intake_starts(session)
+    intake_ends = await load_intake_ends(session)
 
     stmt = select(User).where(User.role == "participant")
     if intake_ids is not None:
@@ -729,8 +758,14 @@ async def get_all_dynamics(
         per_day = _calc_closed_days(messages)
         # Выпускник: считаем его путь по состоянию на день выпуска — что он делал,
         # видно целиком, но экспедиция для него закончилась и дальше не «идёт».
+        # Окно набора закрыто (ARG-96), но человек не выпускник — тот же приём:
+        # замораживаем на дате закрытия, иначе просрочки копились бы бесконечно.
         graduated_on = _platform_day(user.graduated_at) if user.graduated_at else None
-        as_of = graduated_on or today
+        window_ends_on = intake_ends.get(user.intake_id) if user.intake_id else None
+        window_closed_on = (
+            window_ends_on if window_ends_on and today > window_ends_on else None
+        )
+        as_of = graduated_on or window_closed_on or today
         stats = _calc_stats(per_day, pardons, user_start, timeline, credits, today=as_of)
         recent = _recent_days(
             stats["closed_days"], stats["pardoned"], user_start, set(credits), today=as_of

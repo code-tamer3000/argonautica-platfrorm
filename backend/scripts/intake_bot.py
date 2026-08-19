@@ -11,15 +11,17 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
 
 Флоу (тексты — OldBot/bot_texts.md, ключи используются как есть):
   /start → «расскажи о себе» → анкета уходит в admin-чат с кнопкой «Принять» →
-  админ принимает → участник выбирает тариф (список из БД, «Подробнее»/«Выбрать») →
+  админ принимает → участник выбирает тариф (список из БД: одна кнопка на тариф →
+  экран описания → «Перейти к оплате», всё в одном сообщении через editMessageText) →
   реквизиты с ценой тарифа → участник шлёт чек → чек уходит в admin-чат с кнопкой
   «Подтвердить оплату» → админ подтверждает → создаётся пользователь платформы на
   ЭТОМ окружении (см. PLATFORM_URL — на стенде это staging), привязанный к активному
   набору и выбранному тарифу → участнику приходят логин/пароль → чат переходит в
   сервисный режим («Задать вопрос» / «Сменить пароль»).
 
-«Задать вопрос» доступна на любом шаге — отдельная кнопка добавлена в клавиатуру
-каждого исходящего сообщения участнику, не только в сервисном режиме.
+«Задать вопрос» доступна на любом шаге — командой /question и кнопкой меню бота
+(setMyCommands + setChatMenuButton при старте сервиса), а не инлайн-кнопкой в каждом
+сообщении: инлайн-кнопки воронки оставлены только под её собственные шаги.
 
 Запуск (в образе backend): python -m scripts.intake_bot
 Требует env: TELEGRAM_INTAKE_BOT_TOKEN, DATABASE_URL, REDIS_URL,
@@ -30,20 +32,22 @@ from __future__ import annotations
 import asyncio
 import html
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.admin import create_user
+from app.api.admin import create_user, delete_user
 from app.core.redis import redis_client
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import SessionLocal
 from app.models.intake import Intake
 from app.models.intake_application import (
     STATUS_AWAITING_ABOUT,
+    STATUS_AWAITING_OFFER,
     STATUS_AWAITING_RECEIPT,
     STATUS_CHOOSING_PLAN,
     STATUS_CONFIRMED,
@@ -52,6 +56,7 @@ from app.models.intake_application import (
     IntakeApplication,
 )
 from app.models.plan import Plan
+from app.models.task import Task, TaskAssignment
 from app.models.user import User
 from app.schemas.user import AdminCreateUserRequest
 
@@ -60,6 +65,11 @@ PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://staging.argonautica-syste
 TELEGRAM_PROXY = os.environ.get("TELEGRAM_PROXY", "").strip() or None
 _admin_raw = os.environ.get("TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID", "").strip()
 ADMIN_CHAT_ID: int | None = int(_admin_raw) if _admin_raw.lstrip("-").isdigit() else None
+# Сброс прогона воронки (ARG-95) — только там, где явно разрешено env-флагом. По
+# умолчанию (и на проде) выключен: команда отвечает, что недоступна, и ничего не делает.
+ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 RATE_LIMIT = 3
@@ -69,39 +79,60 @@ QMAP_TTL_SEC = 7 * 24 * 3600
 
 # --- Тексты (OldBot/bot_texts.md, использованы как есть) -------------------------
 
+# Premium-эмодзи «звезда» из набора t.me/addemoji/argonautica_systems (custom_emoji_id
+# получен через getStickerSet). Текст внутри тега — ОБЯЗАН быть настоящим Unicode-эмодзи
+# (тот, с которым custom-эмодзи привязан в наборе — там это ⭐️): произвольный dingbat
+# вроде ✦ Telegram отклоняет как ENTITY_TEXT_INVALID. ⭐ — это и есть фолбэк без Premium.
+STAR = '<tg-emoji emoji-id="5440714865192765589">⭐</tg-emoji>'
+# Тот же набор — кораблик вместо якоря. В наборе он привязан к базовому 🚀 (сам рисунок —
+# ладья), поэтому фолбэком для не-Premium клиентов идёт 🚀, не ⚓️.
+SHIP = '<tg-emoji emoji-id="5400063961808799043">🚀</tg-emoji>'
+# Тот же набор — первое из двух чёрных сердечек, вместо конфетти на подтверждении оплаты.
+HEART = '<tg-emoji emoji-id="5440725576841201330">🖤</tg-emoji>'
+
+# Платёжные реквизиты — единственное место, откуда их берут TEXT_ACCEPTED и /info,
+# чтобы не разъезжались при смене карты.
+PAYMENT_DETAILS = "2200701906397754 (Т-банк)"
+
+TEXT_ASK_ABOUT = f"Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? {STAR}"
 TEXT_START = (
-    "⚓️ <b>Экспедиция «Искусство посылания на Хер»</b>\n\n"
+    f"{SHIP} <b>Экспедиция «Искусство посылания на Хер»</b>\n\n"
     "Путь Аргонавта: 28 дней, 5 миров, освобождение внимания и проявление своего "
     "Дела.\n\n"
-    "Чтобы попасть на борт — расскажи о себе одним сообщением: <b>кто ты, в какой "
-    "точке сейчас и что хочешь изменить.</b> 👇"
+    f"{TEXT_ASK_ABOUT}"
 )
 TEXT_NEED_START = "Чтобы начать — напиши /start."
-TEXT_ASK_ABOUT = "Расскажи о себе текстом — одним сообщением. ✦"
 TEXT_SUBMITTED = (
-    "✦ <b>Заявка принята к рассмотрению.</b>\n\n"
-    "Мы читаем каждую анкету лично. Как прочитаем — ответим. Жди весточку. ⚓️"
+    f"{STAR} <b>Заявка принята к рассмотрению.</b>\n\n"
+    f"Мы читаем каждую анкету лично. Как прочитаем — ответим. Жди весточку. {SHIP}"
 )
 TEXT_ACCEPTED = (
-    "✦ <b>Тебя предварительно приняли в Экспедицию.</b>\n\n"
+    f"{STAR} <b>Тебя предварительно приняли в Экспедицию.</b>\n\n"
     "Готовься к началу. Настраивайся в течение 28 дней, ежедневно вести полевой "
     "дневник и разгонять динамику.\n"
-    "Оплачивай экспедиционные (фикс {price} руб.) — забронируем место.\n"
-    "Перевод на карту 2200701906397754 (Т-банк).\n\n"
+    "Оплачивай экспедиционные (фикс {price}) — забронируем место.\n"
+    f"Перевод на карту {PAYMENT_DETAILS}.\n\n"
     "После оплаты пришли сюда чек — PDF-файлом или скриншотом. Как получим — "
-    "подтвердим место. ⚓️"
+    f"подтвердим место. {SHIP}"
 )
+# Согласие с офертой (ARG-43) — экран между выбором тарифа и реквизитами.
+TEXT_OFFER_PROMPT = (
+    "Прежде чем перейти к оплате — прочитай оферту и подтверди согласие. 📄"
+)
+# Редакция принятой оферты (совпадает с «Редакция от …» в самом тексте оферты,
+# frontend/src/features/oferta/content/oferta.md) — поднимать при правке текста.
+OFFER_VERSION = "2026-08-19"
 TEXT_NEED_RECEIPT = (
     "Чтобы подтвердить место — пришли чек об оплате: PDF-файлом или скриншотом. 🧾"
 )
-TEXT_RECEIPT_GOT = "✦ Чек получен. Проверяем оплату — это недолго."
+TEXT_RECEIPT_GOT = f"{STAR} Чек получен. Проверяем оплату — это недолго."
 TEXT_CONFIRMED = (
-    "🎉 <b>Оплата подтверждена. Ты в команде Экспедиции.</b>\n\n"
+    f"{HEART} <b>Оплата подтверждена. Ты в команде Экспедиции.</b>\n\n"
     "Добро пожаловать на борт, Аргонавт. Детали старта и доступы вышлем тебе "
-    "отдельно. До встречи! ⚓️"
+    f"отдельно. До встречи! {SHIP}"
 )
-TEXT_WAIT_DECISION = "Твоя заявка на рассмотрении. Вернёмся с решением — жди здесь. ⚓️"
-TEXT_WAIT_PAYMENT_CHECK = "Проверяем оплату. Скоро подтвердим. ✦"
+TEXT_WAIT_DECISION = f"Твоя заявка на рассмотрении. Вернёмся с решением — жди здесь. {SHIP}"
+TEXT_WAIT_PAYMENT_CHECK = f"Проверяем оплату. Скоро подтвердим. {STAR}"
 TEXT_ALREADY_DONE = (
     "Ты уже на борту Экспедиции 🎉 Следи за этим чатом — пришлём детали старта."
 )
@@ -120,15 +151,22 @@ TEXT_NEED_USERNAME = (
 
 # --- Callback-data ------------------------------------------------------------
 # admin: acc:<app_id> (принять анкету), pay:<app_id> (подтвердить оплату)
-# участник: pd:<app_id>:<plan_id> (подробнее), pl:<app_id> (назад к списку),
-#           pc:<app_id>:<plan_id> (выбрать), svc_q (задать вопрос), svc_pw (сменить пароль)
+# участник: pd:<app_id>:<plan_id> (экран описания тарифа), pl:<app_id> (назад к списку),
+#           pc:<app_id>:<plan_id> (перейти к оплате), svc_pw (сменить пароль).
+# svc_q (задать вопрос) больше не рисуется ни в одной клавиатуре — вместо неё /question,
+# но хендлер оставлен: в уже отправленных чатах старые кнопки должны продолжать работать.
 
 CB_ASK_QUESTION = "svc_q"
 CB_CHANGE_PASSWORD = "svc_pw"
 
+TEXT_STEP_DONE = "Этот шаг уже пройден."
 
-def _ask_question_row() -> list[dict[str, str]]:
-    return [{"text": "💬 Задать вопрос", "callback_data": CB_ASK_QUESTION}]
+# --- /reset (ARG-95, служебная команда админского DM) --------------------------
+
+TEXT_RESET_DISABLED = (
+    "🚫 Сброс прогона на этом окружении недоступен (INTAKE_BOT_ALLOW_RESET выключен)."
+)
+TEXT_RESET_USAGE = "Формат: <code>/reset</code> или <code>/reset @username</code>"
 
 
 def _user_tag(tg_username: str | None, tg_id: int) -> str:
@@ -145,6 +183,52 @@ def _display_name(app: IntakeApplication) -> str:
 # --- Telegram API --------------------------------------------------------------
 
 
+# Стили инлайн-кнопок (`style: "success"`) поддерживает не каждая версия Bot API. Если
+# сервер ответил «не знаю такого поля», один раз снимаем стили и дальше шлём без них —
+# кнопка важнее её цвета, иначе экран оплаты просто не отрисуется.
+_button_styles_supported = True
+
+
+def _strip_button_styles(markup: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not markup or "inline_keyboard" not in markup:
+        return markup
+    return {
+        "inline_keyboard": [
+            [{k: v for k, v in button.items() if k != "style"} for button in row]
+            for row in markup["inline_keyboard"]
+        ]
+    }
+
+
+async def _api_call(
+    client: httpx.AsyncClient, method: str, payload: dict[str, Any]
+) -> dict[str, Any] | None:
+    """POST в Bot API. None — если запрос не удался или Telegram ответил ok=false."""
+    global _button_styles_supported
+
+    if not _button_styles_supported and "reply_markup" in payload:
+        payload = {**payload, "reply_markup": _strip_button_styles(payload["reply_markup"])}
+    try:
+        body = (await client.post(f"{API}/{method}", json=payload)).json()
+    except (httpx.HTTPError, ValueError) as exc:  # noqa: BLE001 — бот не должен падать из-за сети
+        print(f"{method} failed: {type(exc).__name__}: {exc!r}", flush=True)
+        return None
+    if body.get("ok"):
+        result = body.get("result")
+        return result if isinstance(result, dict) else None
+
+    description = str(body.get("description", ""))
+    print(f"{method} rejected: {description}", flush=True)
+    if _button_styles_supported and "style" in description.lower() and "reply_markup" in payload:
+        _button_styles_supported = False
+        return await _api_call(
+            client,
+            method,
+            {**payload, "reply_markup": _strip_button_styles(payload["reply_markup"])},
+        )
+    return None
+
+
 async def _send(
     client: httpx.AsyncClient,
     chat_id: int,
@@ -159,12 +243,37 @@ async def _send(
     }
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
-    try:
-        resp = await client.post(f"{API}/sendMessage", json=payload)
-        return resp.json().get("result")
-    except (httpx.HTTPError, ValueError) as exc:  # noqa: BLE001 — бот не должен падать из-за сети
-        print(f"sendMessage failed: {type(exc).__name__}: {exc!r}", flush=True)
-        return None
+    return await _api_call(client, "sendMessage", payload)
+
+
+async def _edit_or_send(
+    client: httpx.AsyncClient,
+    chat_id: int,
+    message_id: int | None,
+    text: str,
+    reply_markup: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Перерисовать экран в том же сообщении; если не вышло — отправить новое.
+
+    Экран выбора тарифа живёт в одном сообщении: список ⇄ описание — это
+    editMessageText, а не новая пачка сообщений в чате. Сообщение могли удалить
+    (или Telegram отказал по любой другой причине) — тогда молча отправляем новое,
+    участник ошибки не видит (см. «Assumptions» ARG-94).
+    """
+    if message_id is not None:
+        payload: dict[str, Any] = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        edited = await _api_call(client, "editMessageText", payload)
+        if edited is not None:
+            return edited
+    return await _send(client, chat_id, text, reply_markup=reply_markup)
 
 
 async def _send_photo(
@@ -258,32 +367,64 @@ async def _active_plans(session: AsyncSession) -> list[Plan]:
     )
 
 
+def _price_str(price: int) -> str:
+    return f"{price:,} ₽".replace(",", " ")
+
+
 def _plans_keyboard(app_id: int, plans: list[Plan]) -> dict[str, Any]:
-    rows = [
-        [
-            {
-                "text": f"{plan.name} — {plan.price:,} ₽".replace(",", " "),
-                "callback_data": f"pd:{app_id}:{plan.id}",
-            },
-            {"text": "Выбрать", "callback_data": f"pc:{app_id}:{plan.id}"},
+    """Ровно одна кнопка на активный тариф — «название — цена», ведёт на описание.
+
+    Никаких вторых кнопок и никаких посторонних рядов: это последний экран перед
+    оплатой, и выбирать человек должен тариф, а не кнопку (ARG-94).
+    """
+    return {
+        "inline_keyboard": [
+            [
+                {
+                    "text": f"{plan.name} — {_price_str(plan.price)}",
+                    "callback_data": f"pd:{app_id}:{plan.id}",
+                }
+            ]
+            for plan in plans
         ]
-        for plan in plans
-    ]
-    rows.append(_ask_question_row())
-    return {"inline_keyboard": rows}
+    }
+
+
+def _plan_details_keyboard(app_id: int, plan_id: int) -> dict[str, Any]:
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "⬅️ Назад", "callback_data": f"pl:{app_id}"},
+                {
+                    "text": "✅ Перейти к оплате",
+                    "callback_data": f"pc:{app_id}:{plan_id}",
+                    "style": "success",
+                },
+            ]
+        ]
+    }
+
+
+def _offer_keyboard(app_id: int) -> dict[str, Any]:
+    """Экран согласия: WebApp-кнопка с текстом оферты + явное согласие.
+
+    Без нажатия «Согласен» заявитель не получает TEXT_ACCEPTED (реквизиты) —
+    см. `_handle_offer_accept`.
+    """
+    return {
+        "inline_keyboard": [
+            [{"text": "📄 Читать оферту", "web_app": {"url": f"{PLATFORM_URL}/oferta"}}],
+            [{"text": "✅ Согласен, к оплате", "callback_data": f"of:{app_id}"}],
+        ]
+    }
 
 
 def _service_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
-            [{"text": "💬 Задать вопрос", "callback_data": CB_ASK_QUESTION}],
             [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
         ]
     }
-
-
-def _plain_keyboard() -> dict[str, Any]:
-    return {"inline_keyboard": [_ask_question_row()]}
 
 
 async def _rate_ok(tg_id: int) -> bool:
@@ -302,28 +443,33 @@ async def _status_reminder(client: httpx.AsyncClient, chat_id: int, app: IntakeA
     reminders = {
         STATUS_AWAITING_ABOUT: TEXT_ASK_ABOUT,
         STATUS_SUBMITTED: TEXT_WAIT_DECISION,
+        STATUS_AWAITING_OFFER: TEXT_OFFER_PROMPT,
         STATUS_AWAITING_RECEIPT: TEXT_NEED_RECEIPT,
         STATUS_PAYMENT_REVIEW: TEXT_WAIT_PAYMENT_CHECK,
     }
     text = reminders.get(app.status)
     if text:
-        await _send(client, chat_id, text, reply_markup=_plain_keyboard())
+        await _send(client, chat_id, text)
+
+
+TEXT_PLAN_LIST = "Выбери тариф — покажу, что входит, и переведу к оплате:"
+TEXT_NO_PLANS = f"Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. {SHIP}"
 
 
 async def _send_plan_list(
-    client: httpx.AsyncClient, session: AsyncSession, chat_id: int, app: IntakeApplication
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    chat_id: int,
+    app: IntakeApplication,
+    message_id: int | None = None,
 ) -> None:
+    """Экран списка тарифов. `message_id` — перерисовать его в том же сообщении."""
     plans = await _active_plans(session)
     if not plans:
-        await _send(
-            client, chat_id,
-            "Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. ⚓️",
-            reply_markup=_plain_keyboard(),
-        )
+        await _edit_or_send(client, chat_id, message_id, TEXT_NO_PLANS)
         return
-    await _send(
-        client, chat_id,
-        "Выбери тариф — «Подробнее» покажет описание, «Выбрать» бронирует место:",
+    await _edit_or_send(
+        client, chat_id, message_id, TEXT_PLAN_LIST,
         reply_markup=_plans_keyboard(app.id, plans),
     )
 
@@ -338,7 +484,7 @@ async def _handle_about(
     app.about = text
     app.status = STATUS_SUBMITTED
     await session.flush()
-    await _send(client, chat_id, TEXT_SUBMITTED, reply_markup=_plain_keyboard())
+    await _send(client, chat_id, TEXT_SUBMITTED)
 
     if ADMIN_CHAT_ID is not None:
         tag = _user_tag(app.tg_username, app.tg_id)
@@ -363,7 +509,7 @@ async def _handle_receipt(
     app.receipt_kind = kind
     app.status = STATUS_PAYMENT_REVIEW
     await session.flush()
-    await _send(client, chat_id, TEXT_RECEIPT_GOT, reply_markup=_plain_keyboard())
+    await _send(client, chat_id, TEXT_RECEIPT_GOT)
 
     if ADMIN_CHAT_ID is not None:
         tag = _user_tag(app.tg_username, app.tg_id)
@@ -394,7 +540,35 @@ async def _create_platform_user(
         plan_id=app.plan_id,
     )
     response = await create_user(body, session)
+    app.user_id = response.id
+    await _assign_intake_welcome_tasks(session, intake.id, response.id)
     return response.username, response.one_time_password
+
+
+async def _assign_intake_welcome_tasks(
+    session: AsyncSession, intake_id: int, user_id: int
+) -> None:
+    """Назначить новичку индивидуальные задания-приветствия его набора.
+
+    Заводятся provisioning-скриптом (scripts/provision_second_intake.py) с пустым
+    списком получателей — здесь список наполняется по мере регистрации. `intake_id`
+    у individual-заданий тут — метка «чьё это приветствие», видимость по-прежнему
+    решает исключительно назначение (task.py:70-73), поэтому 0 заявителей до сих пор
+    ничего никому не показывал.
+    """
+    tasks = (
+        await session.execute(
+            select(Task.id).where(
+                Task.type == "individual",
+                Task.intake_id == intake_id,
+                Task.deleted_at.is_(None),
+            )
+        )
+    ).scalars().all()
+    for task_id in tasks:
+        session.add(TaskAssignment(task_id=task_id, user_id=user_id))
+    if tasks:
+        await session.flush()
 
 
 # --- Обработчики callback-кнопок ---------------------------------------------
@@ -417,63 +591,103 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
     await _log_action(client, f"заявка #{app.id} ({_user_tag(app.tg_username, app.tg_id)}) принята")
 
 
+def _plan_screen_context(
+    cb: dict[str, Any], app: IntakeApplication | None
+) -> tuple[int, int | None] | None:
+    """(chat_id, message_id) экрана тарифа — либо None, если это чужой чат."""
+    message = cb.get("message") or {}
+    chat_id = message.get("chat", {}).get("id")
+    if app is None or chat_id != app.tg_id:
+        return None
+    return chat_id, message.get("message_id")
+
+
 async def _handle_plan_details(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
     _, app_id_s, plan_id_s = cb["data"].split(":")
     app = await session.get(IntakeApplication, int(app_id_s))
     plan = await session.get(Plan, int(plan_id_s))
+    context = _plan_screen_context(cb, app)
+    if app is None or context is None:
+        await _answer_callback(client, cb["id"])
+        return
+    if app.status != STATUS_CHOOSING_PLAN:
+        await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
+        return
+    if plan is None:
+        await _answer_callback(client, cb["id"], "Тариф больше не доступен", alert=True)
+        return
     await _answer_callback(client, cb["id"])
-    if app is None or plan is None:
-        return
-    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
-    if chat_id != app.tg_id:
-        return
+    chat_id, message_id = context
     description = plan.description or "Описание пока не заполнено."
-    await _send(
-        client, chat_id,
-        f"<b>{html.escape(plan.name)}</b> — {plan.price:,} ₽\n\n{html.escape(description)}".replace(",", " "),
-        reply_markup={
-            "inline_keyboard": [
-                [{"text": "⬅️ Назад к списку", "callback_data": f"pl:{app.id}"}],
-                _ask_question_row(),
-            ]
-        },
+    await _edit_or_send(
+        client, chat_id, message_id,
+        f"<b>{html.escape(plan.name)}</b> — {_price_str(plan.price)}\n\n{html.escape(description)}",
+        reply_markup=_plan_details_keyboard(app.id, plan.id),
     )
 
 
 async def _handle_plan_list(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
     app_id = int(cb["data"].split(":", 1)[1])
     app = await session.get(IntakeApplication, app_id)
+    context = _plan_screen_context(cb, app)
+    if app is None or context is None:
+        await _answer_callback(client, cb["id"])
+        return
+    if app.status != STATUS_CHOOSING_PLAN:
+        await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
+        return
     await _answer_callback(client, cb["id"])
-    if app is None:
-        return
-    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
-    if chat_id != app.tg_id:
-        return
-    await _send_plan_list(client, session, chat_id, app)
+    chat_id, message_id = context
+    await _send_plan_list(client, session, chat_id, app, message_id=message_id)
 
 
 async def _handle_plan_choose(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
     _, app_id_s, plan_id_s = cb["data"].split(":")
     app = await session.get(IntakeApplication, int(app_id_s))
-    if app is None or app.status != STATUS_CHOOSING_PLAN:
-        await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
-        return
-    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
-    if chat_id != app.tg_id:
+    context = _plan_screen_context(cb, app)
+    if app is None or context is None:
         await _answer_callback(client, cb["id"])
+        return
+    # Экран мог устареть: заявку уже увели дальше по воронке из другого места.
+    # Тогда данные не трогаем вообще — только алерт (ARG-94).
+    if app.status != STATUS_CHOOSING_PLAN:
+        await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
         return
     plan = await session.get(Plan, int(plan_id_s))
     if plan is None:
         await _answer_callback(client, cb["id"], "Тариф больше не доступен", alert=True)
         return
     app.plan_id = plan.id
-    app.status = STATUS_AWAITING_RECEIPT
+    app.status = STATUS_AWAITING_OFFER
     await session.flush()
     await _answer_callback(client, cb["id"], f"Выбрано: {plan.name}")
-    price_str = f"{plan.price:,} ₽".replace(",", " ")
-    await _send(
-        client, chat_id, TEXT_ACCEPTED.format(price=price_str), reply_markup=_plain_keyboard()
-    )
+    chat_id, _ = context
+    await _send(client, chat_id, TEXT_OFFER_PROMPT, reply_markup=_offer_keyboard(app.id))
+
+
+async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
+    """«✅ Согласен, к оплате» — фиксирует согласие с офертой (ARG-43) и только
+    после этого открывает шаг присылки чека (реквизиты — в TEXT_ACCEPTED)."""
+    app_id = int(cb["data"].split(":", 1)[1])
+    app = await session.get(IntakeApplication, app_id)
+    context = _plan_screen_context(cb, app)
+    if app is None or context is None:
+        await _answer_callback(client, cb["id"])
+        return
+    if app.status != STATUS_AWAITING_OFFER:
+        await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
+        return
+    plan = await session.get(Plan, app.plan_id) if app.plan_id else None
+    if plan is None:
+        await _answer_callback(client, cb["id"], "Тариф больше не доступен", alert=True)
+        return
+    app.offer_accepted_at = datetime.now(UTC)
+    app.offer_version = OFFER_VERSION
+    app.status = STATUS_AWAITING_RECEIPT
+    await session.flush()
+    await _answer_callback(client, cb["id"], "Принято")
+    chat_id, _ = context
+    await _send(client, chat_id, TEXT_ACCEPTED.format(price=_price_str(plan.price)))
 
 
 async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
@@ -496,7 +710,7 @@ async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSessi
         await _answer_callback(
             client, cb["id"], "У участника нет @username в Telegram — не могу завести логин", alert=True
         )
-        await _send(client, app.tg_id, TEXT_NEED_USERNAME, reply_markup=_plain_keyboard())
+        await _send(client, app.tg_id, TEXT_NEED_USERNAME)
         return
 
     username, password = created
@@ -517,15 +731,25 @@ async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSessi
     await _log_action(client, f"заявка #{app.id} ({_user_tag(app.tg_username, app.tg_id)}) подтверждена, юзер {username}")
 
 
+async def _await_question(client: httpx.AsyncClient, chat_id: int, tg_id: int) -> None:
+    """Взять у участника вопрос следующим сообщением (флаг в Redis, TTL — час)."""
+    await redis_client.set(f"intakebot:await_q:{tg_id}", "1", ex=AWAIT_QUESTION_TTL_SEC)
+    await _send(client, chat_id, TEXT_ASK_QUESTION_PROMPT)
+
+
 async def _handle_ask_question(client: httpx.AsyncClient, cb: dict[str, Any]) -> None:
+    """Старая инлайн-кнопка «Задать вопрос».
+
+    В новых клавиатурах её нет (вместо неё /question и кнопка меню), но в уже
+    отправленных чатах кнопки остались — они должны продолжать работать.
+    """
     chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
     from_user = cb.get("from") or {}
     tg_id = from_user.get("id", chat_id)
     if chat_id is None:
         return
     await _answer_callback(client, cb["id"])
-    await redis_client.set(f"intakebot:await_q:{tg_id}", "1", ex=AWAIT_QUESTION_TTL_SEC)
-    await _send(client, chat_id, TEXT_ASK_QUESTION_PROMPT)
+    await _await_question(client, chat_id, tg_id)
 
 
 async def _handle_change_password(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
@@ -573,6 +797,8 @@ async def _handle_callback(client: httpx.AsyncClient, session: AsyncSession, cb:
         await _handle_plan_list(client, session, cb)
     elif data.startswith("pc:"):
         await _handle_plan_choose(client, session, cb)
+    elif data.startswith("of:"):
+        await _handle_offer_accept(client, session, cb)
     elif data.startswith("pay:"):
         await _handle_confirm_payment(client, session, cb)
     elif data == CB_ASK_QUESTION:
@@ -604,7 +830,7 @@ async def _forward_question(
     if sent is not None:
         await redis_client.set(f"intakebot:qmap:{sent['message_id']}", str(chat_id), ex=QMAP_TTL_SEC)
 
-    await _send(client, chat_id, TEXT_QUESTION_SENT, reply_markup=_plain_keyboard())
+    await _send(client, chat_id, TEXT_QUESTION_SENT)
     await _log_action(client, f"{tag} задал вопрос (воронка приёма)")
 
 
@@ -618,6 +844,150 @@ async def _deliver_admin_reply(client: httpx.AsyncClient, reply_to_msg_id: int, 
         return
     await _send(client, int(asker_chat_id), f"💬 <b>Ответ поддержки</b>\n\n{html.escape(answer)}")
     await _send(client, ADMIN_CHAT_ID, "✅ Ответ доставлен участнику.")  # type: ignore[arg-type]
+
+
+# --- /reset: сброс прогона воронки (ARG-95) -----------------------------------
+
+
+def _reset_actor() -> User:
+    """«От чьего имени» вызывается admin-хендлер `delete_user`.
+
+    У бота нет учётки на платформе, а `delete_user` использует actor'а ровно для
+    одной проверки — «не удаляй сам себя». Транзиентный объект с несуществующим id
+    (BIGSERIAL начинается с 1) её проходит и в сессию не попадает.
+    """
+    return User(id=0)
+
+
+async def _find_application_by_username(
+    session: AsyncSession, username: str
+) -> IntakeApplication | None:
+    return (
+        await session.execute(
+            select(IntakeApplication).where(
+                func.lower(IntakeApplication.tg_username) == username.lower()
+            )
+        )
+    ).scalars().first()
+
+
+async def _reset_application(
+    session: AsyncSession, app: IntakeApplication
+) -> tuple[str, str | None]:
+    """Удалить заявку и созданного ей пользователя. Возвращает (статус, логин|None).
+
+    Порядок обязателен: сначала заявка, потом пользователь — `intake_applications.user_id`
+    ссылается на `users.id` без ON DELETE, обратный порядок упрётся в FK.
+    """
+    status = app.status
+    user_id = app.user_id
+    tg_id = app.tg_id
+
+    username: str | None = None
+    if user_id is not None:
+        user = await session.get(User, user_id)
+        username = user.username if user is not None else None
+
+    await session.delete(app)
+    await session.flush()
+
+    if user_id is not None and username is not None:
+        await delete_user(user_id, _reset_actor(), session)
+
+    await redis_client.delete(f"intakebot:await_q:{tg_id}")
+    await redis_client.delete(f"intakebot:pwd:{tg_id}")
+    return status, username
+
+
+async def _handle_reset(
+    client: httpx.AsyncClient, session: AsyncSession, chat_id: int, text: str, tg_id: int
+) -> None:
+    """Служебная команда админского DM: снести прогон, чтобы пройти воронку заново.
+
+    В `setMyCommands` намеренно не попадает — участнику её в меню видеть незачем.
+    Из любого другого чата не делает и не отвечает ничего.
+    """
+    if ADMIN_CHAT_ID is None or chat_id != ADMIN_CHAT_ID:
+        return
+    if not ALLOW_RESET:
+        await _send(client, chat_id, TEXT_RESET_DISABLED)
+        return
+
+    parts = text.split()
+    target = parts[1].lstrip("@") if len(parts) > 1 else None
+    if len(parts) > 2 or (target is not None and not target):
+        await _send(client, chat_id, TEXT_RESET_USAGE)
+        return
+
+    if target is None:
+        app = await _find_application(session, tg_id)
+        who = "для этого чата"
+    else:
+        app = await _find_application_by_username(session, target)
+        who = f"для @{html.escape(target)}"
+
+    if app is None:
+        await _send(client, chat_id, f"Заявки {who} не найдено — сбрасывать нечего.")
+        return
+
+    tag = _user_tag(app.tg_username, app.tg_id)
+    try:
+        status, username = await _reset_application(session, app)
+    except HTTPException as exc:
+        await session.rollback()
+        await _send(
+            client, chat_id,
+            f"⚠️ Не удалось сбросить {html.escape(tag)}: {html.escape(str(exc.detail))}",
+        )
+        return
+
+    user_line = (
+        f"пользователь платформы <code>{html.escape(username)}</code> удалён"
+        if username
+        else "пользователь платформы не создавался"
+    )
+    await _send(
+        client, chat_id,
+        f"🧹 Сброшено: заявка {html.escape(tag)} (статус <code>{html.escape(status)}</code>), "
+        f"{user_line}. Redis-состояние очищено — можно проходить воронку заново.",
+    )
+
+
+# --- /info: статус бота (админский DM) -----------------------------------------
+
+
+async def _handle_info(client: httpx.AsyncClient, session: AsyncSession, chat_id: int) -> None:
+    """Служебная команда админского DM: к какому набору привязан бот, какие тарифы
+    отдаёт и какие реквизиты уходят в TEXT_ACCEPTED. В `BOT_COMMANDS` не попадает —
+    видна только в меню самого админского чата (см. `_setup_bot_menu`).
+    """
+    if ADMIN_CHAT_ID is None or chat_id != ADMIN_CHAT_ID:
+        return
+
+    intake = await _current_intake(session)
+    if intake is None:
+        intake_line = "⚠️ Активного набора нет (таблица intakes пуста) — заявки не смогут получить аккаунт."
+    else:
+        intake_line = (
+            f"📅 Набор: <b>{intake.starts_on:%d.%m.%Y}</b> — {intake.ends_on:%d.%m.%Y} "
+            f"(id {intake.id})"
+        )
+
+    plans = await _active_plans(session)
+    if plans:
+        plans_lines = "\n".join(
+            f"• {html.escape(plan.name)} — {_price_str(plan.price)}" for plan in plans
+        )
+    else:
+        plans_lines = "⚠️ Активных тарифов нет — на «Выбери тариф» список будет пуст."
+
+    await _send(
+        client, chat_id,
+        f"ℹ️ <b>Статус бота</b>\n\n"
+        f"{intake_line}\n\n"
+        f"💳 Тарифы:\n{plans_lines}\n\n"
+        f"🏦 Реквизиты: {html.escape(PAYMENT_DETAILS)}",
+    )
 
 
 # --- Сообщения -----------------------------------------------------------------
@@ -640,7 +1010,7 @@ async def _handle_start(
         )
         session.add(app)
         await session.flush()
-        await _send(client, chat_id, TEXT_START, reply_markup=_plain_keyboard())
+        await _send(client, chat_id, TEXT_START)
         return
 
     # Обновляем TG-профиль на случай смены ника/имени между визитами.
@@ -650,15 +1020,17 @@ async def _handle_start(
     await session.flush()
 
     if app.status == STATUS_AWAITING_ABOUT:
-        await _send(client, chat_id, TEXT_START, reply_markup=_plain_keyboard())
+        await _send(client, chat_id, TEXT_START)
     elif app.status == STATUS_SUBMITTED:
-        await _send(client, chat_id, TEXT_WAIT_DECISION, reply_markup=_plain_keyboard())
+        await _send(client, chat_id, TEXT_WAIT_DECISION)
     elif app.status == STATUS_CHOOSING_PLAN:
         await _send_plan_list(client, session, chat_id, app)
+    elif app.status == STATUS_AWAITING_OFFER:
+        await _send(client, chat_id, TEXT_OFFER_PROMPT, reply_markup=_offer_keyboard(app.id))
     elif app.status == STATUS_AWAITING_RECEIPT:
-        await _send(client, chat_id, TEXT_NEED_RECEIPT, reply_markup=_plain_keyboard())
+        await _send(client, chat_id, TEXT_NEED_RECEIPT)
     elif app.status == STATUS_PAYMENT_REVIEW:
-        await _send(client, chat_id, TEXT_WAIT_PAYMENT_CHECK, reply_markup=_plain_keyboard())
+        await _send(client, chat_id, TEXT_WAIT_PAYMENT_CHECK)
     elif app.status == STATUS_CONFIRMED:
         await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
 
@@ -670,6 +1042,15 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     tg_id = from_user.get("id", chat_id)
     tg_username = from_user.get("username")
 
+    # Служебные команды админского DM — раньше ветки ответа админа: обе могут
+    # прийти и реплаем, и это всё равно команда, а не ответ участнику.
+    if text.startswith("/reset"):
+        await _handle_reset(client, session, chat_id, text, tg_id)
+        return
+    if text.startswith("/info"):
+        await _handle_info(client, session, chat_id)
+        return
+
     # Ответ админа reply на пересланный вопрос → доставить участнику.
     if ADMIN_CHAT_ID is not None and chat_id == ADMIN_CHAT_ID:
         reply_to = message.get("reply_to_message")
@@ -679,6 +1060,11 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
 
     if text.startswith("/start"):
         await _handle_start(client, session, chat_id, from_user)
+        return
+
+    # «Задать вопрос» — командой/кнопкой меню бота, доступна на любом шаге воронки.
+    if text.startswith("/question"):
+        await _await_question(client, chat_id, tg_id)
         return
 
     # «Задать вопрос» работает на любом шаге воронки, приоритет выше состояния анкеты.
@@ -698,7 +1084,7 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         if text:
             await _handle_about(client, session, chat_id, app, text)
         else:
-            await _send(client, chat_id, TEXT_ASK_ABOUT, reply_markup=_plain_keyboard())
+            await _send(client, chat_id, TEXT_ASK_ABOUT)
         return
 
     if app.status == STATUS_AWAITING_RECEIPT and (photo or document):
@@ -716,6 +1102,32 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     await _status_reminder(client, chat_id, app)
 
 
+BOT_COMMANDS = [
+    {"command": "start", "description": "Начать или продолжить заявку"},
+    {"command": "question", "description": "Задать вопрос поддержке"},
+]
+# /info поверх общего списка — только в scope этого чата (BotCommandScopeChat), поэтому
+# участникам в их собственных чатах не видна, а админу открывается прямо в меню-кнопке,
+# без /reset (тот и так спрятан за INTAKE_BOT_ALLOW_RESET и не нужен в UI).
+ADMIN_COMMANDS = [*BOT_COMMANDS, {"command": "info", "description": "Набор, тарифы, реквизиты"}]
+
+
+async def _setup_bot_menu(client: httpx.AsyncClient) -> None:
+    """Команды бота + кнопка меню: «Задать вопрос» доступна на любом шаге воронки,
+    не занимая ряд в каждой инлайн-клавиатуре (ARG-94). Настраивается кодом при
+    старте сервиса, а не руками в BotFather."""
+    await _api_call(client, "setMyCommands", {"commands": BOT_COMMANDS})
+    await _api_call(client, "setChatMenuButton", {"menu_button": {"type": "commands"}})
+    if ADMIN_CHAT_ID is not None:
+        await _api_call(
+            client, "setMyCommands",
+            {
+                "commands": ADMIN_COMMANDS,
+                "scope": {"type": "chat", "chat_id": ADMIN_CHAT_ID},
+            },
+        )
+
+
 async def main() -> None:
     if not BOT_TOKEN:
         raise SystemExit("TELEGRAM_INTAKE_BOT_TOKEN не задан")
@@ -727,6 +1139,7 @@ async def main() -> None:
     )
     offset = 0
     async with httpx.AsyncClient(timeout=40, proxy=TELEGRAM_PROXY) as client:
+        await _setup_bot_menu(client)
         while True:
             try:
                 resp = await client.get(

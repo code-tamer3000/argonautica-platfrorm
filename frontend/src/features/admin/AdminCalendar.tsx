@@ -11,6 +11,7 @@ import { useRooms } from '../../api/rooms'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import styles from './admin.module.css'
 
 interface EventFormValues {
@@ -204,10 +205,9 @@ export function AdminCalendar() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Календарь</h1>
+      <PageHeader title="Календарь">
         <Button onClick={() => setCreateOpen(true)}>Создать событие</Button>
-      </div>
+      </PageHeader>
 
       <div className={styles.list}>
         {events.map((event) => (
@@ -236,13 +236,13 @@ export function AdminCalendar() {
       </div>
 
       {createOpen && (
-        <Modal title="Создать событие" onClose={() => setCreateOpen(false)}>
+        <Modal title="Создать событие" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <EventForm rooms={rooms} onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editEvent && (
-        <Modal title="Редактировать событие" onClose={() => setEditEvent(null)}>
+        <Modal title="Редактировать событие" onClose={() => setEditEvent(null)} closeOnBackdrop={false}>
           <EventForm rooms={rooms} initial={editEvent} onSubmit={handleEdit} />
         </Modal>
       )}

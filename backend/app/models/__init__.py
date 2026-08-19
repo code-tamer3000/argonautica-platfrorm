@@ -15,13 +15,13 @@ from app.models.journal import (
     JournalProgram,
     JournalSection,
 )
-from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
+from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia, KbItemPlan
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.notification import Notification
 from app.models.plan import Plan
 from app.models.push import PushSubscription
-from app.models.room import Room, RoomMember
+from app.models.room import Room, RoomMember, RoomPlan
 from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
 from app.models.task import (
@@ -29,6 +29,7 @@ from app.models.task import (
     TaskAssignment,
     TaskComment,
     TaskMedia,
+    TaskPlan,
     TaskSubmission,
     TaskSubmissionMedia,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "User",
     "Room",
     "RoomMember",
+    "RoomPlan",
     "Message",
     "MessageAttachment",
     "PinnedMessage",
@@ -47,6 +49,7 @@ __all__ = [
     "KbCategory",
     "KbItem",
     "KbItemMedia",
+    "KbItemPlan",
     "KbComment",
     "CabinEntry",
     "CalendarEvent",
@@ -65,6 +68,7 @@ __all__ = [
     "Task",
     "TaskAssignment",
     "TaskMedia",
+    "TaskPlan",
     "TaskSubmission",
     "TaskSubmissionMedia",
     "TaskComment",

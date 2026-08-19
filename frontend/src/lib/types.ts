@@ -44,6 +44,10 @@ export interface UserOut {
   // Рубка — только чтение. Ставится сервером один раз и не снимается.
   graduated_at: string | null
   settings: Record<string, unknown>
+  // Набор участника (ARG-106): дата старта — гейт Рубки/Календаря; текст — поп-ап
+  // при первом входе. Оба null у бесхозного участника или у набора без текста.
+  intake_starts_on: string | null
+  intake_welcome_message: string | null
 }
 
 export interface PublicUserOut {
@@ -69,6 +73,9 @@ export interface RoomOut {
   // Комната подгруппы потока: над композером висит голосование за общую фразу.
   stream_node_id?: number | null
   stream_task_id?: number | null
+  // Только channel: изоляция по потоку/тарифу (ARG-96).
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export interface MemberOut {
@@ -221,6 +228,9 @@ export interface KbItemOut {
   created_at: string
   updated_at: string
   media_asset_ids: number[]
+  // Изоляция по потоку/тарифу (ARG-96): null/пусто = доступен всем потокам/тарифам.
+  intake_id: number | null
+  plan_ids: number[]
 }
 
 export interface KbCommentOut {
@@ -290,10 +300,12 @@ export interface AdminUserOut {
   intake_starts_on: string | null
 }
 
-/** Набор (когорта): дата старта задаёт начало 28-дневного окна Динамики. */
+/** Набор (когорта): дата старта задаёт начало 28-дневного окна Динамики.
+ * `ends_on` — дата закрытия окна: после неё Динамика становится read-only архивом (ARG-96). */
 export interface IntakeOut {
   id: number
   starts_on: string
+  ends_on: string
   created_at: string
   user_count: number
 }
@@ -313,6 +325,8 @@ export interface MyDynamicsOut {
   pardons_remaining: number
   today_progress: string[]
   program_start: string
+  // Окно набора закрыто (ARG-96): статистика заморожена, форма отправки/помилования скрыта.
+  window_closed: boolean
 }
 
 export interface UserDynamicsOut {

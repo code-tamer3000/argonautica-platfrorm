@@ -34,9 +34,11 @@ export interface PatchAdminUserBody {
 
 /**
  * Список участников. `intakeId` фильтрует по набору на сервере; `undefined` — все
- * наборы сразу (режим «показать все» в админке).
+ * наборы сразу (режим «показать все» в админке). `enabled=false` — не стрелять
+ * запросом вовсе (нужно для мест вне гарантированно-админского экрана, см.
+ * `useAdminUsersMap`, где вызывающая сторона решает по роли текущего юзера).
  */
-export function useAdminUsers(intakeId?: number) {
+export function useAdminUsers(intakeId?: number, enabled = true) {
   return useQuery({
     queryKey: [...adminUsersKey, intakeId ?? 'all'] as const,
     queryFn: () =>
@@ -45,15 +47,18 @@ export function useAdminUsers(intakeId?: number) {
           ? '/api/admin/users'
           : `/api/admin/users?intake_id=${intakeId}`,
       ),
+    enabled,
   })
 }
 
 /**
  * Все участники (без фильтра по набору) в виде `id → участник`. Нужен там, где надо
  * показать имя уже назначенного человека, даже если его набор сейчас отфильтрован.
+ * `enabled=false` для экранов, где вызывающий не гарантированно admin (эндпоинт
+ * `/api/admin/users` иначе 403 для обычного участника).
  */
-export function useAdminUsersMap(): Map<number, AdminUserOut> {
-  const { data } = useAdminUsers()
+export function useAdminUsersMap(enabled = true): Map<number, AdminUserOut> {
+  const { data } = useAdminUsers(undefined, enabled)
   return useMemo(() => {
     const m = new Map<number, AdminUserOut>()
     for (const u of data ?? []) m.set(u.id, u)
@@ -72,8 +77,20 @@ export function useAdminIntakes() {
 export function useCreateIntake() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { starts_on: string }) =>
+    mutationFn: (body: { starts_on: string; ends_on: string }) =>
       http.post<IntakeOut>('/api/admin/intakes', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminIntakesKey })
+    },
+  })
+}
+
+/** Подвинуть дату закрытия набора (ARG-96). `starts_on` без API — см. ARG-89. */
+export function useUpdateIntake() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ends_on }: { id: number; ends_on: string }) =>
+      http.patch<IntakeOut>(`/api/admin/intakes/${id}`, { ends_on }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminIntakesKey })
     },

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
+import { useAdminUsersMap } from '../../api/admin'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
+import { BackButton } from '../../components/BackButton'
 import { IconChat, IconDiary, IconPin, IconPlus, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import type { PublicUserOut, RoomOut } from '../../lib/types'
@@ -52,6 +54,8 @@ function RoomButton({ r, selectedId, onSelect, dmPeers, online, users, pinned }:
 }
 
 interface Props {
+  tab: Tab
+  onTabChange: (tab: Tab) => void
   selectedId: number | null
   onSelect: (id: number) => void
 }
@@ -61,13 +65,24 @@ const subLabel = (r: RoomOut): string =>
     r.is_personal ? 'Личный дневник' :
       r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
 
-export function RoomList({ selectedId, onSelect }: Props) {
+export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()
   const users = useUsersMap()
   const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const online = useUiStore((s) => s.online)
-  const [tab, setTab] = useState<Tab>('chats')
+  // «Текущая экспедиция» (ARG-104): для admin список каналов виден БЕЗ серверного
+  // фильтра (полный доступ, см. assert_room_access) — сужаем его же отображение до
+  // выбранной экспедиции + общих каналов, тот же контекст, что в Задачи/КБ. Для
+  // остального участника ничего не меняет: его rooms и так уже отфильтрованы
+  // сервером. Выбирается ОДИН раз в /admin/expeditions, здесь только читаем.
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const isAdmin = me?.role === 'admin'
+  // Чужие личные дневники несут intake_id владельца НЕ на самой комнате (та колонка
+  // у personal-комнат всегда NULL, см. docs/DATA_MODEL.md) — резолвим поток через
+  // admin-ручку /api/admin/users. enabled=isAdmin: для обычного участника не стреляем
+  // запросом вовсе (эндпоинт всё равно 403 для не-admin).
+  const adminUsers = useAdminUsersMap(isAdmin)
   const [q, setQ] = useState('')
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
   const badges = useNavBadges()
@@ -80,7 +95,19 @@ export function RoomList({ selectedId, onSelect }: Props) {
       : list
     // Новостной канал вынесен в верхнеуровневую кнопку «Новости» (см. AppShell) —
     // из списка каналов его исключаем, чтобы не дублировать.
-    const channels = filtered.filter((r) => r.type === 'channel' && !r.is_news)
+    let channels = filtered.filter((r) => r.type === 'channel' && !r.is_news)
+    const applyIntakeFilter = isAdmin && currentIntakeId != null
+    if (applyIntakeFilter) {
+      channels = channels.filter((r) => {
+        if (r.is_personal) {
+          // Свой дневник виден всегда — иначе admin потерял бы «Закреплённые».
+          if (r.created_by === me?.id) return true
+          const ownerIntakeId = adminUsers.get(r.created_by)?.intake_id
+          return ownerIntakeId == null || ownerIntakeId === currentIntakeId
+        }
+        return r.intake_id == null || r.intake_id === currentIntakeId
+      })
+    }
 
     // Закреплённые сверху: собственный личный канал.
     const mine = channels.find((r) => r.is_personal && r.created_by === me?.id)
@@ -94,7 +121,7 @@ export function RoomList({ selectedId, onSelect }: Props) {
       pinnedChannels: pinned,
       otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
     }
-  }, [rooms, q, dmPeers, users, me?.id])
+  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty = pinnedChannels.length === 0 && otherChannels.length === 0
@@ -111,14 +138,14 @@ export function RoomList({ selectedId, onSelect }: Props) {
         />
         <button
           className={`${styles.tab} ${tab === 'chats' ? styles.tabActive : ''}`}
-          onClick={() => setTab('chats')}
+          onClick={() => onTabChange('chats')}
         >
           <IconChat size={16} /> Чаты
           {badges.chats > 0 && <span className={styles.tabBadge}>{badges.chats > 99 ? '99+' : badges.chats}</span>}
         </button>
         <button
           className={`${styles.tab} ${tab === 'channels' ? styles.tabActive : ''}`}
-          onClick={() => setTab('channels')}
+          onClick={() => onTabChange('channels')}
         >
           <IconDiary size={16} /> Дневники
           {badges.channels > 0 && <span className={styles.tabBadge}>{badges.channels > 99 ? '99+' : badges.channels}</span>}
@@ -140,12 +167,17 @@ export function RoomList({ selectedId, onSelect }: Props) {
             )}
           </div>
         )}
-        <input
-          className={styles.search}
-          placeholder="Поиск"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        {/* «Назад» в строке поиска: полоса вкладок держит глайдер ровно на две
+            кнопки (см. .tabGlider), третий элемент там сбил бы расчёт. */}
+        <div className={styles.searchRow}>
+          <BackButton />
+          <input
+            className={styles.search}
+            placeholder="Поиск"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
       </div>
 
       {modal === 'chat' && (

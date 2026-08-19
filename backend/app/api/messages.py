@@ -14,8 +14,10 @@ from sqlalchemy import cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
+from app.api.dynamics import intake_window_closed
 from app.core.config import settings
 from app.db.session import after_commit, get_session
+from app.models.intake import Intake
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.sticker import Sticker
@@ -160,6 +162,16 @@ async def send_message(
                 "Only the channel owner can post here; use threads to comment",
             )
 
+    # Окно набора владельца дневника закрыто (ARG-96): архив только на чтение,
+    # новых записей (в т.ч. тредом) быть не может.
+    if room.is_personal:
+        owner = await session.get(User, room.created_by)
+        owner_intake_id = owner.intake_id if owner is not None else None
+        if await intake_window_closed(session, owner_intake_id) is not None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Окно набора закрыто — архив только для чтения"
+            )
+
     # Новостной канал: верхнеуровневые посты — только admin. Комментарии (треды) — все.
     if room.is_news and current_user.role != "admin":
         if body.reply_to_message_id is None:
@@ -257,6 +269,7 @@ async def repost_to_news(
     message_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    target_intake_id: Annotated[int | None, Query()] = None,
 ) -> MessageOut:
     """Репост сообщения в новостной канал (только admin).
 
@@ -266,6 +279,12 @@ async def repost_to_news(
     (в отличие от send_message) не делаем — это админский репост; доступ к медиа у
     зрителей новостей отработает через assert_media_access (медиа привязано к живому
     сообщению в доступной комнате).
+
+    Целевой поток (ARG-104, новостной канал больше не singleton): если у комнаты-
+    источника есть свой intake_id — репост уходит в новостной канал ЭТОГО потока,
+    `target_intake_id` игнорируется. Если источник кросс-поточный (intake_id=NULL,
+    например group/dm), поток назначения не вывести из комнаты — админ обязан
+    выбрать его явно через `target_intake_id`.
     """
     if current_user.role != "admin":
         raise HTTPException(
@@ -283,7 +302,19 @@ async def repost_to_news(
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
 
-    news = await ensure_news_channel(session)
+    if room.intake_id is not None:
+        resolved_intake_id = room.intake_id
+    elif target_intake_id is not None:
+        resolved_intake_id = target_intake_id
+    else:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Source room is cross-intake; target_intake_id is required",
+        )
+    if await session.get(Intake, resolved_intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
+
+    news = await ensure_news_channel(session, resolved_intake_id)
     if news is None:
         raise HTTPException(
             status.HTTP_409_CONFLICT, "News channel is not ready yet"

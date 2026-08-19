@@ -1,22 +1,17 @@
 import { useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useUiStore } from '../../stores/ui'
+import { useRooms } from '../../api/rooms'
 
-/**
- * Открыть комнату из любого раздела приложения.
- *
- * Маршрута вида `/chat/:roomId` НЕТ: чат живёт на «/», а нужную комнату выбирает
- * ChatLayout по `pendingOpen` из ui-store. Поэтому ссылка `<Link to="/chat/12">`
- * попадает в несуществующий маршрут и даёт пустой экран — ходить сюда.
- */
+/** Открыть комнату из любого раздела приложения (чат живёт на /chats и /diaries). */
 export function useOpenRoom() {
   const navigate = useNavigate()
-  const setPendingOpen = useUiStore((s) => s.setPendingOpen)
+  const { data: rooms } = useRooms()
   return useCallback(
     (roomId: number) => {
-      setPendingOpen({ roomId })
-      navigate('/')
+      const room = rooms?.find((r) => r.id === roomId)
+      const segment = room?.type === 'channel' ? 'diaries' : 'chats'
+      navigate(`/${segment}/${roomId}`)
     },
-    [navigate, setPendingOpen],
+    [navigate, rooms],
   )
 }

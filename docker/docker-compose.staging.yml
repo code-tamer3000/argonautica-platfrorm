@@ -99,6 +99,11 @@ services:
   intake-bot:
     <<: *backend
     command: ["python", "-m", "scripts.intake_bot"]
+    environment:
+      # Служебный /reset в админском DM: снести прогон воронки и созданного им
+      # пользователя, чтобы гонять воронку с одного аккаунта бесконечно (ARG-95).
+      # Только стенд — в прод-compose этого флага нет и быть не должно.
+      INTAKE_BOT_ALLOW_RESET: "1"
     healthcheck:
       disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
 

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import select
 
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
@@ -28,6 +29,7 @@ from app.core.metrics import render_prometheus
 from app.core.observability import ObservabilityMiddleware
 from app.core.redis import close_redis, redis_client
 from app.db.session import SessionLocal
+from app.models.intake import Intake
 from app.services.media import ensure_buckets
 from app.services.rooms import ensure_news_channel
 from app.ws.chat import router as ws_router
@@ -37,12 +39,14 @@ from app.ws.pubsub import ensure_listener_started, stop_listener
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Проверяем доступность Redis на старте (fail-fast), создаём бакеты MinIO,
-    # гарантируем новостной канал, поднимаем pub/sub-слушателя реалтайма;
-    # на остановке — гасим его и закрываем пул.
+    # гарантируем новостной канал каждого потока (ARG-104 — больше не singleton),
+    # поднимаем pub/sub-слушателя реалтайма; на остановке — гасим его и закрываем пул.
     await redis_client.ping()
     await run_in_threadpool(ensure_buckets)
     async with SessionLocal() as session:
-        await ensure_news_channel(session)
+        intake_ids = (await session.execute(select(Intake.id))).scalars().all()
+        for intake_id in intake_ids:
+            await ensure_news_channel(session, intake_id)
         await session.commit()
     await ensure_listener_started()
     try:

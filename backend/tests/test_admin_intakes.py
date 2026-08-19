@@ -32,8 +32,11 @@ async def create_intake(
 ) -> dict[str, object]:
     """Создать набор на свободную дату и вернуть его тело ответа."""
     starts_on = await free_starts_on(client, headers)
+    ends_on = starts_on + timedelta(days=28)
     created = await client.post(
-        "/api/admin/intakes", headers=headers, json={"starts_on": starts_on.isoformat()}
+        "/api/admin/intakes",
+        headers=headers,
+        json={"starts_on": starts_on.isoformat(), "ends_on": ends_on.isoformat()},
     )
     assert created.status_code == 201, created.text
     return dict(created.json())
@@ -60,12 +63,16 @@ async def test_create_intake_and_list_sorted_desc(
     headers = await admin_headers(client, make_user)
 
     starts_on = await free_starts_on(client, headers)
+    ends_on = starts_on + timedelta(days=28)
     created = await client.post(
-        "/api/admin/intakes", headers=headers, json={"starts_on": starts_on.isoformat()}
+        "/api/admin/intakes",
+        headers=headers,
+        json={"starts_on": starts_on.isoformat(), "ends_on": ends_on.isoformat()},
     )
     assert created.status_code == 201
     body = created.json()
     assert body["starts_on"] == starts_on.isoformat()
+    assert body["ends_on"] == ends_on.isoformat()
     assert body["user_count"] == 0
     assert body["created_at"]
 
@@ -84,15 +91,15 @@ async def test_create_intake_duplicate_date_conflicts(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     headers = await admin_headers(client, make_user)
-    starts_on = (await free_starts_on(client, headers)).isoformat()
+    starts_on = await free_starts_on(client, headers)
+    body = {
+        "starts_on": starts_on.isoformat(),
+        "ends_on": (starts_on + timedelta(days=28)).isoformat(),
+    }
 
-    first = await client.post(
-        "/api/admin/intakes", headers=headers, json={"starts_on": starts_on}
-    )
+    first = await client.post("/api/admin/intakes", headers=headers, json=body)
     assert first.status_code == 201
-    second = await client.post(
-        "/api/admin/intakes", headers=headers, json={"starts_on": starts_on}
-    )
+    second = await client.post("/api/admin/intakes", headers=headers, json=body)
     assert second.status_code == 409
 
 

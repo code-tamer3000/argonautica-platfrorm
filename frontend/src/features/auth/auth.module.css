@@ -96,15 +96,15 @@
 }
 .ruleR { background: linear-gradient(90deg, var(--divider-gold), transparent); }
 
-/* Блик (StarSpark) — мягко мерцает, без вращения. */
+/* Иконка-звезда (StarSpark, variant="icon") — мягко мерцает свечением, без
+   вращения. Как на сайте argonautica: brightness + drop-shadow. */
 .star {
   display: inline-flex;
-  color: var(--accent);
-  animation: starTwinkle 3.8s ease-in-out infinite;
+  animation: starTwinkle 6s ease-in-out infinite;
 }
 @keyframes starTwinkle {
-  0%, 100% { opacity: 0.55; transform: scale(0.85); }
-  50%      { opacity: 1;    transform: scale(1.08); }
+  0%, 100% { filter: brightness(1)    drop-shadow(0 0 2px rgba(214,172,64,0.4)); }
+  50%      { filter: brightness(1.3)  drop-shadow(0 0 4px rgba(214,172,64,0.65)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .star { animation: none; opacity: 0.9; }

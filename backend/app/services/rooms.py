@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.room import Room, RoomMember
+from app.models.room import Room, RoomMember, RoomPlan
 from app.models.task import TaskStreamNode
 from app.models.user import User
 from app.services.graduation import assert_not_graduated
+from app.services.visibility import intake_visible, plan_visible, same_cohort
 
 NEWS_CHANNEL_NAME = "Новости"
 
@@ -56,6 +57,16 @@ async def assert_room_access(
 
     Наблюдатель (is_observer) НЕ имеет доступа ни к одной комнате — включая каналы и
     новостной канал. Его разделы — только материалы (База знаний, Генные замки).
+
+    Канал (включая новостной, ARG-104 — больше не singleton/кросс-поточный
+    исключение) дополнительно гейтится двойным фильтром поток+тариф (ARG-96,
+    docs/ROOMS.md): NULL/пусто — доступен всем, иначе только своему набору/
+    перечисленным тарифам.
+
+    Личный дневник — особый канал: виден не только владельцу («Все дневники»),
+    поэтому чужой дневник дополнительно гейтится тем же потоком+тарифом, но через
+    `same_cohort` (сравнение владельца и смотрящего), а не через intake_id самой
+    комнаты (та колонка у личных комнат намеренно всегда NULL).
     """
     if user.is_observer:
         raise HTTPException(
@@ -64,6 +75,17 @@ async def assert_room_access(
         )
     membership = await session.get(RoomMember, (room.id, user.id))
     if room.type == "channel":
+        if user.role != "admin" and room.is_personal and room.created_by != user.id:
+            owner = await session.get(User, room.created_by)
+            if owner is None or not same_cohort(owner, user):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+        elif user.role != "admin" and not room.is_personal:
+            if not intake_visible(room.intake_id, user):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+            if not await plan_visible(
+                session, RoomPlan.plan_id, RoomPlan.room_id, room.id, user.plan_id
+            ):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         return membership
     if membership is None:
         if (
@@ -108,16 +130,20 @@ def assert_can_pin(room: Room, user: User, membership: RoomMember | None) -> Non
     raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to pin in this room")
 
 
-async def ensure_news_channel(session: AsyncSession) -> Room | None:
-    """Гарантировать существование единственного новостного канала.
+async def ensure_news_channel(session: AsyncSession, intake_id: int) -> Room | None:
+    """Гарантировать существование новостного канала данного потока (ARG-104).
 
-    Создаётся лениво на старте: нужен `created_by` = первый admin. Если админов
-    ещё нет (совсем свежая БД) — пропускаем, создастся при следующем старте после
-    сидирования. Частичный уникальный индекс (uq_rooms_single_news) страхует от
-    гонки blue/green — параллельный INSERT упадёт с IntegrityError, ловим.
+    Один новостной канал на intake, не на всю платформу (было singleton до
+    ARG-104, см. docs/DECISIONS.md). Создаётся лениво: нужен `created_by` =
+    первый admin. Если админов ещё нет (совсем свежая БД) — пропускаем, создастся
+    при следующем вызове после сидирования. Частичный уникальный индекс
+    (uq_rooms_news_per_intake, `WHERE is_news` по `intake_id`) страхует от гонки
+    blue/green — параллельный INSERT упадёт с IntegrityError, ловим.
     """
     existing = (
-        await session.execute(select(Room).where(Room.is_news.is_(True)))
+        await session.execute(
+            select(Room).where(Room.is_news.is_(True), Room.intake_id == intake_id)
+        )
     ).scalar_one_or_none()
     if existing is not None:
         return existing
@@ -134,6 +160,7 @@ async def ensure_news_channel(session: AsyncSession) -> Room | None:
         type="channel",
         name=NEWS_CHANNEL_NAME,
         is_news=True,
+        intake_id=intake_id,
         created_by=admin_id,
     )
     session.add(room)
@@ -142,7 +169,9 @@ async def ensure_news_channel(session: AsyncSession) -> Room | None:
     except IntegrityError:
         await session.rollback()
         return (
-            await session.execute(select(Room).where(Room.is_news.is_(True)))
+            await session.execute(
+                select(Room).where(Room.is_news.is_(True), Room.intake_id == intake_id)
+            )
         ).scalar_one_or_none()
     return room
 

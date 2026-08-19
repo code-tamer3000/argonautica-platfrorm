@@ -23,12 +23,26 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - `GET`/`DELETE /api/rooms/{id}` — room delete exists (see archived PROGRESS for history).
 - **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)): **no room access at all** — `assert_room_access` returns 403 for every room type, including channels and the news channel. `GET /api/rooms` returns them an **empty list**; `GET /api/rooms/personal` → 403. Chat is entirely closed for them (materials-only). `assert_can_write` stays as a redundant write-path barrier.
 - **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)): rooms stay fully readable (list, history, personal diary), but every write path is closed by `assert_can_write` → 403. The «Новый чат»/«Группа» buttons are hidden for them — a room they cannot write in is a dead end.
+- **Cohort not started yet** (`today < intake.starts_on`, ARG-106): the whole Рубка (`/chats`, `/diaries` — `ChatLayout`) is replaced client-side with a "N days until start" placeholder, **except the news channel** (`rooms.is_news`) — reachable via the «Новости» nav item (`/news` → `NewsRedirect`), since the welcome popup content is itself a news post and must stay readable during the wait. Frontend-only (`routes.tsx`'s `withCohortGate`/`useIsNewsRoom`/`CohortPending`) — no backend gate, since it's the participant's own not-yet-relevant content, not another user's (unlike the Observer 403 above). See [DATA_MODEL.md](DATA_MODEL.md) "Cohort-pending gate".
 
 ## Channels — implicit access (variant А)
 
 - No `room_members` rows are created for all users on a channel.
 - Channel visibility is the rule "a platform participant sees all channels" — in code, not data.
 - A `room_members` row for a channel appears **lazily**, only when a user first opens it, solely to store `last_read_message_id`. Avoids mass inserts and desync.
+
+### Isolation by intake and plan (ARG-96)
+
+"All channels" narrows for a regular (non-personal, non-news) channel: `rooms.intake_id`
+(NULL = every intake) and `room_plans` (empty = every plan of the user's intake) both have to
+pass — see [DATA_MODEL.md](DATA_MODEL.md) "Content isolation by intake and plan". Checked in
+`assert_room_access` (channel branch) and mirrored in `list_rooms`' query filter so a
+foreign-intake/plan channel doesn't even show up in the list. Admin bypasses both. Direct
+`GET /api/rooms/{id}` on a channel outside the caller's intake/plan → 403 (same message as
+"not a member" — existence isn't specially revealed beyond that). The news channel
+(`is_news`) is exempt by construction — it stays cross-intake. `POST /api/rooms`
+(`type='channel'`) and `PATCH /api/rooms/{id}` (channel edit, admin-only, rejects
+personal/news) accept `intake_id`/`plan_ids`.
 
 ## DM dedup
 
@@ -37,11 +51,34 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 ## Personal diary rooms
 
 - `rooms.is_personal = true` marks a participant's personal homework-diary room. Homework entries are ordinary `messages` there. See [DYNAMICS.md](DYNAMICS.md).
+- **Not owner-only.** The frontend's «Дневники» tab is a real "browse everyone's diary" feature (`RoomList.tsx`: own diary pinned, everyone else's under «Все дневники») — this is deliberate community/accountability UX, not an oversight.
+- **Cohort-gated (ARG-96).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner's and the viewer's `intake_id` **and** `plan_id` directly (`same_cohort` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Both fields must match (`NULL` matches `NULL` — no-intake/no-plan users share a bucket). The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_same_cohort`), so a foreign-cohort diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`.
 
 ## News channel & repost
 
-- **News channel** — a singleton room with `rooms.is_news = true`, created in app lifespan (`ensure_news_channel`). Top-level posts are admin-only; everyone reads.
-- **Repost into news** — admin forwards a message from any room into the news channel. It is a **copy** (text/sticker/attachments) with `messages.forwarded_from_sender_id` set to the original author ("переслано от X" / forwarded from X), so the post lives independently of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
+- **News channel** — one `rooms.is_news = true` room **per intake** (ARG-104; was a
+  platform-wide singleton before — see docs/DECISIONS.md if resurrecting that). Gated by
+  the same intake+plan double filter as a regular channel (ARG-96, `assert_room_access`) —
+  a participant sees only their own intake's news, not other intakes'. `ensure_news_channel(session, intake_id)`
+  gets-or-creates the channel for one intake; called from app lifespan (bootstraps a
+  channel for every existing intake), from `repost_to_news`, and from
+  `scripts/provision_second_intake.py`. `uq_rooms_news_per_intake` (partial unique on
+  `intake_id` `WHERE is_news`) enforces one per intake. Top-level posts are admin-only;
+  everyone in that intake reads.
+- **Repost into news** — admin forwards a message from any room into the news channel of
+  the **source room's own intake**. If the source room is cross-intake (`intake_id` NULL —
+  group/dm/personal), the endpoint requires an explicit `target_intake_id` query param
+  (400 without it) since there's nothing on the room to infer a target from. It is a
+  **copy** (text/sticker/attachments) with `messages.forwarded_from_sender_id` set to the
+  original author ("переслано от X" / forwarded from X), so the post lives independently
+  of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
+- **Admin "current intake" selector** — a session-only (not persisted) UI context set in
+  `AdminLayout`, shared across the Задачи/КБ/Чаты admin screens (`stores/ui.ts`
+  `adminCurrentIntakeId`). It only changes what the admin sees by default in those lists
+  (a client-side filter, with a "filtered, not the full list" banner) and which intake a
+  repost from a cross-intake room defaults to being asked about — it does **not** change
+  server-side authorization; admin still bypasses the intake/plan gate entirely
+  (`user.role == "admin"` in `assert_room_access`/`list_rooms`).
 
 ## Stream subgroup rooms
 

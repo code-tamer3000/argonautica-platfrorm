@@ -3,6 +3,7 @@ import { useAdminIntakes } from '../../api/admin'
 import { useAdminCreditDay, useAdminDynamics } from '../../api/dynamics'
 import { Avatar } from '../../components/Avatar'
 import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import type {
   DayStatus,
@@ -267,13 +268,12 @@ export function AdminDynamics() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Динамика</h1>
+      <PageHeader title="Динамика">
         <span style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)' }}>
           <IconUsers size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
           {summary?.total_participants ?? 0} участников
         </span>
-      </div>
+      </PageHeader>
 
       <p style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)', marginTop: -4 }}>
         Кликните по пропущенному дню, чтобы зачесть его вручную (по зачтённому — снять). Зачёт помилованного дня вернёт участнику потраченного кита.

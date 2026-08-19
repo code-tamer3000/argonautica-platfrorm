@@ -6,6 +6,7 @@ import type { FeedbackKind, FeedbackOut } from '../../lib/types'
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import cabin from '../cabin/cabin.module.css'
@@ -54,7 +55,6 @@ export function AdminFeedback() {
   const resolve = useResolveFeedback()
   const createRoom = useCreateRoom()
   const navigate = useNavigate()
-  const setPendingOpen = useUiStore((s) => s.setPendingOpen)
   const setPendingDraft = useUiStore((s) => s.setPendingDraft)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
 
@@ -67,8 +67,7 @@ export function AdminFeedback() {
       })
       setDmPeer(room.id, item.user_id)
       setPendingDraft({ roomId: room.id, text: buildReplyHeader(item) })
-      setPendingOpen({ roomId: room.id })
-      navigate('/')
+      navigate(`/chats/${room.id}`)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Не удалось открыть чат', 'error')
     }
@@ -94,14 +93,13 @@ export function AdminFeedback() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Обращения</h1>
+      <PageHeader title="Обращения">
         {data && data.unresolved_count > 0 && (
           <Badge>
             Не разобрано: {data.unresolved_count}
           </Badge>
         )}
-      </div>
+      </PageHeader>
 
       <div className={cabin.segmented} role="tablist">
         <button

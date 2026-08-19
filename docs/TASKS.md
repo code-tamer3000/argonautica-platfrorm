@@ -9,17 +9,30 @@ Author assigns work; participants submit; admin reviews. A task is **common** (`
 
 > **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) keep the section as an archive of what they handed in: `list_tasks` and `assert_task_visible` narrow it to tasks whose own assignment is `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES` in `services/tasks.py`) — `returned`/`assigned` and untouched common tasks disappear, since they can no longer be worked on. Writing is closed too: new submissions, submission comments, review of a cross-task and every stream write → 403. `attention_count` is 0 and progress X/Y is counted over the submitted tasks only, so the denominator never points at tasks they cannot see.
 
+## Isolation by intake and plan (ARG-96)
+
+A **common** task can be scoped: `tasks.intake_id` (NULL = every intake) and `task_plans`
+(empty = every plan of the user's intake) both gate visibility — see
+[DATA_MODEL.md](DATA_MODEL.md) "Content isolation by intake and plan". Checked in
+`assert_task_visible` and mirrored in `list_tasks`' query filter (and the
+`compute_progress`/`attention_count` denominators, so a participant's progress bar and badge
+don't count tasks outside their intake/plan). Individual/pair/stream tasks **ignore** these
+fields — an explicit assignee/pair/stream member sees their task regardless of intake/plan,
+because assignment is already a stronger, deliberate grant. `POST /api/tasks` and
+`PATCH /api/tasks/{id}` accept `intake_id`/`plan_ids` (read only when `type='common'`).
+
 ## Assignments & lifecycle
 
-- Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels).
+- Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels). Exception: `intake_bot.py` assigns intake-tagged welcome tasks (`tasks.intake_id` set, `type='individual'`, created with zero recipients by `scripts/provision_second_intake.py`) to each new user right after their platform account is created — see [INTAKE_BOT.md](INTAKE_BOT.md).
 - `task_assignments.status`: `assigned → submitted → returned → accepted`. `late` is set on the first submission after `deadline_at`.
 - Submission history is kept (a return produces a new `task_submissions` row; the latest is the current one).
+- `tasks.sets_display_name` (default false): if set, `create_submission` overwrites `users.display_name` with the submission's trimmed text on submit. No task id/title is hardcoded — only this flag, set directly by provisioning (not exposed on `TaskCreate`).
 
 ## Media
 
 - **Prompt media** (`task_media`) — attached by admin to the task itself; mirror of `task_submission_media` (submission attachments). Both go through the shared `media_assets` / presigned flow (see [FILES.md](FILES.md)).
 - `create_task` / `update_task` accept `media_asset_ids` → saved into `task_media`. `get_task` / `list_tasks` return `attachments` batch-signed via `resolve_task_attachments`.
-- **Media access**: `assert_media_access` gates task media by task visibility — `common` → any participant; `individual` → assignee / admin.
+- **Media access**: `assert_media_access` gates task media by task visibility — `common` → any participant whose intake/plan pass isolation (ARG-96); `individual` → assignee / admin.
 
 ## Review
 

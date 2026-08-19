@@ -8,8 +8,10 @@
   font-family: var(--font-t1);
   font-size: 28px;
   color: var(--text-primary);
-  margin-bottom: var(--space-4);
 }
+/* Отступ висит на ряду, а не на заголовке: рядом с h1 стоит кнопка «Назад»,
+   и margin у флекс-элемента увёл бы её вверх относительно текста. */
+.titleRow { margin-bottom: var(--space-4); }
 
 .searchBar {
   margin-bottom: var(--space-5);

@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useKbCategories, useKbItems } from '../../api/kb'
+import { BackButton } from '../../components/BackButton'
+import ph from '../../components/pageHeader.module.css'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { cardClass } from '../../components/Card'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
 import type { KbItemOut } from '../../lib/types'
+import { useUiStore } from '../../stores/ui'
 import styles from './kb.module.css'
 
 // Секция «Без категории» после всех именованных категорий.
@@ -23,9 +26,17 @@ export function KbList() {
   const { data: categories } = useKbCategories()
   const { user } = useAuth()
   const [search, setSearch] = useState('')
+  // «Текущая экспедиция» (ARG-104): для admin этот экран не гейтится сервером
+  // вообще (полный доступ) — сужаем отображение тем же общим контекстом, что и
+  // /admin/kb. Выбирается ОДИН раз в /admin/expeditions (AdminExpeditions), здесь
+  // только читаем — без своего контрола/баннера, чтобы не плодить UI-шум.
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const intakeFiltered = user?.role === 'admin' && currentIntakeId != null
 
   const items = (data ?? []).filter(
-    (item) => item.title.toLowerCase().includes(search.toLowerCase()),
+    (item) =>
+      item.title.toLowerCase().includes(search.toLowerCase()) &&
+      (!intakeFiltered || item.intake_id == null || item.intake_id === currentIntakeId),
   )
 
   // Группируем по категориям (порядок — из sort_order категорий),
@@ -55,7 +66,10 @@ export function KbList() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>База знаний</h1>
+      <div className={`${ph.titleRow} ${styles.titleRow}`}>
+        <BackButton />
+        <h1 className={styles.pageTitle}>База знаний</h1>
+      </div>
       <div className={styles.searchBar}>
         <input
           className={styles.searchInput}

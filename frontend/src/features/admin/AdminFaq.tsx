@@ -8,6 +8,7 @@ import {
 import type { FaqItemOut } from '../../lib/types'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
@@ -132,10 +133,9 @@ export function AdminFaq() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Частые вопросы</h1>
+      <PageHeader title="FAQ">
         <Button onClick={() => setCreateOpen(true)}>Добавить вопрос</Button>
-      </div>
+      </PageHeader>
 
       {items.length === 0 ? (
         <p className={styles.mediaEmpty}>Вопросов пока нет.</p>
@@ -161,13 +161,13 @@ export function AdminFaq() {
       )}
 
       {createOpen && (
-        <Modal title="Новый вопрос" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый вопрос" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <FaqForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать вопрос" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать вопрос" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <FaqForm initial={editItem} onSubmit={handleEdit} />
         </Modal>
       )}

@@ -14,15 +14,17 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin, require_participant
 from app.core.config import settings
 from app.db.session import get_session
+from app.models.intake import Intake
 from app.models.kb import KbItem
 from app.models.media import MediaAsset
+from app.models.plan import Plan
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -30,6 +32,7 @@ from app.models.task import (
     TaskMedia,
     TaskPair,
     TaskPairMember,
+    TaskPlan,
     TaskStream,
     TaskStreamNode,
     TaskStreamNodeMember,
@@ -83,6 +86,7 @@ from app.services.tasks import (
     recompute_pair_completion,
     sync_task_calendar_event,
 )
+from app.services.visibility import plan_visibility_clause
 from app.ws import schemas as ws_schemas
 
 # Задачи — активность участника; наблюдателю весь раздел закрыт (в т.ч. чтение).
@@ -93,7 +97,7 @@ router = APIRouter(
 )
 
 # Поля, которые admin вправе править через PATCH.
-_PATCHABLE_FIELDS = {"title", "body", "deadline_at", "kb_item_id"}
+_PATCHABLE_FIELDS = {"title", "body", "deadline_at", "kb_item_id", "intake_id"}
 
 
 async def _assert_kb_item_exists(session: AsyncSession, kb_item_id: int | None) -> None:
@@ -101,6 +105,35 @@ async def _assert_kb_item_exists(session: AsyncSession, kb_item_id: int | None) 
         return
     if await session.get(KbItem, kb_item_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "KB item not found")
+
+
+async def _assert_intake_exists(session: AsyncSession, intake_id: int | None) -> None:
+    if intake_id is None:
+        return
+    if await session.get(Intake, intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
+
+
+async def _assert_plans_exist(session: AsyncSession, plan_ids: list[int]) -> None:
+    if not plan_ids:
+        return
+    found = await session.execute(select(Plan.id).where(Plan.id.in_(plan_ids)))
+    if set(found.scalars().all()) != set(plan_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
+
+
+async def _set_task_plans(session: AsyncSession, task_id: int, plan_ids: list[int]) -> None:
+    """Полностью заменить набор тарифов задачи."""
+    await session.execute(sa_delete(TaskPlan).where(TaskPlan.task_id == task_id))
+    for plan_id in dict.fromkeys(plan_ids):
+        session.add(TaskPlan(task_id=task_id, plan_id=plan_id))
+
+
+async def _task_plan_ids(session: AsyncSession, task_id: int) -> list[int]:
+    rows = await session.execute(
+        select(TaskPlan.plan_id).where(TaskPlan.task_id == task_id).order_by(TaskPlan.plan_id)
+    )
+    return list(rows.scalars().all())
 
 
 async def _assert_users_exist(session: AsyncSession, user_ids: list[int]) -> None:
@@ -130,6 +163,8 @@ async def create_task(
     Дедлайн (если задан) синхронизируется с событием календаря. Фан-аут task.created.
     """
     await _assert_kb_item_exists(session, body.kb_item_id)
+    await _assert_intake_exists(session, body.intake_id)
+    await _assert_plans_exist(session, body.plan_ids)
 
     pairs_input: list[list[int]] = []
     stream_user_ids: list[int] = []
@@ -166,9 +201,11 @@ async def create_task(
         kb_item_id=body.kb_item_id,
         deadline_at=body.deadline_at,
         created_by=current_admin.id,
+        intake_id=body.intake_id,
     )
     session.add(task)
     await session.flush()
+    await _set_task_plans(session, task.id, body.plan_ids)
 
     for uid in assignee_ids:
         session.add(TaskAssignment(task_id=task.id, user_id=uid))
@@ -255,6 +292,8 @@ async def create_task(
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
+        intake_id=task.intake_id,
+        plan_ids=await _task_plan_ids(session, task.id),
     )
 
 
@@ -271,6 +310,11 @@ async def update_task(
     changes = body.model_dump(exclude_unset=True)
     if "kb_item_id" in changes:
         await _assert_kb_item_exists(session, changes["kb_item_id"])
+    if "intake_id" in changes:
+        await _assert_intake_exists(session, changes["intake_id"])
+    if "plan_ids" in changes and changes["plan_ids"] is not None:
+        await _assert_plans_exist(session, changes["plan_ids"])
+        await _set_task_plans(session, task.id, changes["plan_ids"])
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:
             setattr(task, field, value)
@@ -308,6 +352,8 @@ async def update_task(
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
+        intake_id=task.intake_id,
+        plan_ids=await _task_plan_ids(session, task.id),
     )
 
 
@@ -852,7 +898,16 @@ async def list_tasks(
             my_individual = select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == current_user.id
             )
-            where.append((Task.type == "common") | (Task.id.in_(my_individual)))
+            # common-задача — с двойным фильтром поток+тариф (ARG-96); своё
+            # индивидуальное назначение видно независимо от него.
+            visible_common = and_(
+                Task.type == "common",
+                or_(Task.intake_id.is_(None), Task.intake_id == current_user.intake_id),
+                plan_visibility_clause(
+                    TaskPlan.plan_id, TaskPlan.task_id, Task.id, current_user.plan_id
+                ),
+            )
+            where.append(visible_common | (Task.id.in_(my_individual)))
     stmt = (
         select(Task)
         .where(*where)
@@ -906,6 +961,17 @@ async def list_tasks(
 
     task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
 
+    # Тарифы каждой задачи (ARG-96) — батчем, без N+1.
+    task_plans: dict[int, list[int]] = {}
+    if task_ids:
+        plan_rows = await session.execute(
+            select(TaskPlan.task_id, TaskPlan.plan_id)
+            .where(TaskPlan.task_id.in_(task_ids))
+            .order_by(TaskPlan.plan_id)
+        )
+        for tid, pid in plan_rows.all():
+            task_plans.setdefault(tid, []).append(pid)
+
     # Пары для парных заданий (участник видит свою, админ — все).
     pairs_by_task: dict[int, list[PairOut]] = {}
     for t in tasks:
@@ -943,6 +1009,8 @@ async def list_tasks(
                 if t.type in ("individual", "pair")
                 else participants
             ),
+            intake_id=t.intake_id,
+            plan_ids=task_plans.get(t.id, []),
         )
         for t in tasks
     ]
@@ -1012,6 +1080,8 @@ async def get_task(
             if task.type in ("individual", "pair", "stream")
             else await participant_count(session)
         ),
+        intake_id=task.intake_id,
+        plan_ids=await _task_plan_ids(session, task.id),
     )
 
 
@@ -1108,6 +1178,8 @@ async def create_submission(
         and datetime.now(UTC) > task.deadline_at
     ):
         assignment.late = True
+    if task.sets_display_name and body.body and body.body.strip():
+        current_user.display_name = body.body.strip()
     await session.flush()
     await session.refresh(submission)
 

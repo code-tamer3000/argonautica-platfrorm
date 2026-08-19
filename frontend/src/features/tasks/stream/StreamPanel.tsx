@@ -289,8 +289,6 @@ function NodeCard({
         </p>
       )}
 
-      {/* Маршрута /chat/:roomId нет: комната открывается через pendingOpen на «/»
-          (как в useOpenNotification). Ссылка на /chat/... вела в пустой экран. */}
       {roomId != null && (
         <button
           type="button"

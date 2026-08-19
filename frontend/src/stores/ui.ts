@@ -22,11 +22,6 @@ interface UiState {
   activeRoomId: number | null
   setActiveRoom: (id: number | null) => void
 
-  // Запрос «открыть комнату» извне списка (клик по уведомлению/колокольчику).
-  // ChatLayout подхватывает и сбрасывает. threadRootId зарезервирован под тред.
-  pendingOpen: { roomId: number; threadRootId?: number } | null
-  setPendingOpen: (v: { roomId: number; threadRootId?: number } | null) => void
-
   // Репост, ожидающий отправки в новостной канал (см. PendingRepost).
   pendingRepost: PendingRepost | null
   setPendingRepost: (r: PendingRepost | null) => void
@@ -58,6 +53,12 @@ interface UiState {
 
   markTyping: (roomId: number, userId: number) => void
   setOnline: (userId: number, on: boolean) => void
+
+  // «Текущий поток» админа (ARG-104): общий контекст для разделов Задачи/КБ/Чаты
+  // в админке — задаёт поток по умолчанию в списках и куда уходит репост новости.
+  // null = «все потоки» (фильтр выключен). Per-сессия, не персистится.
+  adminCurrentIntakeId: number | null
+  setAdminCurrentIntakeId: (id: number | null) => void
 }
 
 const timers: Record<string, ReturnType<typeof setTimeout>> = {}
@@ -65,9 +66,6 @@ const timers: Record<string, ReturnType<typeof setTimeout>> = {}
 export const useUiStore = create<UiState>((set) => ({
   activeRoomId: null,
   setActiveRoom: (id) => set({ activeRoomId: id }),
-
-  pendingOpen: null,
-  setPendingOpen: (v) => set({ pendingOpen: v }),
 
   pendingRepost: null,
   setPendingRepost: (r) => set({ pendingRepost: r }),
@@ -112,4 +110,7 @@ export const useUiStore = create<UiState>((set) => ({
           : [...s.online, userId]
         : s.online.filter((u) => u !== userId),
     })),
+
+  adminCurrentIntakeId: null,
+  setAdminCurrentIntakeId: (id) => set({ adminCurrentIntakeId: id }),
 }))

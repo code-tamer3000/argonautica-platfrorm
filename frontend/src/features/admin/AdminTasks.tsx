@@ -11,11 +11,14 @@ import {
 } from '../../api/tasks'
 import { useKbItems } from '../../api/kb'
 import { useAdminIntakes, useAdminUsers, useAdminUsersMap } from '../../api/admin'
+import { useAdminPlans } from '../../api/plans'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import styles from './admin.module.css'
 
 const TYPE_LABEL: Record<TaskType, string> = {
@@ -53,6 +56,9 @@ interface TaskFormValues {
   // Участники type='stream': сетку по ним строит сервер (build_bracket).
   participant_ids: number[]
   media: MediaChip[]
+  // Изоляция по потоку/тарифу (ARG-96) — применяется только к type='common'.
+  intake_id: number | null
+  plan_ids: number[]
 }
 
 // datetime-local ↔ ISO. Значение инпута — локальное время без зоны; для бэкенда
@@ -91,6 +97,11 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   const [media, setMedia] = useState<MediaChip[]>(
     () => (initial?.attachments ?? []).map((a) => ({ id: a.asset_id, kind: a.kind }))
   )
+  // Изоляция общей задачи по потоку/тарифу (ARG-96) — не действует на
+  // individual/pair/stream, там видимость уже держится на назначении/членстве.
+  const [taskIntakeId, setTaskIntakeId] = useState<number | null>(initial?.intake_id ?? null)
+  const [taskPlanIds, setTaskPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
+  const { data: plans = [] } = useAdminPlans()
 
   const { data: kbItems = [] } = useKbItems()
 
@@ -156,6 +167,10 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
     setAssignees((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
+  function toggleTaskPlan(id: number) {
+    setTaskPlanIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
   function addPair() {
     if (draftA === '' || draftB === '' || draftA === draftB) return
     setPairs((prev) => [...prev, [draftA, draftB]])
@@ -179,6 +194,8 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
       pairs,
       participant_ids: streamers,
       media,
+      intake_id: taskIntakeId,
+      plan_ids: taskPlanIds,
     })
   }
 
@@ -273,6 +290,46 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
           ))}
         </select>
       </label>
+
+      {type === 'common' && (
+        <>
+          <label className={styles.label}>
+            Изоляция: набор
+            <select
+              className={styles.input}
+              value={taskIntakeId ?? ''}
+              onChange={(e) => setTaskIntakeId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Общая для всех потоков</option>
+              {intakes.map((intake) => (
+                <option key={intake.id} value={intake.id}>
+                  {intake.starts_on} – {intake.ends_on}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className={styles.label}>
+            Изоляция: тарифы
+            {plans.length === 0 ? (
+              <p className={styles.mediaEmpty}>Тарифов пока нет</p>
+            ) : (
+              <div className={styles.checkRow}>
+                {plans.map((plan) => (
+                  <label key={plan.id} className={styles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={taskPlanIds.includes(plan.id)}
+                      onChange={() => toggleTaskPlan(plan.id)}
+                    />
+                    {plan.name}
+                  </label>
+                ))}
+              </div>
+            )}
+            <p className={styles.mediaEmpty}>Ничего не выбрано — доступна всем тарифам потока</p>
+          </div>
+        </>
+      )}
 
       {intakeFilterRow}
 
@@ -489,7 +546,15 @@ function isOverdue(task: TaskWithStatusOut): boolean {
 
 export function AdminTasks() {
   const { data } = useTasks()
-  const items = data?.items ?? []
+  const allItems = data?.items ?? []
+  // «Текущий поток» (ARG-104, общий контекст с КБ/Чаты, см. AdminLayout): сужает
+  // список до задач этого потока + общих (intake_id=NULL). Индивидуальные/парные/
+  // потоковые задачи всегда intake_id=NULL (видимость держится на назначении, не на
+  // потоке, см. docs/TASKS.md) — фильтр их не трогает, проходят как «общие».
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const items = currentIntakeId == null
+    ? allItems
+    : allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
   // Перекрёстные задачи из пар (pair_id != null) выносим в отдельный сворачиваемый
   // раздел — иначе они засоряют общий список (по 2 на каждую пару).
   const crossTasks = items.filter((t) => t.pair_id != null)
@@ -529,6 +594,8 @@ export function AdminTasks() {
         participant_ids:
           values.type === 'stream' ? values.participant_ids : undefined,
         media_asset_ids: values.media.map((m) => m.id),
+        intake_id: values.type === 'common' ? values.intake_id : undefined,
+        plan_ids: values.type === 'common' ? values.plan_ids : undefined,
       },
       {
         onSuccess: () => {
@@ -550,6 +617,8 @@ export function AdminTasks() {
         deadline_at: values.deadline_at,
         kb_item_id: values.kb_item_id,
         media_asset_ids: values.media.map((m) => m.id),
+        intake_id: editTask.type === 'common' ? values.intake_id : undefined,
+        plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
       },
       {
         onSuccess: () => {
@@ -571,12 +640,14 @@ export function AdminTasks() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Задачи</h1>
+      <PageHeader title="Задачи">
         <Button onClick={() => setCreateOpen(true)}>Создать</Button>
-      </div>
+      </PageHeader>
 
-      {items.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
+      {allItems.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
+      {allItems.length > 0 && items.length === 0 && (
+        <p className={styles.mediaEmpty}>В этом потоке задач нет</p>
+      )}
 
       {active.length > 0 && (
         <>
@@ -654,7 +725,7 @@ export function AdminTasks() {
       )}
 
       {editTask && (
-        <Modal title="Редактировать задачу" onClose={() => setEditTask(null)}>
+        <Modal title="Редактировать задачу" onClose={() => setEditTask(null)} closeOnBackdrop={false}>
           <TaskForm initial={editTask} onSubmit={handleEdit} />
         </Modal>
       )}
