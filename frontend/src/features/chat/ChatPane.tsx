@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAdminIntakes } from '../../api/admin'
 import { useMyDynamics } from '../../api/dynamics'
-import { useMarkRead, useMessages } from '../../api/messages'
-import { useRoom, useRooms } from '../../api/rooms'
+import { useMarkRead, useMessages, repostMessage } from '../../api/messages'
+import { roomsKey, useRoom, useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBack, IconPin, IconUsers } from '../../components/icons'
+import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
 import { noteRoomRendered, sampleRoomResources } from '../../lib/metrics'
 import type { MessageOut } from '../../lib/types'
@@ -26,6 +29,39 @@ import { TypingIndicator } from './TypingIndicator'
 import { UserProfileModal } from './UserProfileModal'
 import { roomAvatarUrl, roomTitle } from './util'
 import styles from './chat.module.css'
+
+/** `YYYY-MM-DD` → «2 июня 2026». */
+function intakeDate(startsOn: string): string {
+  return new Date(`${startsOn}T00:00:00`).toLocaleDateString('ru-RU', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+}
+
+// Комната-источник кросс-поточная (intake_id=NULL, group/dm/личный канал) — сервер
+// не может вывести целевой новостной канал сам (ARG-104), даём админу выбрать поток.
+function RepostTargetPicker({ onPick, onClose }: { onPick: (intakeId: number) => void; onClose: () => void }) {
+  const { data: intakes = [] } = useAdminIntakes()
+  return (
+    <Modal title="В какой поток репостить?" onClose={onClose}>
+      {intakes.length === 0 ? (
+        <p>Наборов пока нет.</p>
+      ) : (
+        <div className={styles.refList}>
+          {intakes.map((intake) => (
+            <button
+              key={intake.id}
+              type="button"
+              className={styles.refRow}
+              onClick={() => onPick(intake.id)}
+            >
+              <span className={styles.refRowTitle}>Поток от {intakeDate(intake.starts_on)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 const subLabel = (type: string, isPersonal = false, isNews = false): string =>
   isNews ? 'Новостной канал' :
@@ -63,6 +99,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
+  // Репост из кросс-поточной комнаты (intake_id=NULL) ждёт явного выбора потока
+  // назначения — сообщение «зажато» здесь, пока не выбрали (см. RepostTargetPicker).
+  const [repostAwaitingIntake, setRepostAwaitingIntake] = useState<MessageOut | null>(null)
   const messageListRef = useRef<MessageListHandle>(null)
   // Корень треда, который только что свернули: после размонтирования InlineThread
   // (высота ленты уменьшится) плавно доводим экран обратно к нему, а не роняем в низ.
@@ -73,16 +112,43 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const canPin = user?.role === 'admin' || room?.type === 'dm' ||
     (room?.type === 'group' && room.created_by === user?.id)
 
+  const qc = useQueryClient()
+
+  // Целится в новостной канал ИМЕННО потока комнаты-источника (ARG-104) — публикует
+  // сразу (без промежуточного «дописать комментарий»): нужен, когда канал целевого
+  // потока ещё не создан лениво (нет в кэше rooms) или поток выбран явно из пикера.
+  const performRepost = useCallback(async (msg: MessageOut, targetIntakeId: number) => {
+    try {
+      const result = await repostMessage(roomId, msg.id, targetIntakeId)
+      await qc.invalidateQueries({ queryKey: roomsKey })
+      onOpenRoom?.(result.room_id)
+    } catch {
+      toast('Не удалось отправить репост', 'error')
+    }
+  }, [roomId, qc, onOpenRoom])
+
   // Репост: «зажимаем» сообщение и уводим админа в новостной канал — там композер
   // покажет прикреплённый репост и даст дописать комментарий перед отправкой.
+  // Целевой поток — поток комнаты-источника (ARG-104, не первый попавшийся канал
+  // с is_news, их теперь несколько — по одному на поток). Комната-источник
+  // кросс-поточная (intake_id=NULL) — поток назначения не вывести, спрашиваем.
+  // Целевой канал ещё не создан лениво (не в кэше rooms) — публикуем сразу,
+  // без промежуточного шага «дописать комментарий» (некуда навигировать заранее).
   // useCallback: стабильная ссылка нужна мемоизированному MessageItem (иначе
   // memo пробивается на каждом ре-рендере ленты).
   const handleRepost = useCallback((msg: MessageOut) => {
-    const news = rooms?.find((r) => r.is_news)
-    if (!news) { toast('Новостной канал недоступен', 'error'); return }
+    if (room?.intake_id == null) {
+      setRepostAwaitingIntake(msg)
+      return
+    }
+    const news = rooms?.find((r) => r.is_news && r.intake_id === room.intake_id)
+    if (!news) {
+      void performRepost(msg, room.intake_id)
+      return
+    }
     setPendingRepost({ roomId, message: msg })
     onOpenRoom?.(news.id)
-  }, [rooms, roomId, setPendingRepost, onOpenRoom])
+  }, [room, rooms, roomId, setPendingRepost, onOpenRoom, performRepost])
 
   // Контекстное меню сообщения (общий хук для ленты и треда).
   const msgMenu = useMessageMenu({
@@ -378,6 +444,16 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           onOpenDm={(id) => {
             setShowProfile(false)
             onOpenRoom?.(id)
+          }}
+        />
+      )}
+      {repostAwaitingIntake && (
+        <RepostTargetPicker
+          onClose={() => setRepostAwaitingIntake(null)}
+          onPick={(intakeId) => {
+            const msg = repostAwaitingIntake
+            setRepostAwaitingIntake(null)
+            void performRepost(msg, intakeId)
           }}
         />
       )}

@@ -40,10 +40,10 @@ from app.models.intake import Intake
 from app.models.kb import KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message
-from app.models.room import Room
 from app.models.task import Task
 from app.models.user import User
 from app.services.media import _server_client, build_storage_key
+from app.services.rooms import ensure_news_channel
 
 # --- Копирайт: финальный текст (ARG-105) ------------------------------------------
 
@@ -220,12 +220,13 @@ async def _ensure_manifest_kb_item(session, admin_id: int, manifest_path: str) -
     return await _create_kb_markdown_item(session, admin_id, KB_ITEM_MANIFEST_TITLE, None, raw)
 
 
-async def _post_news(session, admin_id: int) -> None:
-    room = (
-        await session.execute(select(Room).where(Room.is_news.is_(True)))
-    ).scalar_one_or_none()
+async def _post_news(session, admin_id: int, intake: Intake) -> None:
+    # ARG-104: новостной канал больше не singleton — публикуем в канал СОЗДАВАЕМОГО
+    # потока, а не в общий/исторический (ensure_news_channel сама его заведёт, если
+    # ещё нет).
+    room = await ensure_news_channel(session, intake.id)
     if room is None:
-        print("  ⚠ новостного канала ещё нет (см. ensure_news_channel) — пропуск новости")
+        print("  ⚠ ещё нет ни одного admin — пропуск новости (см. ensure_news_channel)")
         return
     dup = (
         await session.execute(
@@ -322,7 +323,7 @@ async def provision(
         await _ensure_manifest_kb_item(session, admin_id, manifest_path)
 
         print("4/6 новость")
-        await _post_news(session, admin_id)
+        await _post_news(session, admin_id, intake)
 
         print("5/6 FAQ")
         await _ensure_faq_items(session)

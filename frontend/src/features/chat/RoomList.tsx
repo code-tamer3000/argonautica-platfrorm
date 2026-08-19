@@ -70,11 +70,17 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const online = useUiStore((s) => s.online)
+  // «Текущий поток» (ARG-104): для admin список каналов admin видит БЕЗ серверного
+  // фильтра (полный доступ, см. assert_room_access) — этот селектор сужает его же
+  // отображение до выбранного потока + общих каналов, тот же контекст, что в
+  // Задачи/КБ (см. AdminLayout). Для остального участника ничего не меняет: его
+  // rooms и так уже отфильтрованы сервером до своего потока.
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const [q, setQ] = useState('')
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
   const badges = useNavBadges()
 
-  const { dms, groups, pinnedChannels, otherChannels } = useMemo(() => {
+  const { dms, groups, pinnedChannels, otherChannels, intakeFiltered } = useMemo(() => {
     const list = rooms ?? []
     const needle = q.trim().toLowerCase()
     const filtered = needle
@@ -82,7 +88,13 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       : list
     // Новостной канал вынесен в верхнеуровневую кнопку «Новости» (см. AppShell) —
     // из списка каналов его исключаем, чтобы не дублировать.
-    const channels = filtered.filter((r) => r.type === 'channel' && !r.is_news)
+    let channels = filtered.filter((r) => r.type === 'channel' && !r.is_news)
+    const applyIntakeFilter = me?.role === 'admin' && currentIntakeId != null
+    if (applyIntakeFilter) {
+      channels = channels.filter(
+        (r) => r.is_personal || r.intake_id == null || r.intake_id === currentIntakeId,
+      )
+    }
 
     // Закреплённые сверху: собственный личный канал.
     const mine = channels.find((r) => r.is_personal && r.created_by === me?.id)
@@ -95,8 +107,9 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       groups: filtered.filter((r) => r.type === 'group'),
       pinnedChannels: pinned,
       otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
+      intakeFiltered: applyIntakeFilter,
     }
-  }, [rooms, q, dmPeers, users, me?.id])
+  }, [rooms, q, dmPeers, users, me?.id, me?.role, currentIntakeId])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty = pinnedChannels.length === 0 && otherChannels.length === 0
@@ -203,6 +216,11 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
         {tab === 'channels' && (
           <>
+            {intakeFiltered && (
+              <div className="muted" style={{ padding: '8px 16px', fontSize: 13 }}>
+                Фильтр по текущему потоку — показаны не все дневники
+              </div>
+            )}
             {rooms && channelsEmpty && (
               <div className="muted" style={{ padding: 16, fontSize: 14 }}>Дневников нет</div>
             )}

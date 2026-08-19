@@ -84,10 +84,12 @@ have explicit membership/assignment, which is stronger than intake/plan. See
 
 **Intake (`intake_id`)** — nullable FK to `intakes` on `rooms`, `tasks`, `kb_items`. `NULL` =
 visible to every intake (the safe backfill default — all pre-ARG-96 content stays NULL,
-except regular non-personal, non-news channels/tasks/kb_items, which were backfilled onto
-the historical intake). The news channel (`rooms.is_news`) is never intake-scoped — it stays
-NULL and cross-intake by design. Personal diary rooms (`rooms.is_personal`) also keep
-`intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
+except regular non-personal channels/tasks/kb_items, which were backfilled onto the
+historical intake). The news channel (`rooms.is_news`) is gated the same way as a regular
+channel (ARG-104 — was a platform-wide singleton with `intake_id` always NULL before;
+`uq_rooms_news_per_intake` now enforces one news channel per intake, the pre-ARG-104
+singleton backfilled onto the historical intake). Personal diary rooms (`rooms.is_personal`)
+also keep `intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
 [ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
 gated by comparing the owner's and the viewer's `intake_id`/`plan_id` directly
 (`same_cohort`), not via a column on the room itself.
@@ -169,7 +171,7 @@ One entity for three space types; differences are behavior in code, not structur
 | created_by | BIGINT | FK users, NOT NULL | |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | is_personal | BOOLEAN | NOT NULL, default false | personal diary room (Dynamics). See [DYNAMICS.md](DYNAMICS.md) |
-| is_news | BOOLEAN | NOT NULL, default false | news channel singleton; top posts admin-only |
+| is_news | BOOLEAN | NOT NULL, default false | news channel; one per intake (`uq_rooms_news_per_intake` on `intake_id`, ARG-104 — was a platform-wide singleton before); top posts admin-only |
 | intake_id | BIGINT | FK intakes, NULL | channel-only isolation by intake (ARG-96); NULL = cross-intake. Ignored for dm/group/personal/news |
 
 **room_plans** — channel-only isolation by plan (ARG-96), many-to-many. PK (`room_id`, `plan_id`); FKs to rooms, plans.
@@ -686,7 +688,7 @@ FK indexes are declared in the migrations, not on the model columns):
 
 | Phantom op autogenerate emits | Index | Real definition |
 |---|---|---|
-| `drop_index('uq_rooms_single_news')` on `rooms` | partial unique | `WHERE is_news` — enforces the single news channel |
+| `drop_index('uq_rooms_news_per_intake')` on `rooms` | partial unique | `WHERE is_news` on `intake_id` — one news channel per intake (ARG-104) |
 | `drop_index('ix_journal_pardons_user_id')` on `journal_pardons` | btree on `user_id` | created by the journal_pardons migration |
 | `drop_index('ix_journal_credits_user_id')` on `journal_credits` | btree on `user_id` | created by the journal_credits migration |
 | `drop_index('ix_journal_sections_program_id')` on `journal_sections` | btree on `program_id` | created by the journal_sections migration |

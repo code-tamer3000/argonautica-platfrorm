@@ -553,14 +553,20 @@ async def test_admin_reposts_to_news(
     )
 
     admin_headers = await _headers(client, admin)
+    # room — group (make_room), кросс-поточная (intake_id=NULL): целевой поток
+    # новостей задаём явно (ARG-104).
     resp = await client.post(
-        f"/api/rooms/{room.id}/messages/{src['id']}/repost", headers=admin_headers
+        f"/api/rooms/{room.id}/messages/{src['id']}/repost",
+        headers=admin_headers,
+        params={"target_intake_id": admin.intake_id},
     )
     assert resp.status_code == 201, resp.text
     out = resp.json()
 
     news = (
-        await session.execute(select(Room).where(Room.is_news.is_(True)))
+        await session.execute(
+            select(Room).where(Room.is_news.is_(True), Room.intake_id == admin.intake_id)
+        )
     ).scalar_one()
     assert out["room_id"] == news.id
     assert out["sender_id"] == admin.id

@@ -17,6 +17,7 @@ import { useAdminPlans } from '../../api/plans'
 import type { KbItemOut } from '../../lib/types'
 import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { Badge } from '../../components/Badge'
@@ -376,7 +377,13 @@ function CategoryManager({ onClose }: { onClose: () => void }) {
 }
 
 export function AdminKb() {
-  const { data: items = [] } = useKbItems()
+  const { data: allItems = [] } = useKbItems()
+  // «Текущий поток» (ARG-104, общий контекст с Задачи/Чаты, см. AdminLayout): сужает
+  // список до материалов этого потока + общих (intake_id=NULL).
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const items = currentIntakeId == null
+    ? allItems
+    : allItems.filter((i) => i.intake_id == null || i.intake_id === currentIntakeId)
   const createItem = useCreateKbItem()
   const updateItem = useUpdateKbItem()
   const deleteItem = useDeleteKbItem()
@@ -464,6 +471,15 @@ export function AdminKb() {
           <Button onClick={() => setCreateOpen(true)}>Создать</Button>
         </div>
       </PageHeader>
+
+      {currentIntakeId != null && (
+        <p style={{ color: 'var(--text-secondary)' }}>
+          Фильтр по текущему потоку (см. переключатель выше) — показаны не все материалы.
+        </p>
+      )}
+      {allItems.length > 0 && items.length === 0 && (
+        <p className={styles.mediaEmpty}>В этом потоке материалов нет</p>
+      )}
 
       <div className={styles.list}>
         {items.map((item) => (

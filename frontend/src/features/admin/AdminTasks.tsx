@@ -18,6 +18,7 @@ import { Modal } from '../../components/Overlay'
 import { Badge } from '../../components/Badge'
 import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import styles from './admin.module.css'
 
 const TYPE_LABEL: Record<TaskType, string> = {
@@ -545,7 +546,15 @@ function isOverdue(task: TaskWithStatusOut): boolean {
 
 export function AdminTasks() {
   const { data } = useTasks()
-  const items = data?.items ?? []
+  const allItems = data?.items ?? []
+  // «Текущий поток» (ARG-104, общий контекст с КБ/Чаты, см. AdminLayout): сужает
+  // список до задач этого потока + общих (intake_id=NULL). Индивидуальные/парные/
+  // потоковые задачи всегда intake_id=NULL (видимость держится на назначении, не на
+  // потоке, см. docs/TASKS.md) — фильтр их не трогает, проходят как «общие».
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const items = currentIntakeId == null
+    ? allItems
+    : allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
   // Перекрёстные задачи из пар (pair_id != null) выносим в отдельный сворачиваемый
   // раздел — иначе они засоряют общий список (по 2 на каждую пару).
   const crossTasks = items.filter((t) => t.pair_id != null)
@@ -635,7 +644,16 @@ export function AdminTasks() {
         <Button onClick={() => setCreateOpen(true)}>Создать</Button>
       </PageHeader>
 
-      {items.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
+      {currentIntakeId != null && (
+        <p style={{ color: 'var(--text-secondary)' }}>
+          Фильтр по текущему потоку (см. переключатель выше) — показаны не все задачи.
+        </p>
+      )}
+
+      {allItems.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
+      {allItems.length > 0 && items.length === 0 && (
+        <p className={styles.mediaEmpty}>В этом потоке задач нет</p>
+      )}
 
       {active.length > 0 && (
         <>

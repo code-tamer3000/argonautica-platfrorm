@@ -55,7 +55,7 @@
 
 ## Repost into news
 
-- `POST /api/rooms/{id}/messages/{mid}/repost` (admin only) — copies text/sticker/attachments into the news channel, preserving the original author via `forwarded_from_sender_id`. News channel details in [ROOMS.md](ROOMS.md).
+- `POST /api/rooms/{id}/messages/{mid}/repost?target_intake_id=<id>` (admin only) — copies text/sticker/attachments into the news channel of the source room's own intake, preserving the original author via `forwarded_from_sender_id`. `target_intake_id` is only read (and required, 400 without it) when the source room is cross-intake (`intake_id` NULL); otherwise it's ignored — the source room's own intake wins. News channel details, including the ARG-104 per-intake change, in [ROOMS.md](ROOMS.md).
 
 ## Voice messages
 
