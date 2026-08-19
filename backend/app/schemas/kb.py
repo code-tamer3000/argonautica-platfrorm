@@ -35,13 +35,19 @@ class KbCategoryOut(BaseModel):
 
 
 class KbItemCreate(BaseModel):
-    """Создание материала. По умолчанию черновик (`published=False`)."""
+    """Создание материала. По умолчанию черновик (`published=False`).
+
+    `intake_id`/`plan_ids` — изоляция по потоку/тарифу (ARG-96): null/пусто =
+    доступен всем потокам/тарифам.
+    """
 
     title: str
     body: str | None = None  # markdown
     published: bool = False
     category_id: int | None = None
     media_asset_ids: list[int] = []
+    intake_id: int | None = None
+    plan_ids: list[int] = []
 
 
 class KbItemUpdate(BaseModel):
@@ -54,6 +60,8 @@ class KbItemUpdate(BaseModel):
     published: bool | None = None
     category_id: int | None = None
     sort_order: int | None = None
+    intake_id: int | None = None
+    plan_ids: list[int] | None = None
 
 
 class KbItemOut(BaseModel):
@@ -69,6 +77,8 @@ class KbItemOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     media_asset_ids: list[int] = []
+    intake_id: int | None = None
+    plan_ids: list[int] = []
 
 
 class AttachMediaRequest(BaseModel):

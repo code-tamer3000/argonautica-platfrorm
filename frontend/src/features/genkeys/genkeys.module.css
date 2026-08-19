@@ -1212,3 +1212,14 @@
     min-height: 0;
   }
 }
+
+/* «Назад» поверх колеса: экран полноэкранный и шапки не имеет. */
+.backFloat {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  color: var(--text-primary);
+}

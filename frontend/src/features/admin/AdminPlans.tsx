@@ -8,6 +8,7 @@ import {
 import type { PlanOut } from '../../lib/types'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
@@ -143,10 +144,9 @@ export function AdminPlans() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Тарифы</h1>
+      <PageHeader title="Тарифы">
         <Button onClick={() => setCreateOpen(true)}>Добавить тариф</Button>
-      </div>
+      </PageHeader>
 
       {plans.length === 0 ? (
         <p className={styles.mediaEmpty}>Тарифов пока нет.</p>
@@ -175,13 +175,13 @@ export function AdminPlans() {
       )}
 
       {createOpen && (
-        <Modal title="Новый тариф" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый тариф" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <PlanForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать тариф" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать тариф" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <PlanForm initial={editItem} onSubmit={handleEdit} />
         </Modal>
       )}

@@ -1109,3 +1109,4 @@
 .refLink:hover:not(:disabled) { border-color: var(--accent); background: rgba(19, 78, 69, 0.2); }
 .refLinkText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .refLinkDisabled { opacity: 0.55; cursor: default; }
+.searchRow { display: flex; align-items: center; gap: var(--space-2); }

@@ -23,19 +23,7 @@ import { TaskDetail } from '../tasks/TaskDetail'
 import { ProfileScreen } from '../profile/ProfileScreen'
 import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
-import { AdminDynamics } from '../admin/AdminDynamics'
-import { AdminJournal } from '../admin/AdminJournal'
-import { AdminKb } from '../admin/AdminKb'
-import { AdminTasks } from '../admin/AdminTasks'
-import { AdminCalendar } from '../admin/AdminCalendar'
-import { AdminStickers } from '../admin/AdminStickers'
-import { AdminUsers } from '../admin/AdminUsers'
-import { AdminPlans } from '../admin/AdminPlans'
-import { AdminFeedback } from '../admin/AdminFeedback'
-import { AdminSurvey } from '../admin/AdminSurvey'
-import { AdminFaq } from '../admin/AdminFaq'
-import { AdminBroadcast } from '../admin/AdminBroadcast'
-import { AdminCabin } from '../admin/AdminCabin'
+import { ADMIN_DEFAULT_PATH, ADMIN_SECTIONS } from '../admin/sections'
 import type { NavBadges } from './useNavBadges'
 import type { Access } from './RequireAccess'
 
@@ -163,20 +151,10 @@ export const routes: RouteEntry[] = [
     access: { kind: 'adminOnly' },
     renderRoutes: () => (
       <Route path="/admin" element={<AdminLayout />}>
-        <Route path="dynamics" element={<AdminDynamics />} />
-        <Route path="journal" element={<AdminJournal />} />
-        <Route path="cabin" element={<AdminCabin />} />
-        <Route path="kb" element={<AdminKb />} />
-        <Route path="tasks" element={<AdminTasks />} />
-        <Route path="calendar" element={<AdminCalendar />} />
-        <Route path="stickers" element={<AdminStickers />} />
-        <Route path="users" element={<AdminUsers />} />
-        <Route path="plans" element={<AdminPlans />} />
-        <Route path="feedback" element={<AdminFeedback />} />
-        <Route path="survey" element={<AdminSurvey />} />
-        <Route path="faq" element={<AdminFaq />} />
-        <Route path="broadcast" element={<AdminBroadcast />} />
-        <Route index element={<Navigate to="dynamics" replace />} />
+        {ADMIN_SECTIONS.map((section) => (
+          <Route key={section.path} path={section.path} element={<section.Component />} />
+        ))}
+        <Route index element={<Navigate to={ADMIN_DEFAULT_PATH} replace />} />
       </Route>
     ),
   },

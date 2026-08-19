@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useCreatePack, useStickerpacks, useAddSticker } from '../../api/stickers'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PageHeader } from '../../components/PageHeader'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import type { MediaAssetOut, StickerpackOut } from '../../lib/types'
@@ -92,7 +93,7 @@ function PackRow({ pack }: { pack: StickerpackOut }) {
       )}
 
       {pendingAsset && (
-        <Modal title="Добавить стикер" onClose={() => setPendingAsset(null)}>
+        <Modal title="Добавить стикер" onClose={() => setPendingAsset(null)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div
               style={{ width: 80, height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--divider)', borderRadius: 'var(--radius-btn)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
@@ -146,10 +147,9 @@ export function AdminStickers() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Стикерпаки</h1>
+      <PageHeader title="Стикеры">
         <Button onClick={() => setCreateOpen(true)}>Создать пак</Button>
-      </div>
+      </PageHeader>
 
       <div className={styles.list}>
         {packs.map((pack) => (
@@ -161,7 +161,7 @@ export function AdminStickers() {
       </div>
 
       {createOpen && (
-        <Modal title="Новый стикерпак" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый стикерпак" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label>Название</label>

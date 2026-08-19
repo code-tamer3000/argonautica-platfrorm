@@ -208,6 +208,60 @@ async def test_admin_delete_user_removes_personal_footprint(
     ) is None
 
 
+async def test_admin_delete_user_removes_task_assignments(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """DELETE /api/admin/users/{id} не должен падать на FK task_assignments (ARG-92
+    intake-бот теперь назначает individual-задания автоматически при регистрации —
+    без этой чистки удаление свежего участника роняло транзакцию)."""
+    from sqlalchemy import select
+
+    from app.models.task import Task, TaskAssignment, TaskComment, TaskSubmission
+    from app.models.user import User
+
+    admin = await make_user(role="admin", password="adminpass123")
+    victim = await make_user(role="participant")
+    reviewer = await make_user(role="participant")
+
+    task = Task(type="individual", title="T", created_by=admin.id)
+    session.add(task)
+    await session.flush()
+    assignment = TaskAssignment(task_id=task.id, user_id=victim.id)
+    session.add(assignment)
+    await session.flush()
+    submission = TaskSubmission(assignment_id=assignment.id, body="done")
+    session.add(submission)
+    await session.flush()
+    # Комментарий под сдачей жертвы, оставленный ДРУГИМ юзером (ревью админа) —
+    # должен уйти вместе со сдачей, а не заблокировать её удаление своим FK.
+    session.add(TaskComment(submission_id=submission.id, author_id=reviewer.id, body="ok"))
+    await session.commit()
+
+    tokens = await login(client, admin.username, "adminpass123")
+    resp = await client.delete(
+        f"/api/admin/users/{victim.id}",
+        headers=auth_headers(tokens["access_token"]),
+    )
+    assert resp.status_code == 204
+
+    assert (await session.scalar(select(User.id).where(User.id == victim.id))) is None
+    assert (
+        await session.scalar(
+            select(TaskAssignment).where(TaskAssignment.user_id == victim.id)
+        )
+    ) is None
+    assert (
+        await session.scalar(
+            select(TaskSubmission).where(TaskSubmission.id == submission.id)
+        )
+    ) is None
+    assert (
+        await session.scalar(
+            select(TaskComment).where(TaskComment.submission_id == submission.id)
+        )
+    ) is None
+
+
 async def test_admin_cannot_delete_self(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

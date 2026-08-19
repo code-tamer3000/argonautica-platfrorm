@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAdminCabinEntries, useAdminCabinUsers } from '../../api/cabin'
 import { Avatar } from '../../components/Avatar'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import type { CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS } from '../cabin/cabinFields'
@@ -37,12 +38,11 @@ export function AdminCabin() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Каюта</h1>
+      <PageHeader title="Каюта">
         <span style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)' }}>
           {list.length} с записями
         </span>
-      </div>
+      </PageHeader>
       <p style={{ fontSize: 'var(--text-ui)', color: 'var(--text-ghost)', marginTop: -4 }}>
         Записи участников доступны только для чтения. Выберите участника, затем раздел.
       </p>

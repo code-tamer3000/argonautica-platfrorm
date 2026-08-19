@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.room import Room, RoomMember
+from app.models.room import Room, RoomMember, RoomPlan
 from app.models.task import TaskStreamNode
 from app.models.user import User
 from app.services.graduation import assert_not_graduated
+from app.services.visibility import intake_visible, plan_visible, same_cohort
 
 NEWS_CHANNEL_NAME = "Новости"
 
@@ -56,6 +57,15 @@ async def assert_room_access(
 
     Наблюдатель (is_observer) НЕ имеет доступа ни к одной комнате — включая каналы и
     новостной канал. Его разделы — только материалы (База знаний, Генные замки).
+
+    Канал (не новостной — тот singleton и кросс-поточный намеренно) дополнительно
+    гейтится двойным фильтром поток+тариф (ARG-96, docs/ROOMS.md): NULL/пусто —
+    доступен всем, иначе только своему набору/перечисленным тарифам.
+
+    Личный дневник — особый канал: виден не только владельцу («Все дневники»),
+    поэтому чужой дневник дополнительно гейтится тем же потоком+тарифом, но через
+    `same_cohort` (сравнение владельца и смотрящего), а не через intake_id самой
+    комнаты (та колонка у личных комнат намеренно всегда NULL).
     """
     if user.is_observer:
         raise HTTPException(
@@ -64,6 +74,17 @@ async def assert_room_access(
         )
     membership = await session.get(RoomMember, (room.id, user.id))
     if room.type == "channel":
+        if user.role != "admin" and room.is_personal and room.created_by != user.id:
+            owner = await session.get(User, room.created_by)
+            if owner is None or not same_cohort(owner, user):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+        elif user.role != "admin" and not room.is_news and not room.is_personal:
+            if not intake_visible(room.intake_id, user):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+            if not await plan_visible(
+                session, RoomPlan.plan_id, RoomPlan.room_id, room.id, user.plan_id
+            ):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         return membership
     if membership is None:
         if (

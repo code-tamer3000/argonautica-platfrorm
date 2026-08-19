@@ -8,13 +8,13 @@ import styles from './chat.module.css'
  * (403 с тем же текстом, см. app/services/graduation.py); это не защита, а ответ
  * на вопрос «почему я не могу написать».
  */
-export function GraduatedNotice() {
+export function GraduatedNotice({ text = 'Аргонавт, ты прошёл Экспедицию' }: { text?: string }) {
   return (
     <div className={styles.graduatedNotice}>
       <span className={styles.graduatedIcon} aria-hidden>
         <IconCompass size={18} />
       </span>
-      <span>Аргонавт, ты прошёл Экспедицию</span>
+      <span>{text}</span>
     </div>
   )
 }

@@ -72,8 +72,20 @@ export function useAdminIntakes() {
 export function useCreateIntake() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { starts_on: string }) =>
+    mutationFn: (body: { starts_on: string; ends_on: string }) =>
       http.post<IntakeOut>('/api/admin/intakes', body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminIntakesKey })
+    },
+  })
+}
+
+/** Подвинуть дату закрытия набора (ARG-96). `starts_on` без API — см. ARG-89. */
+export function useUpdateIntake() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ends_on }: { id: number; ends_on: string }) =>
+      http.patch<IntakeOut>(`/api/admin/intakes/${id}`, { ends_on }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminIntakesKey })
     },

@@ -11,8 +11,9 @@ React 18 + TypeScript + Vite. TanStack Query v5 (server state), Zustand (UI stat
 
 - `lib/` — `apiClient.ts` (Bearer auth, auto-refresh on 401 via a singleton promise, `ApiError`), `wsClient.ts` (auto-reconnect with backoff ≤15s, ping ~25s, re-subscribe after reconnect), `types.ts` (backend DTOs + discriminated `WsEvent` union), `mediaUpload.ts` (3-step presigned flow + video poster capture).
 - `api/` — TanStack Query hooks per domain (messages, rooms, users, media, pins, threads, stickers, kb, calendar, profile, admin, dynamics, notifications, faq, feedback, cabin, tasks) + `cache.ts` mutators.
-- `features/` — screens by domain: `auth`, `app` (AppShell, NotificationBell, nav badges), `chat`, `kb`, `calendar`, `profile`, `admin`, `cabin`, `support`, `tasks`.
-- `components/` — shared UI (Avatar, Badge, Button, Card, Chip, EmptyState, Input, Segmented, Spinner, Overlay=Modal/Drawer/Lightbox, Toasts, icons, VideoPlayer, MediaComposer).
+- `features/` — screens by domain: `auth`, `app` (AppShell, NotificationBell, nav badges), `chat`, `kb`, `calendar`, `profile`, `admin`, `cabin`, `support`, `tasks`, `oferta` (public offer text, ARG-43 — see below).
+- **Public route exception.** `App.tsx` checks `useLocation().pathname === '/oferta'` *before* `AuthGuard` and renders `OfertaScreen` instead — the one screen in the SPA reachable without a session (intake-bot opens it as a Telegram `web_app` before an account exists). It renders `features/oferta/content/oferta.md` (`?raw` import, sanitized via `marked`+`DOMPurify`, same pattern as the Genkeys reader below) and makes no API/WS calls at all.
+- `components/` — shared UI (Avatar, Badge, Button, Card, Chip, EmptyState, Input, PageHeader, Segmented, Spinner, Overlay=Modal/Drawer/Lightbox, Toasts, icons, VideoPlayer, MediaComposer).
 - **Chat composer paperclip → menu** (not a direct file dialog): «Файл» (upload as before) or «Ссылка на материал / задачу» → `features/chat/RefPicker.tsx` (tabs Материалы/Задачи, title search over `useKbItems`/`useTasks`, which the server already scopes to visible items). One picked ref → a chip above the input (beside media chips) and `ref_kind`/`ref_id` on `SendBody`; the optimistic bubble shows the ref immediately (`OutboxItem.optimisticRef`). `MessageItem` renders `msg.ref` as a «Перейти к материалу/задаче» button before the text (disabled when `available=false`). Media and a ref can ride the same message. See [MESSAGES.md](MESSAGES.md).
 - `hooks/` — `useRealtime` (routes WS events into the Query cache), `useIsMobile`.
 - `stores/` — Zustand: `ui` (activeRoomId, typing 4s TTL, online, dmPeers), `toast`, `theme` (dark/light, see below).
@@ -33,6 +34,39 @@ Strictly the project design system (palette `--color-bezdna`/`--color-more`/`--c
 The rule this suggests: match on what an element *is*, not on what its class is called. Two `.empty` rules in different modules were genuinely the same component; a third was a paragraph.
 
 **Theming (dark/light).** Dark is the default; a light "пергамент" theme is available. The palette tokens (`--color-*`) and a few semantic tokens are redefined under `:root[data-theme='light']` in `tokens.css`; since components resolve everything through those tokens, redefining the base palette flips the whole UI — style through tokens, never hardcode hex. `stores/theme.ts` owns the choice (persisted in `localStorage['arg-theme']`), sets `data-theme` on `<html>`, and is applied before first render via `applyThemeAtBoot()` in `main.tsx` (no flash). The user switches theme in the ЛК (ProfileScreen → «Оформление»).
+
+## Admin navigation & page headers (ARG-97)
+
+**Admin section config.** `features/admin/sections.ts` is the single source for the
+admin's 13 sections (`ADMIN_SECTIONS`: `path`/`label`/`group`/`Component`) and the 3
+groups (`ADMIN_GROUPS`: `intake`=Приём, `progress`=Прохождение, `support`=Поддержка).
+`AdminLayout.tsx` renders the vertical grouped sidebar from `ADMIN_SECTIONS`;
+`AppShell.tsx` generates the `/admin/*` child routes from the same array — removing a
+row removes both the menu entry and the route. `ADMIN_DEFAULT_PATH` (`'dynamics'`) is
+kept separate from array order so re-grouping sections doesn't change the `/admin`
+landing redirect. On mobile (`useIsMobile`, ≤768px) the sidebar collapses behind a
+burger toggle in `AdminLayout` and auto-closes on navigation (`useEffect` on
+`location.pathname`).
+
+**`PageHeader`** (`components/PageHeader.tsx` + `pageHeader.module.css`) is the shared
+screen header: an always-visible back button (`navigate(-1)`, no attempt to detect
+whether there's history to go back to) + `<h1>{title}</h1>` + an optional actions slot
+(`children`, right-aligned). Wired on all 13 admin screens, `TaskDetail`, `KbViewer`,
+`ProfileScreen` and `SupportScreen`. Menu-item labels and each screen's `<h1>` are kept
+in sync through this: the `title` prop always equals the section's `ADMIN_SECTIONS`
+label.
+
+**Three pre-existing "back" affordances were deliberately left unconverted** — each is
+a different mechanism than "go to the previous history entry":
+
+- `features/kb/book/KbBookReader.tsx` — `<Link to={backTo}>` where `backTo` is computed
+  (`/genkeys?key=N` for a Gene Key deep-link, otherwise `/kb/:id`). A generic
+  `navigate(-1)` would break the Gene Key round-trip.
+- `features/chat/ChatPane.tsx` (`onBack` prop) — mobile master/detail: switches from
+  room detail back to the room list within the same route, not a history navigation.
+- `features/chat/DailyJournalForm.tsx` (`backToChoice`) — toggles between journal input
+  modes (free entry / task sections) inside the composer bar; it never leaves the
+  screen, so there's no "previous screen" to go back to.
 
 ## Realtime
 

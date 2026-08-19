@@ -6,6 +6,7 @@ import type { FeedbackKind, FeedbackOut } from '../../lib/types'
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import cabin from '../cabin/cabin.module.css'
@@ -94,14 +95,13 @@ export function AdminFeedback() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>Обращения</h1>
+      <PageHeader title="Обращения">
         {data && data.unresolved_count > 0 && (
           <Badge>
             Не разобрано: {data.unresolved_count}
           </Badge>
         )}
-      </div>
+      </PageHeader>
 
       <div className={cabin.segmented} role="tablist">
         <button

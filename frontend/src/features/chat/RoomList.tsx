@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
+import { BackButton } from '../../components/BackButton'
 import { IconChat, IconDiary, IconPin, IconPlus, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import type { PublicUserOut, RoomOut } from '../../lib/types'
@@ -140,12 +141,17 @@ export function RoomList({ selectedId, onSelect }: Props) {
             )}
           </div>
         )}
-        <input
-          className={styles.search}
-          placeholder="Поиск"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
+        {/* «Назад» в строке поиска: полоса вкладок держит глайдер ровно на две
+            кнопки (см. .tabGlider), третий элемент там сбил бы расчёт. */}
+        <div className={styles.searchRow}>
+          <BackButton />
+          <input
+            className={styles.search}
+            placeholder="Поиск"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
       </div>
 
       {modal === 'chat' && (

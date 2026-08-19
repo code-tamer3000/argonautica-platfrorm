@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { BackButton } from '../../components/BackButton'
 import { GeneKeysWheel } from './GeneKeysWheel'
 import { GeneKeyReading } from './GeneKeyReading'
 import { GeneKeyPicker } from './GeneKeyPicker'
@@ -126,6 +127,9 @@ export function GeneKeysScreen() {
   return (
     <div className={`${styles.screen} ${open ? styles.screenOpen : ''}`}>
       <section className={styles.stage} ref={stageRef}>
+        {/* У колеса нет шапки — «Назад» кладём поверх сцены. При раскрытом
+            чтении её прячем, чтобы не спорить с крестиком GeneKeyReading. */}
+        {!open && <BackButton className={styles.backFloat} />}
         <div className={styles.wheelWrap}>
           <GeneKeysWheel
             activeKey={activeKey}

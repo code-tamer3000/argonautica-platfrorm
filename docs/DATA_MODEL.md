@@ -45,28 +45,70 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 ## intakes
 Cohort of participants sharing a Dynamics 28-day window start date. Not the same as a
 `stream` (Tasks tournament mechanic, `tasks.type='stream'`) or a `group` (`rooms.type='group'`) —
-those names were already taken. One historical intake (`starts_on = 2026-06-02`) is seeded by
-migration and every existing user is backfilled onto it.
+those names were already taken. One historical intake (`starts_on = 2026-07-02`,
+`ends_on = 2026-07-29`) is seeded/corrected by migrations and every existing user is
+backfilled onto it. Also the unit of **content isolation** (ARG-96): admin-authored
+content (channels, common tasks, KB items) can be scoped to one intake — see
+"Content isolation by intake and plan" below.
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
 | starts_on | DATE | NOT NULL, UNIQUE | Dynamics window start for every user in this intake |
+| ends_on | DATE | NOT NULL | window close date; after it Dynamics is a read-only archive for the intake's users (frozen stats, no new entries/pardons). Independent of the 28-day Dynamics duration — set explicitly, not derived from `starts_on` |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 
-There is no explicit open/closed status: the **active** intake is simply the one with the
-largest `starts_on`. Admin API (all under `require_admin`):
+There is no explicit open/closed status beyond the date window: the **active** intake is
+simply the one with the largest `starts_on`. Admin API (all under `require_admin`):
 
 - `GET /api/admin/intakes` → intakes newest-first (`starts_on` DESC), each with `user_count`.
   The first row is the active intake.
-- `POST /api/admin/intakes` `{starts_on}` → 201 with the created intake; 409 when a intake
-  with that date already exists (`starts_on` is UNIQUE).
+- `POST /api/admin/intakes` `{starts_on, ends_on}` → 201 with the created intake; 409 when an
+  intake with that `starts_on` already exists (UNIQUE); 422 when `ends_on <= starts_on`.
+- `PATCH /api/admin/intakes/{id}` `{ends_on}` → move the close date. `starts_on` has no edit
+  API on purpose (see ARG-89).
 - `GET /api/admin/users?intake_id=<id>` filters users by intake; every `AdminUserOut` carries
   `intake_id` and the denormalized `intake_starts_on` so the admin list groups without a join
   on the client.
 - `POST /api/admin/users` requires `intake_id` (400 if it does not exist); `PATCH
   /api/admin/users/{id}` accepts `intake_id` to move a participant between intakes (explicit
   `null` is rejected — a participant may not be left without an intake).
+
+## Content isolation by intake and plan (ARG-96)
+
+Admin-authored content — channels (`rooms.type='channel'`), common tasks
+(`tasks.type='common'`), KB items — can be scoped to one intake and/or a set of plans.
+Group/dm rooms and individual/pair/stream tasks are **not** gated by this: they already
+have explicit membership/assignment, which is stronger than intake/plan. See
+[ROOMS.md](ROOMS.md), [TASKS.md](TASKS.md), [KB.md](KB.md) for the exact visibility rules.
+
+**Intake (`intake_id`)** — nullable FK to `intakes` on `rooms`, `tasks`, `kb_items`. `NULL` =
+visible to every intake (the safe backfill default — all pre-ARG-96 content stays NULL,
+except regular non-personal, non-news channels/tasks/kb_items, which were backfilled onto
+the historical intake). The news channel (`rooms.is_news`) is never intake-scoped — it stays
+NULL and cross-intake by design. Personal diary rooms (`rooms.is_personal`) also keep
+`intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
+[ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
+gated by comparing the owner's and the viewer's `intake_id`/`plan_id` directly
+(`same_cohort`), not via a column on the room itself.
+
+**Plan (`<entity>_plans`)** — many-to-many, not a column: an empty set of rows = visible to
+every plan of the user's intake; a non-empty set = only the listed plans. This is the only
+shape that expresses both shared and plan-exclusive content without a second migration once
+ARG-26 (what each plan actually includes) lands.
+
+| Table | Columns | Notes |
+|---|---|---|
+| room_plans | room_id (FK rooms), plan_id (FK plans) | PK (room_id, plan_id) |
+| task_plans | task_id (FK tasks), plan_id (FK plans) | PK (task_id, plan_id) |
+| kb_item_plans | kb_item_id (FK kb_items), plan_id (FK plans) | PK (kb_item_id, plan_id) |
+
+Visibility check (`app/services/visibility.py`, `intake_visible` / `plan_visibility_clause` /
+`plan_visible`) is a double filter — content must pass **both**: `intake_id IS NULL OR
+intake_id = user.intake_id`, AND `<entity>_plans` empty OR contains `user.plan_id`. Applied
+in `assert_room_access` (channel branch), `assert_task_visible`/`list_tasks` (common branch),
+`assert_kb_item_visible`/`list_items`, and `assert_media_access` (media inherits the
+visibility of its carrier — channel message, task, or KB item).
 
 Editing `starts_on` and deleting an intake have no API on purpose — see ARG-89.
 
@@ -103,11 +145,13 @@ admin API — internal to `scripts/intake_bot.py`. See [INTAKE_BOT.md](INTAKE_BO
 | tg_username | TEXT | NULL | refreshed on every `/start` |
 | tg_first_name | TEXT | NULL | |
 | tg_last_name | TEXT | NULL | |
-| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_receipt` → `payment_review` → `confirmed` |
+| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_offer` → `awaiting_receipt` → `payment_review` → `confirmed` |
 | about | TEXT | NULL | the applicant's one-message self-description |
 | plan_id | BIGINT | FK plans, NULL | set once the applicant picks a tariff |
 | receipt_file_id | TEXT | NULL | Telegram `file_id` of the payment receipt (photo or PDF) |
 | receipt_kind | TEXT | NULL | `'photo'` \| `'document'` |
+| offer_accepted_at | TIMESTAMPTZ | NULL | set on the «✅ Согласен, к оплате» callback (ARG-43); gates `awaiting_offer → awaiting_receipt` |
+| offer_version | TEXT | NULL | edition of the accepted offer (bot's `OFFER_VERSION` constant), not a DB-stored text |
 | user_id | BIGINT | FK users, NULL | set once the platform account is created (final step) |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
@@ -126,6 +170,9 @@ One entity for three space types; differences are behavior in code, not structur
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | is_personal | BOOLEAN | NOT NULL, default false | personal diary room (Dynamics). See [DYNAMICS.md](DYNAMICS.md) |
 | is_news | BOOLEAN | NOT NULL, default false | news channel singleton; top posts admin-only |
+| intake_id | BIGINT | FK intakes, NULL | channel-only isolation by intake (ARG-96); NULL = cross-intake. Ignored for dm/group/personal/news |
+
+**room_plans** — channel-only isolation by plan (ARG-96), many-to-many. PK (`room_id`, `plan_id`); FKs to rooms, plans.
 
 ## room_members
 Carries **membership** and **read state**. For channels, rows are created lazily (only to store read state) — see [ROOMS.md](ROOMS.md).
@@ -257,8 +304,11 @@ See [KB.md](KB.md). **kb_categories** is out-of-MVP (structure only).
 | sort_order | INT | NOT NULL, default 0 | |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
+| intake_id | BIGINT | FK intakes, NULL | isolation by intake (ARG-96); NULL = cross-intake |
 
 **kb_item_media** — PK (`kb_item_id`, `media_asset_id`); FKs to kb_items, media_assets.
+
+**kb_item_plans** — isolation by plan (ARG-96), many-to-many. PK (`kb_item_id`, `plan_id`); FKs to kb_items, plans.
 
 **kb_comments**
 
@@ -444,8 +494,12 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 | created_by | BIGINT | FK users, NOT NULL | author; for a cross-task = the giving participant |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
+| intake_id | BIGINT | FK intakes, NULL | isolation by intake (ARG-96) — read only for `type='common'`; individual/pair/stream ignore it (assignment is stronger). On an `individual` task it may still be set — a provisioning tag ("this is intake X's welcome task"), read by `intake_bot.py`'s post-signup auto-assignment, not by visibility |
+| sets_display_name | BOOLEAN | NOT NULL, default false | submitting this task overwrites `users.display_name` with the submission's trimmed text (see `create_submission`); no hardcoded task id/title, only this flag |
 
 **task_media** — task-prompt media (admin), mirror of task_submission_media. PK (`task_id`, `media_asset_id`).
+
+**task_plans** — isolation by plan (ARG-96), many-to-many, same `type='common'`-only scope as `intake_id`. PK (`task_id`, `plan_id`); FKs to tasks, plans.
 
 **task_pairs** — a pair inside a `pair`-type task (peer-learning). Soft delete. See [TASKS.md](TASKS.md).
 
@@ -585,7 +639,10 @@ Short-lived realtime state lives only in Redis. This is the single list of Redis
 ## Relations map
 
 ```
-users --> intakes                      (intake_id nullable; cohort → Dynamics window start)
+users --> intakes                      (intake_id nullable; cohort → Dynamics window start+end)
+rooms --> intakes ; rooms --< room_plans >-- plans       (channel-only isolation, ARG-96)
+tasks --> intakes ; tasks --< task_plans >-- plans       (common-only isolation, ARG-96)
+kb_items --> intakes ; kb_items --< kb_item_plans >-- plans  (isolation, ARG-96)
 users --< room_members >-- rooms
 users --< messages (sender) >-- rooms
 messages --+ (thread_root_id -> messages.id, self-FK to root)

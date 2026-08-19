@@ -4,6 +4,7 @@ import { usePatchMe } from '../../api/profile'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '../../components/icons'
+import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { NotificationsSection } from './NotificationsSection'
@@ -45,7 +46,14 @@ function DynamicsSection() {
 
   return (
     <div className={styles.dynCard}>
-      <h2 className={styles.dynTitle}>Домашние задания</h2>
+      <h2 className={styles.dynTitle}>
+        Домашние задания
+        {dyn.window_closed && (
+          <span style={{ marginLeft: 8, fontWeight: 400, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
+            · архив, набор закрыт
+          </span>
+        )}
+      </h2>
 
       {/* Стрик */}
       {dyn.streak > 0 && (
@@ -73,7 +81,9 @@ function DynamicsSection() {
             {dyn.overdue_dates.map((d) => (
               <div key={d} className={styles.dynOverdueItem}>
                 <span className={styles.dynOverdueDate}>За {formatDate(d)}</span>
-                {dyn.pardons_remaining > 0 ? (
+                {dyn.window_closed ? (
+                  <span className={styles.dynNoPardons}>архив — не редактируется</span>
+                ) : dyn.pardons_remaining > 0 ? (
                   <button
                     className={styles.dynPardonBtn}
                     onClick={() => handlePardon(d)}
@@ -206,6 +216,7 @@ export function ProfileScreen() {
 
   return (
     <div className={styles.page}>
+      <PageHeader title="Профиль" />
       {/* Шапка профиля */}
       <div className={styles.header}>
         <div className={styles.avatarWrap}>

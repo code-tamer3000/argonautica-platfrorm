@@ -30,6 +30,19 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - Channel visibility is the rule "a platform participant sees all channels" — in code, not data.
 - A `room_members` row for a channel appears **lazily**, only when a user first opens it, solely to store `last_read_message_id`. Avoids mass inserts and desync.
 
+### Isolation by intake and plan (ARG-96)
+
+"All channels" narrows for a regular (non-personal, non-news) channel: `rooms.intake_id`
+(NULL = every intake) and `room_plans` (empty = every plan of the user's intake) both have to
+pass — see [DATA_MODEL.md](DATA_MODEL.md) "Content isolation by intake and plan". Checked in
+`assert_room_access` (channel branch) and mirrored in `list_rooms`' query filter so a
+foreign-intake/plan channel doesn't even show up in the list. Admin bypasses both. Direct
+`GET /api/rooms/{id}` on a channel outside the caller's intake/plan → 403 (same message as
+"not a member" — existence isn't specially revealed beyond that). The news channel
+(`is_news`) is exempt by construction — it stays cross-intake. `POST /api/rooms`
+(`type='channel'`) and `PATCH /api/rooms/{id}` (channel edit, admin-only, rejects
+personal/news) accept `intake_id`/`plan_ids`.
+
 ## DM dedup
 
 - `rooms.dm_key` = canonical `"minUserId:maxUserId"`, `UNIQUE`. Creating a dm is deduplicated; races resolved via `IntegrityError`.
@@ -37,6 +50,8 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 ## Personal diary rooms
 
 - `rooms.is_personal = true` marks a participant's personal homework-diary room. Homework entries are ordinary `messages` there. See [DYNAMICS.md](DYNAMICS.md).
+- **Not owner-only.** The frontend's «Дневники» tab is a real "browse everyone's diary" feature (`RoomList.tsx`: own diary pinned, everyone else's under «Все дневники») — this is deliberate community/accountability UX, not an oversight.
+- **Cohort-gated (ARG-96).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner's and the viewer's `intake_id` **and** `plan_id` directly (`same_cohort` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Both fields must match (`NULL` matches `NULL` — no-intake/no-plan users share a bucket). The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_same_cohort`), so a foreign-cohort diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`.
 
 ## News channel & repost
 

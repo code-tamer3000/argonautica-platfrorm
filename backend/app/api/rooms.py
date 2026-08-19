@@ -7,22 +7,32 @@ channel (доступ неявный — вариант А: строк член�
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import delete, func, or_, select, union, update
+from sqlalchemy import and_, delete, exists, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import CompoundSelect
 
-from app.api.deps import get_current_active_user
+from app.api.deps import get_current_active_user, require_admin
 from app.db.session import get_session
+from app.models.intake import Intake
 from app.models.kb import KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
-from app.models.room import Room, RoomMember
+from app.models.plan import Plan
+from app.models.room import Room, RoomMember, RoomPlan
 from app.models.sticker import Sticker
 from app.models.task import TaskStreamNode
 from app.models.user import User
-from app.schemas.room import AddMemberRequest, CreateRoomRequest, MemberOut, RoomOut
+from app.schemas.room import (
+    AddMemberRequest,
+    CreateRoomRequest,
+    MemberOut,
+    RoomOut,
+    UpdateChannelRequest,
+)
 from app.services.rooms import assert_room_access, load_room
+from app.services.visibility import plan_visibility_clause
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -31,6 +41,41 @@ def _dm_key(a: int, b: int) -> str:
     """Канонический ключ пары для дедупа личных чатов: 'minId:maxId'."""
     lo, hi = sorted((a, b))
     return f"{lo}:{hi}"
+
+
+async def _assert_intake_exists(session: AsyncSession, intake_id: int | None) -> None:
+    if intake_id is None:
+        return
+    if await session.get(Intake, intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
+
+
+async def _assert_plans_exist(session: AsyncSession, plan_ids: list[int]) -> None:
+    if not plan_ids:
+        return
+    found = await session.execute(select(Plan.id).where(Plan.id.in_(plan_ids)))
+    if set(found.scalars().all()) != set(plan_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
+
+
+async def _set_room_plans(session: AsyncSession, room_id: int, plan_ids: list[int]) -> None:
+    """Полностью заменить набор тарифов канала."""
+    await session.execute(delete(RoomPlan).where(RoomPlan.room_id == room_id))
+    for plan_id in dict.fromkeys(plan_ids):
+        session.add(RoomPlan(room_id=room_id, plan_id=plan_id))
+
+
+async def _room_plan_ids(session: AsyncSession, room_id: int) -> list[int]:
+    rows = await session.execute(
+        select(RoomPlan.plan_id).where(RoomPlan.room_id == room_id).order_by(RoomPlan.plan_id)
+    )
+    return list(rows.scalars().all())
+
+
+def _room_out(room: Room, plan_ids: list[int]) -> RoomOut:
+    out = RoomOut.model_validate(room)
+    out.plan_ids = plan_ids
+    return out
 
 
 async def _create_dm(
@@ -79,7 +124,7 @@ async def create_room(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     response: Response,
-) -> Room:
+) -> Room | RoomOut:
     """Создать комнату. Правила доступа зависят от типа (см. модуль)."""
     if body.type == "dm":
         return await _create_dm(session, current_user, body.peer_id, response)
@@ -107,11 +152,17 @@ async def create_room(
     # channel — только admin; членских строк не создаём (вариант А).
     if current_user.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin role required")
-    room = Room(type="channel", name=body.name, created_by=current_user.id)
+    await _assert_intake_exists(session, body.intake_id)
+    await _assert_plans_exist(session, body.plan_ids)
+    room = Room(
+        type="channel", name=body.name, created_by=current_user.id, intake_id=body.intake_id
+    )
     session.add(room)
     await session.flush()
+    await _set_room_plans(session, room.id, body.plan_ids)
+    await session.flush()
     response.status_code = status.HTTP_201_CREATED
-    return room
+    return _room_out(room, await _room_plan_ids(session, room.id))
 
 
 @router.get("/personal", response_model=RoomOut)
@@ -156,9 +207,51 @@ async def list_rooms(
     member_rooms = select(RoomMember.room_id).where(
         RoomMember.user_id == current_user.id
     )
+    # Каналы: admin видит все; участник — с двойным фильтром поток+тариф (ARG-96),
+    # новостной канал исключён из фильтра (кросс-поточный singleton). Личный
+    # дневник — особый случай («Все дневники» показывает и чужие): свой виден
+    # всегда, чужой — только тем, у кого совпал и поток, и тариф с владельцем
+    # (сравниваем пользователей напрямую, не intake_id самой комнаты — та колонка
+    # у личных комнат намеренно всегда NULL, см. same_cohort).
+    if current_user.role == "admin":
+        channel_clause = Room.type == "channel"
+    else:
+        Owner = aliased(User)
+        own_personal = and_(
+            Room.is_personal.is_(True), Room.created_by == current_user.id
+        )
+        others_personal_same_cohort = and_(
+            Room.is_personal.is_(True),
+            Room.created_by != current_user.id,
+            exists().where(
+                Owner.id == Room.created_by,
+                Owner.intake_id.is_not_distinct_from(current_user.intake_id),
+                Owner.plan_id.is_not_distinct_from(current_user.plan_id),
+            ),
+        )
+        regular_channel_visible = and_(
+            Room.is_personal.is_(False),
+            Room.is_news.is_(False),
+            or_(
+                Room.intake_id.is_(None),
+                Room.intake_id == current_user.intake_id,
+            ),
+            plan_visibility_clause(
+                RoomPlan.plan_id, RoomPlan.room_id, Room.id, current_user.plan_id
+            ),
+        )
+        channel_clause = and_(
+            Room.type == "channel",
+            or_(
+                Room.is_news.is_(True),
+                own_personal,
+                others_personal_same_cohort,
+                regular_channel_visible,
+            ),
+        )
     result = await session.execute(
         select(Room)
-        .where(or_(Room.type == "channel", Room.id.in_(member_rooms)))
+        .where(or_(channel_clause, Room.id.in_(member_rooms)))
         .order_by(Room.created_at)
     )
     rooms = list(result.scalars().all())
@@ -242,7 +335,8 @@ async def get_room(
     room = await load_room(session, room_id)
     membership = await assert_room_access(session, room, current_user)
 
-    item = RoomOut.model_validate(room)
+    plan_ids = await _room_plan_ids(session, room.id) if room.type == "channel" else []
+    item = _room_out(room, plan_ids)
     last_read = (membership.last_read_message_id or 0) if membership else 0
     unread_result = await session.execute(
         select(func.count())
@@ -275,6 +369,34 @@ async def get_room(
     if node is not None:
         item.stream_node_id, item.stream_task_id = node
     return item
+
+
+@router.patch("/{room_id}", response_model=RoomOut)
+async def update_channel(
+    room_id: int,
+    body: UpdateChannelRequest,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RoomOut:
+    """Править канал: название, привязка к потоку/тарифам (ARG-96). Только channel."""
+    room = await load_room(session, room_id)
+    if room.type != "channel" or room.is_personal or room.is_news:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Only regular channels can be edited this way"
+        )
+
+    changes = body.model_dump(exclude_unset=True)
+    if "name" in changes and changes["name"]:
+        room.name = changes["name"]
+    if "intake_id" in changes:
+        await _assert_intake_exists(session, changes["intake_id"])
+        room.intake_id = changes["intake_id"]
+    if "plan_ids" in changes and changes["plan_ids"] is not None:
+        await _assert_plans_exist(session, changes["plan_ids"])
+        await _set_room_plans(session, room.id, changes["plan_ids"])
+    await session.flush()
+
+    return _room_out(room, await _room_plan_ids(session, room.id))
 
 
 async def _load_group(session: AsyncSession, room_id: int) -> Room:

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useAdminIntakes } from '../../api/admin'
 import {
   useKbItems,
   useKbItem,
@@ -12,12 +13,14 @@ import {
   useAttachKbMedia,
   useDetachKbMedia,
 } from '../../api/kb'
+import { useAdminPlans } from '../../api/plans'
 import type { KbItemOut } from '../../lib/types'
 import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { Badge } from '../../components/Badge'
+import { PageHeader } from '../../components/PageHeader'
 import { Attachment } from '../chat/Attachment'
 import styles from './admin.module.css'
 
@@ -27,6 +30,8 @@ interface KbFormValues {
   published: boolean
   category_id: number | null
   media_asset_ids: number[]
+  intake_id: number | null
+  plan_ids: number[]
 }
 
 interface KbFormProps {
@@ -42,7 +47,11 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [body, setBody] = useState(initial?.body ?? '')
   const [published, setPublished] = useState(initial?.published ?? false)
   const [categoryId, setCategoryId] = useState<number | null>(initial?.category_id ?? null)
+  const [intakeId, setIntakeId] = useState<number | null>(initial?.intake_id ?? null)
+  const [planIds, setPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
   const { data: categories = [] } = useKbCategories()
+  const { data: intakes = [] } = useAdminIntakes()
+  const { data: plans = [] } = useAdminPlans()
   // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
@@ -62,7 +71,21 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ title, body, published, category_id: categoryId, media_asset_ids: stagedMedia })
+    onSubmit({
+      title,
+      body,
+      published,
+      category_id: categoryId,
+      media_asset_ids: stagedMedia,
+      intake_id: intakeId,
+      plan_ids: planIds,
+    })
+  }
+
+  function togglePlan(planId: number) {
+    setPlanIds((prev) =>
+      prev.includes(planId) ? prev.filter((id) => id !== planId) : [...prev, planId],
+    )
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -163,6 +186,41 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
           ))}
         </select>
       </label>
+      <label className={styles.label}>
+        Набор
+        <select
+          className={styles.input}
+          value={intakeId ?? ''}
+          onChange={(e) => setIntakeId(e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Общий для всех потоков</option>
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {intake.starts_on} – {intake.ends_on}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className={styles.label}>
+        Тарифы
+        {plans.length === 0 ? (
+          <p className={styles.mediaEmpty}>Тарифов пока нет</p>
+        ) : (
+          <div className={styles.list}>
+            {plans.map((plan) => (
+              <label key={plan.id} className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={planIds.includes(plan.id)}
+                  onChange={() => togglePlan(plan.id)}
+                />
+                {plan.name}
+              </label>
+            ))}
+          </div>
+        )}
+        <p className={styles.mediaEmpty}>Ничего не выбрано — доступен всем тарифам потока</p>
+      </div>
       <label className={styles.checkLabel}>
         <input
           type="checkbox"
@@ -277,7 +335,7 @@ function CategoryManager({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="Категории" onClose={onClose}>
+    <Modal title="Категории" onClose={onClose} closeOnBackdrop={false}>
       <form onSubmit={handleAdd} className={styles.form}>
         <label className={styles.label}>
           Новая категория
@@ -339,6 +397,8 @@ export function AdminKb() {
         published: values.published,
         category_id: values.category_id,
         media_asset_ids: values.media_asset_ids,
+        intake_id: values.intake_id,
+        plan_ids: values.plan_ids,
       },
       {
         onSuccess: () => {
@@ -360,6 +420,8 @@ export function AdminKb() {
         body: values.body || null,
         published: values.published,
         category_id: values.category_id,
+        intake_id: values.intake_id,
+        plan_ids: values.plan_ids,
       },
       {
         onSuccess: () => {
@@ -394,15 +456,14 @@ export function AdminKb() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.pageHeader}>
-        <h1>База знаний</h1>
+      <PageHeader title="База знаний">
         <div className={styles.listActions}>
           <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
             Категории
           </Button>
           <Button onClick={() => setCreateOpen(true)}>Создать</Button>
         </div>
-      </div>
+      </PageHeader>
 
       <div className={styles.list}>
         {items.map((item) => (
@@ -431,13 +492,13 @@ export function AdminKb() {
       </div>
 
       {createOpen && (
-        <Modal title="Создать материал" onClose={() => setCreateOpen(false)}>
+        <Modal title="Создать материал" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <KbForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <KbForm initial={editItem} onSubmit={handleEdit} item={editItem} />
         </Modal>
       )}

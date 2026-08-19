@@ -9,8 +9,6 @@
   margin: 0 auto;
   box-sizing: border-box;
 }
-.title { font-family: var(--font-t1); color: var(--text-primary); }
-
 .section { display: flex; flex-direction: column; gap: var(--space-4); }
 .sectionTitle {
   font-family: var(--font-t4);

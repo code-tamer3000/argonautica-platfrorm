@@ -4,6 +4,7 @@ import { useFaqItems } from '../../api/faq'
 import type { FeedbackKind } from '../../lib/types'
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/EmptyState'
+import { PageHeader } from '../../components/PageHeader'
 import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { IconChevronRight } from '../../components/icons'
@@ -100,7 +101,7 @@ function FaqSection() {
 export function SupportScreen() {
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Техподдержка</h1>
+      <PageHeader title="Техподдержка" />
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>Обратная связь</h2>

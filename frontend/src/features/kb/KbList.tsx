@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useKbCategories, useKbItems } from '../../api/kb'
+import { BackButton } from '../../components/BackButton'
+import ph from '../../components/pageHeader.module.css'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { cardClass } from '../../components/Card'
@@ -55,7 +57,10 @@ export function KbList() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>База знаний</h1>
+      <div className={`${ph.titleRow} ${styles.titleRow}`}>
+        <BackButton />
+        <h1 className={styles.pageTitle}>База знаний</h1>
+      </div>
       <div className={styles.searchBar}>
         <input
           className={styles.searchInput}

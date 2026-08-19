@@ -23,7 +23,8 @@ from app.db.base import Base
 STATUS_AWAITING_ABOUT = "awaiting_about"  # /start отправлен, ждём рассказ о себе
 STATUS_SUBMITTED = "submitted"  # анкета отправлена, ждём «Принять» от админа
 STATUS_CHOOSING_PLAN = "choosing_plan"  # админ принял, участник выбирает тариф
-STATUS_AWAITING_RECEIPT = "awaiting_receipt"  # тариф выбран, ждём чек
+STATUS_AWAITING_OFFER = "awaiting_offer"  # тариф выбран, ждём согласие с офертой (ARG-43)
+STATUS_AWAITING_RECEIPT = "awaiting_receipt"  # оферта принята, ждём чек
 STATUS_PAYMENT_REVIEW = "payment_review"  # чек прислан, ждём «Подтвердить» от админа
 STATUS_CONFIRMED = "confirmed"  # пользователь платформы создан — сервисный режим
 
@@ -35,7 +36,7 @@ class IntakeApplication(Base):
     __table_args__ = (
         CheckConstraint(
             "status IN ('awaiting_about', 'submitted', 'choosing_plan', "
-            "'awaiting_receipt', 'payment_review', 'confirmed')",
+            "'awaiting_offer', 'awaiting_receipt', 'payment_review', 'confirmed')",
             name="intake_application_status_valid",
         ),
     )
@@ -54,6 +55,10 @@ class IntakeApplication(Base):
     # для пересылки в admin-чат (тот же принцип, что presigned URL для медиа платформы).
     receipt_file_id: Mapped[str | None] = mapped_column(Text)
     receipt_kind: Mapped[str | None] = mapped_column(Text)  # 'photo' | 'document'
+    # Согласие с офертой (ARG-43) — проставляется в обработчике callback'а «Согласен,
+    # к оплате», ДО того как участнику открывается шаг присылки чека.
+    offer_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    offer_version: Mapped[str | None] = mapped_column(Text)  # редакция принятой оферты
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

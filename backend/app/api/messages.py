@@ -14,6 +14,7 @@ from sqlalchemy import cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
+from app.api.dynamics import intake_window_closed
 from app.core.config import settings
 from app.db.session import after_commit, get_session
 from app.models.media import MediaAsset
@@ -158,6 +159,16 @@ async def send_message(
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 "Only the channel owner can post here; use threads to comment",
+            )
+
+    # Окно набора владельца дневника закрыто (ARG-96): архив только на чтение,
+    # новых записей (в т.ч. тредом) быть не может.
+    if room.is_personal:
+        owner = await session.get(User, room.created_by)
+        owner_intake_id = owner.intake_id if owner is not None else None
+        if await intake_window_closed(session, owner_intake_id) is not None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Окно набора закрыто — архив только для чтения"
             )
 
     # Новостной канал: верхнеуровневые посты — только admin. Комментарии (треды) — все.
