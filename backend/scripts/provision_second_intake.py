@@ -37,7 +37,7 @@ from sqlalchemy import select
 from app.db.session import SessionLocal
 from app.models.faq import FaqItem
 from app.models.intake import Intake
-from app.models.kb import KbItem, KbItemMedia
+from app.models.kb import KbCategory, KbItem, KbItemMedia
 from app.models.media import MediaAsset
 from app.models.message import Message
 from app.models.task import Task
@@ -119,6 +119,7 @@ TASK_WELCOME2_BODY = (
 
 KB_ITEM_64_PUTI_TITLE_SUBSTR = "64 пути"
 KB_ITEM_MANIFEST_TITLE = "Манифест"
+KB_CATEGORY_TITLE = "Чтиво"
 
 
 def _has_placeholder() -> bool:
@@ -166,8 +167,21 @@ async def _assert_64_puti_exists(session) -> None:
     print(f"  «{KB_ITEM_64_PUTI_TITLE_SUBSTR}» на месте: kb_item id={found}")
 
 
+async def _ensure_kb_category(session, title: str) -> KbCategory:
+    existing = (
+        await session.execute(select(KbCategory).where(KbCategory.title == title))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+    category = KbCategory(title=title)
+    session.add(category)
+    await session.flush()
+    print(f"  категория «{title}» создана: id={category.id}")
+    return category
+
+
 async def _create_kb_markdown_item(
-    session, admin_id: int, title: str, body: str | None, raw: bytes
+    session, admin_id: int, title: str, body: str | None, raw: bytes, category_id: int | None = None
 ) -> KbItem:
     """Материал БЗ с одним .md-вложением (книга для читалки глав, см. KB.md)."""
     from app.core.config import settings  # локальный импорт — избегаем цикла на уровне модуля
@@ -178,6 +192,7 @@ async def _create_kb_markdown_item(
         published=True,
         created_by=admin_id,
         intake_id=None,  # виден всем потокам (ARG-96)
+        category_id=category_id,
     )
     session.add(kb_item)
     await session.flush()
@@ -217,7 +232,10 @@ async def _ensure_manifest_kb_item(session, admin_id: int, manifest_path: str) -
         return existing
     with open(manifest_path, "rb") as f:
         raw = f.read()
-    return await _create_kb_markdown_item(session, admin_id, KB_ITEM_MANIFEST_TITLE, None, raw)
+    category = await _ensure_kb_category(session, KB_CATEGORY_TITLE)
+    return await _create_kb_markdown_item(
+        session, admin_id, KB_ITEM_MANIFEST_TITLE, None, raw, category_id=category.id
+    )
 
 
 async def _post_news(session, admin_id: int, intake: Intake) -> None:
@@ -399,7 +417,10 @@ async def import_64_puti(in_json: str, in_md: str) -> None:
             print(f"«{existing.title}» уже есть на стейдже: kb_item id={existing.id} — пропуск")
             return
         admin_id = await _first_admin_id(session)
-        await _create_kb_markdown_item(session, admin_id, meta["title"], meta["body"], raw)
+        category = await _ensure_kb_category(session, KB_CATEGORY_TITLE)
+        await _create_kb_markdown_item(
+            session, admin_id, meta["title"], meta["body"], raw, category_id=category.id
+        )
         await session.commit()
 
 
