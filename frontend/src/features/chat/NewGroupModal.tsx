@@ -85,7 +85,7 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
   }
 
   return (
-    <Modal title="Новая группа" onClose={onClose}>
+    <Modal title="Новая группа" onClose={onClose} closeOnBackdrop={false}>
       <input
         className={styles.search}
         placeholder="Название группы"

@@ -268,7 +268,7 @@ export function AdminUsers() {
 
       {/* Create intake modal */}
       {intakeOpen && (
-        <Modal title="Новый набор" onClose={() => setIntakeOpen(false)}>
+        <Modal title="Новый набор" onClose={() => setIntakeOpen(false)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label htmlFor="intake_starts_on">Дата старта*</label>
@@ -298,7 +298,7 @@ export function AdminUsers() {
 
       {/* Create user modal */}
       {createOpen && (
-        <Modal title="Новый пользователь" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый пользователь" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label>Имя пользователя (username)*</label>
@@ -378,7 +378,7 @@ export function AdminUsers() {
 
       {/* OTP result modal */}
       {otpResult && (
-        <Modal title="Пользователь создан" onClose={() => setOtpResult(null)}>
+        <Modal title="Пользователь создан" onClose={() => setOtpResult(null)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
               Пользователь <strong>{otpResult.username}</strong> создан. Одноразовый пароль:
@@ -402,7 +402,7 @@ export function AdminUsers() {
 
       {/* Edit user modal */}
       {editUser && (
-        <Modal title={`Редактировать: ${editUser.display_name}`} onClose={() => setEditUser(null)}>
+        <Modal title={`Редактировать: ${editUser.display_name}`} onClose={() => setEditUser(null)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label htmlFor="edit_user_intake">Набор</label>

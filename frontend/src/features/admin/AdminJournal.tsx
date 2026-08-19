@@ -308,13 +308,13 @@ export function AdminJournal() {
       </div>
 
       {createOpen && (
-        <Modal title="Новое задание" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новое задание" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <ProgramForm submitting={createProgram.isPending} onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать задание" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать задание" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <ProgramForm
             initial={editItem}
             submitting={updateProgram.isPending}

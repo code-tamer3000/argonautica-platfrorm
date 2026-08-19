@@ -654,7 +654,7 @@ export function AdminTasks() {
       )}
 
       {editTask && (
-        <Modal title="Редактировать задачу" onClose={() => setEditTask(null)}>
+        <Modal title="Редактировать задачу" onClose={() => setEditTask(null)} closeOnBackdrop={false}>
           <TaskForm initial={editTask} onSubmit={handleEdit} />
         </Modal>
       )}

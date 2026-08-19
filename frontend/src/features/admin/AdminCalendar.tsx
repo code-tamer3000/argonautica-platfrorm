@@ -236,13 +236,13 @@ export function AdminCalendar() {
       </div>
 
       {createOpen && (
-        <Modal title="Создать событие" onClose={() => setCreateOpen(false)}>
+        <Modal title="Создать событие" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <EventForm rooms={rooms} onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editEvent && (
-        <Modal title="Редактировать событие" onClose={() => setEditEvent(null)}>
+        <Modal title="Редактировать событие" onClose={() => setEditEvent(null)} closeOnBackdrop={false}>
           <EventForm rooms={rooms} initial={editEvent} onSubmit={handleEdit} />
         </Modal>
       )}

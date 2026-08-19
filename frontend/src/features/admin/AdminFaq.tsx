@@ -161,13 +161,13 @@ export function AdminFaq() {
       )}
 
       {createOpen && (
-        <Modal title="Новый вопрос" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый вопрос" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <FaqForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать вопрос" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать вопрос" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <FaqForm initial={editItem} onSubmit={handleEdit} />
         </Modal>
       )}

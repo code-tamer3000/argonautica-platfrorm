@@ -175,13 +175,13 @@ export function AdminPlans() {
       )}
 
       {createOpen && (
-        <Modal title="Новый тариф" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый тариф" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <PlanForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать тариф" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать тариф" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <PlanForm initial={editItem} onSubmit={handleEdit} />
         </Modal>
       )}

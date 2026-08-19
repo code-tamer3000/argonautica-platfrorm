@@ -278,7 +278,7 @@ function CategoryManager({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal title="Категории" onClose={onClose}>
+    <Modal title="Категории" onClose={onClose} closeOnBackdrop={false}>
       <form onSubmit={handleAdd} className={styles.form}>
         <label className={styles.label}>
           Новая категория
@@ -431,13 +431,13 @@ export function AdminKb() {
       </div>
 
       {createOpen && (
-        <Modal title="Создать материал" onClose={() => setCreateOpen(false)}>
+        <Modal title="Создать материал" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <KbForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editItem && (
-        <Modal title="Редактировать" onClose={() => setEditItem(null)}>
+        <Modal title="Редактировать" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
           <KbForm initial={editItem} onSubmit={handleEdit} item={editItem} />
         </Modal>
       )}

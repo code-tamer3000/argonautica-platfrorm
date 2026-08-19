@@ -81,6 +81,26 @@
 .adminContent { flex: 1; min-width: 0; overflow-y: auto; }
 .adminNavToggle { display: none; }
 
+/* ───── Десктоп: меню свёрнуто в узкую полосу, разворачивается по hover/focus.
+   Двигаем transform, не width — анимация layout-свойств дёргает раскладку. */
+@media (min-width: 769px) {
+  .adminNav {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 5;
+    transform: translateX(calc(-100% + 14px));
+    transition: transform 160ms var(--ease-out-soft);
+  }
+  .adminNav:hover,
+  .adminNav:focus-within {
+    transform: translateX(0);
+    box-shadow: 8px 0 28px rgba(0, 0, 0, 0.28);
+  }
+  .adminContent { margin-left: 14px; }
+}
+
 /* ───── Мобила: узкие поля, меню сворачивается за бургер ───── */
 @media (max-width: 768px) {
   .page { padding: var(--space-4); gap: var(--space-4); }

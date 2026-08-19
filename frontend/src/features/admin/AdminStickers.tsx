@@ -93,7 +93,7 @@ function PackRow({ pack }: { pack: StickerpackOut }) {
       )}
 
       {pendingAsset && (
-        <Modal title="Добавить стикер" onClose={() => setPendingAsset(null)}>
+        <Modal title="Добавить стикер" onClose={() => setPendingAsset(null)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div
               style={{ width: 80, height: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--divider)', borderRadius: 'var(--radius-btn)', color: 'var(--text-secondary)', fontSize: '0.75rem' }}
@@ -161,7 +161,7 @@ export function AdminStickers() {
       </div>
 
       {createOpen && (
-        <Modal title="Новый стикерпак" onClose={() => setCreateOpen(false)}>
+        <Modal title="Новый стикерпак" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
           <div className={styles.form}>
             <div className={styles.formRow}>
               <label>Название</label>
