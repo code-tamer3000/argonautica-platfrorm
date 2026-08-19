@@ -7,9 +7,10 @@ channel (доступ неявный — вариант А: строк член�
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import and_, delete, func, or_, select, union, update
+from sqlalchemy import and_, delete, exists, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
@@ -207,23 +208,45 @@ async def list_rooms(
         RoomMember.user_id == current_user.id
     )
     # Каналы: admin видит все; участник — с двойным фильтром поток+тариф (ARG-96),
-    # новостной канал исключён из фильтра (кросс-поточный singleton).
+    # новостной канал исключён из фильтра (кросс-поточный singleton). Личный
+    # дневник — особый случай («Все дневники» показывает и чужие): свой виден
+    # всегда, чужой — только тем, у кого совпал и поток, и тариф с владельцем
+    # (сравниваем пользователей напрямую, не intake_id самой комнаты — та колонка
+    # у личных комнат намеренно всегда NULL, см. same_cohort).
     if current_user.role == "admin":
         channel_clause = Room.type == "channel"
     else:
+        Owner = aliased(User)
+        own_personal = and_(
+            Room.is_personal.is_(True), Room.created_by == current_user.id
+        )
+        others_personal_same_cohort = and_(
+            Room.is_personal.is_(True),
+            Room.created_by != current_user.id,
+            exists().where(
+                Owner.id == Room.created_by,
+                Owner.intake_id.is_not_distinct_from(current_user.intake_id),
+                Owner.plan_id.is_not_distinct_from(current_user.plan_id),
+            ),
+        )
+        regular_channel_visible = and_(
+            Room.is_personal.is_(False),
+            Room.is_news.is_(False),
+            or_(
+                Room.intake_id.is_(None),
+                Room.intake_id == current_user.intake_id,
+            ),
+            plan_visibility_clause(
+                RoomPlan.plan_id, RoomPlan.room_id, Room.id, current_user.plan_id
+            ),
+        )
         channel_clause = and_(
             Room.type == "channel",
             or_(
                 Room.is_news.is_(True),
-                and_(
-                    or_(
-                        Room.intake_id.is_(None),
-                        Room.intake_id == current_user.intake_id,
-                    ),
-                    plan_visibility_clause(
-                        RoomPlan.plan_id, RoomPlan.room_id, Room.id, current_user.plan_id
-                    ),
-                ),
+                own_personal,
+                others_personal_same_cohort,
+                regular_channel_visible,
             ),
         )
     result = await session.execute(
