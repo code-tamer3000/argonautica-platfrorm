@@ -11,11 +11,15 @@
 #
 #   scripts/provision_second_intake.sh --target staging --starts-on 2026-09-01 --ends-on 2026-09-28
 #   scripts/provision_second_intake.sh --target staging ... --allow-placeholders   # черновой текст
+#   scripts/provision_second_intake.sh --target staging ... --skip-64-puti         # прод-образ ещё без export-64-puti
 #   scripts/provision_second_intake.sh --target prod    --starts-on 2026-09-01 --ends-on 2026-09-28
 #
 # На --target staging сначала копирует «64 пути» с прода (кросс-контейнерно, тот же
 # хост — docker cp через локальную машину); на --target prod этот шаг пропускается
-# («64 пути» на проде уже есть, см. Уточнения в задаче).
+# («64 пути» на проде уже есть, см. Уточнения в задаче). --skip-64-puti пропускает
+# копию на стейдж целиком (нужно, пока код export-64-puti/import-64-puti не попал в
+# прод-образ — до мёржа develop → main) и передаёт --skip-64-puti-check в provision,
+# иначе он остановится, не найдя статью «64 пути» на стейдже.
 set -euo pipefail
 
 SSH_HOST=${SSH_HOST:-platform-new}
@@ -23,14 +27,15 @@ REMOTE_WORK=${REMOTE_WORK:-/srv/second-intake}
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 MANIFEST="$HERE/content/manifest.md"
 
-TARGET=""; STARTS_ON=""; ENDS_ON=""; ALLOW_PLACEHOLDERS=0
+TARGET=""; STARTS_ON=""; ENDS_ON=""; ALLOW_PLACEHOLDERS=0; SKIP_64_PUTI=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target)             TARGET="$2"; shift ;;
     --starts-on)          STARTS_ON="$2"; shift ;;
     --ends-on)             ENDS_ON="$2"; shift ;;
     --allow-placeholders) ALLOW_PLACEHOLDERS=1 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --skip-64-puti)       SKIP_64_PUTI=1 ;;
+    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
   esac
   shift
@@ -62,7 +67,10 @@ ssh "$SSH_HOST" "mkdir -p $REMOTE_WORK"
 scp -q "$MANIFEST" "$SSH_HOST:$REMOTE_WORK/manifest.md"
 ssh "$SSH_HOST" "docker cp $REMOTE_WORK/manifest.md $BACKEND:/tmp/manifest.md"
 
-if [[ "$TARGET" == "staging" ]]; then
+if [[ "$TARGET" == "staging" && "$SKIP_64_PUTI" == "1" ]]; then
+  say "«64 пути»: копия на стейдж пропущена (--skip-64-puti)"
+  say "набор + Манифест + новость + FAQ + задания"
+elif [[ "$TARGET" == "staging" ]]; then
   say "1/2 «64 пути»: прод → стейдж"
   ssh "$SSH_HOST" "docker inspect -f . $PROD_BACKEND >/dev/null" \
     || die "на сервере нет прод-контейнера $PROD_BACKEND — поправь PROD_BACKEND_CONTAINER"
@@ -81,7 +89,8 @@ else
 fi
 
 FLAGS=""
-(( ALLOW_PLACEHOLDERS )) && FLAGS="--allow-placeholders"
+(( ALLOW_PLACEHOLDERS )) && FLAGS="$FLAGS --allow-placeholders"
+(( SKIP_64_PUTI )) && FLAGS="$FLAGS --skip-64-puti-check"
 ssh "$SSH_HOST" "docker exec -i $BACKEND python -m scripts.provision_second_intake provision \
   --starts-on $STARTS_ON --ends-on $ENDS_ON --manifest-path /tmp/manifest.md $FLAGS"
 
