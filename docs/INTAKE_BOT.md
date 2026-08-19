@@ -109,6 +109,20 @@ so the same account can run the funnel again from scratch:
 - Deliberately **not** in `setMyCommands` — it is a service command, not a funnel step.
 - Scope: one applicant at a time. No bulk "wipe the stand", no web/admin UI.
 
+## Bot status (`/info`)
+
+Read-only admin command: which intake the bot will attach new users to, which plans it is
+currently offering applicants, and the payment card baked into `TEXT_ACCEPTED`.
+
+- Accepted only from the admin DM, same as `/reset`; from anywhere else it does nothing.
+- Reports the active intake (`intakes` row with the latest `starts_on` — same query the
+  funnel itself uses when it creates a user) or a warning that there is none, the active
+  (`is_active`) plans with their prices, or a warning that there are none, and the payment
+  details string (`PAYMENT_DETAILS`) shared with `TEXT_ACCEPTED`.
+- Registered via `setMyCommands` scoped to the admin chat only
+  (`BotCommandScopeChat`/`ADMIN_COMMANDS`) — shows up as a tappable command in the admin's
+  own chat menu without ever reaching `BOT_COMMANDS` (the global, participant-facing list).
+
 ## Placeholder texts
 
 `bot_texts.md` keys (`start`, `ask_about`, `submitted`, `accepted`, `need_receipt`,

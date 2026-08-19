@@ -87,6 +87,12 @@ STAR = '<tg-emoji emoji-id="5440714865192765589">⭐</tg-emoji>'
 # Тот же набор — кораблик вместо якоря. В наборе он привязан к базовому 🚀 (сам рисунок —
 # ладья), поэтому фолбэком для не-Premium клиентов идёт 🚀, не ⚓️.
 SHIP = '<tg-emoji emoji-id="5400063961808799043">🚀</tg-emoji>'
+# Тот же набор — первое из двух чёрных сердечек, вместо конфетти на подтверждении оплаты.
+HEART = '<tg-emoji emoji-id="5440725576841201330">🖤</tg-emoji>'
+
+# Платёжные реквизиты — единственное место, откуда их берут TEXT_ACCEPTED и /info,
+# чтобы не разъезжались при смене карты.
+PAYMENT_DETAILS = "2200701906397754 (Т-банк)"
 
 TEXT_ASK_ABOUT = f"Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? {STAR}"
 TEXT_START = (
@@ -104,8 +110,8 @@ TEXT_ACCEPTED = (
     f"{STAR} <b>Тебя предварительно приняли в Экспедицию.</b>\n\n"
     "Готовься к началу. Настраивайся в течение 28 дней, ежедневно вести полевой "
     "дневник и разгонять динамику.\n"
-    "Оплачивай экспедиционные (фикс {price} руб.) — забронируем место.\n"
-    "Перевод на карту 2200701906397754 (Т-банк).\n\n"
+    "Оплачивай экспедиционные (фикс {price}) — забронируем место.\n"
+    f"Перевод на карту {PAYMENT_DETAILS}.\n\n"
     "После оплаты пришли сюда чек — PDF-файлом или скриншотом. Как получим — "
     f"подтвердим место. {SHIP}"
 )
@@ -121,7 +127,7 @@ TEXT_NEED_RECEIPT = (
 )
 TEXT_RECEIPT_GOT = f"{STAR} Чек получен. Проверяем оплату — это недолго."
 TEXT_CONFIRMED = (
-    "🎉 <b>Оплата подтверждена. Ты в команде Экспедиции.</b>\n\n"
+    f"{HEART} <b>Оплата подтверждена. Ты в команде Экспедиции.</b>\n\n"
     "Добро пожаловать на борт, Аргонавт. Детали старта и доступы вышлем тебе "
     f"отдельно. До встречи! {SHIP}"
 )
@@ -946,6 +952,43 @@ async def _handle_reset(
     )
 
 
+# --- /info: статус бота (админский DM) -----------------------------------------
+
+
+async def _handle_info(client: httpx.AsyncClient, session: AsyncSession, chat_id: int) -> None:
+    """Служебная команда админского DM: к какому набору привязан бот, какие тарифы
+    отдаёт и какие реквизиты уходят в TEXT_ACCEPTED. В `BOT_COMMANDS` не попадает —
+    видна только в меню самого админского чата (см. `_setup_bot_menu`).
+    """
+    if ADMIN_CHAT_ID is None or chat_id != ADMIN_CHAT_ID:
+        return
+
+    intake = await _current_intake(session)
+    if intake is None:
+        intake_line = "⚠️ Активного набора нет (таблица intakes пуста) — заявки не смогут получить аккаунт."
+    else:
+        intake_line = (
+            f"📅 Набор: <b>{intake.starts_on:%d.%m.%Y}</b> — {intake.ends_on:%d.%m.%Y} "
+            f"(id {intake.id})"
+        )
+
+    plans = await _active_plans(session)
+    if plans:
+        plans_lines = "\n".join(
+            f"• {html.escape(plan.name)} — {_price_str(plan.price)}" for plan in plans
+        )
+    else:
+        plans_lines = "⚠️ Активных тарифов нет — на «Выбери тариф» список будет пуст."
+
+    await _send(
+        client, chat_id,
+        f"ℹ️ <b>Статус бота</b>\n\n"
+        f"{intake_line}\n\n"
+        f"💳 Тарифы:\n{plans_lines}\n\n"
+        f"🏦 Реквизиты: {html.escape(PAYMENT_DETAILS)}",
+    )
+
+
 # --- Сообщения -----------------------------------------------------------------
 
 
@@ -998,10 +1041,13 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     tg_id = from_user.get("id", chat_id)
     tg_username = from_user.get("username")
 
-    # Служебный сброс прогона (ARG-95) — раньше ветки ответа админа: /reset может
+    # Служебные команды админского DM — раньше ветки ответа админа: обе могут
     # прийти и реплаем, и это всё равно команда, а не ответ участнику.
     if text.startswith("/reset"):
         await _handle_reset(client, session, chat_id, text, tg_id)
+        return
+    if text.startswith("/info"):
+        await _handle_info(client, session, chat_id)
         return
 
     # Ответ админа reply на пересланный вопрос → доставить участнику.
@@ -1059,6 +1105,10 @@ BOT_COMMANDS = [
     {"command": "start", "description": "Начать или продолжить заявку"},
     {"command": "question", "description": "Задать вопрос поддержке"},
 ]
+# /info поверх общего списка — только в scope этого чата (BotCommandScopeChat), поэтому
+# участникам в их собственных чатах не видна, а админу открывается прямо в меню-кнопке,
+# без /reset (тот и так спрятан за INTAKE_BOT_ALLOW_RESET и не нужен в UI).
+ADMIN_COMMANDS = [*BOT_COMMANDS, {"command": "info", "description": "Набор, тарифы, реквизиты"}]
 
 
 async def _setup_bot_menu(client: httpx.AsyncClient) -> None:
@@ -1067,6 +1117,14 @@ async def _setup_bot_menu(client: httpx.AsyncClient) -> None:
     старте сервиса, а не руками в BotFather."""
     await _api_call(client, "setMyCommands", {"commands": BOT_COMMANDS})
     await _api_call(client, "setChatMenuButton", {"menu_button": {"type": "commands"}})
+    if ADMIN_CHAT_ID is not None:
+        await _api_call(
+            client, "setMyCommands",
+            {
+                "commands": ADMIN_COMMANDS,
+                "scope": {"type": "chat", "chat_id": ADMIN_CHAT_ID},
+            },
+        )
 
 
 async def main() -> None:
