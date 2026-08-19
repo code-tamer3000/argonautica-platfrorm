@@ -1,6 +1,6 @@
 import { differenceInCalendarDays } from 'date-fns'
 import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
-import { Navigate, Route } from 'react-router-dom'
+import { Navigate, Route, useParams } from 'react-router-dom'
 import { useRooms } from '../../api/rooms'
 import { useAuth } from '../auth/AuthContext'
 import {
@@ -55,16 +55,30 @@ function withSuspense(LazyComponent: ComponentType) {
   }
 }
 
+// Открытая по этому маршруту комната — новостная? «/news» резолвится именно в
+// /chats/:roomId или /diaries/:roomId (см. NewsRedirect) — гейт ниже должен отличать
+// её от обычной комнаты того же маршрута, иначе задевает и новости (не входят
+// в «Рубку и Календарь» из границ задачи — новость и есть текст поп-апа, её
+// нельзя терять за той же заглушкой).
+function useIsNewsRoom(): boolean {
+  const { roomId } = useParams<{ roomId?: string }>()
+  const { data: rooms } = useRooms()
+  if (!roomId || !rooms) return false
+  return !!rooms.find((r) => r.id === Number(roomId))?.is_news
+}
+
 // Набор ещё не начался (ARG-106): подменяет Рубку/Календарь заглушкой «до старта
 // осталось N дней», пока `today < intake.starts_on`. По календарным дням, без учёта
-// времени старта — см. Assumptions задачи. Не влияет на видимость пункта нава
-// (isRouteVisible/Access) — раздел просто открывается сам в день старта.
+// времени старта — см. Assumptions задачи. Новостной канал — исключение (см.
+// useIsNewsRoom). Не влияет на видимость пункта нава (isRouteVisible/Access) —
+// раздел просто открывается сам в день старта.
 function withCohortGate(Component: ComponentType) {
   return function CohortGated() {
     const { user } = useAuth()
+    const isNewsRoom = useIsNewsRoom()
     const startsOn = user?.intake_starts_on ?? null
     const pending = !!startsOn && differenceInCalendarDays(new Date(startsOn), new Date()) > 0
-    if (pending) return <CohortPending startsOn={startsOn!} />
+    if (pending && !isNewsRoom) return <CohortPending startsOn={startsOn!} />
     return <Component />
   }
 }
