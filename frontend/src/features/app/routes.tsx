@@ -70,16 +70,19 @@ function useIsNewsRoom(): boolean {
 // Набор ещё не начался (ARG-106): подменяет Рубку/Календарь заглушкой «до старта
 // осталось N дней», пока `today < intake.starts_on`. По календарным дням, без учёта
 // времени старта — см. Assumptions задачи. Новостной канал — исключение (см.
-// useIsNewsRoom). Не влияет на видимость пункта нава (isRouteVisible/Access) —
-// раздел просто открывается сам в день старта.
-function withCohortGate(Component: ComponentType) {
+// useIsNewsRoom), но список комнат и переключатель Чаты/Дневники вокруг нужного
+// сообщения всё равно ведут в закрытую Рубку — `makeComponent` получает `newsOnly`
+// и прячет их (ChatLayout.hideRoomList), оставляя только саму новость. Гейт не
+// влияет на видимость пункта нава (isRouteVisible/Access) — раздел просто
+// открывается сам в день старта.
+function withCohortGate(makeComponent: (opts: { newsOnly: boolean }) => ReactNode) {
   return function CohortGated() {
     const { user } = useAuth()
     const isNewsRoom = useIsNewsRoom()
     const startsOn = user?.intake_starts_on ?? null
     const pending = !!startsOn && differenceInCalendarDays(new Date(startsOn), new Date()) > 0
     if (pending && !isNewsRoom) return <CohortPending startsOn={startsOn!} />
-    return <Component />
+    return makeComponent({ newsOnly: pending && isNewsRoom })
   }
 }
 
@@ -174,11 +177,20 @@ export const routes: RouteEntry[] = [
     isNavActive: ({ pathname, newsRoomId }) =>
       (pathname.startsWith('/chats') || pathname.startsWith('/diaries')) &&
       !(newsRoomId != null && openRoomIdFrom(pathname) === newsRoomId),
-    Component: withCohortGate(() => <ChatLayout tab="chats" />),
+    Component: withCohortGate(({ newsOnly }) => <ChatLayout tab="chats" hideRoomList={newsOnly} />),
     children: [
-      { path: '/chats/:roomId', Component: withCohortGate(() => <ChatLayout tab="chats" />) },
-      { path: '/diaries', Component: withCohortGate(() => <ChatLayout tab="channels" />) },
-      { path: '/diaries/:roomId', Component: withCohortGate(() => <ChatLayout tab="channels" />) },
+      {
+        path: '/chats/:roomId',
+        Component: withCohortGate(({ newsOnly }) => <ChatLayout tab="chats" hideRoomList={newsOnly} />),
+      },
+      {
+        path: '/diaries',
+        Component: withCohortGate(({ newsOnly }) => <ChatLayout tab="channels" hideRoomList={newsOnly} />),
+      },
+      {
+        path: '/diaries/:roomId',
+        Component: withCohortGate(({ newsOnly }) => <ChatLayout tab="channels" hideRoomList={newsOnly} />),
+      },
     ],
   },
   {
@@ -216,7 +228,7 @@ export const routes: RouteEntry[] = [
     label: 'Календарь',
     icon: IconCalendar,
     access: { kind: 'observerBlocked' },
-    Component: withCohortGate(CalendarView),
+    Component: withCohortGate(() => <CalendarView />),
   },
   {
     path: '/genkeys',

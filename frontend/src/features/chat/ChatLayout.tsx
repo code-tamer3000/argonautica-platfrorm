@@ -9,11 +9,16 @@ import styles from './chat.module.css'
 
 interface Props {
   tab: Tab
+  // Набор ещё не начался (ARG-106): открытая новостная комната — единственное
+  // исключение из гейта Рубки (см. routes.tsx withCohortGate/useIsNewsRoom). Список
+  // комнат и переключатель Чаты/Дневники всё равно ведут в закрытую Рубку — прячем
+  // их, оставляя только саму новость, а не намекаем на доступ, которого нет.
+  hideRoomList?: boolean
 }
 
 const basePathFor = (tab: Tab) => (tab === 'chats' ? '/chats' : '/diaries')
 
-export function ChatLayout({ tab }: Props) {
+export function ChatLayout({ tab, hideRoomList }: Props) {
   const { roomId: roomIdParam } = useParams<{ roomId?: string }>()
   const roomId = roomIdParam ? Number(roomIdParam) : null
   const navigate = useNavigate()
@@ -38,8 +43,8 @@ export function ChatLayout({ tab }: Props) {
   }, [roomId, setActiveRoom])
 
   // На мобиле — master-detail: либо список, либо открытый чат.
-  const showList = !isMobile || roomId == null
-  const showPane = !isMobile || roomId != null
+  const showList = !hideRoomList && (!isMobile || roomId == null)
+  const showPane = hideRoomList || !isMobile || roomId != null
 
   return (
     <div className={`row grow ${styles.layout}`}>
@@ -55,7 +60,7 @@ export function ChatLayout({ tab }: Props) {
               <ChatPane
                 roomId={roomId}
                 onOpenRoom={handleSelect}
-                onBack={isMobile ? () => navigate(basePath) : undefined}
+                onBack={isMobile && !hideRoomList ? () => navigate(basePath) : undefined}
               />
             </div>
           ) : (
