@@ -56,7 +56,18 @@ content (channels, common tasks, KB items) can be scoped to one intake — see
 | id | BIGSERIAL | PK | |
 | starts_on | DATE | NOT NULL, UNIQUE | Dynamics window start for every user in this intake |
 | ends_on | DATE | NOT NULL | window close date; after it Dynamics is a read-only archive for the intake's users (frozen stats, no new entries/pardons). Independent of the 28-day Dynamics duration — set explicitly, not derived from `starts_on` |
+| welcome_message | TEXT | NULL | welcome popup text on first login (ARG-106) — same copy as the news post, set by `scripts/provision_second_intake.py` (`NEWS_BODY`). NULL = no popup (intakes seeded before this feature) |
 | created_at | TIMESTAMPTZ | NOT NULL | |
+
+**Cohort-pending gate (ARG-106).** While `today < intake.starts_on`, a participant's own
+Рубка (chat, root `/`) and Календарь screens are replaced client-side with a
+"N days until start" placeholder (`CohortPending`, N = calendar days, no time-of-day
+precision) — no backend enforcement, same trust level as any other early-availability UI
+state (the participant's own data, not another user's). `GET /api/auth/me` exposes
+`intake_starts_on`/`intake_welcome_message` (denormalized, same pattern as
+`AdminUserOut.intake_starts_on`) for this and for the welcome popup. The popup's "don't
+show again" choice persists as `users.settings.welcome_popup_dismissed` (bool), same
+merge-on-`PATCH /auth/me` convention as notification prefs.
 
 There is no explicit open/closed status beyond the date window: the **active** intake is
 simply the one with the largest `starts_on`. Admin API (all under `require_admin`):

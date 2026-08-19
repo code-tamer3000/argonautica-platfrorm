@@ -144,8 +144,13 @@ async def _ensure_intake(session, starts_on: date, ends_on: date) -> Intake:
     ).scalar_one_or_none()
     if existing is not None:
         print(f"  набор уже есть: id={existing.id} starts_on={existing.starts_on}")
+        # Синкаем welcome_message с текущим NEWS_BODY при каждом прогоне — так
+        # повторный запуск после доводки копирайта (ARG-105) сразу обновляет текст
+        # приветственного поп-апа (ARG-106) без ручной правки в БД.
+        existing.welcome_message = NEWS_BODY
+        await session.flush()
         return existing
-    intake = Intake(starts_on=starts_on, ends_on=ends_on)
+    intake = Intake(starts_on=starts_on, ends_on=ends_on, welcome_message=NEWS_BODY)
     session.add(intake)
     await session.flush()
     print(f"  набор создан: id={intake.id} starts_on={starts_on} ends_on={ends_on}")

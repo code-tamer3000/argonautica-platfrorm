@@ -44,6 +44,10 @@ export interface UserOut {
   // Рубка — только чтение. Ставится сервером один раз и не снимается.
   graduated_at: string | null
   settings: Record<string, unknown>
+  // Набор участника (ARG-106): дата старта — гейт Рубки/Календаря; текст — поп-ап
+  // при первом входе. Оба null у бесхозного участника или у набора без текста.
+  intake_starts_on: string | null
+  intake_welcome_message: string | null
 }
 
 export interface PublicUserOut {

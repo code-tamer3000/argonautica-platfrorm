@@ -1,10 +1,12 @@
 """Тесты аутентификации: login, отказы, просроченный токен, refresh/logout."""
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import jwt
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.intake import Intake
 
 from .conftest import MakeUser, auth_headers, login
 
@@ -106,6 +108,37 @@ async def test_me_returns_current_user(
     resp = await client.get("/api/auth/me", headers=auth_headers(tokens["access_token"]))
     assert resp.status_code == 200
     assert resp.json()["username"] == user.username
+
+
+async def test_me_includes_intake_gate_fields(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-106: /me несёт intake_starts_on + intake_welcome_message для гейта Рубки/
+    Календаря и приветственного поп-апа на клиенте."""
+    starts_on = date.today() + timedelta(days=5)
+    user = await make_user(password="initpass123", intake_starts_on=starts_on)
+    intake = await session.get(Intake, user.intake_id)
+    assert intake is not None
+    intake.welcome_message = "Добро пожаловать в набор"
+    await session.commit()
+
+    tokens = await login(client, user.username, "initpass123")
+    resp = await client.get("/api/auth/me", headers=auth_headers(tokens["access_token"]))
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["intake_starts_on"] == starts_on.isoformat()
+    assert body["intake_welcome_message"] == "Добро пожаловать в набор"
+
+
+async def test_me_intake_welcome_message_null_by_default(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Набор без установленного welcome_message (старые наборы) — поп-ап не показываем."""
+    user = await make_user(password="initpass123")
+    tokens = await login(client, user.username, "initpass123")
+    resp = await client.get("/api/auth/me", headers=auth_headers(tokens["access_token"]))
+    assert resp.status_code == 200
+    assert resp.json()["intake_welcome_message"] is None
 
 
 async def test_refresh_rotation_and_logout(
