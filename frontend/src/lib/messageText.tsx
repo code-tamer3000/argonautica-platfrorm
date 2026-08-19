@@ -9,13 +9,16 @@ import { Fragment, type ReactNode } from 'react'
 // «Голый» URL: http(s):// до первого пробела. Внутренний путь: /раздел без хоста
 // (например /kb, /support) — контент (см. provision_second_intake.py) не знает
 // домен окружения (стейдж/прод разные), поэтому ссылки на свои же разделы пишутся
-// относительными путями. @упоминание: @ + латиница/цифры/_ (как ник в Telegram).
-// Один общий проход, чтобы токены не пересекались.
+// относительными путями. [текст](/путь) — то же самое, но с осмысленной подписью
+// вместо голого пути (не полный markdown — только эта одна конструкция, скобки в
+// обычном тексте никто не набирает). @упоминание: @ + латиница/цифры/_ (как ник в
+// Telegram). Один общий проход, чтобы токены не пересекались.
+const LINK_TEXT_RE = /\[([^\]\n]+)\]\((\/[a-zA-Z][\w/-]*)\)/
 const URL_RE = /https?:\/\/[^\s]+/
 const INTERNAL_PATH_RE = /(?<![\w/])\/[a-zA-Z][\w/-]*/
 const MENTION_RE = /@[A-Za-z0-9_]{1,32}/
 const TOKEN_RE = new RegExp(
-  `(${URL_RE.source})|(${INTERNAL_PATH_RE.source})|(${MENTION_RE.source})`,
+  `${LINK_TEXT_RE.source}|(${URL_RE.source})|(${INTERNAL_PATH_RE.source})|(${MENTION_RE.source})`,
   'g',
 )
 
@@ -38,11 +41,31 @@ function tokenize(
   for (const match of text.matchAll(TOKEN_RE)) {
     const start = match.index ?? 0
     if (start > last) out.push(text.slice(last, start))
-    if (match[1]) {
+    if (match[1] !== undefined) {
+      // [текст](/путь) — подписанная внутренняя ссылка.
+      const label = match[1]
+      const path = match[2]
+      out.push(
+        navigate ? (
+          <a
+            key={`${keyPrefix}-p${i++}`}
+            href={path}
+            onClick={(e) => {
+              e.preventDefault()
+              navigate(path)
+            }}
+          >
+            {label}
+          </a>
+        ) : (
+          <span key={`${keyPrefix}-p${i++}`}>{label}</span>
+        ),
+      )
+    } else if (match[3]) {
       // Абсолютный URL. Ссылка на этот же домен (например, на статью БЗ или задание)
       // открывается внутри приложения — иначе в установленном PWA клик выкидывает в
       // системный браузер вместо перехода на нужный экран.
-      const { url, trailing } = trimTrailingPunct(match[1])
+      const { url, trailing } = trimTrailingPunct(match[3])
       let internalPath: string | null = null
       try {
         const parsed = new URL(url, window.location.origin)
@@ -71,10 +94,10 @@ function tokenize(
         ),
       )
       if (trailing) out.push(trailing)
-    } else if (match[2]) {
+    } else if (match[4]) {
       // Голый внутренний путь (/kb, /support, ...) — всегда открывается внутри
       // приложения, домен окружения ему для этого не нужен.
-      const { url: path, trailing } = trimTrailingPunct(match[2])
+      const { url: path, trailing } = trimTrailingPunct(match[4])
       out.push(
         navigate ? (
           <a
@@ -96,7 +119,7 @@ function tokenize(
       // @упоминание — только подсветка (клик-переход на профиль пока не делаем).
       out.push(
         <span key={`${keyPrefix}-m${i++}`} className={mentionClass}>
-          {match[3]}
+          {match[5]}
         </span>,
       )
     }
