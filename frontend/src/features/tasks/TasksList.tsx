@@ -9,6 +9,8 @@ import {
 } from '../../api/tasks'
 import { useUsersMap } from '../../api/users'
 import { useAuth } from '../auth/AuthContext'
+import { BackButton } from '../../components/BackButton'
+import ph from '../../components/pageHeader.module.css'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { Chip, type ChipKind } from '../../components/Chip'
@@ -153,7 +155,10 @@ export function TasksList() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.pageTitle}>Задачи</h1>
+      <div className={`${ph.titleRow} ${styles.titleRow}`}>
+        <BackButton />
+        <h1 className={styles.pageTitle}>Задачи</h1>
+      </div>
 
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && items.length === 0 && (

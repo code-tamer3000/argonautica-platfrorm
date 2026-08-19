@@ -9,8 +9,9 @@
   font-family: var(--font-t1);
   font-size: 28px;
   color: var(--text-primary);
-  margin-bottom: var(--space-4);
 }
+/* см. KbList: отступ на ряду, иначе кнопка «Назад» встаёт выше заголовка. */
+.titleRow { margin-bottom: var(--space-4); }
 
 /* Прогресс «Выполнено X из Y». */
 .progressBar {

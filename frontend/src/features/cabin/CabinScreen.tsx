@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useCabinEntries, useDeleteCabinEntry } from '../../api/cabin'
+import { BackButton } from '../../components/BackButton'
+import ph from '../../components/pageHeader.module.css'
 import { Button } from '../../components/Button'
 import { EmptyState } from '../../components/EmptyState'
 import { Segmented } from '../../components/Segmented'
@@ -44,7 +46,10 @@ export function CabinScreen() {
 
   return (
     <div className={styles.page}>
-      <h1 className={styles.title}>Каюта</h1>
+      <div className={ph.titleRow}>
+        <BackButton />
+        <h1 className={styles.title}>Каюта</h1>
+      </div>
 
       <Segmented
         label="Подраздел каюты"
