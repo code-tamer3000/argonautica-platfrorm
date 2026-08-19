@@ -51,6 +51,23 @@ class KbItem(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Изоляция по потоку (ARG-96): NULL = материал общий для всех потоков.
+    intake_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("intakes.id")
+    )
+
+
+class KbItemPlan(Base):
+    """Материал доступен только перечисленным тарифам; пусто = всем тарифам потока."""
+
+    __tablename__ = "kb_item_plans"
+
+    kb_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("kb_items.id"), primary_key=True
+    )
+    plan_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("plans.id"), primary_key=True
+    )
 
 
 class KbItemMedia(Base):

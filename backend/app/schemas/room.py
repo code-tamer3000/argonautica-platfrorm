@@ -9,12 +9,31 @@ RoomType = Literal["dm", "group", "channel"]
 
 class CreateRoomRequest(BaseModel):
     """Создание комнаты. Поля зависят от типа (валидируются в эндпоинте):
-    dm → peer_id; group/channel → name.
+    dm → peer_id; group/channel → name. `intake_id`/`plan_ids` — только channel,
+    админ-изоляция контента по потоку/тарифу (ARG-96); для остальных типов
+    игнорируются.
     """
 
     type: RoomType
     name: str | None = None
     peer_id: int | None = None
+    intake_id: int | None = None
+    plan_ids: list[int] = []
+
+
+class UpdateChannelRequest(BaseModel):
+    """Правка канала (admin): название и изоляция по потоку/тарифу (ARG-96).
+
+    `intake_id`/`plan_ids` отсутствуют в теле — не трогаем; переданы — заменяют
+    целиком (null у intake_id = «общий для всех потоков», [] у plan_ids = «всем
+    тарифам»).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = None
+    intake_id: int | None = None
+    plan_ids: list[int] | None = None
 
 
 class RoomOut(BaseModel):
@@ -34,6 +53,10 @@ class RoomOut(BaseModel):
     # комнату виджет голосования за общую фразу. None у обычных комнат.
     stream_node_id: int | None = None
     stream_task_id: int | None = None
+    # Только channel: изоляция по потоку/тарифу (ARG-96), видна только admin-у
+    # (список отдаёт эндпоинт get/create/update канала, не участнику).
+    intake_id: int | None = None
+    plan_ids: list[int] = []
 
 
 class AddMemberRequest(BaseModel):

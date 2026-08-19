@@ -72,6 +72,8 @@ async def main() -> None:
         # ------------------------------------------------------------------ intakes
         # Два набора, чтобы в админке было видно группировку и переключение фильтра:
         # текущий (активный, максимальная starts_on) и прошлый — с выпускниками.
+        # ends_on = starts_on + 28 дней: у "previous" уже в прошлом — окно закрыто,
+        # Динамика архивная (ARG-96), удобно проверить архивный вид на скриншотах.
         intakes: dict[str, Intake] = {}
         for key, starts_on in (
             ("current", days_ago(14).date()),
@@ -81,7 +83,7 @@ async def main() -> None:
                 await s.execute(select(Intake).where(Intake.starts_on == starts_on))
             ).scalar_one_or_none()
             if intake is None:
-                intake = Intake(starts_on=starts_on)
+                intake = Intake(starts_on=starts_on, ends_on=starts_on + timedelta(days=28))
                 s.add(intake)
                 await s.flush()
             intakes[key] = intake

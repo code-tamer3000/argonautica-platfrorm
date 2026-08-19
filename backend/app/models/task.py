@@ -67,6 +67,26 @@ class Task(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # мягкое удаление
+    # Изоляция по потоку (ARG-96): проверяется только для type='common' (неявная
+    # видимость — «видна любому активному участнику»); individual/pair/stream уже
+    # гейтятся явным назначением/членством и это поле в видимости не читают.
+    # NULL = общая для всех потоков.
+    intake_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("intakes.id")
+    )
+
+
+class TaskPlan(Base):
+    """Задача доступна только перечисленным тарифам; пусто = всем тарифам потока."""
+
+    __tablename__ = "task_plans"
+
+    task_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tasks.id"), primary_key=True
+    )
+    plan_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("plans.id"), primary_key=True
+    )
 
 
 class TaskPair(Base):

@@ -6,6 +6,7 @@ import {
   useCreateUser,
   useDeleteUser,
   usePatchAdminUser,
+  useUpdateIntake,
 } from '../../api/admin'
 import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../../components/Overlay'
@@ -31,6 +32,15 @@ function todayIso(): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
+// Дефолт для поля «Дата окончания» в форме — не enforced, админ вправе поправить:
+// срок жизни набора и 28-дневное окно Динамики — разные величины (ARG-96).
+function plusDays(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() + days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export function AdminUsers() {
   const { data: intakes = [] } = useAdminIntakes()
   // Наборы приходят свежими сверху: активный — тот, что стартует последним.
@@ -46,6 +56,7 @@ export function AdminUsers() {
   const { user: me } = useAuth()
   const createUser = useCreateUser()
   const createIntake = useCreateIntake()
+  const updateIntake = useUpdateIntake()
   const patchUser = usePatchAdminUser()
   const deleteUser = useDeleteUser()
 
@@ -60,6 +71,11 @@ export function AdminUsers() {
   // Create intake modal
   const [intakeOpen, setIntakeOpen] = useState(false)
   const [intakeStartsOn, setIntakeStartsOn] = useState(todayIso())
+  const [intakeEndsOn, setIntakeEndsOn] = useState(plusDays(todayIso(), 27))
+
+  // Edit intake window modal (только ends_on — starts_on без API, см. ARG-89)
+  const [editIntakeWindow, setEditIntakeWindow] = useState<IntakeOut | null>(null)
+  const [editIntakeEndsOn, setEditIntakeEndsOn] = useState('')
 
   // OTP result modal
   const [otpResult, setOtpResult] = useState<CreateUserResult | null>(null)
@@ -116,14 +132,30 @@ export function AdminUsers() {
   }
 
   function handleCreateIntake() {
-    if (!intakeStartsOn) return
+    if (!intakeStartsOn || !intakeEndsOn) return
     createIntake.mutate(
-      { starts_on: intakeStartsOn },
+      { starts_on: intakeStartsOn, ends_on: intakeEndsOn },
       {
         onSuccess: (intake) => {
           toast(`Набор от ${intakeDate(intake.starts_on)} создан`)
           setIntakeOpen(false)
           setIntakeFilter(intake.id)
+        },
+        onError: (err: unknown) => {
+          toast(err instanceof Error ? err.message : 'Ошибка', 'error')
+        },
+      },
+    )
+  }
+
+  function handleEditIntakeWindow() {
+    if (!editIntakeWindow || !editIntakeEndsOn) return
+    updateIntake.mutate(
+      { id: editIntakeWindow.id, ends_on: editIntakeEndsOn },
+      {
+        onSuccess: () => {
+          toast('Дата закрытия набора обновлена')
+          setEditIntakeWindow(null)
         },
         onError: (err: unknown) => {
           toast(err instanceof Error ? err.message : 'Ошибка', 'error')
@@ -206,7 +238,15 @@ export function AdminUsers() {
       <div className={styles.pageHeader}>
         <h1>Пользователи</h1>
         <div className={styles.listActions}>
-          <Button variant="outline" onClick={() => { setIntakeStartsOn(todayIso()); setIntakeOpen(true) }}>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const start = todayIso()
+              setIntakeStartsOn(start)
+              setIntakeEndsOn(plusDays(start, 27))
+              setIntakeOpen(true)
+            }}
+          >
             Новый набор
           </Button>
           <Button onClick={handleCreateOpen} disabled={intakes.length === 0}>
@@ -245,10 +285,21 @@ export function AdminUsers() {
         const groupUsers = users.filter((u) => u.intake_id === intake.id)
         return (
           <section key={intake.id}>
-            <h2 className={styles.sectionTitle}>
-              Набор от {intakeDate(intake.starts_on)}
-              {intake.id === activeIntake?.id ? ' — активный' : ''}
-            </h2>
+            <div className={styles.pageHeader} style={{ margin: 'var(--space-4) 0 var(--space-2)' }}>
+              <h2 className={styles.sectionTitle} style={{ margin: 0 }}>
+                Набор {intakeDate(intake.starts_on)} – {intakeDate(intake.ends_on)}
+                {intake.id === activeIntake?.id ? ' — активный' : ''}
+              </h2>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditIntakeWindow(intake)
+                  setEditIntakeEndsOn(intake.ends_on)
+                }}
+              >
+                Дата окончания
+              </Button>
+            </div>
             <div className={styles.list}>
               {groupUsers.map(renderUser)}
               {groupUsers.length === 0 && (
@@ -266,6 +317,41 @@ export function AdminUsers() {
         </section>
       )}
 
+      {/* Edit intake window modal */}
+      {editIntakeWindow && (
+        <Modal title="Дата закрытия набора" onClose={() => setEditIntakeWindow(null)}>
+          <div className={styles.form}>
+            <div className={styles.formRow}>
+              <label htmlFor="edit_intake_ends_on">Дата закрытия*</label>
+              <input
+                id="edit_intake_ends_on"
+                className={styles.input}
+                type="date"
+                value={editIntakeEndsOn}
+                onChange={(e) => setEditIntakeEndsOn(e.target.value)}
+                min={editIntakeWindow.starts_on}
+                autoFocus
+              />
+            </div>
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
+              После этой даты Динамика участников набора становится архивом только для
+              чтения: статистика замораживается, отправка ДЗ и помилование дня закрыты.
+            </p>
+            <div className={styles.formActions}>
+              <Button variant="outline" onClick={() => setEditIntakeWindow(null)}>
+                Отмена
+              </Button>
+              <Button
+                onClick={handleEditIntakeWindow}
+                disabled={updateIntake.isPending || !editIntakeEndsOn}
+              >
+                {updateIntake.isPending ? 'Сохраняем…' : 'Сохранить'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Create intake modal */}
       {intakeOpen && (
         <Modal title="Новый набор" onClose={() => setIntakeOpen(false)}>
@@ -281,14 +367,29 @@ export function AdminUsers() {
                 autoFocus
               />
             </div>
+            <div className={styles.formRow}>
+              <label htmlFor="intake_ends_on">Дата закрытия*</label>
+              <input
+                id="intake_ends_on"
+                className={styles.input}
+                type="date"
+                value={intakeEndsOn}
+                onChange={(e) => setIntakeEndsOn(e.target.value)}
+                min={intakeStartsOn}
+              />
+            </div>
             <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
-              От этой даты считается 28-дневное окно Динамики для всех участников набора.
+              От даты старта считается 28-дневное окно Динамики. Дата закрытия — отдельная
+              величина: после неё Динамика становится архивом только для чтения.
             </p>
             <div className={styles.formActions}>
               <Button variant="outline" onClick={() => setIntakeOpen(false)}>
                 Отмена
               </Button>
-              <Button onClick={handleCreateIntake} disabled={createIntake.isPending || !intakeStartsOn}>
+              <Button
+                onClick={handleCreateIntake}
+                disabled={createIntake.isPending || !intakeStartsOn || !intakeEndsOn}
+              >
                 {createIntake.isPending ? 'Создаём…' : 'Создать набор'}
               </Button>
             </div>

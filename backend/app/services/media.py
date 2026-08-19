@@ -28,12 +28,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.kb import KbItem, KbItemMedia
+from app.models.kb import KbItem, KbItemMedia, KbItemPlan
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment
 from app.models.user import User
 from app.schemas.media import AttachmentOut
 from app.services.rooms import assert_room_access, load_room
+from app.services.visibility import intake_visible, plan_visible
 
 logger = logging.getLogger(__name__)
 
@@ -406,18 +407,27 @@ async def assert_media_access(
     if asset.created_by == user.id:
         return
 
-    # Медиа опубликованного материала базы знаний доступно любому участнику (§4.9).
-    in_published_kb = await session.execute(
-        select(KbItemMedia.kb_item_id)
-        .join(KbItem, KbItem.id == KbItemMedia.kb_item_id)
-        .where(
-            KbItemMedia.media_asset_id == asset.id,
-            KbItem.published.is_(True),
+    # Медиа опубликованного материала базы знаний доступно любому участнику (§4.9),
+    # с двойным фильтром поток+тариф (ARG-96) — тем же, что и assert_kb_item_visible.
+    kb_items = (
+        await session.execute(
+            select(KbItem)
+            .join(KbItemMedia, KbItemMedia.kb_item_id == KbItem.id)
+            .where(KbItemMedia.media_asset_id == asset.id)
+            .distinct()
         )
-        .limit(1)
-    )
-    if in_published_kb.first() is not None:
-        return
+    ).scalars().all()
+    for kb_item in kb_items:
+        if user.role == "admin":
+            return
+        if not kb_item.published:
+            continue
+        if not intake_visible(kb_item.intake_id, user):
+            continue
+        if await plan_visible(
+            session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, kb_item.id, user.plan_id
+        ):
+            return
 
     # Медиа задач (условие задачи ИЛИ сдача): доступно тому, кто видит саму задачу
     # (common → любой активный участник; individual → адресат/админ). Импорт
@@ -427,20 +437,26 @@ async def assert_media_access(
         Task,
         TaskAssignment,
         TaskMedia,
+        TaskPlan,
         TaskSubmission,
         TaskSubmissionMedia,
     )
 
     async def _visible_task(task: Task) -> bool:
-        """Видит ли юзер задачу: common → любой; иначе админ/адресат.
+        """Видит ли юзер задачу: common → любой (с двойным фильтром поток+тариф,
+        ARG-96, тем же, что и assert_task_visible); иначе админ/адресат.
 
         У pair и stream назначение заведено на каждого участника, поэтому проверка
         по task_assignments покрывает и их — отдельной ветки не нужно.
         """
-        if task.type == "common":
-            return True
         if user.role == "admin":
             return True
+        if task.type == "common":
+            if not intake_visible(task.intake_id, user):
+                return False
+            return await plan_visible(
+                session, TaskPlan.plan_id, TaskPlan.task_id, task.id, user.plan_id
+            )
         assignee = await session.scalar(
             select(TaskAssignment.id).where(
                 TaskAssignment.task_id == task.id,

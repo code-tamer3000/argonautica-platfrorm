@@ -45,7 +45,14 @@ function DynamicsSection() {
 
   return (
     <div className={styles.dynCard}>
-      <h2 className={styles.dynTitle}>Домашние задания</h2>
+      <h2 className={styles.dynTitle}>
+        Домашние задания
+        {dyn.window_closed && (
+          <span style={{ marginLeft: 8, fontWeight: 400, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
+            · архив, набор закрыт
+          </span>
+        )}
+      </h2>
 
       {/* Стрик */}
       {dyn.streak > 0 && (
@@ -73,7 +80,9 @@ function DynamicsSection() {
             {dyn.overdue_dates.map((d) => (
               <div key={d} className={styles.dynOverdueItem}>
                 <span className={styles.dynOverdueDate}>За {formatDate(d)}</span>
-                {dyn.pardons_remaining > 0 ? (
+                {dyn.window_closed ? (
+                  <span className={styles.dynNoPardons}>архив — не редактируется</span>
+                ) : dyn.pardons_remaining > 0 ? (
                   <button
                     className={styles.dynPardonBtn}
                     onClick={() => handlePardon(d)}

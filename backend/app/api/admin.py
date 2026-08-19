@@ -37,7 +37,7 @@ from app.schemas.feedback import (
     FeedbackOut,
     FeedbackResolveRequest,
 )
-from app.schemas.intake import IntakeCreateRequest, IntakeOut
+from app.schemas.intake import IntakeCreateRequest, IntakeOut, IntakeUpdateRequest
 from app.schemas.journal import (
     AdminCreditRequest,
     AdminDynamicsOut,
@@ -110,6 +110,7 @@ async def list_intakes(
         IntakeOut(
             id=intake.id,
             starts_on=intake.starts_on,
+            ends_on=intake.ends_on,
             created_at=intake.created_at,
             user_count=user_count,
         )
@@ -123,7 +124,7 @@ async def create_intake(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> IntakeOut:
     """Создать набор. Дата старта уникальна — два набора в один день бессмысленны."""
-    intake = Intake(starts_on=body.starts_on)
+    intake = Intake(starts_on=body.starts_on, ends_on=body.ends_on)
     session.add(intake)
     try:
         await session.flush()
@@ -136,8 +137,39 @@ async def create_intake(
     return IntakeOut(
         id=intake.id,
         starts_on=intake.starts_on,
+        ends_on=intake.ends_on,
         created_at=intake.created_at,
         user_count=0,
+    )
+
+
+@router.patch("/intakes/{intake_id}", response_model=IntakeOut)
+async def update_intake(
+    intake_id: int,
+    body: IntakeUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeOut:
+    """Подвинуть дату закрытия набора (`starts_on` без API — см. ARG-89)."""
+    intake = await session.get(Intake, intake_id)
+    if intake is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Набор не найден")
+    if body.ends_on <= intake.starts_on:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Дата закрытия должна быть позже даты старта"
+        )
+    intake.ends_on = body.ends_on
+    await session.flush()
+    user_count = (
+        await session.scalar(
+            select(func.count()).select_from(User).where(User.intake_id == intake.id)
+        )
+    ) or 0
+    return IntakeOut(
+        id=intake.id,
+        starts_on=intake.starts_on,
+        ends_on=intake.ends_on,
+        created_at=intake.created_at,
+        user_count=user_count,
     )
 
 

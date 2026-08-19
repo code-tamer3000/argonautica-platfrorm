@@ -43,6 +43,10 @@ class TaskCreate(BaseModel):
     participant_ids: list[int] = []
     # Медиа условия задачи (создаёт admin). Ассеты должны существовать.
     media_asset_ids: list[int] = []
+    # Изоляция по потоку/тарифу (ARG-96) — применяется в видимости только к
+    # type='common'; для individual/pair/stream игнорируется (назначение сильнее).
+    intake_id: int | None = None
+    plan_ids: list[int] = []
 
 
 class TaskUpdate(BaseModel):
@@ -57,6 +61,8 @@ class TaskUpdate(BaseModel):
     kb_item_id: int | None = None
     # None — не трогаем набор медиа; список — ЗАМЕНЯЕТ весь набор целиком.
     media_asset_ids: list[int] | None = None
+    intake_id: int | None = None
+    plan_ids: list[int] | None = None
 
 
 class TaskOut(BaseModel):
@@ -72,6 +78,8 @@ class TaskOut(BaseModel):
     created_by: int
     created_at: datetime
     attachments: list[AttachmentOut] = []
+    intake_id: int | None = None
+    plan_ids: list[int] = []
 
 
 class PairMemberOut(BaseModel):

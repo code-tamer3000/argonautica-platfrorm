@@ -18,6 +18,9 @@ export interface TaskOut {
   created_by: number
   created_at: string
   attachments: AttachmentOut[]
+  // Изоляция по потоку/тарифу (ARG-96) — читается только для type='common'.
+  intake_id: number | null
+  plan_ids: number[]
 }
 
 // Один участник пары в глазах смотрящего + выданная им перекрёстная задача.
@@ -201,6 +204,9 @@ export interface TaskCreateBody {
   // Только для type='stream': участники сетки (её строит сервер).
   participant_ids?: number[]
   media_asset_ids?: number[]
+  // Изоляция по потоку/тарифу (ARG-96) — применяется только к type='common'.
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export interface TaskUpdateBody {
@@ -209,6 +215,8 @@ export interface TaskUpdateBody {
   deadline_at?: string | null
   kb_item_id?: number | null
   media_asset_ids?: number[]
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export function useCreateTask() {

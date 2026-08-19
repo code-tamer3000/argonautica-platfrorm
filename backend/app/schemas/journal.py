@@ -24,6 +24,10 @@ class MyDynamicsOut(BaseModel):
     pardons_remaining: int
     today_progress: list[str]
     program_start: date
+    # Окно набора закрыто (ARG-96): статистика заморожена на дате закрытия
+    # (intakes.ends_on), отправка ДЗ и помилование — 403. Фронт по этому флагу
+    # прячет форму отправки/кнопки помилования.
+    window_closed: bool = False
 
 
 class UserDynamicsOut(BaseModel):

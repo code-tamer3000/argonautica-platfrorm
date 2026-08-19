@@ -5,10 +5,11 @@ import type { AdminDynamicsOut, MyDynamicsOut } from '../lib/types'
 export const myDynamicsKey = ['dynamics', 'me'] as const
 export const adminDynamicsKey = ['dynamics', 'admin'] as const
 
-export function useMyDynamics() {
+export function useMyDynamics(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: myDynamicsKey,
     queryFn: () => http.get<MyDynamicsOut>('/api/dynamics/my-stats'),
+    enabled: options?.enabled ?? true,
   })
 }
 

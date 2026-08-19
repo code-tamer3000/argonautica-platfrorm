@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMyDynamics } from '../../api/dynamics'
 import { useMarkRead, useMessages } from '../../api/messages'
 import { useRoom, useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
@@ -217,6 +218,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const isOwnPersonal = !!room.is_personal && room.created_by === user?.id
   // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403).
   const isGraduated = !!user?.graduated_at
+  // Окно набора закрыто (ARG-96): дневник — архив только для чтения, форму
+  // отправки прячем (бэкенд 403-ит тот же путь). Запрос только для своего дневника.
+  const { data: myDyn } = useMyDynamics({ enabled: isOwnPersonal })
+  const isWindowClosed = isOwnPersonal && !!myDyn?.window_closed
   const journalChosen =
     pendingJournal?.roomId === roomId || journalFreeEntry === roomId
 
@@ -304,12 +309,17 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onAtBottomChange={onAtBottomChange}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      {room.is_personal && room.created_by === user?.id && !isGraduated && (
+      {isOwnPersonal && !isGraduated && !isWindowClosed && (
         <DailyJournalForm roomId={roomId} />
       )}
       {/* Экспедиция пройдена: вместо любого ввода — плашка. История комнаты
           (личные чаты, дневник, каналы) остаётся доступной на чтение. */}
       {isGraduated && <GraduatedNotice />}
+      {/* Окно набора закрыто (ARG-96): дневник — архив, статистика заморожена
+          (см. ProfileScreen), новых записей быть не может. */}
+      {!isGraduated && isWindowClosed && (
+        <GraduatedNotice text="Окно набора закрыто — дневник в архиве" />
+      )}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
           в новостном — только админ. Комментировать можно через треды.
           В своём личном дневнике композер СКРЫТ, пока пользователь не выбрал режим
@@ -317,7 +327,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           (journalFreeEntry): нельзя написать «просто так», не выбрав ничего.
           НО когда открыт тред — композер показываем всегда (в режиме ответа): ответить
           в тред можно везде, даже там, где верхний уровень запрещён (комментарии). */}
-      {!isGraduated && (threadRootId != null ||
+      {!isGraduated && !isWindowClosed && (threadRootId != null ||
         ((!room.is_personal || room.created_by === user?.id) &&
           (!room.is_news || user?.role === 'admin') &&
           (!isOwnPersonal || journalChosen))) && (

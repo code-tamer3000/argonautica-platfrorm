@@ -68,6 +68,9 @@ export interface KbItemCreateBody {
   published?: boolean
   category_id?: number | null
   media_asset_ids?: number[]
+  // Изоляция по потоку/тарифу (ARG-96): null/пусто = доступен всем потокам/тарифам.
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export interface KbItemUpdateBody {
@@ -76,6 +79,8 @@ export interface KbItemUpdateBody {
   published?: boolean
   category_id?: number | null
   sort_order?: number
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export function useCreateKbItem() {
