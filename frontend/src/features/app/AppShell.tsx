@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { useRooms } from '../../api/rooms'
 import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
@@ -18,6 +19,11 @@ export function AppShell() {
   const badges = useNavBadges()
   const accessCtx = useAccessContext()
   const isObserver = accessCtx.isObserver
+
+  // Для подсветки нава: /news резолвится в /chats/:id или /diaries/:id, и без
+  // знания id новостной комнаты её адрес неотличим от обычной (см. routes.tsx).
+  const { data: rooms } = useRooms()
+  const newsRoomId = useMemo(() => rooms?.find((r) => r.is_news)?.id ?? null, [rooms])
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -147,7 +153,7 @@ export function AppShell() {
               </>
             )
             if (cfg.isNavActive) {
-              const active = cfg.isNavActive(location.pathname)
+              const active = cfg.isNavActive({ pathname: location.pathname, newsRoomId })
               return (
                 <Link
                   key={cfg.path}
