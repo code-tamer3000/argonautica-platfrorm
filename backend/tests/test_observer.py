@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import Notification
 from app.models.room import Room
 from app.models.user import User
+from app.services.rooms import ensure_news_channel
 
 from .conftest import (
     AddMembership,
@@ -28,15 +29,9 @@ async def _headers(client: AsyncClient, user: User) -> dict[str, str]:
 
 
 async def _news_channel(session: AsyncSession, admin: User) -> Room:
-    """get-or-create новостного канала (singleton, uq_rooms_single_news)."""
-    news = (
-        await session.execute(select(Room).where(Room.is_news.is_(True)))
-    ).scalar_one_or_none()
-    if news is None:
-        news = Room(type="channel", name="Новости", is_news=True, created_by=admin.id)
-        session.add(news)
-        await session.commit()
-        await session.refresh(news)
+    """Новостной канал потока admin'а (ARG-104 — один на intake, не singleton)."""
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
     return news
 
 

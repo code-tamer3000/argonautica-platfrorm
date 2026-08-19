@@ -5,8 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
-from app.models.room import Room
 from app.models.user import User
+from app.services.rooms import ensure_news_channel
 
 from .conftest import AddMembership, MakeRoom, MakeUser, auth_headers, login
 
@@ -128,15 +128,9 @@ async def test_news_post_notifies_participants(
     admin = await make_user(role="admin")
     participant = await make_user()
 
-    # get-or-create новостного канала (singleton, uq_rooms_single_news).
-    news = (
-        await session.execute(select(Room).where(Room.is_news.is_(True)))
-    ).scalar_one_or_none()
-    if news is None:
-        news = Room(type="channel", name="Новости", is_news=True, created_by=admin.id)
-        session.add(news)
-        await session.commit()
-        await session.refresh(news)
+    # Новостной канал потока участника (ARG-104 — один на intake, не singleton).
+    news = await ensure_news_channel(session, participant.intake_id)
+    await session.commit()
 
     before = await _db_count(session, participant.id)
     await _send(client, await _headers(client, admin), news.id, content="Важный пост")

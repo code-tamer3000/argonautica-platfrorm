@@ -298,8 +298,12 @@ async def test_repost_carries_ref(
     _, msg = await _send(
         client, admin_h, room.id, content="src", ref_kind="kb", ref_id=item["id"]
     )
+    # room — group (make_room), кросс-поточная (intake_id=NULL): целевой поток
+    # новостей задаём явно (ARG-104).
     resp = await client.post(
-        f"/api/rooms/{room.id}/messages/{msg['id']}/repost", headers=admin_h
+        f"/api/rooms/{room.id}/messages/{msg['id']}/repost",
+        headers=admin_h,
+        params={"target_intake_id": admin.intake_id},
     )
     assert resp.status_code == 201, resp.text
     reposted = resp.json()

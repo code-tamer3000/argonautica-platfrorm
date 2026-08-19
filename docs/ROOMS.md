@@ -55,8 +55,29 @@ personal/news) accept `intake_id`/`plan_ids`.
 
 ## News channel & repost
 
-- **News channel** — a singleton room with `rooms.is_news = true`, created in app lifespan (`ensure_news_channel`). Top-level posts are admin-only; everyone reads.
-- **Repost into news** — admin forwards a message from any room into the news channel. It is a **copy** (text/sticker/attachments) with `messages.forwarded_from_sender_id` set to the original author ("переслано от X" / forwarded from X), so the post lives independently of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
+- **News channel** — one `rooms.is_news = true` room **per intake** (ARG-104; was a
+  platform-wide singleton before — see docs/DECISIONS.md if resurrecting that). Gated by
+  the same intake+plan double filter as a regular channel (ARG-96, `assert_room_access`) —
+  a participant sees only their own intake's news, not other intakes'. `ensure_news_channel(session, intake_id)`
+  gets-or-creates the channel for one intake; called from app lifespan (bootstraps a
+  channel for every existing intake), from `repost_to_news`, and from
+  `scripts/provision_second_intake.py`. `uq_rooms_news_per_intake` (partial unique on
+  `intake_id` `WHERE is_news`) enforces one per intake. Top-level posts are admin-only;
+  everyone in that intake reads.
+- **Repost into news** — admin forwards a message from any room into the news channel of
+  the **source room's own intake**. If the source room is cross-intake (`intake_id` NULL —
+  group/dm/personal), the endpoint requires an explicit `target_intake_id` query param
+  (400 without it) since there's nothing on the room to infer a target from. It is a
+  **copy** (text/sticker/attachments) with `messages.forwarded_from_sender_id` set to the
+  original author ("переслано от X" / forwarded from X), so the post lives independently
+  of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
+- **Admin "current intake" selector** — a session-only (not persisted) UI context set in
+  `AdminLayout`, shared across the Задачи/КБ/Чаты admin screens (`stores/ui.ts`
+  `adminCurrentIntakeId`). It only changes what the admin sees by default in those lists
+  (a client-side filter, with a "filtered, not the full list" banner) and which intake a
+  repost from a cross-intake room defaults to being asked about — it does **not** change
+  server-side authorization; admin still bypasses the intake/plan gate entirely
+  (`user.role == "admin"` in `assert_room_access`/`list_rooms`).
 
 ## Stream subgroup rooms
 

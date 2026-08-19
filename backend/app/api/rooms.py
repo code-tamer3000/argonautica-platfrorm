@@ -208,11 +208,11 @@ async def list_rooms(
         RoomMember.user_id == current_user.id
     )
     # Каналы: admin видит все; участник — с двойным фильтром поток+тариф (ARG-96),
-    # новостной канал исключён из фильтра (кросс-поточный singleton). Личный
-    # дневник — особый случай («Все дневники» показывает и чужие): свой виден
-    # всегда, чужой — только тем, у кого совпал и поток, и тариф с владельцем
-    # (сравниваем пользователей напрямую, не intake_id самой комнаты — та колонка
-    # у личных комнат намеренно всегда NULL, см. same_cohort).
+    # новостной канал больше не исключение (ARG-104) — гейтится тем же правилом,
+    # что обычный канал. Личный дневник — особый случай («Все дневники» показывает
+    # и чужие): свой виден всегда, чужой — только тем, у кого совпал и поток, и
+    # тариф с владельцем (сравниваем пользователей напрямую, не intake_id самой
+    # комнаты — та колонка у личных комнат намеренно всегда NULL, см. same_cohort).
     if current_user.role == "admin":
         channel_clause = Room.type == "channel"
     else:
@@ -231,7 +231,6 @@ async def list_rooms(
         )
         regular_channel_visible = and_(
             Room.is_personal.is_(False),
-            Room.is_news.is_(False),
             or_(
                 Room.intake_id.is_(None),
                 Room.intake_id == current_user.intake_id,
@@ -243,7 +242,6 @@ async def list_rooms(
         channel_clause = and_(
             Room.type == "channel",
             or_(
-                Room.is_news.is_(True),
                 own_personal,
                 others_personal_same_cohort,
                 regular_channel_visible,
