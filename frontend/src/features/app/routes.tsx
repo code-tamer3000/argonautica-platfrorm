@@ -69,6 +69,20 @@ function NewsRedirect() {
   return <Navigate to={`/${segment}/${news.id}`} replace />
 }
 
+// id открытой комнаты из /chats/:id или /diaries/:id, иначе null.
+const openRoomIdFrom = (pathname: string): number | null => {
+  const m = /^\/(?:chats|diaries)\/(\d+)$/.exec(pathname)
+  return m ? Number(m[1]) : null
+}
+
+export interface NavActiveContext {
+  pathname: string
+  // id новостной комнаты (см. NewsRedirect) — «/news» резолвится в /chats/:id
+  // или /diaries/:id, и без этого её адрес неотличим от обычной комнаты того
+  // же раздела: подсвечивались бы одновременно «Рубка»/«Дневники» и «Новости».
+  newsRoomId: number | null
+}
+
 export interface RouteChild {
   path: string
   Component: ComponentType
@@ -86,10 +100,11 @@ export interface RouteEntry {
   hidden?: boolean
   /**
    * Пункт нава активен на нескольких несмежных путях (Рубка = /chats* и /diaries*
-   * — Чаты/Дневники визуально один раздел, см. ARG-99 «навигацию не меняем»).
+   * — Чаты/Дневники визуально один раздел, см. ARG-99 «навигацию не меняем»),
+   * либо требует различить открытую новостную комнату от обычной (Новости).
    * Если задано, заменяет обычное сопоставление NavLink.
    */
-  isNavActive?: (pathname: string) => boolean
+  isNavActive?: (ctx: NavActiveContext) => boolean
   /** Обычный случай: один компонент на path, плюс соседние маршруты без своего пункта в наве. */
   Component?: ComponentType
   children?: RouteChild[]
@@ -116,7 +131,9 @@ export const routes: RouteEntry[] = [
     icon: IconChat,
     access: { kind: 'observerBlocked' },
     badgeKey: 'rubka',
-    isNavActive: (pathname) => pathname.startsWith('/chats') || pathname.startsWith('/diaries'),
+    isNavActive: ({ pathname, newsRoomId }) =>
+      (pathname.startsWith('/chats') || pathname.startsWith('/diaries')) &&
+      !(newsRoomId != null && openRoomIdFrom(pathname) === newsRoomId),
     Component: () => <ChatLayout tab="chats" />,
     children: [
       { path: '/chats/:roomId', Component: () => <ChatLayout tab="chats" /> },
@@ -130,6 +147,8 @@ export const routes: RouteEntry[] = [
     icon: IconNews,
     access: { kind: 'observerBlocked' },
     badgeKey: 'news',
+    isNavActive: ({ pathname, newsRoomId }) =>
+      newsRoomId != null && openRoomIdFrom(pathname) === newsRoomId,
     Component: NewsRedirect,
   },
   {
