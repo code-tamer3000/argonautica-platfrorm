@@ -10,9 +10,7 @@ import { ObserverBlocked } from './ObserverBlocked'
  */
 export type Access =
   | { kind: 'public' }
-  // redirectTo — для «/»: наблюдателя тихо уводим на домашние материалы, а не
-  // показываем ObserverBlocked (это не тупик по прямой ссылке, а дефолтный вход).
-  | { kind: 'observerBlocked'; redirectTo?: string }
+  | { kind: 'observerBlocked' }
   | { kind: 'requiresCabinGrant' }
   | { kind: 'adminOnly' }
 
@@ -49,8 +47,6 @@ export function isRouteVisible(access: Access, ctx: AccessContext): boolean {
 export function RequireAccess({ access }: { access: Access }) {
   const ctx = useAccessContext()
   if (isRouteVisible(access, ctx)) return <Outlet />
-  if (access.kind === 'observerBlocked') {
-    return access.redirectTo ? <Navigate to={access.redirectTo} replace /> : <ObserverBlocked />
-  }
+  if (access.kind === 'observerBlocked') return <ObserverBlocked />
   return <Navigate to="/" replace />
 }

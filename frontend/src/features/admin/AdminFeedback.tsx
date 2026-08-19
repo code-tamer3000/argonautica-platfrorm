@@ -55,7 +55,6 @@ export function AdminFeedback() {
   const resolve = useResolveFeedback()
   const createRoom = useCreateRoom()
   const navigate = useNavigate()
-  const setPendingOpen = useUiStore((s) => s.setPendingOpen)
   const setPendingDraft = useUiStore((s) => s.setPendingDraft)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
 
@@ -68,8 +67,7 @@ export function AdminFeedback() {
       })
       setDmPeer(room.id, item.user_id)
       setPendingDraft({ roomId: room.id, text: buildReplyHeader(item) })
-      setPendingOpen({ roomId: room.id })
-      navigate('/')
+      navigate(`/chats/${room.id}`)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Не удалось открыть чат', 'error')
     }

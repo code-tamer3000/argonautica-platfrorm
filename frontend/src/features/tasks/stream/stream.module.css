@@ -241,7 +241,7 @@
   color: var(--text-muted);
 }
 
-/* И <Link>, и <button> (переход в комнату идёт через pendingOpen, а не по URL). */
+/* <button>, стилизованная под ссылку (переход дёргает useOpenRoom, а не href). */
 .roomLink {
   display: inline-block;
   margin-top: var(--space-3);

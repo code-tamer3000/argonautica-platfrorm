@@ -1,42 +1,36 @@
-import { useEffect, useState } from 'react'
-import { useRooms } from '../../api/rooms'
+import { useCallback, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import { EmptyState } from '../../components/EmptyState'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useUiStore } from '../../stores/ui'
 import { ChatPane } from './ChatPane'
-import { RoomList } from './RoomList'
+import { RoomList, type Tab } from './RoomList'
 import styles from './chat.module.css'
 
 interface Props {
-  /** 'news' — при заходе автоматически открыть новостной канал (кнопка «Новости»). */
-  autoOpen?: 'news'
+  tab: Tab
 }
 
-export function ChatLayout({ autoOpen }: Props = {}) {
-  const [roomId, setRoomId] = useState<number | null>(null)
-  const [autoOpened, setAutoOpened] = useState(false)
-  const { data: rooms } = useRooms()
+const basePathFor = (tab: Tab) => (tab === 'chats' ? '/chats' : '/diaries')
+
+export function ChatLayout({ tab }: Props) {
+  const { roomId: roomIdParam } = useParams<{ roomId?: string }>()
+  const roomId = roomIdParam ? Number(roomIdParam) : null
+  const navigate = useNavigate()
   const setActiveRoom = useUiStore((s) => s.setActiveRoom)
-  const pendingOpen = useUiStore((s) => s.pendingOpen)
-  const setPendingOpen = useUiStore((s) => s.setPendingOpen)
   const isMobile = useIsMobile()
 
-  // Открыть комнату по внешнему запросу (клик по уведомлению/колокольчику).
-  useEffect(() => {
-    if (!pendingOpen) return
-    setRoomId(pendingOpen.roomId)
-    setPendingOpen(null)
-  }, [pendingOpen, setPendingOpen])
+  const basePath = basePathFor(tab)
 
-  // Один раз после загрузки комнат открываем новостной канал (для маршрута /news).
-  useEffect(() => {
-    if (autoOpen !== 'news' || autoOpened || !rooms) return
-    const news = rooms.find((r) => r.is_news)
-    if (news) {
-      setRoomId(news.id)
-      setAutoOpened(true)
-    }
-  }, [autoOpen, autoOpened, rooms])
+  const handleSelect = useCallback(
+    (id: number) => navigate(`${basePath}/${id}`),
+    [navigate, basePath],
+  )
+
+  const handleTabChange = useCallback(
+    (nextTab: Tab) => navigate(basePathFor(nextTab)),
+    [navigate],
+  )
 
   useEffect(() => {
     setActiveRoom(roomId)
@@ -49,7 +43,9 @@ export function ChatLayout({ autoOpen }: Props = {}) {
 
   return (
     <div className={`row grow ${styles.layout}`}>
-      {showList && <RoomList selectedId={roomId} onSelect={setRoomId} />}
+      {showList && (
+        <RoomList tab={tab} onTabChange={handleTabChange} selectedId={roomId} onSelect={handleSelect} />
+      )}
       {showPane && (
         <div className={`grow ${styles.pane}`}>
           {roomId ? (
@@ -58,8 +54,8 @@ export function ChatLayout({ autoOpen }: Props = {}) {
             <div key={roomId} className={styles.paneEnter}>
               <ChatPane
                 roomId={roomId}
-                onOpenRoom={setRoomId}
-                onBack={isMobile ? () => setRoomId(null) : undefined}
+                onOpenRoom={handleSelect}
+                onBack={isMobile ? () => navigate(basePath) : undefined}
               />
             </div>
           ) : (
