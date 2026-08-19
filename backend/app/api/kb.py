@@ -10,13 +10,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin
 from app.db.session import get_session
-from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia
+from app.models.intake import Intake
+from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia, KbItemPlan
 from app.models.media import MediaAsset
+from app.models.plan import Plan
 from app.models.user import User
 from app.schemas.kb import (
     AttachMediaRequest,
@@ -33,18 +35,21 @@ from app.services.kb import (
     assert_category_exists,
     assert_kb_item_visible,
     attached_media_ids,
+    attached_plan_ids,
     load_kb_item,
 )
+from app.services.visibility import plan_visibility_clause
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
 # Поля, которые admin вправе править через PATCH.
-_PATCHABLE_FIELDS = {"title", "body", "published", "category_id", "sort_order"}
+_PATCHABLE_FIELDS = {"title", "body", "published", "category_id", "sort_order", "intake_id"}
 
 
-def _to_out(item: KbItem, media_ids: list[int]) -> KbItemOut:
+def _to_out(item: KbItem, media_ids: list[int], plan_ids: list[int]) -> KbItemOut:
     out = KbItemOut.model_validate(item)
     out.media_asset_ids = media_ids
+    out.plan_ids = plan_ids
     return out
 
 
@@ -57,6 +62,37 @@ async def _assert_assets_exist(session: AsyncSession, asset_ids: list[int]) -> N
     )
     if set(found.scalars().all()) != set(asset_ids):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+
+
+async def _assert_intake_exists(session: AsyncSession, intake_id: int | None) -> None:
+    if intake_id is None:
+        return
+    if await session.get(Intake, intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
+
+
+async def _assert_plans_exist(session: AsyncSession, plan_ids: list[int]) -> None:
+    if not plan_ids:
+        return
+    found = await session.execute(select(Plan.id).where(Plan.id.in_(plan_ids)))
+    if set(found.scalars().all()) != set(plan_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
+
+
+async def _set_item_plans(session: AsyncSession, item_id: int, plan_ids: list[int]) -> None:
+    """Полностью заменить набор тарифов материала."""
+    await session.execute(sa_delete(KbItemPlan).where(KbItemPlan.kb_item_id == item_id))
+    for plan_id in dict.fromkeys(plan_ids):
+        session.add(KbItemPlan(kb_item_id=item_id, plan_id=plan_id))
+
+
+async def _item_plan_ids(session: AsyncSession, item_id: int) -> list[int]:
+    rows = await session.execute(
+        select(KbItemPlan.plan_id)
+        .where(KbItemPlan.kb_item_id == item_id)
+        .order_by(KbItemPlan.plan_id)
+    )
+    return list(rows.scalars().all())
 
 
 # --- категории (плоские) ----------------------------------------------------
@@ -138,6 +174,8 @@ async def create_item(
     """Создать материал (по умолчанию черновик). Опционально привязать медиа."""
     await _assert_assets_exist(session, body.media_asset_ids)
     await assert_category_exists(session, body.category_id)
+    await _assert_intake_exists(session, body.intake_id)
+    await _assert_plans_exist(session, body.plan_ids)
 
     item = KbItem(
         title=body.title,
@@ -145,17 +183,19 @@ async def create_item(
         published=body.published,
         category_id=body.category_id,
         created_by=current_admin.id,
+        intake_id=body.intake_id,
     )
     session.add(item)
     await session.flush()
 
     for asset_id in dict.fromkeys(body.media_asset_ids):  # без дублей
         session.add(KbItemMedia(kb_item_id=item.id, media_asset_id=asset_id))
+    await _set_item_plans(session, item.id, body.plan_ids)
     await session.flush()
     await session.refresh(item)
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
-    return _to_out(item, media_ids)
+    return _to_out(item, media_ids, body.plan_ids)
 
 
 @router.patch("/items/{item_id}", response_model=KbItemOut)
@@ -171,6 +211,11 @@ async def update_item(
     changes = body.model_dump(exclude_unset=True)
     if "category_id" in changes:
         await assert_category_exists(session, changes["category_id"])
+    if "intake_id" in changes:
+        await _assert_intake_exists(session, changes["intake_id"])
+    if "plan_ids" in changes and changes["plan_ids"] is not None:
+        await _assert_plans_exist(session, changes["plan_ids"])
+        await _set_item_plans(session, item.id, changes["plan_ids"])
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:
             setattr(item, field, value)
@@ -179,7 +224,8 @@ async def update_item(
     await session.flush()
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
-    return _to_out(item, media_ids)
+    plan_ids = await _item_plan_ids(session, item.id)
+    return _to_out(item, media_ids, plan_ids)
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -194,6 +240,9 @@ async def delete_item(
     # Сначала дочерние связи (явный bulk-DELETE), затем сам материал — иначе FK.
     await session.execute(
         sa_delete(KbItemMedia).where(KbItemMedia.kb_item_id == item_id)
+    )
+    await session.execute(
+        sa_delete(KbItemPlan).where(KbItemPlan.kb_item_id == item_id)
     )
     await session.delete(item)
     await session.flush()
@@ -217,7 +266,8 @@ async def attach_media(
     await session.flush()
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
-    return _to_out(item, media_ids)
+    plan_ids = await _item_plan_ids(session, item.id)
+    return _to_out(item, media_ids, plan_ids)
 
 
 @router.delete("/items/{item_id}/media/{media_asset_id}", status_code=204)
@@ -246,14 +296,21 @@ async def list_items(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[KbItemOut]:
-    """Список материалов: участник — только опубликованные; admin — все."""
+    """Список материалов: участник — только опубликованные своего потока/тарифа; admin — все."""
     stmt = select(KbItem).order_by(KbItem.sort_order, KbItem.created_at)
     if current_user.role != "admin":
-        stmt = stmt.where(KbItem.published.is_(True))
+        stmt = stmt.where(
+            KbItem.published.is_(True),
+            or_(KbItem.intake_id.is_(None), KbItem.intake_id == current_user.intake_id),
+            plan_visibility_clause(
+                KbItemPlan.plan_id, KbItemPlan.kb_item_id, KbItem.id, current_user.plan_id
+            ),
+        )
 
     items = list((await session.execute(stmt)).scalars().all())
     media = await attached_media_ids(session, [i.id for i in items])
-    return [_to_out(i, media.get(i.id, [])) for i in items]
+    plans = await attached_plan_ids(session, [i.id for i in items])
+    return [_to_out(i, media.get(i.id, []), plans.get(i.id, [])) for i in items]
 
 
 @router.get("/items/{item_id}", response_model=KbItemOut)
@@ -264,10 +321,11 @@ async def get_item(
 ) -> KbItemOut:
     """Один материал. Черновик виден только admin (иначе 404)."""
     item = await load_kb_item(session, item_id)
-    assert_kb_item_visible(item, current_user)
+    await assert_kb_item_visible(session, item, current_user)
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
-    return _to_out(item, media_ids)
+    plan_ids = await _item_plan_ids(session, item.id)
+    return _to_out(item, media_ids, plan_ids)
 
 
 # --- комментарии участников (плоские, п.2) ---------------------------------
@@ -284,7 +342,7 @@ async def list_comments(
     Видимость комментариев = видимость материала: черновик — только admin (404).
     """
     item = await load_kb_item(session, item_id)
-    assert_kb_item_visible(item, current_user)
+    await assert_kb_item_visible(session, item, current_user)
 
     rows = await session.execute(
         select(KbComment)
@@ -303,7 +361,7 @@ async def create_comment(
 ) -> KbComment:
     """Оставить комментарий. Может любой участник, кто видит материал."""
     item = await load_kb_item(session, item_id)
-    assert_kb_item_visible(item, current_user)
+    await assert_kb_item_visible(session, item, current_user)
 
     comment = KbComment(
         kb_item_id=item_id,

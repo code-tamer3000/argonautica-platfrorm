@@ -30,6 +30,19 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - Channel visibility is the rule "a platform participant sees all channels" — in code, not data.
 - A `room_members` row for a channel appears **lazily**, only when a user first opens it, solely to store `last_read_message_id`. Avoids mass inserts and desync.
 
+### Isolation by intake and plan (ARG-96)
+
+"All channels" narrows for a regular (non-personal, non-news) channel: `rooms.intake_id`
+(NULL = every intake) and `room_plans` (empty = every plan of the user's intake) both have to
+pass — see [DATA_MODEL.md](DATA_MODEL.md) "Content isolation by intake and plan". Checked in
+`assert_room_access` (channel branch) and mirrored in `list_rooms`' query filter so a
+foreign-intake/plan channel doesn't even show up in the list. Admin bypasses both. Direct
+`GET /api/rooms/{id}` on a channel outside the caller's intake/plan → 403 (same message as
+"not a member" — existence isn't specially revealed beyond that). The news channel
+(`is_news`) is exempt by construction — it stays cross-intake. `POST /api/rooms`
+(`type='channel'`) and `PATCH /api/rooms/{id}` (channel edit, admin-only, rejects
+personal/news) accept `intake_id`/`plan_ids`.
+
 ## DM dedup
 
 - `rooms.dm_key` = canonical `"minUserId:maxUserId"`, `UNIQUE`. Creating a dm is deduplicated; races resolved via `IntegrityError`.

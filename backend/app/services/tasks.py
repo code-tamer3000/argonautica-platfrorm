@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,11 +20,13 @@ from app.models.task import (
     TaskAssignment,
     TaskPair,
     TaskPairMember,
+    TaskPlan,
     TaskStreamNodeMember,
 )
 from app.models.user import User
 from app.services import stream as stream_service
 from app.services.graduation import is_graduated
+from app.services.visibility import intake_visible, plan_visibility_clause, plan_visible
 from app.ws.pubsub import publish_user_event
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,19 @@ logger = logging.getLogger(__name__)
 # успел сдать. 'returned' сюда не входит — доработать он уже не может, висящая
 # карточка была бы тупиком; 'assigned' тем более.
 GRADUATE_VISIBLE_STATUSES = ("submitted", "accepted")
+
+
+def _visible_common_where(user: User) -> tuple[ColumnElement[bool], ...]:
+    """Условия WHERE «common-задача видна юзеру по потоку+тарифу» (ARG-96).
+
+    Общий кусок для compute_progress/attention_count — считать личный прогресс и
+    бейдж по задачам чужого потока/тарифа было бы неверно (участник их не видит).
+    """
+    return (
+        Task.type == "common",
+        or_(Task.intake_id.is_(None), Task.intake_id == user.intake_id),
+        plan_visibility_clause(TaskPlan.plan_id, TaskPlan.task_id, Task.id, user.plan_id),
+    )
 
 
 async def load_task(session: AsyncSession, task_id: int) -> Task:
@@ -70,6 +85,14 @@ async def assert_task_visible(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
     if task.type == "common":
+        # Двойной фильтр поток+тариф (ARG-96): common-задача чужого потока/тарифа
+        # для участника не видна (403) — тем же принципом, что и каналы.
+        if not intake_visible(task.intake_id, user):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+        if not await plan_visible(
+            session, TaskPlan.plan_id, TaskPlan.task_id, task.id, user.plan_id
+        ):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
 
     if task.type == "pair":
@@ -410,7 +433,7 @@ async def compute_progress(session: AsyncSession, user: User) -> tuple[int, int]
         await session.scalar(
             select(func.count())
             .select_from(Task)
-            .where(Task.type == "common", Task.deleted_at.is_(None))
+            .where(*_visible_common_where(user), Task.deleted_at.is_(None))
         )
     ) or 0
     individual_total = (
@@ -477,7 +500,7 @@ async def attention_count(session: AsyncSession, user: User) -> int:
             select(func.count())
             .select_from(Task)
             .where(
-                Task.type == "common",
+                *_visible_common_where(user),
                 Task.deleted_at.is_(None),
                 Task.id.not_in(interacted),
             )

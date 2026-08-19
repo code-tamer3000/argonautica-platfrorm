@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useAdminIntakes } from '../../api/admin'
 import {
   useKbItems,
   useKbItem,
@@ -12,6 +13,7 @@ import {
   useAttachKbMedia,
   useDetachKbMedia,
 } from '../../api/kb'
+import { useAdminPlans } from '../../api/plans'
 import type { KbItemOut } from '../../lib/types'
 import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
@@ -28,6 +30,8 @@ interface KbFormValues {
   published: boolean
   category_id: number | null
   media_asset_ids: number[]
+  intake_id: number | null
+  plan_ids: number[]
 }
 
 interface KbFormProps {
@@ -43,7 +47,11 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [body, setBody] = useState(initial?.body ?? '')
   const [published, setPublished] = useState(initial?.published ?? false)
   const [categoryId, setCategoryId] = useState<number | null>(initial?.category_id ?? null)
+  const [intakeId, setIntakeId] = useState<number | null>(initial?.intake_id ?? null)
+  const [planIds, setPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
   const { data: categories = [] } = useKbCategories()
+  const { data: intakes = [] } = useAdminIntakes()
+  const { data: plans = [] } = useAdminPlans()
   // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
   const [uploading, setUploading] = useState(false)
@@ -63,7 +71,21 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ title, body, published, category_id: categoryId, media_asset_ids: stagedMedia })
+    onSubmit({
+      title,
+      body,
+      published,
+      category_id: categoryId,
+      media_asset_ids: stagedMedia,
+      intake_id: intakeId,
+      plan_ids: planIds,
+    })
+  }
+
+  function togglePlan(planId: number) {
+    setPlanIds((prev) =>
+      prev.includes(planId) ? prev.filter((id) => id !== planId) : [...prev, planId],
+    )
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -164,6 +186,41 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
           ))}
         </select>
       </label>
+      <label className={styles.label}>
+        Набор
+        <select
+          className={styles.input}
+          value={intakeId ?? ''}
+          onChange={(e) => setIntakeId(e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Общий для всех потоков</option>
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {intake.starts_on} – {intake.ends_on}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className={styles.label}>
+        Тарифы
+        {plans.length === 0 ? (
+          <p className={styles.mediaEmpty}>Тарифов пока нет</p>
+        ) : (
+          <div className={styles.list}>
+            {plans.map((plan) => (
+              <label key={plan.id} className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={planIds.includes(plan.id)}
+                  onChange={() => togglePlan(plan.id)}
+                />
+                {plan.name}
+              </label>
+            ))}
+          </div>
+        )}
+        <p className={styles.mediaEmpty}>Ничего не выбрано — доступен всем тарифам потока</p>
+      </div>
       <label className={styles.checkLabel}>
         <input
           type="checkbox"
@@ -340,6 +397,8 @@ export function AdminKb() {
         published: values.published,
         category_id: values.category_id,
         media_asset_ids: values.media_asset_ids,
+        intake_id: values.intake_id,
+        plan_ids: values.plan_ids,
       },
       {
         onSuccess: () => {
@@ -361,6 +420,8 @@ export function AdminKb() {
         body: values.body || null,
         published: values.published,
         category_id: values.category_id,
+        intake_id: values.intake_id,
+        plan_ids: values.plan_ids,
       },
       {
         onSuccess: () => {

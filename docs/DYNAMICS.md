@@ -11,6 +11,28 @@ is **closed** when every section of the задание active on that day is sub
 
 > **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) lose Dynamics by the same dependency: the expedition is over, there is nothing left to score. In the admin overview they stay visible but **frozen at the graduation day** — `_calc_stats`/`_recent_days` take a `today` override, so overdue days stop accruing and the streak does not reset the day after. Such a row carries `graduated_at`, is badged «Прошёл Экспедицию», sorts last, and is **excluded from the summary counters** (which describe people still on the way).
 
+## Intake window (ARG-96)
+
+`intakes.ends_on` closes the intake's Dynamics window. Inside `[starts_on, ends_on]` Dynamics
+works as usual. After `ends_on`:
+
+- `GET /api/dynamics/my-stats` returns `window_closed: true` and stats **frozen at `ends_on`**
+  — `_calc_stats`/`_recent_days` take `today=ends_on` (the same override mechanism as the
+  graduate freeze above), so overdue days stop accruing.
+- `POST /api/dynamics/pardon` → 403 (`intake_window_closed`, `app/api/dynamics.py`).
+- Sending a message into the personal diary room (`rooms.is_personal`) → 403, checked in
+  `send_message` (`app/api/messages.py`) against the room **owner's** intake window (not the
+  poster's — matters for thread comments from someone else). This is how "no submission form"
+  is enforced server-side; the frontend hides the composer and the pardon button (`ChatPane`,
+  `ProfileScreen`) using the same `window_closed` flag.
+- The admin overview (`get_all_dynamics`) applies the same freeze to non-graduate rows whose
+  intake window has closed, so overdue counts don't run forever for a closed cohort.
+
+This is independent of graduation: a participant can have a closed intake window without
+having submitted the exit survey. Both freezes use the same `today`-override mechanism in
+`_calc_stats`/`_recent_days`; graduation takes precedence when both apply (graduation is
+permanent, the window date is not).
+
 ## Structure: задания (versioned diary structure)
 
 - A **задание** (`journal_programs`) is a version of the diary structure effective from a

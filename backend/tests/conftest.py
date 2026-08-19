@@ -70,11 +70,17 @@ async def session() -> AsyncIterator[AsyncSession]:
         yield s
 
 
-async def get_or_create_intake(session: AsyncSession, starts_on: date) -> Intake:
-    """Набор с указанной датой старта (`intakes.starts_on` UNIQUE — переиспользуем)."""
+async def get_or_create_intake(
+    session: AsyncSession, starts_on: date, ends_on: date | None = None
+) -> Intake:
+    """Набор с указанной датой старта (`intakes.starts_on` UNIQUE — переиспользуем).
+
+    `ends_on` по умолчанию далеко в будущем (окно заведомо открыто) — большинству
+    тестов дата закрытия набора не важна. Тесты окна (ARG-96) передают своё значение.
+    """
     intake = await session.scalar(select(Intake).where(Intake.starts_on == starts_on))
     if intake is None:
-        intake = Intake(starts_on=starts_on)
+        intake = Intake(starts_on=starts_on, ends_on=ends_on or starts_on + timedelta(days=400))
         session.add(intake)
         await session.commit()
         await session.refresh(intake)
@@ -102,14 +108,21 @@ async def make_user(session: AsyncSession) -> MakeUser:
         is_observer: bool = False,
         graduated_at: datetime | None = None,
         intake_starts_on: date | None = None,
+        intake_ends_on: date | None = None,
+        intake_id: int | None = None,
+        plan_id: int | None = None,
     ) -> User:
-        intake = await get_or_create_intake(
-            session,
-            intake_starts_on
-            or date.today() - timedelta(days=DEFAULT_INTAKE_OFFSET_DAYS),
-        )
+        if intake_id is None:
+            intake = await get_or_create_intake(
+                session,
+                intake_starts_on
+                or date.today() - timedelta(days=DEFAULT_INTAKE_OFFSET_DAYS),
+                intake_ends_on,
+            )
+            intake_id = intake.id
         user = User(
-            intake_id=intake.id,
+            intake_id=intake_id,
+            plan_id=plan_id,
             username=username or f"u_{uuid.uuid4().hex[:12]}",
             display_name="Test User",
             email=email,

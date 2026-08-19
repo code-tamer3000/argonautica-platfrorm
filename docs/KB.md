@@ -36,6 +36,16 @@ participant sees the category list to group the item list.
 
 - `assert_media_access` grants any participant a presigned-GET to an asset attached to a **published** item (through the normal `GET /api/media/{id}`). Unlinking or unpublishing closes access. See [FILES.md](FILES.md).
 
+## Isolation by intake and plan (ARG-96)
+
+A published item can still be scoped: `kb_items.intake_id` (NULL = every intake) and
+`kb_item_plans` (empty = every plan of the user's intake) both gate visibility — see
+[DATA_MODEL.md](DATA_MODEL.md) "Content isolation by intake and plan". Checked in
+`assert_kb_item_visible` (and mirrored in `GET /items`' query filter) with the **same 404**
+as a draft — a foreign-intake/plan item doesn't reveal its existence any more than an
+unpublished one does. `assert_media_access` applies the same double filter to the item(s) an
+asset is attached to. `POST /items` and `PATCH /items/{id}` accept `intake_id`/`plan_ids`.
+
 ## Markdown reader (attached `.md` files)
 
 There is **no separate "book" material type** — every item is a normal article.

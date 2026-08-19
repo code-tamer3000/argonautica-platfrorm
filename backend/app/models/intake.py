@@ -16,6 +16,11 @@ class Intake(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     starts_on: Mapped[date] = mapped_column(Date, nullable=False, unique=True)
+    # Дата закрытия набора: внутри [starts_on, ends_on] Динамика идёт как обычно,
+    # после — архив только на чтение (см. app/services/graduation.py-style гейт в
+    # api/dynamics.py). Отдельная величина от 28-дневного окна ДЗ — совпадение дат
+    # у исторического набора случайно.
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
