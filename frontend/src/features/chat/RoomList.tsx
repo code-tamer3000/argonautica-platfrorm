@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useAdminUsersMap } from '../../api/admin'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
@@ -76,6 +77,12 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   // Задачи/КБ (см. AdminLayout). Для остального участника ничего не меняет: его
   // rooms и так уже отфильтрованы сервером до своего потока.
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const isAdmin = me?.role === 'admin'
+  // Чужие личные дневники несут intake_id владельца НЕ на самой комнате (та колонка
+  // у personal-комнат всегда NULL, см. docs/DATA_MODEL.md) — резолвим поток через
+  // admin-ручку /api/admin/users. enabled=isAdmin: для обычного участника не стреляем
+  // запросом вовсе (эндпоинт всё равно 403 для не-admin).
+  const adminUsers = useAdminUsersMap(isAdmin)
   const [q, setQ] = useState('')
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
   const badges = useNavBadges()
@@ -89,11 +96,17 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
     // Новостной канал вынесен в верхнеуровневую кнопку «Новости» (см. AppShell) —
     // из списка каналов его исключаем, чтобы не дублировать.
     let channels = filtered.filter((r) => r.type === 'channel' && !r.is_news)
-    const applyIntakeFilter = me?.role === 'admin' && currentIntakeId != null
+    const applyIntakeFilter = isAdmin && currentIntakeId != null
     if (applyIntakeFilter) {
-      channels = channels.filter(
-        (r) => r.is_personal || r.intake_id == null || r.intake_id === currentIntakeId,
-      )
+      channels = channels.filter((r) => {
+        if (r.is_personal) {
+          // Свой дневник виден всегда — иначе admin потерял бы «Закреплённые».
+          if (r.created_by === me?.id) return true
+          const ownerIntakeId = adminUsers.get(r.created_by)?.intake_id
+          return ownerIntakeId == null || ownerIntakeId === currentIntakeId
+        }
+        return r.intake_id == null || r.intake_id === currentIntakeId
+      })
     }
 
     // Закреплённые сверху: собственный личный канал.
@@ -109,7 +122,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
       intakeFiltered: applyIntakeFilter,
     }
-  }, [rooms, q, dmPeers, users, me?.id, me?.role, currentIntakeId])
+  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty = pinnedChannels.length === 0 && otherChannels.length === 0
