@@ -78,15 +78,19 @@ simply the one with the largest `starts_on`. Admin API (all under `require_admin
 
 Admin-authored content — channels (`rooms.type='channel'`), common tasks
 (`tasks.type='common'`), KB items — can be scoped to one intake and/or a set of plans.
-Personal/group/dm rooms and individual/pair/stream tasks are **not** gated by this: they
-already have explicit membership/assignment, which is stronger than intake/plan. See
+Group/dm rooms and individual/pair/stream tasks are **not** gated by this: they already
+have explicit membership/assignment, which is stronger than intake/plan. See
 [ROOMS.md](ROOMS.md), [TASKS.md](TASKS.md), [KB.md](KB.md) for the exact visibility rules.
 
 **Intake (`intake_id`)** — nullable FK to `intakes` on `rooms`, `tasks`, `kb_items`. `NULL` =
 visible to every intake (the safe backfill default — all pre-ARG-96 content stays NULL,
 except regular non-personal, non-news channels/tasks/kb_items, which were backfilled onto
-the historical intake). The news channel (`rooms.is_news`) and personal diary rooms
-(`rooms.is_personal`) are never intake-scoped — they stay NULL and cross-intake by design.
+the historical intake). The news channel (`rooms.is_news`) is never intake-scoped — it stays
+NULL and cross-intake by design. Personal diary rooms (`rooms.is_personal`) also keep
+`intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
+[ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
+gated by comparing the owner's and the viewer's `intake_id`/`plan_id` directly
+(`same_cohort`), not via a column on the room itself.
 
 **Plan (`<entity>_plans`)** — many-to-many, not a column: an empty set of rows = visible to
 every plan of the user's intake; a non-empty set = only the listed plans. This is the only

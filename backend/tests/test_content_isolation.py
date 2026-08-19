@@ -405,3 +405,80 @@ async def test_create_intake_requires_ends_on_after_starts_on(
         },
     )
     assert ok.status_code == 201
+
+
+# --- личные дневники в разделе «Все дневники» ------------------------------------
+#
+# Дневник виден не только владельцу («Все дневники» — реальная фича, не утечка):
+# чужой дневник открыт, только если у смотрящего совпали И поток, И тариф с
+# владельцем (см. same_cohort в app/services/visibility.py). Сама комната своего
+# intake_id не несёт — сравниваются владелец и смотрящий напрямую.
+
+
+async def test_personal_diary_visible_within_same_cohort(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    plan_admin = await make_user(role="admin")
+    plan_a = await _create_plan(client, await _headers(client, plan_admin), "Тариф Г")
+
+    owner = await make_user(
+        intake_starts_on=date.today() - timedelta(days=50), plan_id=plan_a
+    )
+    # Тот же набор (intake_id) и тариф, что и owner — совпадает по same_cohort.
+    peer = await make_user(intake_id=owner.intake_id, plan_id=plan_a)
+    room = await _make_personal_room(session, owner.id)
+
+    peer_h = await _headers(client, peer)
+    one = await client.get(f"/api/rooms/{room.id}", headers=peer_h)
+    assert one.status_code == 200
+
+    listed = await client.get("/api/rooms", headers=peer_h)
+    assert room.id in {r["id"] for r in listed.json()}
+
+
+async def test_personal_diary_hidden_across_intake(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    owner = await make_user(intake_starts_on=date.today() - timedelta(days=50))
+    other_intake = await make_user(intake_starts_on=date.today() - timedelta(days=1))
+    room = await _make_personal_room(session, owner.id)
+
+    other_h = await _headers(client, other_intake)
+    one = await client.get(f"/api/rooms/{room.id}", headers=other_h)
+    assert one.status_code == 403
+
+    listed = await client.get("/api/rooms", headers=other_h)
+    assert room.id not in {r["id"] for r in listed.json()}
+
+
+async def test_personal_diary_hidden_across_plan(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    plan_a = await _create_plan(client, admin_h, "Тариф Д")
+
+    owner = await make_user(plan_id=plan_a)
+    other_plan = await make_user(intake_id=owner.intake_id, plan_id=None)
+    room = await _make_personal_room(session, owner.id)
+
+    other_h = await _headers(client, other_plan)
+    one = await client.get(f"/api/rooms/{room.id}", headers=other_h)
+    assert one.status_code == 403
+
+    listed = await client.get("/api/rooms", headers=other_h)
+    assert room.id not in {r["id"] for r in listed.json()}
+
+
+async def test_personal_diary_always_visible_to_owner_and_admin(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    owner = await make_user(intake_starts_on=date.today() - timedelta(days=1))
+    room = await _make_personal_room(session, owner.id)
+
+    owner_h = await _headers(client, owner)
+    assert (await client.get(f"/api/rooms/{room.id}", headers=owner_h)).status_code == 200
+
+    admin_h = await _headers(client, admin)
+    assert (await client.get(f"/api/rooms/{room.id}", headers=admin_h)).status_code == 200

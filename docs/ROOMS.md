@@ -50,6 +50,8 @@ personal/news) accept `intake_id`/`plan_ids`.
 ## Personal diary rooms
 
 - `rooms.is_personal = true` marks a participant's personal homework-diary room. Homework entries are ordinary `messages` there. See [DYNAMICS.md](DYNAMICS.md).
+- **Not owner-only.** The frontend's «Дневники» tab is a real "browse everyone's diary" feature (`RoomList.tsx`: own diary pinned, everyone else's under «Все дневники») — this is deliberate community/accountability UX, not an oversight.
+- **Cohort-gated (ARG-96).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner's and the viewer's `intake_id` **and** `plan_id` directly (`same_cohort` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Both fields must match (`NULL` matches `NULL` — no-intake/no-plan users share a bucket). The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_same_cohort`), so a foreign-cohort diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`.
 
 ## News channel & repost
 
