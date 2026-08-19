@@ -6,11 +6,18 @@ import { Fragment, type ReactNode } from 'react'
 // что в чате реально нужно: сохранённые переносы строк, кликабельные ссылки и подсветка
 // @упоминаний. Возвращаем React-узлы (не HTML) — dangerouslySetInnerHTML не нужен, XSS нет.
 
-// «Голый» URL: http(s):// до первого пробела. @упоминание: @ + латиница/цифры/_
-// (как ник в Telegram). Один общий проход, чтобы токены не пересекались.
+// «Голый» URL: http(s):// до первого пробела. Внутренний путь: /раздел без хоста
+// (например /kb, /support) — контент (см. provision_second_intake.py) не знает
+// домен окружения (стейдж/прод разные), поэтому ссылки на свои же разделы пишутся
+// относительными путями. @упоминание: @ + латиница/цифры/_ (как ник в Telegram).
+// Один общий проход, чтобы токены не пересекались.
 const URL_RE = /https?:\/\/[^\s]+/
+const INTERNAL_PATH_RE = /(?<![\w/])\/[a-zA-Z][\w/-]*/
 const MENTION_RE = /@[A-Za-z0-9_]{1,32}/
-const TOKEN_RE = new RegExp(`(${URL_RE.source})|(${MENTION_RE.source})`, 'g')
+const TOKEN_RE = new RegExp(
+  `(${URL_RE.source})|(${INTERNAL_PATH_RE.source})|(${MENTION_RE.source})`,
+  'g',
+)
 
 function trimTrailingPunct(url: string): { url: string; trailing: string } {
   const m = url.match(/[.,!?;:)\]]+$/)
@@ -32,11 +39,10 @@ function tokenize(
     const start = match.index ?? 0
     if (start > last) out.push(text.slice(last, start))
     if (match[1]) {
-      // URL
+      // Абсолютный URL. Ссылка на этот же домен (например, на статью БЗ или задание)
+      // открывается внутри приложения — иначе в установленном PWA клик выкидывает в
+      // системный браузер вместо перехода на нужный экран.
       const { url, trailing } = trimTrailingPunct(match[1])
-      // Ссылка на этот же домен (например, на статью БЗ или задание) открывается
-      // внутри приложения — иначе в установленном PWA клик выкидывает в системный
-      // браузер вместо перехода на нужный экран.
       let internalPath: string | null = null
       try {
         const parsed = new URL(url, window.location.origin)
@@ -65,11 +71,32 @@ function tokenize(
         ),
       )
       if (trailing) out.push(trailing)
+    } else if (match[2]) {
+      // Голый внутренний путь (/kb, /support, ...) — всегда открывается внутри
+      // приложения, домен окружения ему для этого не нужен.
+      const { url: path, trailing } = trimTrailingPunct(match[2])
+      out.push(
+        navigate ? (
+          <a
+            key={`${keyPrefix}-p${i++}`}
+            href={path}
+            onClick={(e) => {
+              e.preventDefault()
+              navigate(path)
+            }}
+          >
+            {path}
+          </a>
+        ) : (
+          <span key={`${keyPrefix}-p${i++}`}>{path}</span>
+        ),
+      )
+      if (trailing) out.push(trailing)
     } else {
       // @упоминание — только подсветка (клик-переход на профиль пока не делаем).
       out.push(
         <span key={`${keyPrefix}-m${i++}`} className={mentionClass}>
-          {match[2]}
+          {match[3]}
         </span>,
       )
     }
