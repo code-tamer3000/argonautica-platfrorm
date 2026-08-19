@@ -538,3 +538,59 @@ async def test_reset_reports_missing_application(
 
 def test_reset_is_not_in_bot_commands() -> None:
     assert "reset" not in [c["command"] for c in intake_bot.BOT_COMMANDS]
+
+
+# --- /info: статус бота ---------------------------------------------------------
+
+
+async def test_info_reports_intake_plans_and_payment_details(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_006
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    intake = await get_or_create_intake(session, date(2026, 9, 1))
+    plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 15000)
+    inactive = await make_plan(session, f"Скрытый-{random.randint(100, 999)}", 5000)
+    inactive.is_active = False
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_message(client, session, admin_message("/info", admin_chat))
+
+    reply = client.payload("sendMessage")["text"]
+    assert f"{intake.starts_on:%d.%m.%Y}" in reply
+    assert plan.name in reply and "15 000 ₽" in reply
+    assert inactive.name not in reply
+    assert intake_bot.PAYMENT_DETAILS in reply
+
+
+async def test_info_warns_when_no_intake_or_plans(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_007
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    client = FakeClient()
+
+    await intake_bot._handle_message(client, session, admin_message("/info", admin_chat))
+
+    reply = client.payload("sendMessage")["text"]
+    assert "Активного набора нет" in reply
+    assert "Активных тарифов нет" in reply
+
+
+async def test_info_from_participant_chat_does_nothing(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    app = await make_application(session)
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_008)
+    client = FakeClient()
+
+    await intake_bot._handle_message(client, session, admin_message("/info", app.tg_id))
+
+    assert client.methods() == []
+
+
+def test_info_is_admin_scoped_not_global() -> None:
+    """Видна только в меню самого админского чата, а не всем участникам."""
+    assert "info" not in [c["command"] for c in intake_bot.BOT_COMMANDS]
+    assert "info" in [c["command"] for c in intake_bot.ADMIN_COMMANDS]
