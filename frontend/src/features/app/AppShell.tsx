@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
@@ -137,8 +137,28 @@ export function AppShell() {
               style={{ transform: `translate(${glider.x}px, ${glider.y}px)`, width: glider.w, height: glider.h }}
             />
           )}
-          {routes.filter((cfg) => isRouteVisible(cfg.access, accessCtx)).map((cfg) => {
+          {routes.filter((cfg) => !cfg.hidden && isRouteVisible(cfg.access, accessCtx)).map((cfg) => {
             const badgeValue = cfg.badgeKey ? badges[cfg.badgeKey] : 0
+            const content = (
+              <>
+                <span className={styles.navIcon}><cfg.icon /></span>
+                <span className={styles.navLabel}>{cfg.label}</span>
+                {badgeValue > 0 && <span className={styles.navBadge}>{badgeValue > 99 ? '99+' : badgeValue}</span>}
+              </>
+            )
+            if (cfg.isNavActive) {
+              const active = cfg.isNavActive(location.pathname)
+              return (
+                <Link
+                  key={cfg.path}
+                  to={cfg.path}
+                  className={active ? styles.navLinkActive : styles.navLink}
+                  aria-current={active ? 'page' : undefined}
+                >
+                  {content}
+                </Link>
+              )
+            }
             return (
               <NavLink
                 key={cfg.path}
@@ -146,9 +166,7 @@ export function AppShell() {
                 end={cfg.end}
                 className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}
               >
-                <span className={styles.navIcon}><cfg.icon /></span>
-                <span className={styles.navLabel}>{cfg.label}</span>
-                {badgeValue > 0 && <span className={styles.navBadge}>{badgeValue > 99 ? '99+' : badgeValue}</span>}
+                {content}
               </NavLink>
             )
           })}

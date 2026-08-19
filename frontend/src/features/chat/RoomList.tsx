@@ -53,6 +53,8 @@ function RoomButton({ r, selectedId, onSelect, dmPeers, online, users, pinned }:
 }
 
 interface Props {
+  tab: Tab
+  onTabChange: (tab: Tab) => void
   selectedId: number | null
   onSelect: (id: number) => void
 }
@@ -62,13 +64,12 @@ const subLabel = (r: RoomOut): string =>
     r.is_personal ? 'Личный дневник' :
       r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
 
-export function RoomList({ selectedId, onSelect }: Props) {
+export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()
   const users = useUsersMap()
   const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const online = useUiStore((s) => s.online)
-  const [tab, setTab] = useState<Tab>('chats')
   const [q, setQ] = useState('')
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
   const badges = useNavBadges()
@@ -112,14 +113,14 @@ export function RoomList({ selectedId, onSelect }: Props) {
         />
         <button
           className={`${styles.tab} ${tab === 'chats' ? styles.tabActive : ''}`}
-          onClick={() => setTab('chats')}
+          onClick={() => onTabChange('chats')}
         >
           <IconChat size={16} /> Чаты
           {badges.chats > 0 && <span className={styles.tabBadge}>{badges.chats > 99 ? '99+' : badges.chats}</span>}
         </button>
         <button
           className={`${styles.tab} ${tab === 'channels' ? styles.tabActive : ''}`}
-          onClick={() => setTab('channels')}
+          onClick={() => onTabChange('channels')}
         >
           <IconDiary size={16} /> Дневники
           {badges.channels > 0 && <span className={styles.tabBadge}>{badges.channels > 99 ? '99+' : badges.channels}</span>}

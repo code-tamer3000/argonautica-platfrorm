@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ComponentType, type ReactNode } from 'react'
 import { Navigate, Route } from 'react-router-dom'
+import { useRooms } from '../../api/rooms'
 import {
   IconBook,
   IconCalendar,
@@ -25,7 +26,7 @@ import { SupportScreen } from '../support/SupportScreen'
 import { AdminLayout } from '../admin/AdminLayout'
 import { ADMIN_DEFAULT_PATH, ADMIN_SECTIONS } from '../admin/sections'
 import type { NavBadges } from './useNavBadges'
-import type { Access } from './RequireAccess'
+import { useAccessContext, type Access } from './RequireAccess'
 
 // Раздел «Генные ключи» тянет 64 markdown-файла — держим его в отдельном чанке,
 // чтобы не раздувать основной бандл (грузится только при заходе в раздел).
@@ -46,6 +47,24 @@ function withSuspense(LazyComponent: ComponentType) {
   }
 }
 
+// «/» никогда не рендерит контент сам — только решает, куда увести: обычного
+// пользователя в Рубку, наблюдателя — на его домашние материалы.
+function RootRedirect() {
+  const { isObserver } = useAccessContext()
+  return <Navigate to={isObserver ? '/kb' : '/chats'} replace />
+}
+
+// «/news» резолвит новостную комнату и уводит на её реальный адрес — сегмент
+// зависит от типа комнаты (канал живёт в /diaries, всё остальное — в /chats).
+function NewsRedirect() {
+  const { data: rooms } = useRooms()
+  if (!rooms) return <div className="center grow"><Spinner /></div>
+  const news = rooms.find((r) => r.is_news)
+  if (!news) return <Navigate to="/chats" replace />
+  const segment = news.type === 'channel' ? 'diaries' : 'chats'
+  return <Navigate to={`/${segment}/${news.id}`} replace />
+}
+
 export interface RouteChild {
   path: string
   Component: ComponentType
@@ -59,6 +78,14 @@ export interface RouteEntry {
   badgeKey?: keyof NavBadges
   /** Для NavLink: `end` нужен только «/», иначе он подсвечен на любом вложенном пути. */
   end?: boolean
+  /** Маршрут существует, но не показывается в наве — редирект-переходники («/»). */
+  hidden?: boolean
+  /**
+   * Пункт нава активен на нескольких несмежных путях (Рубка = /chats* и /diaries*
+   * — Чаты/Дневники визуально один раздел, см. ARG-99 «навигацию не меняем»).
+   * Если задано, заменяет обычное сопоставление NavLink.
+   */
+  isNavActive?: (pathname: string) => boolean
   /** Обычный случай: один компонент на path, плюс соседние маршруты без своего пункта в наве. */
   Component?: ComponentType
   children?: RouteChild[]
@@ -76,10 +103,23 @@ export const routes: RouteEntry[] = [
     path: '/',
     label: 'Рубка',
     icon: IconChat,
-    access: { kind: 'observerBlocked', redirectTo: '/kb' },
+    access: { kind: 'public' },
+    hidden: true,
+    Component: RootRedirect,
+  },
+  {
+    path: '/chats',
+    label: 'Рубка',
+    icon: IconChat,
+    access: { kind: 'observerBlocked' },
     badgeKey: 'rubka',
-    end: true,
-    Component: () => <ChatLayout key="rubka" />,
+    isNavActive: (pathname) => pathname.startsWith('/chats') || pathname.startsWith('/diaries'),
+    Component: () => <ChatLayout tab="chats" />,
+    children: [
+      { path: '/chats/:roomId', Component: () => <ChatLayout tab="chats" /> },
+      { path: '/diaries', Component: () => <ChatLayout tab="channels" /> },
+      { path: '/diaries/:roomId', Component: () => <ChatLayout tab="channels" /> },
+    ],
   },
   {
     path: '/news',
@@ -87,7 +127,7 @@ export const routes: RouteEntry[] = [
     icon: IconNews,
     access: { kind: 'observerBlocked' },
     badgeKey: 'news',
-    Component: () => <ChatLayout key="news" autoOpen="news" />,
+    Component: NewsRedirect,
   },
   {
     path: '/kb',
