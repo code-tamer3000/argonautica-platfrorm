@@ -16,7 +16,7 @@
 
 Манифест грузится из `scripts/content/manifest.md` — обёртка кладёт этот файл в
 контейнер (`docker cp`) ПЕРЕД запуском; путь внутри контейнера настраивается
-`--manifest-path` (по умолчанию `/work/manifest.md`, см. .sh-обёртку).
+`--manifest-path` (по умолчанию `/tmp/manifest.md`, см. .sh-обёртку).
 
 Идемпотентен: перед каждой вставкой ищет существующую строку (по title/дате/тексту
 вопроса) и пропускает, если она уже есть — повторный прогон ничего не дублирует.
@@ -343,16 +343,16 @@ def main() -> None:
     p_provision = sub.add_parser("provision", help="набор + Манифест + новость + FAQ + задания")
     p_provision.add_argument("--starts-on", required=True, type=date.fromisoformat)
     p_provision.add_argument("--ends-on", required=True, type=date.fromisoformat)
-    p_provision.add_argument("--manifest-path", default="/work/manifest.md")
+    p_provision.add_argument("--manifest-path", default="/tmp/manifest.md")
     p_provision.add_argument("--allow-placeholders", action="store_true")
 
     p_export = sub.add_parser("export-64-puti", help="прод: снять «64 пути» в файлы")
-    p_export.add_argument("--out-json", default="/work/64-puti.json")
-    p_export.add_argument("--out-md", default="/work/64-puti.md")
+    p_export.add_argument("--out-json", default="/tmp/64-puti.json")
+    p_export.add_argument("--out-md", default="/tmp/64-puti.md")
 
     p_import = sub.add_parser("import-64-puti", help="стейдж: залить «64 пути» из файлов")
-    p_import.add_argument("--in-json", default="/work/64-puti.json")
-    p_import.add_argument("--in-md", default="/work/64-puti.md")
+    p_import.add_argument("--in-json", default="/tmp/64-puti.json")
+    p_import.add_argument("--in-md", default="/tmp/64-puti.md")
 
     args = parser.parse_args()
     if args.cmd == "provision":

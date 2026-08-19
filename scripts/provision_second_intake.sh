@@ -60,20 +60,20 @@ ssh "$SSH_HOST" "docker inspect -f . $BACKEND >/dev/null" \
 say "Цель: $TARGET (project=$PROJECT, backend=$BACKEND)"
 ssh "$SSH_HOST" "mkdir -p $REMOTE_WORK"
 scp -q "$MANIFEST" "$SSH_HOST:$REMOTE_WORK/manifest.md"
-ssh "$SSH_HOST" "docker cp $REMOTE_WORK/manifest.md $BACKEND:/work/manifest.md"
+ssh "$SSH_HOST" "docker cp $REMOTE_WORK/manifest.md $BACKEND:/tmp/manifest.md"
 
 if [[ "$TARGET" == "staging" ]]; then
   say "1/2 «64 пути»: прод → стейдж"
   ssh "$SSH_HOST" "docker inspect -f . $PROD_BACKEND >/dev/null" \
     || die "на сервере нет прод-контейнера $PROD_BACKEND — поправь PROD_BACKEND_CONTAINER"
   ssh "$SSH_HOST" "docker exec -i $PROD_BACKEND python -m scripts.provision_second_intake export-64-puti \
-    --out-json /work/64-puti.json --out-md /work/64-puti.md"
-  ssh "$SSH_HOST" "docker cp $PROD_BACKEND:/work/64-puti.json $REMOTE_WORK/64-puti.json && \
-    docker cp $PROD_BACKEND:/work/64-puti.md $REMOTE_WORK/64-puti.md"
-  ssh "$SSH_HOST" "docker cp $REMOTE_WORK/64-puti.json $BACKEND:/work/64-puti.json && \
-    docker cp $REMOTE_WORK/64-puti.md $BACKEND:/work/64-puti.md"
+    --out-json /tmp/64-puti.json --out-md /tmp/64-puti.md"
+  ssh "$SSH_HOST" "docker cp $PROD_BACKEND:/tmp/64-puti.json $REMOTE_WORK/64-puti.json && \
+    docker cp $PROD_BACKEND:/tmp/64-puti.md $REMOTE_WORK/64-puti.md"
+  ssh "$SSH_HOST" "docker cp $REMOTE_WORK/64-puti.json $BACKEND:/tmp/64-puti.json && \
+    docker cp $REMOTE_WORK/64-puti.md $BACKEND:/tmp/64-puti.md"
   ssh "$SSH_HOST" "docker exec -i $BACKEND python -m scripts.provision_second_intake import-64-puti \
-    --in-json /work/64-puti.json --in-md /work/64-puti.md"
+    --in-json /tmp/64-puti.json --in-md /tmp/64-puti.md"
   say "2/2 набор + Манифест + новость + FAQ + задания"
 else
   say "«64 пути» — на проде уже существует, шаг копии пропущен"
@@ -83,6 +83,6 @@ fi
 FLAGS=""
 (( ALLOW_PLACEHOLDERS )) && FLAGS="--allow-placeholders"
 ssh "$SSH_HOST" "docker exec -i $BACKEND python -m scripts.provision_second_intake provision \
-  --starts-on $STARTS_ON --ends-on $ENDS_ON --manifest-path /work/manifest.md $FLAGS"
+  --starts-on $STARTS_ON --ends-on $ENDS_ON --manifest-path /tmp/manifest.md $FLAGS"
 
 info "готово — проверь глазами (набор/статьи/новость/FAQ/задания) в UI $TARGET перед следующим шагом"
