@@ -235,7 +235,13 @@ async def _ensure_welcome_task(
     return task
 
 
-async def provision(starts_on: date, ends_on: date, manifest_path: str, allow_placeholders: bool) -> None:
+async def provision(
+    starts_on: date,
+    ends_on: date,
+    manifest_path: str,
+    allow_placeholders: bool,
+    skip_64_puti_check: bool = False,
+) -> None:
     if _has_placeholder() and not allow_placeholders:
         raise SystemExit(
             "Копирайт (новость/FAQ/второе задание) ещё не заполнен константами в "
@@ -250,7 +256,10 @@ async def provision(starts_on: date, ends_on: date, manifest_path: str, allow_pl
         intake = await _ensure_intake(session, starts_on, ends_on)
 
         print("2/6 «64 пути»")
-        await _assert_64_puti_exists(session)
+        if skip_64_puti_check:
+            print("  --skip-64-puti-check: пропущено (копия отдельным шагом позже)")
+        else:
+            await _assert_64_puti_exists(session)
 
         print("3/6 «Манифест»")
         await _ensure_manifest_kb_item(session, admin_id, manifest_path)
@@ -345,6 +354,10 @@ def main() -> None:
     p_provision.add_argument("--ends-on", required=True, type=date.fromisoformat)
     p_provision.add_argument("--manifest-path", default="/tmp/manifest.md")
     p_provision.add_argument("--allow-placeholders", action="store_true")
+    p_provision.add_argument(
+        "--skip-64-puti-check", action="store_true",
+        help="стейдж до отдельного шага копии «64 пути» с прода — не блокировать на нём",
+    )
 
     p_export = sub.add_parser("export-64-puti", help="прод: снять «64 пути» в файлы")
     p_export.add_argument("--out-json", default="/tmp/64-puti.json")
@@ -357,7 +370,10 @@ def main() -> None:
     args = parser.parse_args()
     if args.cmd == "provision":
         asyncio.run(
-            provision(args.starts_on, args.ends_on, args.manifest_path, args.allow_placeholders)
+            provision(
+                args.starts_on, args.ends_on, args.manifest_path, args.allow_placeholders,
+                skip_64_puti_check=args.skip_64_puti_check,
+            )
         )
     elif args.cmd == "export-64-puti":
         asyncio.run(export_64_puti(args.out_json, args.out_md))
