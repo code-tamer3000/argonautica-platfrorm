@@ -1,21 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { IconClose, IconMenu } from '../../components/icons'
 import { useIsMobile } from '../../hooks/useIsMobile'
-import { useAuth } from '../auth/AuthContext'
 import { ADMIN_GROUPS, ADMIN_SECTIONS } from './sections'
 import styles from './admin.module.css'
 
+// Проверка role === 'admin' живёт в RequireAccess (см. features/app/routes.tsx,
+// запись "/admin") — этот компонент отвечает только за subnav и Outlet.
 export function AdminLayout() {
-  const { user } = useAuth()
   const isMobile = useIsMobile()
   const location = useLocation()
   const [navOpen, setNavOpen] = useState(false)
 
   // На мобиле после перехода в раздел меню сворачивается само.
   useEffect(() => { setNavOpen(false) }, [location.pathname])
-
-  if (user?.role !== 'admin') return <Navigate to="/" replace />
 
   return (
     <div className={styles.adminLayout}>

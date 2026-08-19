@@ -1,54 +1,23 @@
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { IconBook, IconCalendar, IconChat, IconDiary, IconGenkeys, IconNews, IconSettings, IconSupport, IconTasks, IconUser } from '../../components/icons'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
 import { useOutbox } from '../../hooks/useOutbox'
 import { wsClient } from '../../lib/wsClient'
 import { ConnectionBanner } from './ConnectionBanner'
-import { useAuth } from '../auth/AuthContext'
-import { ChatLayout } from '../chat/ChatLayout'
-import { CalendarView } from '../calendar/CalendarView'
-import { CabinScreen } from '../cabin/CabinScreen'
-import { KbList } from '../kb/KbList'
-import { KbViewer } from '../kb/KbViewer'
-import { TasksList } from '../tasks/TasksList'
-import { TaskDetail } from '../tasks/TaskDetail'
-import { ProfileScreen } from '../profile/ProfileScreen'
-import { SupportScreen } from '../support/SupportScreen'
-import { AdminLayout } from '../admin/AdminLayout'
-import { ADMIN_DEFAULT_PATH, ADMIN_SECTIONS } from '../admin/sections'
 import { NotificationBell } from './NotificationBell'
-import { ObserverBlocked } from './ObserverBlocked'
 import { ProfileMenu } from './ProfileMenu'
+import { RequireAccess, isRouteVisible, useAccessContext } from './RequireAccess'
+import { routes } from './routes'
 import { useNavBadges } from './useNavBadges'
-import { Spinner } from '../../components/Spinner'
 import styles from './appshell.module.css'
 
-// Раздел «Генные ключи» тянет 64 markdown-файла — держим его в отдельном чанке,
-// чтобы не раздувать основной бандл (грузится только при заходе в раздел).
-const GeneKeysScreen = lazy(() =>
-  import('../genkeys/GeneKeysScreen').then((m) => ({ default: m.GeneKeysScreen })),
-)
-const KbBookReader = lazy(() =>
-  import('../kb/book/KbBookReader').then((m) => ({ default: m.KbBookReader })),
-)
-
 export function AppShell() {
-  const { user } = useAuth()
   const location = useLocation()
   const badges = useNavBadges()
-
-  // Режим наблюдателя: пассивный доступ «только к материалам». Прячем всё, кроме
-  // Базы знаний, Новостей, Генных замков, Профиля и Техподдержки. Бэкенд эти
-  // разделы всё равно закрывает (403) — здесь просто не показываем тупики.
-  const isObserver = !!user?.is_observer
-
-  // Каюта закрыта по умолчанию — видна, только если админ выдал доступ (у самого
-  // админа доступ есть всегда). Наблюдателю Каюта закрыта, даже если флаг был выдан.
-  // Прячем и пункт навигации, и маршрут.
-  const canCabin = !isObserver && (user?.can_access_cabin || user?.role === 'admin')
+  const accessCtx = useAccessContext()
+  const isObserver = accessCtx.isObserver
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {
@@ -97,7 +66,7 @@ export function AppShell() {
     const ro = new ResizeObserver(measure)
     ro.observe(nav)
     return () => ro.disconnect()
-  }, [location.pathname, user?.role])
+  }, [location.pathname, accessCtx.isAdmin])
 
   // Мобильный таб-бар прокручивается горизонтально, когда вкладок больше, чем
   // влезает на экран — но по умолчанию это никак не видно и люди не догадываются
@@ -140,7 +109,7 @@ export function AppShell() {
       nav.removeEventListener('scroll', update)
       ro.disconnect()
     }
-  }, [user?.role, canCabin, isDesktop])
+  }, [accessCtx.isAdmin, accessCtx.canCabin, isDesktop])
 
   return (
     <div className={`col ${styles.shell}`}>
@@ -168,102 +137,36 @@ export function AppShell() {
               style={{ transform: `translate(${glider.x}px, ${glider.y}px)`, width: glider.w, height: glider.h }}
             />
           )}
-          {!isObserver && (
-            <NavLink to="/" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink} end>
-              <span className={styles.navIcon}><IconChat /></span>
-              <span className={styles.navLabel}>Рубка</span>
-              {badges.rubka > 0 && <span className={styles.navBadge}>{badges.rubka > 99 ? '99+' : badges.rubka}</span>}
-            </NavLink>
-          )}
-          {!isObserver && (
-            <NavLink to="/news" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-              <span className={styles.navIcon}><IconNews /></span>
-              <span className={styles.navLabel}>Новости</span>
-              {badges.news > 0 && <span className={styles.navBadge}>{badges.news > 99 ? '99+' : badges.news}</span>}
-            </NavLink>
-          )}
-          <NavLink to="/kb" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconBook /></span>
-            <span className={styles.navLabel}>База знаний</span>
-          </NavLink>
-          {!isObserver && (
-            <NavLink to="/tasks" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-              <span className={styles.navIcon}><IconTasks /></span>
-              <span className={styles.navLabel}>Задачи</span>
-              {badges.tasks > 0 && <span className={styles.navBadge}>{badges.tasks > 99 ? '99+' : badges.tasks}</span>}
-            </NavLink>
-          )}
-          {!isObserver && (
-            <NavLink to="/calendar" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-              <span className={styles.navIcon}><IconCalendar /></span>
-              <span className={styles.navLabel}>Календарь</span>
-            </NavLink>
-          )}
-          <NavLink to="/genkeys" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconGenkeys /></span>
-            <span className={styles.navLabel}>Генные замки</span>
-          </NavLink>
-          {canCabin && (
-            <NavLink to="/cabin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-              <span className={styles.navIcon}><IconDiary /></span>
-              <span className={styles.navLabel}>Каюта</span>
-            </NavLink>
-          )}
-          <NavLink to="/profile" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconUser /></span>
-            <span className={styles.navLabel}>Профиль</span>
-          </NavLink>
-          <NavLink to="/support" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-            <span className={styles.navIcon}><IconSupport /></span>
-            <span className={styles.navLabel}>Техподдержка</span>
-          </NavLink>
-          {user?.role === 'admin' && (
-            <NavLink to="/admin" className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}>
-              <span className={styles.navIcon}><IconSettings /></span>
-              <span className={styles.navLabel}>Управление</span>
-            </NavLink>
-          )}
+          {routes.filter((cfg) => isRouteVisible(cfg.access, accessCtx)).map((cfg) => {
+            const badgeValue = cfg.badgeKey ? badges[cfg.badgeKey] : 0
+            return (
+              <NavLink
+                key={cfg.path}
+                to={cfg.path}
+                end={cfg.end}
+                className={({ isActive }) => isActive ? styles.navLinkActive : styles.navLink}
+              >
+                <span className={styles.navIcon}><cfg.icon /></span>
+                <span className={styles.navLabel}>{cfg.label}</span>
+                {badgeValue > 0 && <span className={styles.navBadge}>{badgeValue > 99 ? '99+' : badgeValue}</span>}
+              </NavLink>
+            )
+          })}
         </nav>
         <main className={styles.content}>
           <Routes>
-            {/* Наблюдатель: Рубка и прочие активные разделы закрыты. Корень «/» для
-                него — не тупик-заглушка, а редирект на его домашние материалы (КБ);
-                при прямом заходе на закрытый URL показываем ObserverBlocked. */}
-            <Route
-              path="/"
-              element={isObserver ? <Navigate to="/kb" replace /> : <ChatLayout key="rubka" />}
-            />
-            <Route path="/news" element={isObserver ? <ObserverBlocked /> : <ChatLayout key="news" autoOpen="news" />} />
-            <Route path="/kb" element={<KbList />} />
-            <Route
-              path="/kb/read/:itemId/:assetId"
-              element={
-                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
-                  <KbBookReader />
-                </Suspense>
-              }
-            />
-            <Route path="/kb/:itemId" element={<KbViewer />} />
-            <Route path="/tasks" element={isObserver ? <ObserverBlocked /> : <TasksList />} />
-            <Route path="/tasks/:taskId" element={isObserver ? <ObserverBlocked /> : <TaskDetail />} />
-            <Route path="/calendar" element={isObserver ? <ObserverBlocked /> : <CalendarView />} />
-            <Route
-              path="/genkeys"
-              element={
-                <Suspense fallback={<div className="center grow"><Spinner /></div>}>
-                  <GeneKeysScreen />
-                </Suspense>
-              }
-            />
-            <Route path="/cabin" element={canCabin ? <CabinScreen /> : <Navigate to="/" replace />} />
-            <Route path="/profile" element={<ProfileScreen />} />
-            <Route path="/support" element={<SupportScreen />} />
-            <Route path="/admin" element={<AdminLayout />}>
-              {ADMIN_SECTIONS.map((section) => (
-                <Route key={section.path} path={section.path} element={<section.Component />} />
-              ))}
-              <Route index element={<Navigate to={ADMIN_DEFAULT_PATH} replace />} />
-            </Route>
+            {routes.map((cfg) => (
+              <Route key={cfg.path} element={<RequireAccess access={cfg.access} />}>
+                {cfg.renderRoutes ? cfg.renderRoutes() : (
+                  <>
+                    {cfg.Component && <Route path={cfg.path} element={<cfg.Component />} />}
+                    {cfg.children?.map((child) => (
+                      <Route key={child.path} path={child.path} element={<child.Component />} />
+                    ))}
+                  </>
+                )}
+              </Route>
+            ))}
           </Routes>
         </main>
       </div>
