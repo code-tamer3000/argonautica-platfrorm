@@ -540,6 +540,7 @@ async def _create_platform_user(
         plan_id=app.plan_id,
     )
     response = await create_user(body, session)
+    app.user_id = response.id
     await _assign_intake_welcome_tasks(session, intake.id, response.id)
     return response.username, response.one_time_password
 

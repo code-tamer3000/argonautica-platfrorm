@@ -418,14 +418,37 @@ async def make_confirmed_application(session: AsyncSession) -> IntakeApplication
     app.plan_id = plan.id
     created = await intake_bot._create_platform_user(session, app)
     assert created is not None
-    user = await session.scalar(
-        select(User).where(User.username == created[0])
-    )
-    assert user is not None
-    app.user_id = user.id
     app.status = STATUS_CONFIRMED
     await session.commit()
     return app
+
+
+async def test_confirm_payment_links_application_to_created_user(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """`intake_applications.user_id` должен указывать на созданного юзера сразу
+    после подтверждения оплаты — на нём держится /reset (см. `_reset_application`,
+    без этой связи он не находит, кого удалять, и оставляет учётку сиротой)."""
+    admin_chat = 999_006
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    await get_or_create_intake(session, date(2026, 4, 1))
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_PAYMENT_REVIEW)
+    app.plan_id = plan.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_confirm_payment(
+        client, session,
+        {"id": "cb", "data": f"pay:{app.id}", "message": {"chat": {"id": admin_chat}}},
+    )
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_CONFIRMED
+    assert app.user_id is not None
+    user = await session.get(User, app.user_id)
+    assert user is not None and user.username == app.tg_username
 
 
 def admin_message(text: str, chat_id: int, tg_id: int | None = None) -> dict[str, Any]:
