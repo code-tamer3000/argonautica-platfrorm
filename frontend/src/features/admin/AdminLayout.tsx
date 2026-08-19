@@ -31,20 +31,29 @@ export function AdminLayout() {
         </button>
       )}
       <nav className={`${styles.adminNav} ${isMobile && navOpen ? styles.adminNavOpen : ''}`}>
-        {ADMIN_GROUPS.map((group) => (
-          <div key={group.key} className={styles.adminNavGroup}>
-            <div className={styles.adminNavGroupTitle}>{group.label}</div>
-            {ADMIN_SECTIONS.filter((section) => section.group === group.key).map((section) => (
-              <NavLink
-                key={section.path}
-                to={`/admin/${section.path}`}
-                className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}
-              >
-                {section.label}
-              </NavLink>
-            ))}
-          </div>
-        ))}
+        <div className={styles.adminNavList}>
+          {ADMIN_GROUPS.map((group) => (
+            <div key={group.key} className={styles.adminNavGroup}>
+              <div className={styles.adminNavGroupTitle}>{group.label}</div>
+              {ADMIN_SECTIONS.filter((section) => section.group === group.key).map((section) => (
+                <NavLink
+                  key={section.path}
+                  to={`/admin/${section.path}`}
+                  className={({ isActive }) => isActive ? styles.adminNavActive : styles.adminNavLink}
+                  // Клик мышью оставляет фокус на ссылке, и :focus-within держит меню
+                  // раскрытым после увода курсора. detail > 0 — только настоящий клик,
+                  // активация с клавиатуры (detail === 0) фокус сохраняет.
+                  onClick={(e) => { if (e.detail > 0) e.currentTarget.blur() }}
+                >
+                  {section.label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </div>
+        <span className={styles.adminNavRail} aria-hidden="true">
+          <IconMenu size={20} />
+        </span>
       </nav>
       <div className={styles.adminContent}>
         <Outlet />
