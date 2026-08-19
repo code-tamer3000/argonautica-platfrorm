@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import delete, exists, func, select, union, update
+from sqlalchemy import delete, exists, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
@@ -31,6 +31,7 @@ from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
+from app.models.task import TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
 from app.models.user import User
 from app.schemas.feedback import (
     FeedbackListOut,
@@ -502,6 +503,56 @@ async def delete_user(
             delete(Message).where(Message.room_id.in_(room_ids_to_drop))
         )
         await session.execute(delete(Room).where(Room.id.in_(room_ids_to_drop)))
+
+    # Задачи: свои назначения/сдачи — личный след, как и сообщения выше (не блокер:
+    # ARG-92 intake-бот теперь назначает individual-задания автоматически при
+    # регистрации, поэтому у любого свежесозданного юзера уже есть task_assignments
+    # к моменту, когда /reset может его удалить — без этой чистки FK на
+    # task_assignments/task_submissions роняет транзакцию). Комментарии под сдачей
+    # могли оставить и другие (ревью админа) — снимаем их тоже, иначе повиснет FK
+    # на уже удаляемую сдачу; свои комментарии под ЧУЖИМИ сдачами удаляем отдельно.
+    own_assignment_ids = list(
+        (
+            await session.execute(
+                select(TaskAssignment.id).where(TaskAssignment.user_id == user_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    own_submission_ids = (
+        list(
+            (
+                await session.execute(
+                    select(TaskSubmission.id).where(
+                        TaskSubmission.assignment_id.in_(own_assignment_ids)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if own_assignment_ids
+        else []
+    )
+    await session.execute(
+        delete(TaskComment).where(
+            or_(
+                TaskComment.author_id == user_id,
+                TaskComment.submission_id.in_(own_submission_ids),
+            )
+        )
+    )
+    if own_submission_ids:
+        await session.execute(
+            delete(TaskSubmissionMedia).where(
+                TaskSubmissionMedia.submission_id.in_(own_submission_ids)
+            )
+        )
+        await session.execute(
+            delete(TaskSubmission).where(TaskSubmission.id.in_(own_submission_ids))
+        )
+    await session.execute(delete(TaskAssignment).where(TaskAssignment.user_id == user_id))
 
     # Медиа, загруженные юзером. Снимаем его аватар (media_assets.created_by NOT NULL,
     # обнулить нельзя — только удалить актив). Удаляем лишь те активы, что больше

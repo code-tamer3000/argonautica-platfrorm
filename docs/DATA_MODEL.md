@@ -145,11 +145,13 @@ admin API — internal to `scripts/intake_bot.py`. See [INTAKE_BOT.md](INTAKE_BO
 | tg_username | TEXT | NULL | refreshed on every `/start` |
 | tg_first_name | TEXT | NULL | |
 | tg_last_name | TEXT | NULL | |
-| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_receipt` → `payment_review` → `confirmed` |
+| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_offer` → `awaiting_receipt` → `payment_review` → `confirmed` |
 | about | TEXT | NULL | the applicant's one-message self-description |
 | plan_id | BIGINT | FK plans, NULL | set once the applicant picks a tariff |
 | receipt_file_id | TEXT | NULL | Telegram `file_id` of the payment receipt (photo or PDF) |
 | receipt_kind | TEXT | NULL | `'photo'` \| `'document'` |
+| offer_accepted_at | TIMESTAMPTZ | NULL | set on the «✅ Согласен, к оплате» callback (ARG-43); gates `awaiting_offer → awaiting_receipt` |
+| offer_version | TEXT | NULL | edition of the accepted offer (bot's `OFFER_VERSION` constant), not a DB-stored text |
 | user_id | BIGINT | FK users, NULL | set once the platform account is created (final step) |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
@@ -492,7 +494,8 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 | created_by | BIGINT | FK users, NOT NULL | author; for a cross-task = the giving participant |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
-| intake_id | BIGINT | FK intakes, NULL | isolation by intake (ARG-96) — read only for `type='common'`; individual/pair/stream ignore it (assignment is stronger) |
+| intake_id | BIGINT | FK intakes, NULL | isolation by intake (ARG-96) — read only for `type='common'`; individual/pair/stream ignore it (assignment is stronger). On an `individual` task it may still be set — a provisioning tag ("this is intake X's welcome task"), read by `intake_bot.py`'s post-signup auto-assignment, not by visibility |
+| sets_display_name | BOOLEAN | NOT NULL, default false | submitting this task overwrites `users.display_name` with the submission's trimmed text (see `create_submission`); no hardcoded task id/title, only this flag |
 
 **task_media** — task-prompt media (admin), mirror of task_submission_media. PK (`task_id`, `media_asset_id`).
 

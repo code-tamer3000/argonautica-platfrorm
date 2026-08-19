@@ -6,15 +6,18 @@
 import importlib.util
 import random
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.intake import Intake
 from app.models.intake_application import (
     STATUS_AWAITING_ABOUT,
+    STATUS_AWAITING_OFFER,
     STATUS_AWAITING_RECEIPT,
     STATUS_CHOOSING_PLAN,
     STATUS_CONFIRMED,
@@ -23,6 +26,8 @@ from app.models.intake_application import (
 )
 from app.models.plan import Plan
 from app.models.user import User
+
+from .conftest import MakeUser, get_or_create_intake
 
 
 def _load_bot() -> ModuleType:
@@ -164,7 +169,9 @@ async def test_edit_falls_back_to_new_message(session: AsyncSession) -> None:
     assert client.methods() == ["editMessageText", "sendMessage"]
 
 
-async def test_choose_plan_moves_to_awaiting_receipt(session: AsyncSession) -> None:
+async def test_choose_plan_moves_to_awaiting_offer(session: AsyncSession) -> None:
+    """Выбор тарифа больше не открывает реквизиты напрямую (ARG-43) — сперва
+    экран согласия с офертой."""
     app = await make_application(session)
     plan = await make_plan(session, "Вода", 12000)
     client = FakeClient()
@@ -173,9 +180,47 @@ async def test_choose_plan_moves_to_awaiting_receipt(session: AsyncSession) -> N
     await session.commit()
     await session.refresh(app)
 
-    assert app.status == STATUS_AWAITING_RECEIPT
+    assert app.status == STATUS_AWAITING_OFFER
     assert app.plan_id == plan.id
+    assert app.offer_accepted_at is None
+    sent = client.payload("sendMessage")
+    assert sent["text"] == intake_bot.TEXT_OFFER_PROMPT
+    assert "12 000" not in sent["text"]  # реквизиты ещё не раскрыты
+    buttons = [b for row in sent["reply_markup"]["inline_keyboard"] for b in row]
+    assert any(b.get("web_app", {}).get("url", "").endswith("/oferta") for b in buttons)
+    assert any(b.get("callback_data") == f"of:{app.id}" for b in buttons)
+
+
+async def test_offer_accept_records_consent_and_reveals_payment(session: AsyncSession) -> None:
+    app = await make_application(session, status=STATUS_AWAITING_OFFER)
+    plan = await make_plan(session, "Вода", 12000)
+    app.plan_id = plan.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_offer_accept(client, session, callback(app, f"of:{app.id}"))
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_AWAITING_RECEIPT
+    assert app.offer_accepted_at is not None
+    assert app.offer_version == intake_bot.OFFER_VERSION
     assert "12 000 ₽" in client.payload("sendMessage")["text"]
+
+
+async def test_offer_accept_on_stale_screen_does_not_reveal_payment(
+    session: AsyncSession,
+) -> None:
+    app = await make_application(session, status=STATUS_PAYMENT_REVIEW)
+    client = FakeClient()
+
+    await intake_bot._handle_offer_accept(client, session, callback(app, f"of:{app.id}"))
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_PAYMENT_REVIEW
+    assert app.offer_accepted_at is None
+    assert client.methods() == ["answerCallbackQuery"]
 
 
 async def test_stale_screen_does_not_change_data_and_alerts(session: AsyncSession) -> None:
@@ -283,6 +328,16 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await intake_bot._handle_plan_choose(
         client, session, callback(app, f"pc:{app.id}:{plan.id}", screen_id)
     )
+    await session.commit()
+    await session.refresh(app)
+    assert app.status == STATUS_AWAITING_OFFER
+
+    # Согласие с офертой (ARG-43) — без него бот не откроет шаг присылки чека.
+    await intake_bot._handle_offer_accept(client, session, callback(app, f"of:{app.id}"))
+    await session.commit()
+    await session.refresh(app)
+    assert app.status == STATUS_AWAITING_RECEIPT
+
     await intake_bot._handle_message(
         client, session,
         {
@@ -297,15 +352,66 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     assert app.plan_id == plan.id and app.receipt_file_id == "receipt-1"
 
 
+# --- приветственные задания набора (provision_second_intake.py) --------------
+
+
+async def test_new_user_is_assigned_intake_welcome_tasks(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Individual-задание с tasks.intake_id набора, заведённое provisioning-скриптом
+    заранее с пустым списком получателей, назначается новичку в момент регистрации."""
+    from app.models.task import Task, TaskAssignment
+
+    admin = await make_user(role="admin")
+
+    # Тестовая БД переживает прогоны, intakes.starts_on UNIQUE — берём дату строго
+    # позже текущего максимума (тот же приём, что test_admin_intakes.py::free_starts_on),
+    # иначе _current_intake (max starts_on = «активный» набор) подхватит чужой,
+    # более поздний набор, оставшийся от другого теста.
+    current_max = await session.scalar(select(func.max(Intake.starts_on)))
+    starts_on = (current_max or date.today()) + timedelta(days=1)
+    other_starts_on = starts_on - timedelta(days=1000)
+    intake = await get_or_create_intake(session, starts_on)
+    other_intake = await get_or_create_intake(session, other_starts_on)
+
+    welcome = Task(
+        type="individual", title="Придумай себе имя аргонавта",
+        created_by=admin.id, intake_id=intake.id, sets_display_name=True,
+    )
+    other_stream_task = Task(
+        type="individual", title="Чужой поток", created_by=admin.id, intake_id=other_intake.id,
+    )
+    session.add_all([welcome, other_stream_task])
+    await session.commit()
+
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN)
+    app.plan_id = plan.id
+    session.add(app)
+    await session.flush()
+
+    created = await intake_bot._create_platform_user(session, app)
+    await session.commit()
+    assert created is not None
+    user = await session.scalar(select(User).where(User.username == created[0]))
+    assert user is not None
+
+    assigned_task_ids = set(
+        (
+            await session.execute(
+                select(TaskAssignment.task_id).where(TaskAssignment.user_id == user.id)
+            )
+        ).scalars().all()
+    )
+    assert welcome.id in assigned_task_ids
+    assert other_stream_task.id not in assigned_task_ids
+
+
 # --- /reset: сброс прогона воронки (ARG-95) -----------------------------------
 
 
 async def make_confirmed_application(session: AsyncSession) -> IntakeApplication:
     """Заявка в `confirmed` с реально созданным пользователем платформы."""
-    from datetime import date
-
-    from tests.conftest import get_or_create_intake
-
     await get_or_create_intake(session, date(2026, 3, 1))
     plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
     app = await make_application(session, status=STATUS_CHOOSING_PLAN)

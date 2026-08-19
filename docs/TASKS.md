@@ -23,9 +23,10 @@ because assignment is already a stronger, deliberate grant. `POST /api/tasks` an
 
 ## Assignments & lifecycle
 
-- Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels).
+- Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels). Exception: `intake_bot.py` assigns intake-tagged welcome tasks (`tasks.intake_id` set, `type='individual'`, created with zero recipients by `scripts/provision_second_intake.py`) to each new user right after their platform account is created — see [INTAKE_BOT.md](INTAKE_BOT.md).
 - `task_assignments.status`: `assigned → submitted → returned → accepted`. `late` is set on the first submission after `deadline_at`.
 - Submission history is kept (a return produces a new `task_submissions` row; the latest is the current one).
+- `tasks.sets_display_name` (default false): if set, `create_submission` overwrites `users.display_name` with the submission's trimmed text on submit. No task id/title is hardcoded — only this flag, set directly by provisioning (not exposed on `TaskCreate`).
 
 ## Media
 
