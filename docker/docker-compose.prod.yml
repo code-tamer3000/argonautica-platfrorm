@@ -82,6 +82,17 @@ services:
     healthcheck:
       disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
 
+  # Бот-воронка приёма/оплаты (scripts/intake_bot.py, ARG-92): анкета → тариф → оплата →
+  # чек → одобрение админом → аккаунт. Свой Telegram-токен (TELEGRAM_INTAKE_BOT_TOKEN),
+  # свой getUpdates-поллер — не конфликтует с `bot` (ADR-029). Singleton вне blue-green,
+  # без healthcheck (не слушает :8000). Если TELEGRAM_INTAKE_BOT_TOKEN пуст — падает при
+  # старте (SystemExit), ожидаемо: `--scale intake-bot=0` или убрать, если не нужен.
+  intake-bot:
+    <<: *backend
+    command: ["python", "-m", "scripts.intake_bot"]
+    healthcheck:
+      disable: true   # бот не слушает :8000 — стандартный HTTP-healthcheck неприменим
+
   # Серверный транскод видео (docs/FILES.md «Video transcode»). Тот же образ и env,
   # что backend, но вместо uvicorn — воркер очереди. Не участвует в blue-green
   # (singleton, тянет задачи из Redis-очереди), поэтому deploy.sh его не трогает —
