@@ -432,7 +432,7 @@ def _payment_keyboard() -> dict[str, Any]:
     через /question. Переиспользует существующий CB_ASK_QUESTION/_handle_ask_question."""
     return {
         "inline_keyboard": [
-            [{"text": "🆘 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
+            [{"text": "💬 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
         ]
     }
 
