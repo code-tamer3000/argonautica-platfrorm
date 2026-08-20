@@ -62,7 +62,7 @@ export function TaskComposer({
         onChange={setText}
         attachments={attachments}
         onAttachmentsChange={setAttachments}
-        placeholder="Опишите вашу работу…"
+        placeholder="Дай здесь свой ответ"
         disabled={create.isPending}
       />
       <div className={styles.composerActions}>
