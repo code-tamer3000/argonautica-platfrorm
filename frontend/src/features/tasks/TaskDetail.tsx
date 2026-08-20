@@ -136,7 +136,6 @@ export function TaskDetail() {
           сами её не сдают — только проверяют). */}
       {task.type !== 'pair' && task.type !== 'stream' && !canReview && (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Моя работа</h2>
           {myTrack && (
             <div className={styles.myStatusRow}>
               <span className={styles.myStatusLabel}>Статус:</span>
