@@ -20,8 +20,8 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
   сервисный режим («Задать вопрос» / «Сменить пароль»).
 
 «Задать вопрос» доступна на любом шаге — командой /question и кнопкой меню бота
-(setMyCommands + setChatMenuButton при старте сервиса), а не инлайн-кнопкой в каждом
-сообщении: инлайн-кнопки воронки оставлены только под её собственные шаги.
+(setMyCommands + setChatMenuButton при старте сервиса); инлайн-кнопкой она висит
+только на шаге оплаты (TEXT_ACCEPTED/_payment_keyboard) — там вопросы чаще всего.
 
 Запуск (в образе backend): python -m scripts.intake_bot
 Требует env: TELEGRAM_INTAKE_BOT_TOKEN, DATABASE_URL, REDIS_URL,
@@ -92,7 +92,7 @@ HEART = '<tg-emoji emoji-id="5440725576841201330">🖤</tg-emoji>'
 
 # Платёжные реквизиты — единственное место, откуда их берут TEXT_ACCEPTED и /info,
 # чтобы не разъезжались при смене карты.
-PAYMENT_DETAILS = "2200701906397754 (Т-банк)"
+PAYMENT_DETAILS = "2200 2488 5210 8934 (ВТБ-банк)"
 
 TEXT_ASK_ABOUT = f"Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? {STAR}"
 TEXT_START = (
@@ -107,13 +107,12 @@ TEXT_SUBMITTED = (
     f"Мы читаем каждую анкету лично. Как прочитаем — ответим. Жди весточку. {SHIP}"
 )
 TEXT_ACCEPTED = (
-    f"{STAR} <b>Тебя предварительно приняли в Экспедицию.</b>\n\n"
-    "Готовься к началу. Настраивайся в течение 28 дней, ежедневно вести полевой "
-    "дневник и разгонять динамику.\n"
-    "Оплачивай экспедиционные (фикс {price}) — забронируем место.\n"
+    f"{STAR} <b>Оплата.</b>\n\n"
+    "Оплачивай экспедиционный взнос ({price}) — забронируем место.\n"
     f"Перевод на карту {PAYMENT_DETAILS}.\n\n"
-    "После оплаты пришли сюда чек — PDF-файлом или скриншотом. Как получим — "
-    f"подтвердим место. {SHIP}"
+    "После оплаты пришли сюда чек — PDF-файлом или скриншотом.\n"
+    f"Как средства поступят на счёт — подтвердим место и вышлем доступы к "
+    f"платформе. {SHIP}"
 )
 # Согласие с офертой (ARG-43) — экран между выбором тарифа и реквизитами.
 TEXT_OFFER_PROMPT = (
@@ -153,8 +152,8 @@ TEXT_NEED_USERNAME = (
 # admin: acc:<app_id> (принять анкету), pay:<app_id> (подтвердить оплату)
 # участник: pd:<app_id>:<plan_id> (экран описания тарифа), pl:<app_id> (назад к списку),
 #           pc:<app_id>:<plan_id> (перейти к оплате), svc_pw (сменить пароль).
-# svc_q (задать вопрос) больше не рисуется ни в одной клавиатуре — вместо неё /question,
-# но хендлер оставлен: в уже отправленных чатах старые кнопки должны продолжать работать.
+# svc_q (задать вопрос) — на шаге оплаты (_payment_keyboard, самый частый момент
+# вопросов), в остальных клавиатурах не рисуется, там основной путь — /question.
 
 CB_ASK_QUESTION = "svc_q"
 CB_CHANGE_PASSWORD = "svc_pw"
@@ -427,6 +426,17 @@ def _service_keyboard() -> dict[str, Any]:
     }
 
 
+def _payment_keyboard() -> dict[str, Any]:
+    """Кнопка на шаге оплаты (TEXT_ACCEPTED) — самый частый момент, где у заявителя
+    возникают вопросы (реквизиты, чек), поэтому висит прямо на сообщении, а не только
+    через /question. Переиспользует существующий CB_ASK_QUESTION/_handle_ask_question."""
+    return {
+        "inline_keyboard": [
+            [{"text": "🆘 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
+        ]
+    }
+
+
 async def _rate_ok(tg_id: int) -> bool:
     key = f"intakebot:pwd:{tg_id}"
     count = await redis_client.incr(key)
@@ -687,7 +697,10 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
     chat_id, _ = context
-    await _send(client, chat_id, TEXT_ACCEPTED.format(price=_price_str(plan.price)))
+    await _send(
+        client, chat_id, TEXT_ACCEPTED.format(price=_price_str(plan.price)),
+        reply_markup=_payment_keyboard(),
+    )
 
 
 async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
@@ -738,11 +751,9 @@ async def _await_question(client: httpx.AsyncClient, chat_id: int, tg_id: int) -
 
 
 async def _handle_ask_question(client: httpx.AsyncClient, cb: dict[str, Any]) -> None:
-    """Старая инлайн-кнопка «Задать вопрос».
-
-    В новых клавиатурах её нет (вместо неё /question и кнопка меню), но в уже
-    отправленных чатах кнопки остались — они должны продолжать работать.
-    """
+    """Инлайн-кнопка «Задать вопрос» — сейчас только на шаге оплаты (_payment_keyboard),
+    в остальных клавиатурах вместо неё /question и кнопка меню. В уже отправленных
+    старых чатах кнопка тоже могла остаться — должна продолжать работать."""
     chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
     from_user = cb.get("from") or {}
     tg_id = from_user.get("id", chat_id)
