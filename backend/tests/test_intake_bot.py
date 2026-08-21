@@ -91,7 +91,10 @@ async def make_application(
 ) -> IntakeApplication:
     app = IntakeApplication(
         tg_id=random.randint(10**9, 10**12),
-        tg_username=f"u{random.randint(1000, 9999)}",
+        # Диапазон настолько же широкий, как у tg_id — узкий (1000-9999) давал
+        # реальные коллизии username между тестами: `_find_application_by_username`
+        # без ORDER BY подхватывал произвольную из двух заявок с тем же именем.
+        tg_username=f"u{random.randint(10**8, 10**9 - 1)}",
         status=status,
     )
     session.add(app)
