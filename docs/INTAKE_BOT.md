@@ -21,7 +21,11 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    (`ask_about`, also the opening line of `start` — same string, see «Placeholder texts»).
 2. Reply → `status=submitted`; the anketa is forwarded to the admin DM with an **«Принять»**
    button.
-3. Admin taps **«Принять»** → `status=choosing_plan`; bot shows tariffs as buttons, read
+3. Admin taps **«Принять»** → the anketa message is edited in place (`editMessageText`):
+   button removed, «— ✅ Принята» appended to the header, no separate confirmation message —
+   before this, the tap fired two *extra* chat messages (a confirmation + a `📋` log echo),
+   which made it easy to reply to the wrong bubble later (see the admin-chat bug above).
+   `status=choosing_plan`; bot shows tariffs as buttons, read
    from the `plans` table **at request time** (not hardcoded — an admin price edit applies
    immediately, no bot redeploy). **One button per tariff** («Вода — 12 000 ₽») opening a
    description screen: title, price, `plans.description`, and a single row of
@@ -43,7 +47,12 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
 6. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
    with a **«Подтвердить оплату»** button.
 7. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
-   environment** (see `PLATFORM_URL` — on staging, the staging domain): login = the
+   environment** (see `PLATFORM_URL` — on staging, the staging domain). The receipt
+   message's caption is edited in place (`editMessageCaption`, button removed, «— ✅
+   Подтверждено, логин ...» appended) instead of a separate confirmation message, same
+   reasoning as the anketa-accept edit above. (Manual confirmation with no receipt at all —
+   admin saw the payment land some other way — goes through `/confirm @username` instead,
+   see below, which shares this same account-creation path.) Login = the
    applicant's Telegram `@username`, one-time password (`must_change_password=true`),
    `intake_id` = the current active intake ([DATA_MODEL.md](DATA_MODEL.md) `intakes`),
    `plan_id` = the chosen tariff. Right after the account is created, the bot assigns the
@@ -74,6 +83,16 @@ buttons that actually belong to the current step. The command sets an ephemeral 
 separate service, separate Redis namespace) and takes priority over whatever the funnel
 step would otherwise do with the applicant's next message. The old `svc_q` callback is
 still handled so buttons in already-sent chats keep working.
+
+The question forwarded to the admin chat includes the applicant's **currently chosen
+tariff** in parens next to their tag (or «тариф ещё не выбран» before `choosing_plan`) —
+useful context when several applicants are mid-funnel at once. `intakebot:qmap:{message_id}`
+(Redis, 7-day TTL) stores this forwarded message's `{chat_id, text}` as JSON, not just a bare
+chat id — when the admin replies, the bot edits *that same message* in place to append
+«✅ Отвечено» instead of posting a separate confirmation, same edit-in-place pattern as the
+funnel buttons above. Reads of the old bare-`chat_id` format (questions forwarded before
+this changed) still deliver correctly, just without the in-place mark — no stored text to
+edit into.
 
 ## Data model
 
@@ -109,6 +128,26 @@ so the same account can run the funnel again from scratch:
 - Deliberately **not** in `setMyCommands` — it is a service command, not a funnel step.
 - Scope: one applicant at a time. No bulk "wipe the stand", no web/admin UI.
 
+## Manual payment confirmation (`/confirm @username`)
+
+Admin-only command (any environment, unlike `/reset`) for when the admin sees the payment
+land some other way than a forwardable receipt (bank statement, Tribute payment from abroad
+without a screenshot the applicant thinks to send) — the normal path (applicant sends a
+receipt → «✅ Подтвердить оплату» button on it) never fires, and the funnel would otherwise
+be stuck.
+
+- Accepted only from `ADMIN_CHAT_ID`; requires a target — `/confirm @username`, no
+  chat-implicit form (unlike `/reset`).
+- Valid on any status once a tariff is chosen (`plan_id` set) and the application isn't
+  already `confirmed` — typically `awaiting_offer`/`awaiting_receipt`/`payment_review`.
+  No tariff chosen yet → refused with an explicit reply, nothing changed.
+- Shares the same account-creation path as the `pay:` callback (`_finalize_payment`): same
+  `_create_platform_user` call, same credentials message to the applicant, same welcome-task
+  assignment. The admin-chat confirmation is worded differently — «...подтверждена
+  **вручную (без чека)**...» — so the log/history makes clear the receipt was never
+  eyeballed.
+- Registered in `ADMIN_COMMANDS` (visible in the admin chat's own menu), unlike `/reset`.
+
 ## Bot status (`/info`)
 
 Read-only admin command: which intake the bot will attach new users to, which plans it is
@@ -140,9 +179,16 @@ temporary placeholder; final copy is a separate follow-up.
   unlike the access bot, `intake-bot` **does run on staging**
   (`docker/docker-compose.staging.yml`) — the "no bot on staging" rule in
   [DEPLOY.md](DEPLOY.md) exists specifically to avoid a second poller on the *same* token.
-- Admin chat = the task author's personal DM (`TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`), not a
-  group chat — obtained the standard way (message the bot `/start` from that account first,
-  read the chat id from `docker logs`).
+- Admin chat (`TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`) can be either the task author's personal
+  DM or a group/supergroup — both are supported the same way, matched purely by `chat_id`
+  (staging currently uses a personal DM, prod a supergroup with several admins). Obtained
+  the standard way for a DM (message the bot `/start` from that account first, read the
+  chat id from `docker logs`) or by adding the bot to the group and reading its chat id the
+  same way. **Historical bug (found live, ARG — no admin reply ever got through in the prod
+  group):** the update dispatcher only forwarded messages to the funnel handler when
+  `chat.type == "private"`, so replies/`/reset`/`/info` typed into a group admin chat never
+  even reached the code — no error anywhere, just silence. Fixed by `_should_handle_message`
+  (dispatch also when `chat_id == ADMIN_CHAT_ID`, regardless of chat type).
 - Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`,
   `INTAKE_BOT_ALLOW_RESET` (staging only, see `/reset`), `TELEGRAM_PROXY`
   (shared with the access bot), `PLATFORM_URL` (shared — on staging this should point at

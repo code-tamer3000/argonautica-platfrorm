@@ -4,6 +4,7 @@
 вызовы Bot API), а Postgres — настоящий: статусы заявки проверяем в БД.
 """
 import importlib.util
+import json
 import random
 import sys
 from datetime import date, timedelta
@@ -632,3 +633,276 @@ def test_info_is_admin_scoped_not_global() -> None:
     """Видна только в меню самого админского чата, а не всем участникам."""
     assert "info" not in [c["command"] for c in intake_bot.BOT_COMMANDS]
     assert "info" in [c["command"] for c in intake_bot.ADMIN_COMMANDS]
+
+
+# --- Диспетчерский гейт: групповой admin-чат (регрессия) ------------------------
+
+
+def test_dispatch_gate_allows_admin_group_chat(monkeypatch: Any) -> None:
+    """Регрессия: раньше гейт пропускал в `_handle_message` только приватные
+
+    чаты — если ADMIN_CHAT_ID настроен на группу (а не личку админа, как в доке),
+    реплаи админа там никогда не доходили до кода, без единой ошибки в логах."""
+    admin_chat = 999_020
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+
+    assert intake_bot._should_handle_message({"chat": {"id": admin_chat, "type": "supergroup"}})
+    assert intake_bot._should_handle_message({"chat": {"id": 123, "type": "private"}})
+    assert not intake_bot._should_handle_message({"chat": {"id": 123, "type": "supergroup"}})
+
+
+# --- Кнопки воронки: edit-in-place вместо отдельных сообщений в admin-чат -------
+
+
+async def test_accept_edits_anketa_in_place(session: AsyncSession, monkeypatch: Any) -> None:
+    """«Принять» перерисовывает то же сообщение анкеты (кнопка снимается) вместо
+
+    отдельного «✅ Заявка принята» + лог-эха в чат — иначе на одно действие
+    приходится 3 сообщения, и легко зареплаить не на то (см. живой инцидент)."""
+    admin_chat = 999_021
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    tg_id = random.randint(10**9, 10**12)
+    app = IntakeApplication(tg_id=tg_id, tg_username="arg", status="submitted", about="кто я")
+    session.add(app)
+    await session.commit()
+    await session.refresh(app)
+    client = FakeClient()
+
+    await intake_bot._handle_accept(
+        client, session,
+        {
+            "id": "cb", "data": f"acc:{app.id}",
+            "message": {"message_id": 55, "chat": {"id": admin_chat}},
+        },
+    )
+    await session.commit()
+
+    edit = client.payload("editMessageText")
+    assert edit["message_id"] == 55 and edit["chat_id"] == admin_chat
+    assert "✅ Принята" in edit["text"] and "кто я" in edit["text"]
+    assert edit["reply_markup"] == {"inline_keyboard": []}
+    # Единственный sendMessage — экран тарифов участнику, не эхо в admin-чат.
+    sends = [p for m, p in client.calls if m == "sendMessage"]
+    assert len(sends) == 1 and sends[0]["chat_id"] == tg_id
+
+
+async def test_confirm_payment_edits_caption_in_place(session: AsyncSession, monkeypatch: Any) -> None:
+    admin_chat = 999_022
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    await get_or_create_intake(session, date(2026, 5, 1))
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_PAYMENT_REVIEW)
+    app.plan_id = plan.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_confirm_payment(
+        client, session,
+        {
+            "id": "cb", "data": f"pay:{app.id}",
+            "message": {"message_id": 77, "chat": {"id": admin_chat}},
+        },
+    )
+    await session.commit()
+
+    edit = client.payload("editMessageCaption")
+    assert edit["message_id"] == 77 and edit["chat_id"] == admin_chat
+    assert "✅ Подтверждено, логин" in edit["caption"]
+    assert edit["reply_markup"] == {"inline_keyboard": []}
+    # Никакого отдельного «✅ Заявка ... подтверждена» сообщения в admin-чат —
+    # единственный sendMessage тут — логин/пароль участнику.
+    sends = [p for m, p in client.calls if m == "sendMessage"]
+    assert len(sends) == 1 and sends[0]["chat_id"] == app.tg_id
+
+
+# --- Вопрос: тариф в тексте + edit-in-place «Отвечено» --------------------------
+
+
+async def test_question_forward_includes_chosen_tariff(session: AsyncSession, monkeypatch: Any) -> None:
+    admin_chat = 999_023
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 20000)
+    app = await make_application(session, status=STATUS_AWAITING_RECEIPT)
+    app.plan_id = plan.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._forward_question(
+        client, session, app.tg_id, app.tg_id, app.tg_username, "когда старт?"
+    )
+
+    forwarded = client.payload("sendMessage")["text"]
+    assert plan.name in forwarded and "20 000 ₽" in forwarded
+
+    raw = await intake_bot.redis_client.get("intakebot:qmap:777")
+    assert raw is not None
+    data = json.loads(raw)
+    assert data["chat_id"] == app.tg_id and plan.name in data["text"]
+    await intake_bot.redis_client.delete("intakebot:qmap:777")
+
+
+async def test_question_forward_notes_missing_tariff(session: AsyncSession, monkeypatch: Any) -> None:
+    admin_chat = 999_024
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = await make_application(session, status=STATUS_AWAITING_ABOUT)
+    app.plan_id = None
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._forward_question(
+        client, session, app.tg_id, app.tg_id, app.tg_username, "привет"
+    )
+
+    assert "тариф ещё не выбран" in client.payload("sendMessage")["text"]
+    await intake_bot.redis_client.delete("intakebot:qmap:777")
+
+
+async def test_admin_reply_marks_question_answered_in_place(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_025
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = await make_application(session, status=STATUS_AWAITING_ABOUT)
+    await session.commit()
+    forward_client = FakeClient()
+    await intake_bot._forward_question(
+        forward_client, session, app.tg_id, app.tg_id, app.tg_username, "вопрос"
+    )
+    forwarded_msg_id = 777  # FakeClient всегда отвечает message_id 777
+
+    reply_client = FakeClient()
+    await intake_bot._deliver_admin_reply(reply_client, forwarded_msg_id, "ответ тут")
+
+    delivered = reply_client.payload("sendMessage")
+    assert delivered["chat_id"] == app.tg_id and "ответ тут" in delivered["text"]
+    edit = reply_client.payload("editMessageText")
+    assert edit["message_id"] == forwarded_msg_id and "Отвечено" in edit["text"]
+    await intake_bot.redis_client.delete(f"intakebot:qmap:{forwarded_msg_id}")
+
+
+async def test_admin_reply_falls_back_for_legacy_qmap_format(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Ключ старого формата (голый chat_id, не JSON) — вопрос, отправленный до
+
+    этого релиза — должен и дальше доставляться, просто без edit-in-place
+    отметки (сохранённого текста для правки у нас для него нет)."""
+    admin_chat = 999_026
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    asker_chat_id = random.randint(10**9, 10**12)
+    await intake_bot.redis_client.set("intakebot:qmap:555", str(asker_chat_id), ex=60)
+    client = FakeClient()
+
+    await intake_bot._deliver_admin_reply(client, 555, "старый формат ответа")
+
+    delivered = client.payload("sendMessage")
+    assert delivered["chat_id"] == asker_chat_id and "старый формат ответа" in delivered["text"]
+    assert "editMessageText" not in client.methods()
+    admin_sends = [p["text"] for m, p in client.calls if m == "sendMessage" and p["chat_id"] == admin_chat]
+    assert admin_sends == ["✅ Ответ доставлен участнику."]
+    await intake_bot.redis_client.delete("intakebot:qmap:555")
+
+
+# --- /confirm: подтвердить оплату вручную, без чека -----------------------------
+
+
+async def test_confirm_command_creates_user_without_receipt(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_027
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    await get_or_create_intake(session, date(2026, 6, 1))
+    plan = await make_plan(session, f"Земля-{random.randint(100, 999)}", 18000)
+    app = await make_application(session, status=STATUS_AWAITING_RECEIPT)
+    app.plan_id = plan.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message(f"/confirm @{app.tg_username}", admin_chat)
+    )
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_CONFIRMED
+    assert app.user_id is not None
+    admin_reply = next(
+        p["text"] for m, p in client.calls if m == "sendMessage" and p["chat_id"] == admin_chat
+    )
+    assert "вручную" in admin_reply
+
+
+async def test_confirm_command_requires_tariff(session: AsyncSession, monkeypatch: Any) -> None:
+    admin_chat = 999_028
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN)
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message(f"/confirm @{app.tg_username}", admin_chat)
+    )
+    await session.refresh(app)
+
+    assert "не выбран" in client.payload("sendMessage")["text"]
+    assert app.status == STATUS_CHOOSING_PLAN
+
+
+async def test_confirm_command_reports_missing_application(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_029
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message("/confirm @no-such-user", admin_chat)
+    )
+
+    assert "не найдено" in client.payload("sendMessage")["text"]
+
+
+async def test_confirm_command_reports_already_confirmed(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_030
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = await make_confirmed_application(session)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message(f"/confirm @{app.tg_username}", admin_chat)
+    )
+
+    assert "уже подтверждена" in client.payload("sendMessage")["text"]
+
+
+async def test_confirm_command_usage_without_username(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_031
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    client = FakeClient()
+
+    await intake_bot._handle_message(client, session, admin_message("/confirm", admin_chat))
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_CONFIRM_USAGE
+
+
+async def test_confirm_command_from_participant_chat_does_nothing(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    app = await make_application(session)
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_032)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, admin_message(f"/confirm @{app.tg_username}", app.tg_id)
+    )
+
+    assert client.methods() == []
+
+
+def test_confirm_is_admin_scoped_not_global() -> None:
+    assert "confirm" not in [c["command"] for c in intake_bot.BOT_COMMANDS]
+    assert "confirm" in [c["command"] for c in intake_bot.ADMIN_COMMANDS]
