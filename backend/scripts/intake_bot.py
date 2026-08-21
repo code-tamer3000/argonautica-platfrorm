@@ -25,12 +25,14 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
 
 Запуск (в образе backend): python -m scripts.intake_bot
 Требует env: TELEGRAM_INTAKE_BOT_TOKEN, DATABASE_URL, REDIS_URL,
-  (опц.) PLATFORM_URL, TELEGRAM_PROXY, TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID.
+  (опц.) PLATFORM_URL, TELEGRAM_PROXY, TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID,
+  TELEGRAM_INTAKE_BOT_LOG_CHAT_ID.
 """
 from __future__ import annotations
 
 import asyncio
 import html
+import json
 import os
 from datetime import UTC, datetime
 from typing import Any
@@ -65,6 +67,11 @@ PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://staging.argonautica-syste
 TELEGRAM_PROXY = os.environ.get("TELEGRAM_PROXY", "").strip() or None
 _admin_raw = os.environ.get("TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID", "").strip()
 ADMIN_CHAT_ID: int | None = int(_admin_raw) if _admin_raw.lstrip("-").isdigit() else None
+# Отдельный чат под служебные "📋"-логи (см. _log_action) — опционален: если не задан,
+# логи, как и раньше, уходят в ADMIN_CHAT_ID. Позволяет вынести шум действий (сменил
+# пароль и т.п.) из чата, где админ реально работает с кнопками/reply.
+_log_raw = os.environ.get("TELEGRAM_INTAKE_BOT_LOG_CHAT_ID", "").strip()
+LOG_CHAT_ID: int | None = int(_log_raw) if _log_raw.lstrip("-").isdigit() else None
 # Сброс прогона воронки (ARG-95) — только там, где явно разрешено env-флагом. По
 # умолчанию (и на проде) выключен: команда отвечает, что недоступна, и ничего не делает.
 ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
@@ -93,6 +100,9 @@ HEART = '<tg-emoji emoji-id="5440725576841201330">🖤</tg-emoji>'
 # Платёжные реквизиты — единственное место, откуда их берут TEXT_ACCEPTED и /info,
 # чтобы не разъезжались при смене карты.
 PAYMENT_DETAILS = "2200 2488 5210 8934 (ВТБ-банк)"
+# Оплата зарубежной картой — Tribute mini-app, для тех, у кого нет счёта в РФ-банке.
+# Один и тот же startapp-код на все тарифы (сумму и оффер Tribute настраивает у себя).
+TRIBUTE_PAYMENT_URL = "https://t.me/tribute/app?startapp=dP8y"
 
 TEXT_ASK_ABOUT = f"Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? {STAR}"
 TEXT_START = (
@@ -167,6 +177,7 @@ TEXT_RESET_DISABLED = (
     "🚫 Сброс прогона на этом окружении недоступен (INTAKE_BOT_ALLOW_RESET выключен)."
 )
 TEXT_RESET_USAGE = "Формат: <code>/reset</code> или <code>/reset @username</code>"
+TEXT_CONFIRM_USAGE = "Формат: <code>/confirm @username</code>"
 
 
 def _user_tag(tg_username: str | None, tg_id: int) -> str:
@@ -276,6 +287,49 @@ async def _edit_or_send(
     return await _send(client, chat_id, text, reply_markup=reply_markup)
 
 
+async def _edit_text(
+    client: httpx.AsyncClient,
+    chat_id: int,
+    message_id: int,
+    text: str,
+    reply_markup: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Отредактировать уже отправленное сообщение на месте (без фолбэка на send —
+
+    в отличие от `_edit_or_send`, вызывающий точно знает, что сообщение существует:
+    это то самое сообщение, у которого только что нажали кнопку.
+    """
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    return await _api_call(client, "editMessageText", payload)
+
+
+async def _edit_caption(
+    client: httpx.AsyncClient,
+    chat_id: int,
+    message_id: int,
+    caption: str,
+    reply_markup: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """То же, что `_edit_text`, но для caption фото/документа (чек)."""
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "caption": caption,
+        "parse_mode": "HTML",
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+    return await _api_call(client, "editMessageCaption", payload)
+
+
 async def _send_photo(
     client: httpx.AsyncClient,
     chat_id: int,
@@ -332,9 +386,14 @@ async def _answer_callback(
 
 
 async def _log_action(client: httpx.AsyncClient, text: str) -> None:
+    """Служебный лог действия — в LOG_CHAT_ID, если он задан, иначе в ADMIN_CHAT_ID
+
+    (прежнее поведение). Отдельный чат позволяет не мешать инфо-шум (сменил пароль
+    и т.п.) с чатом, где админ реально нажимает кнопки/отвечает reply'ем."""
     print(f"[action] {text}", flush=True)
-    if ADMIN_CHAT_ID is not None:
-        await _send(client, ADMIN_CHAT_ID, f"📋 {text}")
+    target = LOG_CHAT_ID if LOG_CHAT_ID is not None else ADMIN_CHAT_ID
+    if target is not None:
+        await _send(client, target, f"📋 {text}")
 
 
 # --- Работа с БД -----------------------------------------------------------
@@ -419,21 +478,29 @@ def _offer_keyboard(app_id: int) -> dict[str, Any]:
     }
 
 
-def _service_keyboard() -> dict[str, Any]:
+def _payment_keyboard() -> dict[str, Any]:
+    """Кнопки на шаге оплаты (TEXT_ACCEPTED) — самый частый момент, где у заявителя
+
+    возникают вопросы (реквизиты, чек) или проблема с РФ-картой:
+    - «Связаться по техническим вопросам» переиспользует существующий
+      CB_ASK_QUESTION/_handle_ask_question (висит прямо на сообщении, а не только
+      через /question);
+    - «Оплатить зарубежной картой» — обычная ссылка (не web_app: это deep-link в
+      чужой мини-апп Tribute, а не наш /oferta), один и тот же startapp-код на все
+      тарифы (сумму и оффер Tribute настраивает у себя).
+    """
     return {
         "inline_keyboard": [
-            [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
+            [{"text": "💬 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
+            [{"text": "💳 Оплатить зарубежной картой", "url": TRIBUTE_PAYMENT_URL}],
         ]
     }
 
 
-def _payment_keyboard() -> dict[str, Any]:
-    """Кнопка на шаге оплаты (TEXT_ACCEPTED) — самый частый момент, где у заявителя
-    возникают вопросы (реквизиты, чек), поэтому висит прямо на сообщении, а не только
-    через /question. Переиспользует существующий CB_ASK_QUESTION/_handle_ask_question."""
+def _service_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
-            [{"text": "💬 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
+            [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
         ]
     }
 
@@ -597,9 +664,18 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
     app.status = STATUS_CHOOSING_PLAN
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
-    await _send(client, ADMIN_CHAT_ID, f"✅ Заявка #{app.id} принята, участник выбирает тариф.")
+
+    tag = _user_tag(app.tg_username, app.tg_id)
+    message_id = (cb.get("message") or {}).get("message_id")
+    if message_id is not None:
+        await _edit_text(
+            client, ADMIN_CHAT_ID, message_id,  # type: ignore[arg-type]
+            f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята\n\n"
+            f"{html.escape(app.about or '')}",
+            reply_markup={"inline_keyboard": []},
+        )
     await _send_plan_list(client, session, app.tg_id, app)
-    await _log_action(client, f"заявка #{app.id} ({_user_tag(app.tg_username, app.tg_id)}) принята")
+    print(f"[action] заявка #{app.id} ({tag}) принята", flush=True)
 
 
 def _plan_screen_context(
@@ -704,6 +780,40 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
     )
 
 
+async def _finalize_payment(
+    client: httpx.AsyncClient, session: AsyncSession, app: IntakeApplication, *, manual: bool
+) -> tuple[str, str] | None:
+    """Создать аккаунт участника и завершить заявку — общий хвост для кнопки
+
+    «Подтвердить оплату» и для ручной команды `/confirm` (ARG — оплата мимо чека,
+    например из-за рубежа через Tribute). None — нет @username или нет активного
+    набора (см. `_create_platform_user`); вызывающий уже знает, какой из двух
+    случаев у него на руках, и формулирует сообщение админу сам.
+    HTTPException (логин занят / набор не найден на уровне create_user) не
+    ловится тут — откат транзакции делает вызывающий.
+    """
+    created = await _create_platform_user(session, app)
+    if created is None:
+        return None
+    username, password = created
+    app.status = STATUS_CONFIRMED
+    await session.flush()
+
+    await _send(
+        client, app.tg_id,
+        f"{TEXT_CONFIRMED}\n\n"
+        f"🔗 Ссылка: {PLATFORM_URL}\n"
+        f"👤 Логин: <code>{html.escape(username)}</code>\n"
+        f"🔑 Пароль: <code>{html.escape(password)}</code>\n\n"
+        f"При первом входе система попросит сменить пароль.",
+        reply_markup=_service_keyboard(),
+    )
+    tag = _user_tag(app.tg_username, app.tg_id)
+    suffix = " вручную (без чека)" if manual else ""
+    print(f"[action] заявка #{app.id} ({tag}) подтверждена{suffix}, юзер {username}", flush=True)
+    return username, password
+
+
 async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
     chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
     if chat_id != ADMIN_CHAT_ID:
@@ -715,7 +825,7 @@ async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSessi
         return
 
     try:
-        created = await _create_platform_user(session, app)
+        created = await _finalize_payment(client, session, app, manual=False)
     except HTTPException:
         await session.rollback()
         await _answer_callback(client, cb["id"], "Такой логин уже занят или набор не найден", alert=True)
@@ -727,22 +837,18 @@ async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSessi
         await _send(client, app.tg_id, TEXT_NEED_USERNAME)
         return
 
-    username, password = created
-    app.status = STATUS_CONFIRMED
-    await session.flush()
-
+    username, _password = created
     await _answer_callback(client, cb["id"], "Подтверждено")
-    await _send(client, ADMIN_CHAT_ID, f"✅ Заявка #{app.id} подтверждена, создан пользователь {username}.")
-    await _send(
-        client, app.tg_id,
-        f"{TEXT_CONFIRMED}\n\n"
-        f"🔗 Ссылка: {PLATFORM_URL}\n"
-        f"👤 Логин: <code>{html.escape(username)}</code>\n"
-        f"🔑 Пароль: <code>{html.escape(password)}</code>\n\n"
-        f"При первом входе система попросит сменить пароль.",
-        reply_markup=_service_keyboard(),
-    )
-    await _log_action(client, f"заявка #{app.id} ({_user_tag(app.tg_username, app.tg_id)}) подтверждена, юзер {username}")
+
+    tag = _user_tag(app.tg_username, app.tg_id)
+    message_id = (cb.get("message") or {}).get("message_id")
+    if message_id is not None:
+        await _edit_caption(
+            client, ADMIN_CHAT_ID, message_id,  # type: ignore[arg-type]
+            f"🧾 Чек от {html.escape(tag)} (заявка #{app.id}) — ✅ Подтверждено, логин "
+            f"{html.escape(username)}",
+            reply_markup={"inline_keyboard": []},
+        )
 
 
 async def _await_question(client: httpx.AsyncClient, chat_id: int, tg_id: int) -> None:
@@ -825,7 +931,12 @@ async def _handle_callback(client: httpx.AsyncClient, session: AsyncSession, cb:
 
 
 async def _forward_question(
-    client: httpx.AsyncClient, chat_id: int, tg_id: int, tg_username: str | None, question: str
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    chat_id: int,
+    tg_id: int,
+    tg_username: str | None,
+    question: str,
 ) -> None:
     await redis_client.delete(f"intakebot:await_q:{tg_id}")
 
@@ -833,29 +944,61 @@ async def _forward_question(
         await _send(client, chat_id, "Вопрос принят, но канал поддержки временно не настроен.")
         return
 
+    app = await _find_application(session, tg_id)
+    plan_label = "тариф ещё не выбран"
+    if app is not None and app.plan_id is not None:
+        plan = await session.get(Plan, app.plan_id)
+        if plan is not None:
+            plan_label = f"тариф: {plan.name} — {_price_str(plan.price)}"
+
     tag = _user_tag(tg_username, tg_id)
-    sent = await _send(
-        client, ADMIN_CHAT_ID,
-        f"💬 <b>Вопрос от {html.escape(tag)}</b>\n\n{html.escape(question)}\n\n"
-        f"<i>Ответь reply на это сообщение — бот доставит ответ.</i>",
+    question_text = (
+        f"💬 <b>Вопрос от {html.escape(tag)}</b> ({html.escape(plan_label)})\n\n"
+        f"{html.escape(question)}\n\n"
+        f"<i>Ответь reply на это сообщение — бот доставит ответ.</i>"
     )
+    sent = await _send(client, ADMIN_CHAT_ID, question_text)
     if sent is not None:
-        await redis_client.set(f"intakebot:qmap:{sent['message_id']}", str(chat_id), ex=QMAP_TTL_SEC)
+        # JSON, а не голый chat_id: чтобы при доставке ответа отметить это же
+        # сообщение «✅ Отвечено» вместо отдельного сообщения-эха в чат.
+        await redis_client.set(
+            f"intakebot:qmap:{sent['message_id']}",
+            json.dumps({"chat_id": chat_id, "text": question_text}),
+            ex=QMAP_TTL_SEC,
+        )
 
     await _send(client, chat_id, TEXT_QUESTION_SENT)
-    await _log_action(client, f"{tag} задал вопрос (воронка приёма)")
+    print(f"[action] {tag} задал вопрос (воронка приёма)", flush=True)
 
 
 async def _deliver_admin_reply(client: httpx.AsyncClient, reply_to_msg_id: int, answer: str) -> None:
-    asker_chat_id = await redis_client.get(f"intakebot:qmap:{reply_to_msg_id}")
-    if asker_chat_id is None:
+    raw = await redis_client.get(f"intakebot:qmap:{reply_to_msg_id}")
+    if raw is None:
         await _send(
             client, ADMIN_CHAT_ID,  # type: ignore[arg-type]
             "⚠️ Не нашёл, кому доставить этот ответ (вопрос устарел или это не reply на пересланный вопрос).",
         )
         return
-    await _send(client, int(asker_chat_id), f"💬 <b>Ответ поддержки</b>\n\n{html.escape(answer)}")
-    await _send(client, ADMIN_CHAT_ID, "✅ Ответ доставлен участнику.")  # type: ignore[arg-type]
+
+    original_text: str | None = None
+    try:
+        data = json.loads(raw)
+        asker_chat_id = int(data["chat_id"])
+        original_text = data.get("text")
+    except (ValueError, KeyError, TypeError):
+        # Ключ старого формата (голый chat_id) — вопрос отправлен до этого релиза,
+        # текста для edit-in-place у нас нет, фолбэк на прежнее поведение.
+        asker_chat_id = int(raw)
+
+    await _send(client, asker_chat_id, f"💬 <b>Ответ поддержки</b>\n\n{html.escape(answer)}")
+
+    if original_text is not None:
+        await _edit_text(
+            client, ADMIN_CHAT_ID, reply_to_msg_id,  # type: ignore[arg-type]
+            f"{original_text}\n\n✅ <b>Отвечено</b>",
+        )
+    else:
+        await _send(client, ADMIN_CHAT_ID, "✅ Ответ доставлен участнику.")  # type: ignore[arg-type]
 
 
 # --- /reset: сброс прогона воронки (ARG-95) -----------------------------------
@@ -965,6 +1108,64 @@ async def _handle_reset(
     )
 
 
+# --- /confirm: подтвердить оплату вручную, без чека -----------------------------
+
+
+async def _handle_confirm_command(
+    client: httpx.AsyncClient, session: AsyncSession, chat_id: int, text: str
+) -> None:
+    """Ручное подтверждение оплаты — админ увидел зачисление другим путём (выписка,
+
+    Tribute без скрина, платёж из-за рубежа), а участник чек так и не прислал.
+    В отличие от `/reset`, работает на любом окружении, включая прод — это штатная
+    эксплуатационная потребность, не дев-утилита.
+    """
+    if ADMIN_CHAT_ID is None or chat_id != ADMIN_CHAT_ID:
+        return
+
+    parts = text.split()
+    target = parts[1].lstrip("@") if len(parts) > 1 else None
+    if len(parts) != 2 or not target:
+        await _send(client, chat_id, TEXT_CONFIRM_USAGE)
+        return
+
+    app = await _find_application_by_username(session, target)
+    if app is None:
+        await _send(client, chat_id, f"Заявки для @{html.escape(target)} не найдено.")
+        return
+    if app.status == STATUS_CONFIRMED:
+        await _send(client, chat_id, f"Заявка @{html.escape(target)} уже подтверждена.")
+        return
+    if app.plan_id is None:
+        await _send(
+            client, chat_id,
+            f"У @{html.escape(target)} ещё не выбран тариф — нечего подтверждать.",
+        )
+        return
+
+    try:
+        created = await _finalize_payment(client, session, app, manual=True)
+    except HTTPException as exc:
+        await session.rollback()
+        await _send(client, chat_id, f"⚠️ Не удалось подтвердить: {html.escape(str(exc.detail))}")
+        return
+    if created is None:
+        # tg_username гарантированно есть — нашли заявку именно по нему; значит
+        # причина — нет активного набора (см. `_create_platform_user`).
+        await _send(
+            client, chat_id,
+            "⚠️ Нет активного набора (таблица intakes пуста) — не могу завести аккаунт.",
+        )
+        return
+
+    username, _password = created
+    await _send(
+        client, chat_id,
+        f"✅ Заявка #{app.id} (@{html.escape(target)}) подтверждена вручную (без чека), "
+        f"создан пользователь <code>{html.escape(username)}</code>.",
+    )
+
+
 # --- /info: статус бота (админский DM) -----------------------------------------
 
 
@@ -1047,6 +1248,18 @@ async def _handle_start(
         await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
 
 
+def _should_handle_message(message: dict[str, Any]) -> bool:
+    """Гейт диспетчера: приватный чат заявителя ИЛИ сконфигурированный admin-чат.
+
+    Раньше пропускался только `chat.type == "private"` — если ADMIN_CHAT_ID
+    настроен на группу/супергруппу (а не личку админа, как в докe), реплаи
+    админа там никогда не доходили до `_handle_message`: ни ответ на пересланный
+    вопрос, ни /reset, ни /info не срабатывали, без единой ошибки в логах.
+    """
+    chat = message.get("chat", {})
+    return bool(chat.get("type") == "private" or chat.get("id") == ADMIN_CHAT_ID)
+
+
 async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, message: dict[str, Any]) -> None:
     chat_id = message["chat"]["id"]
     text = (message.get("text") or "").strip()
@@ -1054,7 +1267,7 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     tg_id = from_user.get("id", chat_id)
     tg_username = from_user.get("username")
 
-    # Служебные команды админского DM — раньше ветки ответа админа: обе могут
+    # Служебные команды админского чата — раньше ветки ответа админа: обе могут
     # прийти и реплаем, и это всё равно команда, а не ответ участнику.
     if text.startswith("/reset"):
         await _handle_reset(client, session, chat_id, text, tg_id)
@@ -1062,12 +1275,21 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     if text.startswith("/info"):
         await _handle_info(client, session, chat_id)
         return
+    if text.startswith("/confirm"):
+        await _handle_confirm_command(client, session, chat_id, text)
+        return
 
     # Ответ админа reply на пересланный вопрос → доставить участнику.
     if ADMIN_CHAT_ID is not None and chat_id == ADMIN_CHAT_ID:
         reply_to = message.get("reply_to_message")
         if reply_to and text:
             await _deliver_admin_reply(client, reply_to["message_id"], text)
+            return
+        if message.get("chat", {}).get("type") != "private":
+            # Групповой админ-чат (в отличие от личного DM админа, который
+            # исторически мог им же тестироваться как заявитель — see docs/
+            # INTAKE_BOT.md) — не пропускаем непонятные ей сообщения (обычную
+            # переписку между админами) дальше, в логику воронки заявителя.
             return
 
     if text.startswith("/start"):
@@ -1081,7 +1303,7 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
 
     # «Задать вопрос» работает на любом шаге воронки, приоритет выше состояния анкеты.
     if text and await redis_client.get(f"intakebot:await_q:{tg_id}"):
-        await _forward_question(client, chat_id, tg_id, tg_username, text)
+        await _forward_question(client, session, chat_id, tg_id, tg_username, text)
         return
 
     app = await _find_application(session, tg_id)
@@ -1121,7 +1343,11 @@ BOT_COMMANDS = [
 # /info поверх общего списка — только в scope этого чата (BotCommandScopeChat), поэтому
 # участникам в их собственных чатах не видна, а админу открывается прямо в меню-кнопке,
 # без /reset (тот и так спрятан за INTAKE_BOT_ALLOW_RESET и не нужен в UI).
-ADMIN_COMMANDS = [*BOT_COMMANDS, {"command": "info", "description": "Набор, тарифы, реквизиты"}]
+ADMIN_COMMANDS = [
+    *BOT_COMMANDS,
+    {"command": "info", "description": "Набор, тарифы, реквизиты"},
+    {"command": "confirm", "description": "Подтвердить оплату вручную (без чека)"},
+]
 
 
 async def _setup_bot_menu(client: httpx.AsyncClient) -> None:
@@ -1171,7 +1397,7 @@ async def main() -> None:
                             await _handle_callback(client, session, upd["callback_query"])
                         else:
                             message = upd.get("message") or upd.get("edited_message")
-                            if message and message.get("chat", {}).get("type") == "private":
+                            if message and _should_handle_message(message):
                                 await _handle_message(client, session, message)
                         await session.commit()
                 except Exception as exc:  # noqa: BLE001 — один сбой не роняет бота
