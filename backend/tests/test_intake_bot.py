@@ -206,7 +206,11 @@ async def test_offer_accept_records_consent_and_reveals_payment(session: AsyncSe
     assert app.status == STATUS_AWAITING_RECEIPT
     assert app.offer_accepted_at is not None
     assert app.offer_version == intake_bot.OFFER_VERSION
-    assert "12 000 ₽" in client.payload("sendMessage")["text"]
+    payload = client.payload("sendMessage")
+    assert "12 000 ₽" in payload["text"]
+    buttons = [b for row in payload["reply_markup"]["inline_keyboard"] for b in row]
+    assert any(b.get("callback_data") == intake_bot.CB_ASK_QUESTION for b in buttons)
+    assert any(b.get("url") == intake_bot.TRIBUTE_PAYMENT_URL for b in buttons)
 
 
 async def test_offer_accept_on_stale_screen_does_not_reveal_payment(
@@ -906,3 +910,42 @@ async def test_confirm_command_from_participant_chat_does_nothing(
 def test_confirm_is_admin_scoped_not_global() -> None:
     assert "confirm" not in [c["command"] for c in intake_bot.BOT_COMMANDS]
     assert "confirm" in [c["command"] for c in intake_bot.ADMIN_COMMANDS]
+
+
+# --- Логи действий: редирект в отдельный чат (TELEGRAM_INTAKE_BOT_LOG_CHAT_ID) --
+
+
+async def test_log_action_goes_to_dedicated_chat_when_configured(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_033
+    log_chat = 999_034
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "LOG_CHAT_ID", log_chat)
+    app = await make_confirmed_application(session)
+    client = FakeClient()
+
+    await intake_bot._handle_change_password(
+        client, session, callback(app, intake_bot.CB_CHANGE_PASSWORD)
+    )
+
+    log_sends = [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == log_chat]
+    assert len(log_sends) == 1 and "сменил пароль" in log_sends[0]["text"]
+    assert all(p["chat_id"] != admin_chat for m, p in client.calls if m == "sendMessage")
+
+
+async def test_log_action_falls_back_to_admin_chat_when_not_configured(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_035
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "LOG_CHAT_ID", None)
+    app = await make_confirmed_application(session)
+    client = FakeClient()
+
+    await intake_bot._handle_change_password(
+        client, session, callback(app, intake_bot.CB_CHANGE_PASSWORD)
+    )
+
+    log_sends = [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == admin_chat]
+    assert len(log_sends) == 1 and "сменил пароль" in log_sends[0]["text"]

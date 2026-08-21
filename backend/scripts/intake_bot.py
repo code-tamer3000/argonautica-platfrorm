@@ -25,7 +25,8 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
 
 Запуск (в образе backend): python -m scripts.intake_bot
 Требует env: TELEGRAM_INTAKE_BOT_TOKEN, DATABASE_URL, REDIS_URL,
-  (опц.) PLATFORM_URL, TELEGRAM_PROXY, TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID.
+  (опц.) PLATFORM_URL, TELEGRAM_PROXY, TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID,
+  TELEGRAM_INTAKE_BOT_LOG_CHAT_ID.
 """
 from __future__ import annotations
 
@@ -66,6 +67,11 @@ PLATFORM_URL = os.environ.get("PLATFORM_URL", "https://staging.argonautica-syste
 TELEGRAM_PROXY = os.environ.get("TELEGRAM_PROXY", "").strip() or None
 _admin_raw = os.environ.get("TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID", "").strip()
 ADMIN_CHAT_ID: int | None = int(_admin_raw) if _admin_raw.lstrip("-").isdigit() else None
+# Отдельный чат под служебные "📋"-логи (см. _log_action) — опционален: если не задан,
+# логи, как и раньше, уходят в ADMIN_CHAT_ID. Позволяет вынести шум действий (сменил
+# пароль и т.п.) из чата, где админ реально работает с кнопками/reply.
+_log_raw = os.environ.get("TELEGRAM_INTAKE_BOT_LOG_CHAT_ID", "").strip()
+LOG_CHAT_ID: int | None = int(_log_raw) if _log_raw.lstrip("-").isdigit() else None
 # Сброс прогона воронки (ARG-95) — только там, где явно разрешено env-флагом. По
 # умолчанию (и на проде) выключен: команда отвечает, что недоступна, и ничего не делает.
 ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
@@ -94,6 +100,9 @@ HEART = '<tg-emoji emoji-id="5440725576841201330">🖤</tg-emoji>'
 # Платёжные реквизиты — единственное место, откуда их берут TEXT_ACCEPTED и /info,
 # чтобы не разъезжались при смене карты.
 PAYMENT_DETAILS = "2200 2488 5210 8934 (ВТБ-банк)"
+# Оплата зарубежной картой — Tribute mini-app, для тех, у кого нет счёта в РФ-банке.
+# Один и тот же startapp-код на все тарифы (сумму и оффер Tribute настраивает у себя).
+TRIBUTE_PAYMENT_URL = "https://t.me/tribute/app?startapp=dP8y"
 
 TEXT_ASK_ABOUT = f"Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? {STAR}"
 TEXT_START = (
@@ -377,9 +386,14 @@ async def _answer_callback(
 
 
 async def _log_action(client: httpx.AsyncClient, text: str) -> None:
+    """Служебный лог действия — в LOG_CHAT_ID, если он задан, иначе в ADMIN_CHAT_ID
+
+    (прежнее поведение). Отдельный чат позволяет не мешать инфо-шум (сменил пароль
+    и т.п.) с чатом, где админ реально нажимает кнопки/отвечает reply'ем."""
     print(f"[action] {text}", flush=True)
-    if ADMIN_CHAT_ID is not None:
-        await _send(client, ADMIN_CHAT_ID, f"📋 {text}")
+    target = LOG_CHAT_ID if LOG_CHAT_ID is not None else ADMIN_CHAT_ID
+    if target is not None:
+        await _send(client, target, f"📋 {text}")
 
 
 # --- Работа с БД -----------------------------------------------------------
@@ -464,21 +478,29 @@ def _offer_keyboard(app_id: int) -> dict[str, Any]:
     }
 
 
-def _service_keyboard() -> dict[str, Any]:
+def _payment_keyboard() -> dict[str, Any]:
+    """Кнопки на шаге оплаты (TEXT_ACCEPTED) — самый частый момент, где у заявителя
+
+    возникают вопросы (реквизиты, чек) или проблема с РФ-картой:
+    - «Связаться по техническим вопросам» переиспользует существующий
+      CB_ASK_QUESTION/_handle_ask_question (висит прямо на сообщении, а не только
+      через /question);
+    - «Оплатить зарубежной картой» — обычная ссылка (не web_app: это deep-link в
+      чужой мини-апп Tribute, а не наш /oferta), один и тот же startapp-код на все
+      тарифы (сумму и оффер Tribute настраивает у себя).
+    """
     return {
         "inline_keyboard": [
-            [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
+            [{"text": "💬 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
+            [{"text": "💳 Оплатить зарубежной картой", "url": TRIBUTE_PAYMENT_URL}],
         ]
     }
 
 
-def _payment_keyboard() -> dict[str, Any]:
-    """Кнопка на шаге оплаты (TEXT_ACCEPTED) — самый частый момент, где у заявителя
-    возникают вопросы (реквизиты, чек), поэтому висит прямо на сообщении, а не только
-    через /question. Переиспользует существующий CB_ASK_QUESTION/_handle_ask_question."""
+def _service_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
-            [{"text": "💬 Связаться по техническим вопросам", "callback_data": CB_ASK_QUESTION}],
+            [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
         ]
     }
 
@@ -1235,7 +1257,7 @@ def _should_handle_message(message: dict[str, Any]) -> bool:
     вопрос, ни /reset, ни /info не срабатывали, без единой ошибки в логах.
     """
     chat = message.get("chat", {})
-    return chat.get("type") == "private" or chat.get("id") == ADMIN_CHAT_ID
+    return bool(chat.get("type") == "private" or chat.get("id") == ADMIN_CHAT_ID)
 
 
 async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, message: dict[str, Any]) -> None:

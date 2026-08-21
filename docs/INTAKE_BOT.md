@@ -43,7 +43,13 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    changes — the offer itself lives in git, `frontend/src/features/oferta/content/oferta.md`,
    not in the DB), `status=awaiting_receipt`; **now** the bot sends payment details (the
    `accepted` text with `{price}` substituted for the chosen tariff's price) and asks for a
-   receipt.
+   receipt. Below the text, `_payment_keyboard()` attaches two buttons: **«💬 Связаться по
+   техническим вопросам»** (reuses `CB_ASK_QUESTION`/`_handle_ask_question` — this is the
+   one screen where that legacy inline button still renders, since this is the step where
+   questions are most common) and **«💳 Оплатить зарубежной картой»** (`TRIBUTE_PAYMENT_URL`,
+   opens the Tribute mini-app for applicants without a RU bank account — one fixed link for
+   every tariff, Tribute handles the actual amount on its own side, not something this bot
+   passes through).
 6. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
    with a **«Подтвердить оплату»** button.
 7. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
@@ -190,9 +196,11 @@ temporary placeholder; final copy is a separate follow-up.
   even reached the code — no error anywhere, just silence. Fixed by `_should_handle_message`
   (dispatch also when `chat_id == ADMIN_CHAT_ID`, regardless of chat type).
 - Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`,
-  `INTAKE_BOT_ALLOW_RESET` (staging only, see `/reset`), `TELEGRAM_PROXY`
-  (shared with the access bot), `PLATFORM_URL` (shared — on staging this should point at
-  `https://staging.argonautica-systems.ru`).
+  `TELEGRAM_INTAKE_BOT_LOG_CHAT_ID` (optional — redirects `_log_action`'s "📋" echoes, e.g.
+  password changes, to a different chat than `ADMIN_CHAT_ID`; falls back to `ADMIN_CHAT_ID`
+  when unset, same as before this existed), `INTAKE_BOT_ALLOW_RESET` (staging only, see
+  `/reset`), `TELEGRAM_PROXY` (shared with the access bot), `PLATFORM_URL` (shared — on
+  staging this should point at `https://staging.argonautica-systems.ru`).
 - Not part of blue-green, no `:8000` healthcheck (long-poller, not an HTTP server) — same
   pattern as `bot` and `transcode-worker`.
 
