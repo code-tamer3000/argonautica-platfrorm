@@ -19,6 +19,12 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
   набору и выбранному тарифу → участнику приходят логин/пароль → чат переходит в
   сервисный режим («Задать вопрос» / «Сменить пароль»).
 
+Бронь места (ARG-108): «Принять» заводит часы на INTAKE_PAYMENT_WINDOW_HOURS (24 по
+умолчанию). Не пришла оплата в окно — заявка уходит в `expired` (фоновый свип
+`_expire_sweep_loop`, потому что молчащий участник не даёт боту ни одного апдейта),
+место освобождается, вернуться можно через /start → повторное рассмотрение админом.
+На `payment_review` часы не тикают: чек уже прислан, дальше ход админа.
+
 «Задать вопрос» доступна на любом шаге — командой /question и кнопкой меню бота
 (setMyCommands + setChatMenuButton при старте сервиса); инлайн-кнопкой она висит
 только на шаге оплаты (TEXT_ACCEPTED/_payment_keyboard) — там вопросы чаще всего.
@@ -26,7 +32,7 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
 Запуск (в образе backend): python -m scripts.intake_bot
 Требует env: TELEGRAM_INTAKE_BOT_TOKEN, DATABASE_URL, REDIS_URL,
   (опц.) PLATFORM_URL, TELEGRAM_PROXY, TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID,
-  TELEGRAM_INTAKE_BOT_LOG_CHAT_ID.
+  TELEGRAM_INTAKE_BOT_LOG_CHAT_ID, INTAKE_PAYMENT_WINDOW_HOURS.
 """
 from __future__ import annotations
 
@@ -34,7 +40,7 @@ import asyncio
 import html
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -53,8 +59,10 @@ from app.models.intake_application import (
     STATUS_AWAITING_RECEIPT,
     STATUS_CHOOSING_PLAN,
     STATUS_CONFIRMED,
+    STATUS_EXPIRED,
     STATUS_PAYMENT_REVIEW,
     STATUS_SUBMITTED,
+    STATUSES_ON_PAYMENT_CLOCK,
     IntakeApplication,
 )
 from app.models.plan import Plan
@@ -78,6 +86,38 @@ ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
     "1", "true", "yes", "on",
 }
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+
+def _payment_window_hours() -> float:
+    """Сколько часов держим бронь после «Принять» (ARG-108).
+
+    Дефолт зашит в код, а не в compose: прод-compose не трогаем, а на стенде
+    ставится что-нибудь вроде 0.05, чтобы прогнать сгорание за минуты, а не за сутки.
+    """
+    raw = os.environ.get("INTAKE_PAYMENT_WINDOW_HOURS", "").strip()
+    if not raw:
+        return 24.0
+    try:
+        hours = float(raw)
+    except ValueError:
+        print(f"INTAKE_PAYMENT_WINDOW_HOURS={raw!r} — не число, беру 24", flush=True)
+        return 24.0
+    if hours <= 0:
+        print(f"INTAKE_PAYMENT_WINDOW_HOURS={raw!r} — не положительное, беру 24", flush=True)
+        return 24.0
+    return hours
+
+
+PAYMENT_WINDOW_HOURS = _payment_window_hours()
+# Свип брони: молчащий участник не шлёт боту ни одного апдейта, поэтому сгорание не
+# может быть реакцией на сообщение — нужен отдельный проход по времени. Минута
+# погрешности на окне в сутки роли не играет, зато на стенде видно сразу.
+EXPIRE_SWEEP_INTERVAL_SEC = 60
+MSK = timezone(timedelta(hours=3))
+MONTHS_RU = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
 
 RATE_LIMIT = 3
 RATE_WINDOW_SEC = 3600
@@ -157,6 +197,23 @@ TEXT_QUESTION_SENT = "✅ Вопрос отправлен в поддержку.
 TEXT_NEED_USERNAME = (
     "У тебя не задан @username в Telegram. Открой Настройки → «Имя пользователя», "
     "задай его и напиши сюда что угодно, чтобы мы попробовали снова."
+)
+
+# --- Бронь места на время оплаты (ARG-108) ------------------------------------
+
+TEXT_DEADLINE_NOTE = (
+    "⏳ Место держим за тобой до <b>{deadline}</b> (МСК). Не придёт оплата к этому "
+    "времени — заявка аннулируется, и место уйдёт следующему."
+)
+TEXT_EXPIRED = (
+    "⏳ <b>Бронь снята.</b>\n\n"
+    "Время на оплату истекло — заявка аннулирована, место ушло дальше.\n\n"
+    "Всё ещё хочешь в Экспедицию? Нажми /start — рассмотрим заявку заново."
+)
+TEXT_EXPIRED_ALERT = "Срок брони истёк."
+TEXT_RESUBMITTED = (
+    f"{STAR} <b>Заявка снова отправлена на рассмотрение.</b>\n\n"
+    f"Мы читаем каждую анкету лично. Как прочитаем — ответим. Жди весточку. {SHIP}"
 )
 
 # --- Callback-data ------------------------------------------------------------
@@ -513,6 +570,130 @@ async def _rate_ok(tg_id: int) -> bool:
     return bool(count <= RATE_LIMIT)
 
 
+# --- Бронь места: дедлайн, сгорание, свип (ARG-108) ---------------------------
+
+
+def _deadline_str(deadline: datetime) -> str:
+    """«21:40 27 августа» — момент в МСК, как его читает участник."""
+    local = deadline.astimezone(MSK)
+    return f"{local:%H:%M} {local.day} {MONTHS_RU[local.month - 1]}"
+
+
+def _with_deadline(text: str, app: IntakeApplication) -> str:
+    """Добавить к сообщению строку про бронь, если часы тикают.
+
+    Напоминаний «осталось N часов» нет намеренно, поэтому дедлайн проговаривается
+    в каждом экране шага оплаты — списке тарифов и реквизитах.
+    """
+    if app.payment_deadline_at is None or app.status not in STATUSES_ON_PAYMENT_CLOCK:
+        return text
+    note = TEXT_DEADLINE_NOTE.format(deadline=_deadline_str(app.payment_deadline_at))
+    return f"{text}\n\n{note}"
+
+
+def _deadline_passed(app: IntakeApplication) -> bool:
+    """Окно вышло — и вышло именно на том шаге, где часы вообще тикают."""
+    return (
+        app.status in STATUSES_ON_PAYMENT_CLOCK
+        and app.payment_deadline_at is not None
+        and app.payment_deadline_at <= datetime.now(UTC)
+    )
+
+
+async def _mark_expired(session: AsyncSession, app: IntakeApplication) -> None:
+    app.status = STATUS_EXPIRED
+    app.expired_at = datetime.now(UTC)
+    await session.flush()
+
+
+async def _notify_expired(client: httpx.AsyncClient, app: IntakeApplication) -> None:
+    """Сообщить о снятой брони обоим: участнику — что место ушло, админу — что оно
+    освободилось, с кнопкой «Принять снова» (она же «продлить»)."""
+    await _send(client, app.tg_id, TEXT_EXPIRED)
+    if ADMIN_CHAT_ID is None:
+        return
+    tag = _user_tag(app.tg_username, app.tg_id)
+    await _send(
+        client, ADMIN_CHAT_ID,
+        f"⌛️ <b>Бронь заявки #{app.id}</b> ({html.escape(tag)}) истекла — место свободно.\n\n"
+        f"{html.escape(app.about or '')}",
+        reply_markup={
+            "inline_keyboard": [[{"text": "✅ Принять снова", "callback_data": f"acc:{app.id}"}]]
+        },
+    )
+    print(f"[action] бронь заявки #{app.id} ({tag}) истекла", flush=True)
+
+
+async def _expire_now(
+    client: httpx.AsyncClient, session: AsyncSession, app: IntakeApplication
+) -> None:
+    await _mark_expired(session, app)
+    await _notify_expired(client, app)
+
+
+async def _expired_guard(
+    client: httpx.AsyncClient,
+    session: AsyncSession,
+    app: IntakeApplication,
+    cb: dict[str, Any],
+) -> bool:
+    """True — заявка сгорела, обработчик кнопки должен остановиться.
+
+    Проверка синхронная, а не «дождёмся свипа»: между истечением и проходом свипа
+    до минуты, и всё это время кнопки в чате живые.
+    """
+    if app.status != STATUS_EXPIRED and not _deadline_passed(app):
+        return False
+    if app.status != STATUS_EXPIRED:
+        await _expire_now(client, session, app)
+    await _answer_callback(client, cb["id"], TEXT_EXPIRED_ALERT, alert=True)
+    return True
+
+
+async def _expire_overdue(client: httpx.AsyncClient, session: AsyncSession) -> int:
+    """Снять все брони с вышедшим окном. Возвращает число снятых.
+
+    Сначала статусы в БД + commit, и только потом сообщения: иначе упавший commit
+    оставит участника с «бронь снята» при живой заявке, а следующий проход пришлёт
+    то же самое ещё раз.
+    """
+    overdue = list(
+        (
+            await session.execute(
+                select(IntakeApplication)
+                .where(
+                    IntakeApplication.status.in_(STATUSES_ON_PAYMENT_CLOCK),
+                    IntakeApplication.payment_deadline_at.is_not(None),
+                    IntakeApplication.payment_deadline_at <= datetime.now(UTC),
+                )
+                .order_by(IntakeApplication.payment_deadline_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not overdue:
+        return 0
+    for app in overdue:
+        await _mark_expired(session, app)
+    await session.commit()
+    for app in overdue:
+        await _notify_expired(client, app)
+    return len(overdue)
+
+
+async def _expire_sweep_loop(client: httpx.AsyncClient) -> None:
+    """Часы брони. Отдельная корутина рядом с long-poll-циклом: участник, который
+    просто молчит, не даёт боту ни одного повода проснуться."""
+    while True:
+        try:
+            async with SessionLocal() as session:
+                await _expire_overdue(client, session)
+        except Exception as exc:  # noqa: BLE001 — свип не должен ронять бота
+            print(f"expire sweep error: {type(exc).__name__}: {exc!r}", flush=True)
+        await asyncio.sleep(EXPIRE_SWEEP_INTERVAL_SEC)
+
+
 # --- Шаги воронки ------------------------------------------------------------
 
 
@@ -524,6 +705,7 @@ async def _status_reminder(client: httpx.AsyncClient, chat_id: int, app: IntakeA
         STATUS_AWAITING_OFFER: TEXT_OFFER_PROMPT,
         STATUS_AWAITING_RECEIPT: TEXT_NEED_RECEIPT,
         STATUS_PAYMENT_REVIEW: TEXT_WAIT_PAYMENT_CHECK,
+        STATUS_EXPIRED: TEXT_EXPIRED,
     }
     text = reminders.get(app.status)
     if text:
@@ -547,7 +729,7 @@ async def _send_plan_list(
         await _edit_or_send(client, chat_id, message_id, TEXT_NO_PLANS)
         return
     await _edit_or_send(
-        client, chat_id, message_id, TEXT_PLAN_LIST,
+        client, chat_id, message_id, _with_deadline(TEXT_PLAN_LIST, app),
         reply_markup=_plans_keyboard(app.id, plans),
     )
 
@@ -563,16 +745,35 @@ async def _handle_about(
     app.status = STATUS_SUBMITTED
     await session.flush()
     await _send(client, chat_id, TEXT_SUBMITTED)
+    await _send_anketa_to_admin(client, app)
 
-    if ADMIN_CHAT_ID is not None:
-        tag = _user_tag(app.tg_username, app.tg_id)
-        await _send(
-            client, ADMIN_CHAT_ID,
-            f"📝 <b>Новая заявка от {html.escape(tag)}</b>\n\n{html.escape(text)}",
-            reply_markup={
-                "inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"acc:{app.id}"}]]
-            },
+
+async def _send_anketa_to_admin(
+    client: httpx.AsyncClient, app: IntakeApplication, *, repeat: bool = False
+) -> None:
+    """Карточка анкеты в admin-чат с кнопкой «Принять».
+
+    `repeat=True` — заявка вернулась после сгоревшей брони (ARG-108): та же кнопка,
+    тот же `acc:`-callback, отличается только шапка, чтобы админ видел, что это
+    второй заход, а не новый человек.
+    """
+    if ADMIN_CHAT_ID is None:
+        return
+    tag = _user_tag(app.tg_username, app.tg_id)
+    if repeat:
+        header = (
+            f"🔁 <b>Повторная заявка от {html.escape(tag)}</b>\n"
+            "<i>Бронь по прошлой заявке истекла.</i>"
         )
+    else:
+        header = f"📝 <b>Новая заявка от {html.escape(tag)}</b>"
+    await _send(
+        client, ADMIN_CHAT_ID,
+        f"{header}\n\n{html.escape(app.about or '')}",
+        reply_markup={
+            "inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"acc:{app.id}"}]]
+        },
+    )
 
 
 async def _handle_receipt(
@@ -658,10 +859,19 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
         return
     app_id = int(cb["data"].split(":", 1)[1])
     app = await session.get(IntakeApplication, app_id)
-    if app is None or app.status != STATUS_SUBMITTED:
+    if app is None or app.status not in (STATUS_SUBMITTED, STATUS_EXPIRED):
         await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
         return
+    # Приём сгоревшей заявки — это и «принять заново», и «продлить»: воронка
+    # начинается с выбора тарифа, оферта принимается ещё раз (согласие привязано к
+    # конкретной оплате), часы брони заводятся с нуля.
+    if app.status == STATUS_EXPIRED:
+        app.plan_id = None
+        app.offer_accepted_at = None
+        app.offer_version = None
+        app.expired_at = None
     app.status = STATUS_CHOOSING_PLAN
+    app.payment_deadline_at = datetime.now(UTC) + timedelta(hours=PAYMENT_WINDOW_HOURS)
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
 
@@ -697,6 +907,8 @@ async def _handle_plan_details(client: httpx.AsyncClient, session: AsyncSession,
     if app is None or context is None:
         await _answer_callback(client, cb["id"])
         return
+    if await _expired_guard(client, session, app, cb):
+        return
     if app.status != STATUS_CHOOSING_PLAN:
         await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
         return
@@ -720,6 +932,8 @@ async def _handle_plan_list(client: httpx.AsyncClient, session: AsyncSession, cb
     if app is None or context is None:
         await _answer_callback(client, cb["id"])
         return
+    if await _expired_guard(client, session, app, cb):
+        return
     if app.status != STATUS_CHOOSING_PLAN:
         await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
         return
@@ -734,6 +948,8 @@ async def _handle_plan_choose(client: httpx.AsyncClient, session: AsyncSession, 
     context = _plan_screen_context(cb, app)
     if app is None or context is None:
         await _answer_callback(client, cb["id"])
+        return
+    if await _expired_guard(client, session, app, cb):
         return
     # Экран мог устареть: заявку уже увели дальше по воронке из другого места.
     # Тогда данные не трогаем вообще — только алерт (ARG-94).
@@ -761,6 +977,8 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
     if app is None or context is None:
         await _answer_callback(client, cb["id"])
         return
+    if await _expired_guard(client, session, app, cb):
+        return
     if app.status != STATUS_AWAITING_OFFER:
         await _answer_callback(client, cb["id"], TEXT_STEP_DONE, alert=True)
         return
@@ -775,7 +993,8 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
     await _answer_callback(client, cb["id"], "Принято")
     chat_id, _ = context
     await _send(
-        client, chat_id, TEXT_ACCEPTED.format(price=_price_str(plan.price)),
+        client, chat_id,
+        _with_deadline(TEXT_ACCEPTED.format(price=_price_str(plan.price)), app),
         reply_markup=_payment_keyboard(),
     )
 
@@ -1194,12 +1413,35 @@ async def _handle_info(client: httpx.AsyncClient, session: AsyncSession, chat_id
     else:
         plans_lines = "⚠️ Активных тарифов нет — на «Выбери тариф» список будет пуст."
 
+    booked = list(
+        (
+            await session.execute(
+                select(IntakeApplication)
+                .where(
+                    IntakeApplication.status.in_(STATUSES_ON_PAYMENT_CLOCK),
+                    IntakeApplication.payment_deadline_at.is_not(None),
+                )
+                .order_by(IntakeApplication.payment_deadline_at)
+                .limit(10)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    booked_lines = "\n".join(
+        f"• {html.escape(_user_tag(app.tg_username, app.tg_id))} — до {_deadline_str(deadline)}"
+        for app in booked
+        if (deadline := app.payment_deadline_at) is not None
+    ) or "— никого"
+
     await _send(
         client, chat_id,
         f"ℹ️ <b>Статус бота</b>\n\n"
         f"{intake_line}\n\n"
         f"💳 Тарифы:\n{plans_lines}\n\n"
-        f"🏦 Реквизиты: {html.escape(PAYMENT_DETAILS)}",
+        f"🏦 Реквизиты: {html.escape(PAYMENT_DETAILS)}\n\n"
+        f"⏳ Окно оплаты: {PAYMENT_WINDOW_HOURS:g} ч\n"
+        f"Брони в силе:\n{booked_lines}",
     )
 
 
@@ -1232,8 +1474,16 @@ async def _handle_start(
     app.tg_last_name = from_user.get("last_name")
     await session.flush()
 
+    # Бронь могла сгореть, пока участник молчал, а свип ещё не дошёл до заявки.
+    # Отмечаем молча: TEXT_EXPIRED зовёт нажать /start, а он уже нажат — вместо
+    # него человек сразу получает «заявка снова на рассмотрении».
+    if _deadline_passed(app):
+        await _mark_expired(session, app)
+
     if app.status == STATUS_AWAITING_ABOUT:
         await _send(client, chat_id, TEXT_START)
+    elif app.status == STATUS_EXPIRED:
+        await _resubmit_after_expiry(client, session, chat_id, app)
     elif app.status == STATUS_SUBMITTED:
         await _send(client, chat_id, TEXT_WAIT_DECISION)
     elif app.status == STATUS_CHOOSING_PLAN:
@@ -1246,6 +1496,30 @@ async def _handle_start(
         await _send(client, chat_id, TEXT_WAIT_PAYMENT_CHECK)
     elif app.status == STATUS_CONFIRMED:
         await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
+
+
+async def _resubmit_after_expiry(
+    client: httpx.AsyncClient, session: AsyncSession, chat_id: int, app: IntakeApplication
+) -> None:
+    """/start на сгоревшей заявке — заново к админу, а не сразу к тарифам (ARG-108).
+
+    Строка та же (`tg_id` уникален): чистим выбор тарифа и согласие с офертой, но
+    сохраняем анкету — админ видит её в карточке «повторная заявка».
+    """
+    if not app.about:  # сгореть без анкеты нельзя, но и падать на этом незачем
+        app.status = STATUS_AWAITING_ABOUT
+        await session.flush()
+        await _send(client, chat_id, TEXT_START)
+        return
+    app.status = STATUS_SUBMITTED
+    app.payment_deadline_at = None
+    app.expired_at = None
+    app.plan_id = None
+    app.offer_accepted_at = None
+    app.offer_version = None
+    await session.flush()
+    await _send(client, chat_id, TEXT_RESUBMITTED)
+    await _send_anketa_to_admin(client, app, repeat=True)
 
 
 def _should_handle_message(message: dict[str, Any]) -> bool:
@@ -1311,6 +1585,11 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         await _send(client, chat_id, TEXT_NEED_START)
         return
 
+    # Одна точка на все шаги: чек, присланный после дедлайна, тоже опоздал.
+    if _deadline_passed(app):
+        await _expire_now(client, session, app)
+        return
+
     photo = message.get("photo")
     document = message.get("document")
 
@@ -1372,36 +1651,42 @@ async def main() -> None:
 
     print(
         f"Intake bot started. Platform URL: {PLATFORM_URL}. Proxy: {TELEGRAM_PROXY or 'none'}. "
-        f"Admin chat: {ADMIN_CHAT_ID if ADMIN_CHAT_ID is not None else 'not set'}",
+        f"Admin chat: {ADMIN_CHAT_ID if ADMIN_CHAT_ID is not None else 'not set'}. "
+        f"Payment window: {PAYMENT_WINDOW_HOURS:g}h",
         flush=True,
     )
-    offset = 0
     async with httpx.AsyncClient(timeout=40, proxy=TELEGRAM_PROXY) as client:
         await _setup_bot_menu(client)
-        while True:
-            try:
-                resp = await client.get(
-                    f"{API}/getUpdates", params={"offset": offset, "timeout": 30}
-                )
-                updates = resp.json().get("result", [])
-            except (httpx.HTTPError, ValueError) as exc:  # noqa: BLE001
-                print(f"getUpdates failed: {type(exc).__name__}: {exc!r}", flush=True)
-                await asyncio.sleep(3)
-                continue
+        # Два независимых цикла: апдейты от Telegram и часы брони (ARG-108).
+        await asyncio.gather(_poll_loop(client), _expire_sweep_loop(client))
 
-            for upd in updates:
-                offset = upd["update_id"] + 1
-                try:
-                    async with SessionLocal() as session:
-                        if "callback_query" in upd:
-                            await _handle_callback(client, session, upd["callback_query"])
-                        else:
-                            message = upd.get("message") or upd.get("edited_message")
-                            if message and _should_handle_message(message):
-                                await _handle_message(client, session, message)
-                        await session.commit()
-                except Exception as exc:  # noqa: BLE001 — один сбой не роняет бота
-                    print(f"handle update error: {type(exc).__name__}: {exc!r}", flush=True)
+
+async def _poll_loop(client: httpx.AsyncClient) -> None:
+    offset = 0
+    while True:
+        try:
+            resp = await client.get(
+                f"{API}/getUpdates", params={"offset": offset, "timeout": 30}
+            )
+            updates = resp.json().get("result", [])
+        except (httpx.HTTPError, ValueError) as exc:  # noqa: BLE001
+            print(f"getUpdates failed: {type(exc).__name__}: {exc!r}", flush=True)
+            await asyncio.sleep(3)
+            continue
+
+        for upd in updates:
+            offset = upd["update_id"] + 1
+            try:
+                async with SessionLocal() as session:
+                    if "callback_query" in upd:
+                        await _handle_callback(client, session, upd["callback_query"])
+                    else:
+                        message = upd.get("message") or upd.get("edited_message")
+                        if message and _should_handle_message(message):
+                            await _handle_message(client, session, message)
+                    await session.commit()
+            except Exception as exc:  # noqa: BLE001 — один сбой не роняет бота
+                print(f"handle update error: {type(exc).__name__}: {exc!r}", flush=True)
 
 
 if __name__ == "__main__":
