@@ -989,10 +989,7 @@ async def make_booked_application(
     return app
 
 
-async def test_accept_does_not_start_the_payment_clock(
-    session: AsyncSession, monkeypatch: Any
-) -> None:
-    """«Принять» больше не заводит часы — время на выбор тарифа не должно гореть."""
+async def test_accept_starts_the_payment_clock(session: AsyncSession, monkeypatch: Any) -> None:
     admin_chat = 999_101
     monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
     await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
@@ -1007,32 +1004,31 @@ async def test_accept_does_not_start_the_payment_clock(
     await session.refresh(app)
 
     assert app.status == STATUS_CHOOSING_PLAN
-    assert app.payment_deadline_at is None
-    # Дедлайна ещё нет, поэтому на экране тарифов о нём ни слова.
+    assert app.payment_deadline_at is not None
+    window = app.payment_deadline_at - datetime.now(UTC)
+    assert timedelta(hours=23, minutes=59) < window <= timedelta(hours=24)
+    # Дедлайн виден прямо на экране тарифов.
     plans_screen = sent_to(client, app.tg_id)
-    assert plans_screen["text"] == intake_bot.TEXT_PLAN_LIST
+    assert intake_bot._deadline_str(app.payment_deadline_at) in plans_screen["text"]
 
 
-async def test_offer_accept_starts_the_payment_clock(
+async def test_offer_accept_repeats_the_deadline_with_payment_details(
     session: AsyncSession,
 ) -> None:
-    """Часы заводятся, когда участник принял оферту, а не раньше (ARG-108 fix)."""
     plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
-    app = await make_application(session, status=STATUS_AWAITING_OFFER)
+    app = await make_booked_application(
+        session, STATUS_AWAITING_OFFER, datetime.now(UTC) + timedelta(hours=5)
+    )
     app.plan_id = plan.id
     await session.commit()
     client = FakeClient()
 
     await intake_bot._handle_offer_accept(client, session, callback(app, f"of:{app.id}"))
     await session.commit()
-    await session.refresh(app)
 
-    assert app.payment_deadline_at is not None
-    window = app.payment_deadline_at - datetime.now(UTC)
-    assert timedelta(hours=23, minutes=59) < window <= timedelta(hours=24)
-    # Дедлайн проговаривается прямо на экране реквизитов.
     text = client.payload("sendMessage")["text"]
     assert "12 000 ₽" in text
+    assert app.payment_deadline_at is not None
     assert intake_bot._deadline_str(app.payment_deadline_at) in text
 
 
@@ -1072,11 +1068,10 @@ async def test_sweep_does_not_expire_application_under_review(session: AsyncSess
     assert not [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == app.tg_id]
 
 
-async def test_choosing_plan_ignores_stale_deadline(
+async def test_button_after_deadline_expires_the_application(
     session: AsyncSession, monkeypatch: Any
 ) -> None:
-    """choosing_plan не на часах брони (ARG-108 fix) — даже осиротевший дедлайн из
-    прошлого цикла (напр. после ручной правки данных) не должен трогать выбор тарифа."""
+    """Свип мог ещё не дойти до заявки — кнопка в чате обязана отбиться сама."""
     monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_103)
     plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 9000)
     app = await make_booked_application(
@@ -1089,8 +1084,11 @@ async def test_choosing_plan_ignores_stale_deadline(
     await session.commit()
     await session.refresh(app)
 
-    assert app.status == STATUS_AWAITING_OFFER
-    assert app.plan_id == plan.id
+    assert app.status == STATUS_EXPIRED
+    assert app.plan_id is None
+    answer = client.payload("answerCallbackQuery")
+    assert answer["show_alert"] is True
+    assert answer["text"] == intake_bot.TEXT_EXPIRED_ALERT
 
 
 async def test_receipt_after_deadline_is_too_late(
@@ -1141,11 +1139,10 @@ async def test_start_on_expired_sends_application_back_to_admin(
     assert any(b["callback_data"] == f"acc:{app.id}" for b in buttons)
 
 
-async def test_accept_of_expired_restarts_funnel_without_deadline_yet(
+async def test_accept_of_expired_restarts_funnel_with_fresh_deadline(
     session: AsyncSession, monkeypatch: Any
 ) -> None:
-    """«Принять снова» — она же «продлить»: тариф и оферта выбираются заново, а часы
-    брони не заводятся, пока участник заново не примет оферту (ARG-108 fix)."""
+    """«Принять снова» — она же «продлить»: тариф и оферта выбираются заново."""
     admin_chat = 999_106
     monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
     plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
@@ -1170,4 +1167,5 @@ async def test_accept_of_expired_restarts_funnel_without_deadline_yet(
     assert app.plan_id is None
     assert app.offer_accepted_at is None and app.offer_version is None
     assert app.expired_at is None
-    assert app.payment_deadline_at is None
+    assert app.payment_deadline_at is not None
+    assert app.payment_deadline_at > datetime.now(UTC)
