@@ -28,9 +28,14 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    before this, the tap fired two *extra* chat messages (a confirmation + a `📋` log echo),
    which made it easy to reply to the wrong bubble later (see the admin-chat bug above).
    `status=choosing_plan` and the 24h booking clock starts (`payment_deadline_at`, see
-   «Payment window» below); bot shows tariffs as buttons, read
-   from the `plans` table **at request time** (not hardcoded — an admin price edit applies
-   immediately, no bot redeploy). **One button per tariff** («Вода — 12 000 ₽») opening a
+   «Payment window» below). In the **same** handler, `IntakeApplication.price_snapshot`
+   is filled with the price of every active plan — from this instant, this one
+   application never reads `plans.price` live again (see «Payment window»); an admin
+   price edit still applies immediately, but only to applicants who haven't reached
+   «Принять» yet. Bot shows tariffs as buttons, read
+   from the `plans` table **at request time** for which tariffs to list (not hardcoded —
+   still no bot redeploy needed), priced from the snapshot. **One button per tariff**
+   («Вода — 12 000 ₽») opening a
    description screen: title, price, `plans.description`, and a single row of
    **«⬅️ Назад»** / **«✅ Перейти к оплате»**. List ⇄ description ⇄ back all happen in
    **one message** via `editMessageText` — the chat never fills with stale copies of the
@@ -46,7 +51,8 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    changes — the offer itself lives in git, `frontend/src/features/oferta/content/oferta.md`,
    not in the DB), `status=awaiting_receipt`; **now**
    the bot sends payment details (the
-   `accepted` text with `{price}` substituted for the chosen tariff's price) and asks for a
+   `accepted` text with `{price}` substituted for the chosen tariff's price **from
+   `price_snapshot`**, not live `plans.price`) and asks for a
    receipt. Below the text, `_payment_keyboard()` attaches two buttons: **«💬 Связаться по
    техническим вопросам»** (reuses `CB_ASK_QUESTION`/`_handle_ask_question` — this is the
    one screen where that legacy inline button still renders, since this is the step where
@@ -55,7 +61,9 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    every tariff, Tribute handles the actual amount on its own side, not something this bot
    passes through).
 6. Receipt (photo or PDF document) → `status=payment_review`; forwarded to the admin DM
-   with a **«Подтвердить оплату»** button.
+   with a **«Подтвердить оплату»** button. The caption includes the tariff name and its
+   **snapshotted** price, so the admin checks the receipt against what this applicant was
+   actually promised, not against whatever `plans.price` happens to be at review time.
 7. Admin taps **«Подтвердить оплату»** → bot creates the platform account **on this
    environment** (see `PLATFORM_URL` — on staging, the staging domain). The receipt
    message's caption is edited in place (`editMessageCaption`, button removed, «— ✅
@@ -117,6 +125,16 @@ someone takes a week to pick a tariff.
   `INTAKE_PAYMENT_WINDOW_HOURS` (default **24**, hardcoded — prod compose is untouchable;
   staging passes it through so a run can be forced to burn in minutes:
   `INTAKE_PAYMENT_WINDOW_HOURS=0.05`).
+- **The price guarantee is the same handler, not just the deadline text.** Until this was
+  added, every funnel screen re-read `plans.price` live, so an admin price edit mid-window
+  silently changed what the applicant saw next — the deadline protected the *time*, not the
+  *price* the texts promised. `_handle_accept` now also snapshots every active plan's price
+  into `price_snapshot` (`{plan_id: price}`), and `_plan_price(app, plan)` — used by the
+  tariff list, the tariff-detail screen, the offer-acceptance payment text, the admin's
+  receipt-review caption, and the question-forward tariff label — reads from there first,
+  falling back to live `plans.price` only for applications accepted before this field
+  existed (`price_snapshot is None`). Re-accepting from `expired` re-snapshots from scratch;
+  `_resubmit_after_expiry` clears the stale one on `/start` in the meantime.
 - The clock runs in `choosing_plan` / `awaiting_offer` / `awaiting_receipt`
   (`STATUSES_ON_PAYMENT_CLOCK`) and **freezes on `payment_review`**: the receipt is in, the
   ball is the admin's, and an applicant who paid at 23:59 must not burn because nobody was
@@ -151,7 +169,8 @@ someone takes a week to pick a tariff.
 
 `plans` (admin CRUD), `intake_applications` (funnel state; read-only admin API since
 ARG-107, see below — mutating it is still bot-only), `users.plan_id` — see
-[DATA_MODEL.md](DATA_MODEL.md). Booking columns: `payment_deadline_at`, `expired_at`.
+[DATA_MODEL.md](DATA_MODEL.md). Booking columns: `payment_deadline_at`, `expired_at`,
+`price_snapshot`.
 
 `intake_applications.tg_id` is **unique**: one Telegram account = one application, ever.
 `intake_applications.user_id → users.id` has **no `ON DELETE`**, so the account created at
