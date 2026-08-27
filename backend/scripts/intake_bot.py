@@ -19,13 +19,12 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
   набору и выбранному тарифу → участнику приходят логин/пароль → чат переходит в
   сервисный режим («Задать вопрос» / «Сменить пароль»).
 
-Гарантия цены на время оплаты (ARG-108): «Согласен, к оплате» (принятие оферты)
-заводит часы на INTAKE_PAYMENT_WINDOW_HOURS (24 по умолчанию) — не «Принять» и не
-выбор тарифа: время на просмотр тарифов и чтение оферты не горит. Не пришла оплата в
-окно — заявка уходит в `expired` (фоновый свип `_expire_sweep_loop`, потому что
-молчащий участник не даёт боту ни одного апдейта), цена больше не гарантирована,
-вернуться можно через /start → повторное рассмотрение админом (возможно, по новой
-цене). На `payment_review` часы не тикают: чек уже прислан, дальше ход админа.
+Гарантия цены на время оплаты (ARG-108): «Принять» заводит часы на
+INTAKE_PAYMENT_WINDOW_HOURS (24 по умолчанию). Не пришла оплата в окно — заявка
+уходит в `expired` (фоновый свип `_expire_sweep_loop`, потому что молчащий участник
+не даёт боту ни одного апдейта), цена больше не гарантирована, вернуться можно через
+/start → повторное рассмотрение админом (возможно, по новой цене). На
+`payment_review` часы не тикают: чек уже прислан, дальше ход админа.
 
 «Задать вопрос» доступна на любом шаге — командой /question и кнопкой меню бота
 (setMyCommands + setChatMenuButton при старте сервиса); инлайн-кнопкой она висит
@@ -91,7 +90,7 @@ API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 def _payment_window_hours() -> float:
-    """Сколько часов гарантируем цену после принятия оферты (ARG-108).
+    """Сколько часов гарантируем цену после «Принять» (ARG-108).
 
     Дефолт зашит в код, а не в compose: прод-compose не трогаем, а на стенде
     ставится что-нибудь вроде 0.05, чтобы прогнать сгорание за минуты, а не за сутки.
@@ -207,13 +206,17 @@ TEXT_NEED_USERNAME = (
 # поднять тарифы, пока участник тянет с оплатой, при повторном заходе он увидит
 # уже новую цену. Тексты объясняют участнику именно это, а не «конкуренцию за место».
 
-TEXT_DEADLINE_NOTE = (
-    "⏳ Держим эту цену для тебя до <b>{deadline}</b> (МСК) — после этого цена "
-    "тарифа может измениться."
+TEXT_DEADLINE_NOTE_PLAN = (
+    "⏳ Выбери тариф и оплати до <b>{deadline}</b> (МСК). После — заявка сгорит."
+)
+TEXT_DEADLINE_NOTE_PAYMENT = (
+    "⏳ Аргонавтика совсем рядом — оплачивай выбранную Позицию до <b>{deadline}</b> "
+    "(МСК). После — заявка отменится. При новой заявке стоимость Позиций изменится."
 )
 TEXT_EXPIRED = (
-    "⏳ <b>Время действия цены истекло.</b>\n\n"
-    f"Напиши /start, и мы снова рассмотрим твою заявку. {SHIP}"
+    "⏳ <b>Время истекло — заявка сгорела.</b>\n\n"
+    f"Напиши /start, и мы снова рассмотрим твою заявку. Цена Позиций могла "
+    f"измениться. {SHIP}"
 )
 TEXT_EXPIRED_ALERT = "Время на оплату истекло."
 TEXT_RESUBMITTED = (
@@ -587,12 +590,17 @@ def _deadline_str(deadline: datetime) -> str:
 def _with_deadline(text: str, app: IntakeApplication) -> str:
     """Добавить к сообщению строку про гарантию цены, если часы тикают.
 
-    Напоминаний «осталось N часов» нет намеренно — дедлайн называется один раз,
-    сразу на экране реквизитов (единственном, где часы уже идут).
+    Напоминаний «осталось N часов» нет намеренно, поэтому дедлайн проговаривается
+    в каждом экране шага оплаты — списке тарифов и реквизитах, но разными словами:
+    до выбора тарифа фиксировать ещё нечего (см. TEXT_DEADLINE_NOTE_PLAN vs _PAYMENT).
     """
     if app.payment_deadline_at is None or app.status not in STATUSES_ON_PAYMENT_CLOCK:
         return text
-    note = TEXT_DEADLINE_NOTE.format(deadline=_deadline_str(app.payment_deadline_at))
+    template = (
+        TEXT_DEADLINE_NOTE_PLAN if app.status == STATUS_CHOOSING_PLAN
+        else TEXT_DEADLINE_NOTE_PAYMENT
+    )
+    note = template.format(deadline=_deadline_str(app.payment_deadline_at))
     return f"{text}\n\n{note}"
 
 
@@ -612,20 +620,15 @@ async def _mark_expired(session: AsyncSession, app: IntakeApplication) -> None:
 
 
 async def _notify_expired(client: httpx.AsyncClient, app: IntakeApplication) -> None:
-    """Сообщить обоим: участнику — что цена больше не гарантирована, админу — что
-    можно принять заявку заново, с кнопкой «Принять снова» (она же «продлить»)."""
+    """Сообщить участнику, что цена больше не гарантирована.
+
+    Админ узнаёт не сразу, а только если участник сам вернётся через /start —
+    тогда прилетит «🔁 Повторная заявка» (`_resubmit_after_expiry`). Нет смысла
+    заранее дёргать админа по каждому истёкшему окну: большинство просто не
+    возвращаются, и «✅ Принять снова» на пустом месте — только шум в чате.
+    """
     await _send(client, app.tg_id, TEXT_EXPIRED)
-    if ADMIN_CHAT_ID is None:
-        return
     tag = _user_tag(app.tg_username, app.tg_id)
-    await _send(
-        client, ADMIN_CHAT_ID,
-        f"⌛️ <b>Заявка #{app.id}</b> ({html.escape(tag)}): время на оплату истекло, "
-        f"цена больше не гарантирована.\n\n{html.escape(app.about or '')}",
-        reply_markup={
-            "inline_keyboard": [[{"text": "✅ Принять снова", "callback_data": f"acc:{app.id}"}]]
-        },
-    )
     print(f"[action] окно оплаты заявки #{app.id} ({tag}) истекло", flush=True)
 
 
@@ -734,7 +737,7 @@ async def _send_plan_list(
         await _edit_or_send(client, chat_id, message_id, TEXT_NO_PLANS)
         return
     await _edit_or_send(
-        client, chat_id, message_id, TEXT_PLAN_LIST,
+        client, chat_id, message_id, _with_deadline(TEXT_PLAN_LIST, app),
         reply_markup=_plans_keyboard(app.id, plans),
     )
 
@@ -871,16 +874,15 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
         return
     # Приём сгоревшей заявки — это и «принять заново», и «продлить»: воронка
     # начинается с выбора тарифа, оферта принимается ещё раз (согласие привязано к
-    # конкретной оплате). Часы брони по-прежнему не тикают — они заводятся заново
-    # только когда участник дойдёт до «Согласен, к оплате» (см. _handle_offer_accept).
+    # конкретной оплате), часы брони заводятся с нуля.
     if app.status == STATUS_EXPIRED:
         app.plan_id = None
         app.offer_accepted_at = None
         app.offer_version = None
         app.expired_at = None
-        app.payment_deadline_at = None
     app.status = STATUS_CHOOSING_PLAN
     app.accepted_at = datetime.now(UTC)
+    app.payment_deadline_at = datetime.now(UTC) + timedelta(hours=PAYMENT_WINDOW_HOURS)
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
 
@@ -999,10 +1001,6 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
     app.offer_accepted_at = datetime.now(UTC)
     app.offer_version = OFFER_VERSION
     app.status = STATUS_AWAITING_RECEIPT
-    # Часы брони (ARG-108) заводятся здесь, а не на «Принять»: участник только что
-    # прочитал и принял оферту — окно на оплату должно отсчитываться от этого
-    # момента, а не съедаться временем на выбор тарифа и чтение оферты.
-    app.payment_deadline_at = datetime.now(UTC) + timedelta(hours=PAYMENT_WINDOW_HOURS)
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
     chat_id, _ = context
