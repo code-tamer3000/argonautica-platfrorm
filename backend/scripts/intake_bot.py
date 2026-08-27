@@ -620,20 +620,15 @@ async def _mark_expired(session: AsyncSession, app: IntakeApplication) -> None:
 
 
 async def _notify_expired(client: httpx.AsyncClient, app: IntakeApplication) -> None:
-    """Сообщить обоим: участнику — что цена больше не гарантирована, админу — что
-    можно принять заявку заново, с кнопкой «Принять снова» (она же «продлить»)."""
+    """Сообщить участнику, что цена больше не гарантирована.
+
+    Админ узнаёт не сразу, а только если участник сам вернётся через /start —
+    тогда прилетит «🔁 Повторная заявка» (`_resubmit_after_expiry`). Нет смысла
+    заранее дёргать админа по каждому истёкшему окну: большинство просто не
+    возвращаются, и «✅ Принять снова» на пустом месте — только шум в чате.
+    """
     await _send(client, app.tg_id, TEXT_EXPIRED)
-    if ADMIN_CHAT_ID is None:
-        return
     tag = _user_tag(app.tg_username, app.tg_id)
-    await _send(
-        client, ADMIN_CHAT_ID,
-        f"⌛️ <b>Заявка #{app.id}</b> ({html.escape(tag)}): время на оплату истекло, "
-        f"цена больше не гарантирована.\n\n{html.escape(app.about or '')}",
-        reply_markup={
-            "inline_keyboard": [[{"text": "✅ Принять снова", "callback_data": f"acc:{app.id}"}]]
-        },
-    )
     print(f"[action] окно оплаты заявки #{app.id} ({tag}) истекло", flush=True)
 
 

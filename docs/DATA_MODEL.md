@@ -171,7 +171,7 @@ ARG-107. See [INTAKE_BOT.md](INTAKE_BOT.md).
 | receipt_kind | TEXT | NULL | `'photo'` \| `'document'` |
 | offer_accepted_at | TIMESTAMPTZ | NULL | set on the «✅ Согласен, к оплате» callback (ARG-43); gates `awaiting_offer → awaiting_receipt`; also doubles as the `stage_since` timestamp for `awaiting_receipt` (ARG-107 — no separate column) |
 | offer_version | TEXT | NULL | edition of the accepted offer (bot's `OFFER_VERSION` constant), not a DB-stored text |
-| payment_deadline_at | TIMESTAMPTZ | NULL | end of the 24h booking, set when the applicant accepts the offer, not when the admin taps «Принять» (ARG-108); the clock only runs in `awaiting_receipt` |
+| payment_deadline_at | TIMESTAMPTZ | NULL | end of the 24h booking, set when the admin taps «Принять» (ARG-108); the clock only runs in `choosing_plan`/`awaiting_offer`/`awaiting_receipt` |
 | expired_at | TIMESTAMPTZ | NULL | when the booking was actually dropped (`status='expired'`) |
 | user_id | BIGINT | FK users, NULL | set once the platform account is created (final step) |
 | created_at | TIMESTAMPTZ | NOT NULL, INDEX (`ix_intake_applications_created_at`) | |

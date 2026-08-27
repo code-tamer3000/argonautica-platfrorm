@@ -1047,10 +1047,9 @@ async def test_sweep_expires_overdue_booking(session: AsyncSession, monkeypatch:
     assert app.status == STATUS_EXPIRED
     assert app.expired_at is not None
     assert sent_to(client, app.tg_id)["text"] == intake_bot.TEXT_EXPIRED
-    to_admin = sent_to(client, admin_chat)
-    assert "истекло" in to_admin["text"]
-    buttons = [b for row in to_admin["reply_markup"]["inline_keyboard"] for b in row]
-    assert any(b["callback_data"] == f"acc:{app.id}" for b in buttons)
+    # Админ узнаёт не сразу, а только если участник сам вернётся через /start
+    # («🔁 Повторная заявка») — заранее слать «Принять снова» не надо.
+    assert not [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == admin_chat]
 
 
 async def test_sweep_does_not_expire_application_under_review(session: AsyncSession) -> None:
