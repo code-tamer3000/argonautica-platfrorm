@@ -456,6 +456,7 @@ export type ApplicationStatus =
   | 'awaiting_receipt'
   | 'payment_review'
   | 'confirmed'
+  | 'expired'
 
 export interface ApplicationOut {
   id: number
@@ -480,6 +481,7 @@ export interface ApplicationOut {
   offer_accepted_at: string | null
   receipt_at: string | null
   confirmed_at: string | null
+  expired_at: string | null
   updated_at: string
   /** Момент входа в текущую стадию — считает бэкенд, фронт даты не пересчитывает. */
   stage_since: string | null

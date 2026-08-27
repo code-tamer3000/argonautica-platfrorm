@@ -14,6 +14,10 @@ import funnelStyles from './funnel.module.css'
 // confirmed — там воронка для неё уже кончилась).
 const STUCK_THRESHOLD_DAYS = 3
 
+// Терминальные стадии — воронка для заявки на них уже кончилась, «застрял»/«в
+// работе» их не считают (confirmed — успех, expired — бронь сгорела, ARG-108).
+const TERMINAL_STATUSES: ReadonlySet<ApplicationStatus> = new Set(['confirmed', 'expired'])
+
 const STAGES: { status: ApplicationStatus; label: string; accent?: boolean }[] = [
   { status: 'awaiting_about', label: 'Ждём анкету' },
   { status: 'submitted', label: 'Анкета на проверке', accent: true },
@@ -22,6 +26,7 @@ const STAGES: { status: ApplicationStatus; label: string; accent?: boolean }[] =
   { status: 'awaiting_receipt', label: 'Ждём чек' },
   { status: 'payment_review', label: 'Проверка оплаты', accent: true },
   { status: 'confirmed', label: 'Оплачено' },
+  { status: 'expired', label: 'Бронь сгорела' },
 ]
 
 const STAGE_LABEL: Record<ApplicationStatus, string> = Object.fromEntries(
@@ -36,6 +41,7 @@ const TIMELINE_FIELDS: { key: keyof ApplicationOut; label: string }[] = [
   { key: 'offer_accepted_at', label: 'Оферта принята' },
   { key: 'receipt_at', label: 'Чек прислан' },
   { key: 'confirmed_at', label: 'Оплата подтверждена' },
+  { key: 'expired_at', label: 'Бронь сгорела' },
 ]
 
 function formatDatetime(iso: string | null): string {
@@ -50,7 +56,7 @@ function formatDatetime(iso: string | null): string {
 }
 
 function isStuck(item: ApplicationOut): boolean {
-  return item.status !== 'confirmed' && (item.days_in_stage ?? 0) > STUCK_THRESHOLD_DAYS
+  return !TERMINAL_STATUSES.has(item.status) && (item.days_in_stage ?? 0) > STUCK_THRESHOLD_DAYS
 }
 
 function matchesQuery(item: ApplicationOut, query: string): boolean {
@@ -180,7 +186,9 @@ export function AdminFunnel() {
 
   const byStatus = data?.by_status
   const stuckCount = items.filter(isStuck).length
-  const working = data ? data.total - (byStatus?.awaiting_about ?? 0) - (byStatus?.confirmed ?? 0) : 0
+  const working = data
+    ? data.total - (byStatus?.awaiting_about ?? 0) - (byStatus?.confirmed ?? 0) - (byStatus?.expired ?? 0)
+    : 0
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
 

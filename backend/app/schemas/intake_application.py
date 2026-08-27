@@ -7,6 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 # Порядок стадий — совпадает с CheckConstraint в app/models/intake_application.py.
+# `expired` (ARG-108) — терминальная стадия, бронь сгорела до оплаты.
 FUNNEL_STATUSES: tuple[str, ...] = (
     "awaiting_about",
     "submitted",
@@ -15,6 +16,7 @@ FUNNEL_STATUSES: tuple[str, ...] = (
     "awaiting_receipt",
     "payment_review",
     "confirmed",
+    "expired",
 )
 
 
@@ -47,6 +49,7 @@ class ApplicationOut(BaseModel):
     offer_accepted_at: datetime | None
     receipt_at: datetime | None
     confirmed_at: datetime | None
+    expired_at: datetime | None
     updated_at: datetime
     stage_since: datetime | None
     days_in_stage: int | None

@@ -1,4 +1,5 @@
 """Веб-воронка приёма — GET /api/admin/applications (ARG-107, read-only CRM)."""
+import random
 from datetime import UTC, datetime, timedelta
 
 from httpx import AsyncClient
@@ -18,8 +19,9 @@ async def admin_headers(client: AsyncClient, make_user: MakeUser) -> dict[str, s
 
 
 def _next_tg_id() -> int:
-    # tg_id UNIQUE — тестовая БД переживает прогоны, берём из монотонного времени.
-    return int(datetime.now(UTC).timestamp() * 1000) % 1_000_000_000
+    # tg_id UNIQUE, тестовая БД переживает прогоны — широкий диапазон, тот же приём,
+    # что в test_intake_bot.py::make_application (узкий диапазон реально коллидировал).
+    return random.randint(10**9, 10**12)
 
 
 async def test_non_admin_forbidden(client: AsyncClient, make_user: MakeUser) -> None:
@@ -36,7 +38,7 @@ async def test_unauthenticated_rejected(client: AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_empty_by_status_has_all_seven_keys(
+async def test_empty_by_status_has_all_stage_keys(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     headers = await admin_headers(client, make_user)

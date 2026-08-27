@@ -159,7 +159,7 @@ ARG-107. See [INTAKE_BOT.md](INTAKE_BOT.md).
 | tg_username | TEXT | NULL | refreshed on every `/start` |
 | tg_first_name | TEXT | NULL | |
 | tg_last_name | TEXT | NULL | |
-| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK, INDEX (`ix_intake_applications_status`) | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_offer` → `awaiting_receipt` → `payment_review` → `confirmed` |
+| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK, INDEX (`ix_intake_applications_status`) | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_offer` → `awaiting_receipt` → `payment_review` → `confirmed`; plus `expired` — booking burned before payment (ARG-108) |
 | about | TEXT | NULL | the applicant's one-message self-description |
 | submitted_at | TIMESTAMPTZ | NULL | entered `submitted` (ARG-107) |
 | accepted_at | TIMESTAMPTZ | NULL | entered `choosing_plan` (ARG-107) |
@@ -171,6 +171,8 @@ ARG-107. See [INTAKE_BOT.md](INTAKE_BOT.md).
 | receipt_kind | TEXT | NULL | `'photo'` \| `'document'` |
 | offer_accepted_at | TIMESTAMPTZ | NULL | set on the «✅ Согласен, к оплате» callback (ARG-43); gates `awaiting_offer → awaiting_receipt`; also doubles as the `stage_since` timestamp for `awaiting_receipt` (ARG-107 — no separate column) |
 | offer_version | TEXT | NULL | edition of the accepted offer (bot's `OFFER_VERSION` constant), not a DB-stored text |
+| payment_deadline_at | TIMESTAMPTZ | NULL | end of the 24h booking, set when the admin taps «Принять» (ARG-108); the clock only runs in `choosing_plan`/`awaiting_offer`/`awaiting_receipt` |
+| expired_at | TIMESTAMPTZ | NULL | when the booking was actually dropped (`status='expired'`) |
 | user_id | BIGINT | FK users, NULL | set once the platform account is created (final step) |
 | created_at | TIMESTAMPTZ | NOT NULL, INDEX (`ix_intake_applications_created_at`) | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |

@@ -48,6 +48,7 @@ _STAGE_TIMESTAMP: dict[str, str] = {
     "awaiting_receipt": "offer_accepted_at",
     "payment_review": "receipt_at",
     "confirmed": "confirmed_at",
+    "expired": "expired_at",  # ARG-108: бронь сгорела до оплаты
 }
 
 
@@ -77,6 +78,7 @@ def _to_out(app: IntakeApplication, plan: Plan | None) -> ApplicationOut:
         offer_accepted_at=app.offer_accepted_at,
         receipt_at=app.receipt_at,
         confirmed_at=app.confirmed_at,
+        expired_at=app.expired_at,
         updated_at=app.updated_at,
         stage_since=stage_since,
         days_in_stage=days_in_stage,
