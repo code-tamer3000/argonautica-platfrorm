@@ -15,8 +15,9 @@ verbatim from `OldBot/bot_texts.md`.
 ```
 awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_receipt →
   payment_review → confirmed
-                     ↑                ↓                ↓
-                     └──── expired ←──┴────────────────┘   (booking burned, ARG-108)
+                                                    ↓
+                                                 expired   (booking burned, ARG-108 —
+                                                            only reachable from here)
 ```
 
 1. **`/start`** → bot asks the applicant to describe themselves in one message
@@ -27,8 +28,8 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    button removed, «— ✅ Принята» appended to the header, no separate confirmation message —
    before this, the tap fired two *extra* chat messages (a confirmation + a `📋` log echo),
    which made it easy to reply to the wrong bubble later (see the admin-chat bug above).
-   `status=choosing_plan` and the 24h booking clock starts (`payment_deadline_at`, see
-   «Payment window» below); bot shows tariffs as buttons, read
+   `status=choosing_plan`; the booking clock does **not** start yet (see «Payment window»
+   below — it starts on offer acceptance, step 5, not here); bot shows tariffs as buttons, read
    from the `plans` table **at request time** (not hardcoded — an admin price edit applies
    immediately, no bot redeploy). **One button per tariff** («Вода — 12 000 ₽») opening a
    description screen: title, price, `plans.description`, and a single row of
@@ -44,7 +45,10 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
 5. Tap **«✅ Согласен, к оплате»** → `intake_applications.offer_accepted_at` = now,
    `offer_version` = the bot's `OFFER_VERSION` constant (bump it whenever the offer text
    changes — the offer itself lives in git, `frontend/src/features/oferta/content/oferta.md`,
-   not in the DB), `status=awaiting_receipt`; **now** the bot sends payment details (the
+   not in the DB), `status=awaiting_receipt`, and **the 24h booking clock starts**
+   (`payment_deadline_at`, see «Payment window» below — from here, not from step 3, so
+   browsing tariffs and reading the offer never eats into the payment window); **now**
+   the bot sends payment details (the
    `accepted` text with `{price}` substituted for the chosen tariff's price) and asks for a
    receipt. Below the text, `_payment_keyboard()` attaches two buttons: **«💬 Связаться по
    техническим вопросам»** (reuses `CB_ASK_QUESTION`/`_handle_ask_question` — this is the
@@ -74,8 +78,8 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
      refused (login = username, must exist) — the admin gets an alert and the applicant is
      asked to set one; nothing else in the funnel is blocked, retry the same button once
      they have.
-8. Any step between «Принять» and the receipt can end in **`expired`** — the booking
-   window ran out. See «Payment window» below.
+8. Waiting on the receipt (step 6) can end in **`expired`** — the booking window ran out.
+   See «Payment window» below.
 9. In-between statuses show `wait_decision` / `wait_payment_check` / the offer prompt again
    (idle waiting on the *other* party, or on the applicant tapping «Согласен») if the
    applicant sends something out of turn.
@@ -107,21 +111,24 @@ edit into.
 
 ## Payment window (ARG-108)
 
-A booking is held for **24 hours after the admin accepts the application**, not from the
-moment the payment details are revealed: the seat must not sit occupied while someone takes
-a week to pick a tariff.
+A booking is held for **24 hours after the applicant accepts the offer** («✅ Согласен, к
+оплате», not the admin's earlier «Принять»): browsing tariffs and reading the offer must
+not eat into the payment window — only the actual "go pay" window is timed.
 
-- `payment_deadline_at` is set in `_handle_accept` together with `status=choosing_plan`.
-  The window comes from `INTAKE_PAYMENT_WINDOW_HOURS` (default **24**, hardcoded — prod
-  compose is untouchable; staging passes it through so a run can be forced to burn in
-  minutes: `INTAKE_PAYMENT_WINDOW_HOURS=0.05`).
-- The clock runs in `choosing_plan` / `awaiting_offer` / `awaiting_receipt`
-  (`STATUSES_ON_PAYMENT_CLOCK`) and **freezes on `payment_review`**: the receipt is in, the
-  ball is the admin's, and an applicant who paid at 23:59 must not burn because nobody was
-  awake.
+- `payment_deadline_at` is set in `_handle_offer_accept`, together with `offer_accepted_at`
+  and `status=awaiting_receipt` — same handler, same moment. `_handle_accept` (admin's
+  «Принять») does **not** touch it any more. The window comes from
+  `INTAKE_PAYMENT_WINDOW_HOURS` (default **24**, hardcoded — prod compose is untouchable;
+  staging passes it through so a run can be forced to burn in minutes:
+  `INTAKE_PAYMENT_WINDOW_HOURS=0.05`).
+- The clock runs **only** in `awaiting_receipt` (`STATUSES_ON_PAYMENT_CLOCK`) and
+  **freezes on `payment_review`**: the receipt is in, the ball is the admin's, and an
+  applicant who paid at 23:59 must not burn because nobody was awake. `choosing_plan` /
+  `awaiting_offer` are never on the clock — `payment_deadline_at` is simply `NULL` there,
+  so no amount of stray/legacy data on those rows can expire an application early.
 - **No reminders before the deadline** — deliberate. Instead the deadline is spelled out
-  twice, on both screens of the payment step: the tariff list and the payment details
-  (`_with_deadline`, «до 21:40 27 августа», МСК).
+  once, right on the payment-details screen the moment it starts (`_with_deadline`, «до
+  21:40 27 августа», МСК) — there is no earlier screen where it would apply.
 - Expiry is a **background sweep** (`_expire_sweep_loop`, every 60s, started by `main()`
   alongside the long-poll loop): an applicant who simply goes quiet never gives the bot a
   single update to react to. `_expire_overdue` marks the rows and commits **before**
@@ -129,12 +136,16 @@ a week to pick a tariff.
   while it is not.
 - The same check also runs **synchronously** in every participant-facing handler
   (`_expired_guard` on the tariff/offer buttons, one check in `_handle_message` covering a
-  late receipt). Without it, buttons stay live for up to a minute past the deadline.
+  late receipt). Without it, buttons stay live for up to a minute past the deadline. On the
+  tariff/offer buttons this only ever fires for a row that was **already** `expired` from a
+  previous cycle (still un-resubmitted) — those statuses have no live deadline of their own
+  to pass any more.
 - On expiry: `status=expired`, `expired_at` set, the applicant is told the seat is gone,
   and the admin DM gets a card with **«✅ Принять снова»** — the very same `acc:<app_id>`
   callback, so "extend" and "accept again" are one button and one handler. Accepting from
-  `expired` clears `plan_id` / `offer_accepted_at` / `offer_version` and restarts at the
-  tariff list, so the offer is consented to again (consent stays tied to one payment).
+  `expired` clears `plan_id` / `offer_accepted_at` / `offer_version` / `payment_deadline_at`
+  and restarts at the tariff list with **no clock running** — it starts again only once the
+  offer is consented to a second time (consent stays tied to one payment).
 - A tap on any stale funnel button of an expired application answers «Срок брони истёк»,
   not the usual «Этот шаг уже пройден».
 - **Coming back**: `/start` on an `expired` application returns it to `submitted` with the

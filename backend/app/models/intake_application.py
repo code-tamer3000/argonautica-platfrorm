@@ -30,14 +30,11 @@ STATUS_PAYMENT_REVIEW = "payment_review"  # чек прислан, ждём «П
 STATUS_CONFIRMED = "confirmed"  # пользователь платформы создан — сервисный режим
 STATUS_EXPIRED = "expired"  # бронь не оплачена за отведённое окно — заявка аннулирована
 
-# Шаги, на которых тикают часы брони (ARG-108). `payment_review` в список НЕ входит
-# намеренно: чек уже прислан, дальше ход админа — заявка не должна сгореть, пока он
-# не нажал «Подтвердить оплату».
-STATUSES_ON_PAYMENT_CLOCK = (
-    STATUS_CHOOSING_PLAN,
-    STATUS_AWAITING_OFFER,
-    STATUS_AWAITING_RECEIPT,
-)
+# Шаги, на которых тикают часы брони (ARG-108). Только awaiting_receipt: часы
+# заводятся, когда участник принял оферту (`offer_accepted_at`/`payment_deadline_at`
+# ставятся вместе в `_handle_offer_accept`) — выбор тарифа и чтение оферты уже не
+# горят. `payment_review` намеренно снаружи: чек прислан, дальше ход админа.
+STATUSES_ON_PAYMENT_CLOCK = (STATUS_AWAITING_RECEIPT,)
 
 
 class IntakeApplication(Base):
@@ -82,8 +79,9 @@ class IntakeApplication(Base):
     # к оплате», ДО того как участнику открывается шаг присылки чека.
     offer_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     offer_version: Mapped[str | None] = mapped_column(Text)  # редакция принятой оферты
-    # Бронь места (ARG-108): дедлайн ставится в момент «Принять» и тикает только в
-    # STATUSES_ON_PAYMENT_CLOCK. `expired_at` — когда бронь фактически сняли.
+    # Бронь места (ARG-108): дедлайн ставится, когда участник принял оферту
+    # («Согласен, к оплате»), не раньше — часы не должны тикать, пока человек ещё
+    # выбирает тариф и читает оферту. `expired_at` — когда бронь фактически сняли.
     payment_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
