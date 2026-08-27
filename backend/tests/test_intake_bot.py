@@ -119,7 +119,8 @@ def test_plans_keyboard_has_one_button_per_plan() -> None:
         Plan(id=1, name="Вода", price=12000, description="d"),
         Plan(id=2, name="Огонь", price=9000, description="d"),
     ]
-    rows = intake_bot._plans_keyboard(7, plans)["inline_keyboard"]
+    app = IntakeApplication(id=7, price_snapshot=None)
+    rows = intake_bot._plans_keyboard(app, plans)["inline_keyboard"]
 
     assert [len(row) for row in rows] == [1, 1]
     assert rows[0][0] == {"text": "Вода — 12 000 ₽", "callback_data": "pd:7:1"}
@@ -1030,6 +1031,91 @@ async def test_offer_accept_repeats_the_deadline_with_payment_details(
     assert "12 000 ₽" in text
     assert app.payment_deadline_at is not None
     assert intake_bot._deadline_str(app.payment_deadline_at) in text
+
+
+async def test_accept_snapshots_active_plan_prices(session: AsyncSession, monkeypatch: Any) -> None:
+    """«Принять» замораживает цены активных тарифов на саму заявку — момент, с
+    которого воронка больше не смотрит в live plans.price (см. _plan_price)."""
+    admin_chat = 999_107
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_SUBMITTED)
+    client = FakeClient()
+
+    await intake_bot._handle_accept(client, session, admin_callback(app.id, admin_chat))
+    await session.commit()
+    await session.refresh(app)
+
+    # Не полное равенство словаря: тестовая БД переживает прогоны (см. коммент у
+    # test_new_user_is_assigned_intake_welcome_tasks), активных планов от других
+    # тестов может быть сколько угодно — важно только, что наш попал в снимок верно.
+    assert app.price_snapshot is not None
+    assert app.price_snapshot[str(plan.id)] == 12000
+
+
+async def test_price_hike_after_accept_does_not_reach_applicant(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Регрессия: до фикса цена читалась живьём на каждом шаге воронки — админская
+    правка тарифа посреди уже принятой заявки молча долетала до участника на
+    экране тарифа и на экране оплаты, хотя тексты обещают держать цену до истечения
+    брони."""
+    admin_chat = 999_108
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_SUBMITTED)
+    client = FakeClient()
+
+    await intake_bot._handle_accept(client, session, admin_callback(app.id, admin_chat))
+    await session.commit()
+    await session.refresh(app)
+
+    # Админ поднимает цену, пока заявитель ещё выбирает тариф.
+    plan.price = 20000
+    await session.commit()
+
+    client = FakeClient()
+    await intake_bot._handle_plan_details(client, session, callback(app, f"pd:{app.id}:{plan.id}"))
+    details_text = client.payload("editMessageText")["text"]
+    assert "12 000 ₽" in details_text
+    assert "20 000" not in details_text
+
+    client = FakeClient()
+    await intake_bot._handle_plan_choose(client, session, callback(app, f"pc:{app.id}:{plan.id}"))
+    await session.commit()
+    await session.refresh(app)
+
+    client = FakeClient()
+    await intake_bot._handle_offer_accept(client, session, callback(app, f"of:{app.id}"))
+    payment_text = client.payload("sendMessage")["text"]
+    assert "12 000 ₽" in payment_text
+    assert "20 000" not in payment_text
+
+
+async def test_receipt_card_shows_locked_price_not_live_price(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Админ сверяет чек с зафиксированной ценой заявки, а не с текущей plans.price —
+    иначе после правки тарифа честно оплаченный по старой цене чек выглядит «неверной
+    суммой»."""
+    admin_chat = 999_110
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_AWAITING_RECEIPT)
+    app.plan_id = plan.id
+    app.price_snapshot = {str(plan.id): 12000}
+    await session.commit()
+
+    plan.price = 20000
+    await session.commit()
+
+    client = FakeClient()
+    await intake_bot._handle_receipt(client, session, app.tg_id, app, "receipt-1", "document")
+
+    caption = client.payload("sendDocument")["caption"]
+    assert plan.name in caption
+    assert "12 000 ₽" in caption
+    assert "20 000" not in caption
 
 
 async def test_sweep_expires_overdue_booking(session: AsyncSession, monkeypatch: Any) -> None:
