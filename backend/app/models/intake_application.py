@@ -6,6 +6,7 @@ Persistent-состояние в Postgres (не sqlite, не Redis — воро�
 жить только пока чат открыт.
 """
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -86,6 +88,13 @@ class IntakeApplication(Base):
     # STATUSES_ON_PAYMENT_CLOCK. `expired_at` — когда бронь фактически сняли.
     payment_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Снимок цен активных тарифов ({plan_id как str: price}), сделанный в момент «Принять»
+    # (та же секунда, что и payment_deadline_at) — гарантия цены иначе была словами, а не
+    # кодом: до этого поля бот везде читал live plans.price, и админская правка тарифа
+    # долетала до уже забронировавшего человека молча, посреди его собственного окна.
+    # Вся воронка (список, карточка тарифа, оферта, реквизиты) с этого момента и до
+    # payment_review/confirmed/expired читает цену отсюда, а не из plans.
+    price_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

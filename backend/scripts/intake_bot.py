@@ -201,10 +201,12 @@ TEXT_NEED_USERNAME = (
 )
 
 # --- Окно на оплату: цена гарантирована ограниченное время (ARG-108) ---------
-# Не «бронь места» — мест хватает всем, кто дошёл до оплаты. Смысл дедлайна в
-# том, что цена тарифа зафиксирована только на это время: если админ успеет
-# поднять тарифы, пока участник тянет с оплатой, при повторном заходе он увидит
-# уже новую цену. Тексты объясняют участнику именно это, а не «конкуренцию за место».
+# Не «бронь места» — мест хватает всем, кто дошёл до оплаты. Смысл дедлайна в том,
+# что цена тарифа зафиксирована ровно на это время: с «Принять» и до конца окна
+# заявка смотрит на снимок цен (`price_snapshot`, см. _plan_price), а не на живой
+# plans.price — админ может поднять тарифы сколько угодно, эта заявка не почувствует.
+# Только по истечении окна (expired → новая заявка → новый «Принять») цена пересчитается
+# заново. Тексты объясняют участнику именно это, а не «конкуренцию за место».
 
 TEXT_DEADLINE_NOTE_PLAN = (
     "⏳ Выбери тариф и оплати до <b>{deadline}</b> (МСК). После — заявка сгорит."
@@ -495,7 +497,20 @@ def _price_str(price: int) -> str:
     return f"{price:,} ₽".replace(",", " ")
 
 
-def _plans_keyboard(app_id: int, plans: list[Plan]) -> dict[str, Any]:
+def _plan_price(app: IntakeApplication, plan: Plan) -> int:
+    """Цена тарифа для ЭТОЙ заявки: из снимка (ARG-*), сделанного на «Принять», а не
+    из живого plans.price — иначе админская правка тарифа долетает до человека,
+    который уже забронировал место по старой цене. Заявки, принятые до появления
+    снимка (`price_snapshot is None`), фолбэчат на live-цену — снимок им взять неоткуда.
+    """
+    if app.price_snapshot is not None:
+        snapshot_price = app.price_snapshot.get(str(plan.id))
+        if snapshot_price is not None:
+            return int(snapshot_price)
+    return plan.price
+
+
+def _plans_keyboard(app: IntakeApplication, plans: list[Plan]) -> dict[str, Any]:
     """Ровно одна кнопка на активный тариф — «название — цена», ведёт на описание.
 
     Никаких вторых кнопок и никаких посторонних рядов: это последний экран перед
@@ -505,8 +520,8 @@ def _plans_keyboard(app_id: int, plans: list[Plan]) -> dict[str, Any]:
         "inline_keyboard": [
             [
                 {
-                    "text": f"{plan.name} — {_price_str(plan.price)}",
-                    "callback_data": f"pd:{app_id}:{plan.id}",
+                    "text": f"{plan.name} — {_price_str(_plan_price(app, plan))}",
+                    "callback_data": f"pd:{app.id}:{plan.id}",
                 }
             ]
             for plan in plans
@@ -730,15 +745,21 @@ async def _send_plan_list(
     chat_id: int,
     app: IntakeApplication,
     message_id: int | None = None,
+    plans: list[Plan] | None = None,
 ) -> None:
-    """Экран списка тарифов. `message_id` — перерисовать его в том же сообщении."""
-    plans = await _active_plans(session)
+    """Экран списка тарифов. `message_id` — перерисовать его в том же сообщении.
+
+    `plans` — если уже выбраны вызывающим (`_handle_accept`, вместе со снимком цен);
+    иначе читаются заново, но по-прежнему по ценам из `app.price_snapshot`.
+    """
+    if plans is None:
+        plans = await _active_plans(session)
     if not plans:
         await _edit_or_send(client, chat_id, message_id, TEXT_NO_PLANS)
         return
     await _edit_or_send(
         client, chat_id, message_id, _with_deadline(TEXT_PLAN_LIST, app),
-        reply_markup=_plans_keyboard(app.id, plans),
+        reply_markup=_plans_keyboard(app, plans),
     )
 
 
@@ -803,6 +824,11 @@ async def _handle_receipt(
     if ADMIN_CHAT_ID is not None:
         tag = _user_tag(app.tg_username, app.tg_id)
         caption = f"🧾 Чек от {html.escape(tag)} (заявка #{app.id})"
+        # Зафиксированная цена рядом с чеком — админ сверяет сумму на чеке с тем, что
+        # реально обещано этой заявке, а не с текущей (возможно уже другой) plans.price.
+        plan = await session.get(Plan, app.plan_id) if app.plan_id else None
+        if plan is not None:
+            caption += f"\nТариф: {html.escape(plan.name)} — {_price_str(_plan_price(app, plan))}"
         markup = {
             "inline_keyboard": [[{"text": "✅ Подтвердить оплату", "callback_data": f"pay:{app.id}"}]]
         }
@@ -883,6 +909,10 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
     app.status = STATUS_CHOOSING_PLAN
     app.accepted_at = datetime.now(UTC)
     app.payment_deadline_at = datetime.now(UTC) + timedelta(hours=PAYMENT_WINDOW_HOURS)
+    # Снимок цен — в тот же момент, что и дедлайн: с этой секунды и до конца окна
+    # заявка смотрит только сюда, что бы админ ни поменял в plans (см. _plan_price).
+    plans = await _active_plans(session)
+    app.price_snapshot = {str(plan.id): plan.price for plan in plans}
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
 
@@ -895,7 +925,7 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
             f"{html.escape(app.about or '')}",
             reply_markup={"inline_keyboard": []},
         )
-    await _send_plan_list(client, session, app.tg_id, app)
+    await _send_plan_list(client, session, app.tg_id, app, plans=plans)
     print(f"[action] заявка #{app.id} ({tag}) принята", flush=True)
 
 
@@ -929,9 +959,10 @@ async def _handle_plan_details(client: httpx.AsyncClient, session: AsyncSession,
     await _answer_callback(client, cb["id"])
     chat_id, message_id = context
     description = plan.description or "Описание пока не заполнено."
+    price = _price_str(_plan_price(app, plan))
     await _edit_or_send(
         client, chat_id, message_id,
-        f"<b>{html.escape(plan.name)}</b> — {_price_str(plan.price)}\n\n{html.escape(description)}",
+        f"<b>{html.escape(plan.name)}</b> — {price}\n\n{html.escape(description)}",
         reply_markup=_plan_details_keyboard(app.id, plan.id),
     )
 
@@ -1006,7 +1037,7 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
     chat_id, _ = context
     await _send(
         client, chat_id,
-        _with_deadline(TEXT_ACCEPTED.format(price=_price_str(plan.price)), app),
+        _with_deadline(TEXT_ACCEPTED.format(price=_price_str(_plan_price(app, plan))), app),
         reply_markup=_payment_keyboard(),
     )
 
@@ -1181,7 +1212,7 @@ async def _forward_question(
     if app is not None and app.plan_id is not None:
         plan = await session.get(Plan, app.plan_id)
         if plan is not None:
-            plan_label = f"тариф: {plan.name} — {_price_str(plan.price)}"
+            plan_label = f"тариф: {plan.name} — {_price_str(_plan_price(app, plan))}"
 
     tag = _user_tag(tg_username, tg_id)
     question_text = (
@@ -1531,6 +1562,7 @@ async def _resubmit_after_expiry(
     app.plan_id = None
     app.offer_accepted_at = None
     app.offer_version = None
+    app.price_snapshot = None
     await session.flush()
     await _send(client, chat_id, TEXT_RESUBMITTED)
     await _send_anketa_to_admin(client, app, repeat=True)
