@@ -743,6 +743,7 @@ async def _handle_about(
 ) -> None:
     app.about = text
     app.status = STATUS_SUBMITTED
+    app.submitted_at = datetime.now(UTC)
     await session.flush()
     await _send(client, chat_id, TEXT_SUBMITTED)
     await _send_anketa_to_admin(client, app)
@@ -787,6 +788,7 @@ async def _handle_receipt(
     app.receipt_file_id = file_id
     app.receipt_kind = kind
     app.status = STATUS_PAYMENT_REVIEW
+    app.receipt_at = datetime.now(UTC)
     await session.flush()
     await _send(client, chat_id, TEXT_RECEIPT_GOT)
 
@@ -871,6 +873,7 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
         app.offer_version = None
         app.expired_at = None
     app.status = STATUS_CHOOSING_PLAN
+    app.accepted_at = datetime.now(UTC)
     app.payment_deadline_at = datetime.now(UTC) + timedelta(hours=PAYMENT_WINDOW_HOURS)
     await session.flush()
     await _answer_callback(client, cb["id"], "Принято")
@@ -962,6 +965,7 @@ async def _handle_plan_choose(client: httpx.AsyncClient, session: AsyncSession, 
         return
     app.plan_id = plan.id
     app.status = STATUS_AWAITING_OFFER
+    app.plan_chosen_at = datetime.now(UTC)
     await session.flush()
     await _answer_callback(client, cb["id"], f"Выбрано: {plan.name}")
     chat_id, _ = context
@@ -1016,6 +1020,7 @@ async def _finalize_payment(
         return None
     username, password = created
     app.status = STATUS_CONFIRMED
+    app.confirmed_at = datetime.now(UTC)
     await session.flush()
 
     await _send(
@@ -1512,6 +1517,7 @@ async def _resubmit_after_expiry(
         await _send(client, chat_id, TEXT_START)
         return
     app.status = STATUS_SUBMITTED
+    app.submitted_at = datetime.now(UTC)  # ARG-107: re-entering submitted resets the clock
     app.payment_deadline_at = None
     app.expired_at = None
     app.plan_id = None

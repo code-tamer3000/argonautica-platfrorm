@@ -7,6 +7,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 
 from app.api.admin import router as admin_router
+from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.cabin import router as cabin_router
 from app.api.calendar import router as calendar_router
@@ -64,6 +65,7 @@ app.add_middleware(ObservabilityMiddleware)
 
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(applications_router)
 app.include_router(rooms_router)
 app.include_router(messages_router)
 app.include_router(media_router)

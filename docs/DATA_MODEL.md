@@ -148,8 +148,9 @@ Full CRUD under `require_admin`: `GET/POST /api/admin/plans`, `PATCH/DELETE
 ## intake_applications
 Funnel state for the intake/payment bot (ARG-92): one row per Telegram chat (`tg_id`
 unique). Postgres, not sqlite/Redis — the funnel must survive a container restart
-(Redis is only for the ephemeral "awaiting a support question" flag, per ADR-013). No
-admin API — internal to `scripts/intake_bot.py`. See [INTAKE_BOT.md](INTAKE_BOT.md).
+(Redis is only for the ephemeral "awaiting a support question" flag, per ADR-013).
+Mutating it is bot-only; a read-only admin API for the funnel dashboard was added in
+ARG-107. See [INTAKE_BOT.md](INTAKE_BOT.md).
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
@@ -158,17 +159,22 @@ admin API — internal to `scripts/intake_bot.py`. See [INTAKE_BOT.md](INTAKE_BO
 | tg_username | TEXT | NULL | refreshed on every `/start` |
 | tg_first_name | TEXT | NULL | |
 | tg_last_name | TEXT | NULL | |
-| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_offer` → `awaiting_receipt` → `payment_review` → `confirmed`; plus `expired` — booking burned before payment (ARG-108) |
+| status | TEXT | NOT NULL, default `'awaiting_about'`, CHECK, INDEX (`ix_intake_applications_status`) | `awaiting_about` → `submitted` → `choosing_plan` → `awaiting_offer` → `awaiting_receipt` → `payment_review` → `confirmed`; plus `expired` — booking burned before payment (ARG-108) |
 | about | TEXT | NULL | the applicant's one-message self-description |
+| submitted_at | TIMESTAMPTZ | NULL | entered `submitted` (ARG-107) |
+| accepted_at | TIMESTAMPTZ | NULL | entered `choosing_plan` (ARG-107) |
+| plan_chosen_at | TIMESTAMPTZ | NULL | entered `awaiting_offer` (ARG-107) |
+| receipt_at | TIMESTAMPTZ | NULL | entered `payment_review` (ARG-107) |
+| confirmed_at | TIMESTAMPTZ | NULL | entered `confirmed` (ARG-107); backfilled exactly from `users.created_at` |
 | plan_id | BIGINT | FK plans, NULL | set once the applicant picks a tariff |
 | receipt_file_id | TEXT | NULL | Telegram `file_id` of the payment receipt (photo or PDF) |
 | receipt_kind | TEXT | NULL | `'photo'` \| `'document'` |
-| offer_accepted_at | TIMESTAMPTZ | NULL | set on the «✅ Согласен, к оплате» callback (ARG-43); gates `awaiting_offer → awaiting_receipt` |
+| offer_accepted_at | TIMESTAMPTZ | NULL | set on the «✅ Согласен, к оплате» callback (ARG-43); gates `awaiting_offer → awaiting_receipt`; also doubles as the `stage_since` timestamp for `awaiting_receipt` (ARG-107 — no separate column) |
 | offer_version | TEXT | NULL | edition of the accepted offer (bot's `OFFER_VERSION` constant), not a DB-stored text |
 | payment_deadline_at | TIMESTAMPTZ | NULL | end of the 24h booking, set when the admin taps «Принять» (ARG-108); the clock only runs in `choosing_plan`/`awaiting_offer`/`awaiting_receipt` |
 | expired_at | TIMESTAMPTZ | NULL | when the booking was actually dropped (`status='expired'`) |
 | user_id | BIGINT | FK users, NULL | set once the platform account is created (final step) |
-| created_at | TIMESTAMPTZ | NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL, INDEX (`ix_intake_applications_created_at`) | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
 
 ## rooms

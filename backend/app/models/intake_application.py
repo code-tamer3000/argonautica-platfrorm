@@ -12,6 +12,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Text,
     func,
 )
@@ -50,6 +51,9 @@ class IntakeApplication(Base):
             "'expired')",
             name="intake_application_status_valid",
         ),
+        # ARG-107: CRM-дашборд группирует заявки по статусу и сортирует по свежести.
+        Index("ix_intake_applications_status", "status"),
+        Index("ix_intake_applications_created_at", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -61,6 +65,14 @@ class IntakeApplication(Base):
         Text, nullable=False, server_default=STATUS_AWAITING_ABOUT
     )
     about: Mapped[str | None] = mapped_column(Text)
+    # Момент входа в каждую стадию (ARG-107, CRM-дашборд воронки) — nullable, проставляется
+    # в intake_bot.py рядом с присвоением `status`. Историческим строкам может не хватать
+    # ранних стадий (backfill только приближает submitted_at, confirmed_at — точный).
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    plan_chosen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     plan_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("plans.id"))
     # file_id чека (фото или PDF-документ) — Telegram хранит байты, нам нужен только id
     # для пересылки в admin-чат (тот же принцип, что presigned URL для медиа платформы).

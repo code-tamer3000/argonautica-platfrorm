@@ -189,6 +189,7 @@ async def test_choose_plan_moves_to_awaiting_offer(session: AsyncSession) -> Non
     assert app.status == STATUS_AWAITING_OFFER
     assert app.plan_id == plan.id
     assert app.offer_accepted_at is None
+    assert app.plan_chosen_at is not None  # ARG-107: веб-воронка читает эту метку
     sent = client.payload("sendMessage")
     assert sent["text"] == intake_bot.TEXT_OFFER_PROMPT
     assert "12 000" not in sent["text"]  # реквизиты ещё не раскрыты
@@ -309,6 +310,7 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.commit()
     app = await intake_bot._find_application(session, tg_id)
     assert app is not None and app.status == "submitted"
+    assert app.submitted_at is not None  # ARG-107: веб-воронка считает от этой метки
 
     # Админ принимает заявку из своего DM → участнику приходит экран тарифов.
     await intake_bot._handle_accept(
@@ -322,6 +324,7 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.commit()
     await session.refresh(app)
     assert app.status == STATUS_CHOOSING_PLAN
+    assert app.accepted_at is not None
 
     screen_id = 42
     client = FakeClient()
@@ -360,6 +363,7 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.refresh(app)
     assert app.status == STATUS_PAYMENT_REVIEW
     assert app.plan_id == plan.id and app.receipt_file_id == "receipt-1"
+    assert app.receipt_at is not None
 
 
 # --- приветственные задания набора (provision_second_intake.py) --------------
@@ -457,6 +461,7 @@ async def test_confirm_payment_links_application_to_created_user(
 
     assert app.status == STATUS_CONFIRMED
     assert app.user_id is not None
+    assert app.confirmed_at is not None
     user = await session.get(User, app.user_id)
     assert user is not None and user.username == app.tg_username
 
