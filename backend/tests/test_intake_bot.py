@@ -1046,7 +1046,11 @@ async def test_accept_snapshots_active_plan_prices(session: AsyncSession, monkey
     await session.commit()
     await session.refresh(app)
 
-    assert app.price_snapshot == {str(plan.id): 12000}
+    # Не полное равенство словаря: тестовая БД переживает прогоны (см. коммент у
+    # test_new_user_is_assigned_intake_welcome_tasks), активных планов от других
+    # тестов может быть сколько угодно — важно только, что наш попал в снимок верно.
+    assert app.price_snapshot is not None
+    assert app.price_snapshot[str(plan.id)] == 12000
 
 
 async def test_price_hike_after_accept_does_not_reach_applicant(
