@@ -102,8 +102,9 @@ edit into.
 
 ## Data model
 
-`plans` (admin CRUD), `intake_applications` (funnel state, no admin API — internal to the
-bot), `users.plan_id` — see [DATA_MODEL.md](DATA_MODEL.md).
+`plans` (admin CRUD), `intake_applications` (funnel state; read-only admin API since
+ARG-107, see below — mutating it is still bot-only), `users.plan_id` — see
+[DATA_MODEL.md](DATA_MODEL.md).
 
 `intake_applications.tg_id` is **unique**: one Telegram account = one application, ever.
 `intake_applications.user_id → users.id` has **no `ON DELETE`**, so the account created at
@@ -153,6 +154,31 @@ be stuck.
   **вручную (без чека)**...» — so the log/history makes clear the receipt was never
   eyeballed.
 - Registered in `ADMIN_COMMANDS` (visible in the admin chat's own menu), unlike `/reset`.
+
+## Web funnel dashboard (admin, ARG-107)
+
+`GET /api/admin/applications` (`app/api/applications.py`, `require_admin`) is a **read-only**
+CRM view of `intake_applications` for the `/admin/funnel` page — a kanban board, one column
+per status, so the admin can see who is stuck without paging through the bot's DM. There is
+no write path here: moving an application through the funnel is still only done from
+Telegram (`✅ Принять`, `✅ Подтвердить оплату`, …), same as before this task.
+
+Response shape: `{total, by_status: {<status>: count, ...all 7 keys always}, items: [...]}`.
+Each item adds two backend-computed fields the frontend must not try to derive itself:
+`stage_since` (timestamp the application entered its *current* status) and `days_in_stage`.
+
+Five nullable timestamp columns back `stage_since`, set by the bot right next to the
+`status` assignment that causes them (`submitted_at`, `accepted_at`, `plan_chosen_at`,
+`receipt_at`, `confirmed_at`). `awaiting_receipt` reuses the pre-existing
+`offer_accepted_at` (ARG-43) instead of a new column — offer consent and entering that
+status happen in the same handler. Historical rows from before ARG-107 may have earlier
+timestamps as `NULL` (backfill only recovered `confirmed_at`, exactly, and `submitted_at`,
+approximately — see the migration) — the API and the UI both render that as "—", not as an
+error.
+
+The receipt itself is never proxied to the browser (no `getFile` call): the API only
+exposes `has_receipt`/`receipt_kind`. Checking the actual photo/PDF still means opening the
+admin's Telegram DM.
 
 ## Bot status (`/info`)
 

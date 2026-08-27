@@ -6,6 +6,7 @@ import { AdminDynamics } from './AdminDynamics'
 import { AdminExpeditions } from './AdminExpeditions'
 import { AdminFaq } from './AdminFaq'
 import { AdminFeedback } from './AdminFeedback'
+import { AdminFunnel } from './AdminFunnel'
 import { AdminJournal } from './AdminJournal'
 import { AdminKb } from './AdminKb'
 import { AdminStickers } from './AdminStickers'
@@ -32,6 +33,7 @@ export interface AdminSection {
 // (AdminLayout) и роуты (AppShell) строятся из этого массива — убрать раздел
 // отсюда значит убрать и пункт меню, и маршрут.
 export const ADMIN_SECTIONS: AdminSection[] = [
+  { path: 'funnel', label: 'Воронка', group: 'intake', Component: AdminFunnel },
   { path: 'expeditions', label: 'Экспедиции', group: 'intake', Component: AdminExpeditions },
   { path: 'survey', label: 'Анкета', group: 'intake', Component: AdminSurvey },
   { path: 'users', label: 'Пользователи', group: 'intake', Component: AdminUsers },

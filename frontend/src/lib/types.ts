@@ -447,6 +447,51 @@ export interface PlanOut {
   updated_at: string
 }
 
+// --- Веб-воронка приёма: CRM-дашборд (ARG-107, read-only) ---
+export type ApplicationStatus =
+  | 'awaiting_about'
+  | 'submitted'
+  | 'choosing_plan'
+  | 'awaiting_offer'
+  | 'awaiting_receipt'
+  | 'payment_review'
+  | 'confirmed'
+
+export interface ApplicationOut {
+  id: number
+  tg_id: number
+  tg_username: string | null
+  tg_first_name: string | null
+  tg_last_name: string | null
+  display_name: string
+  status: ApplicationStatus
+  about: string | null
+  plan_id: number | null
+  plan_name: string | null
+  plan_price: number | null
+  has_receipt: boolean
+  receipt_kind: string | null
+  offer_version: string | null
+  user_id: number | null
+  created_at: string
+  submitted_at: string | null
+  accepted_at: string | null
+  plan_chosen_at: string | null
+  offer_accepted_at: string | null
+  receipt_at: string | null
+  confirmed_at: string | null
+  updated_at: string
+  /** Момент входа в текущую стадию — считает бэкенд, фронт даты не пересчитывает. */
+  stage_since: string | null
+  days_in_stage: number | null
+}
+
+export interface ApplicationFunnelOut {
+  total: number
+  by_status: Record<ApplicationStatus, number>
+  items: ApplicationOut[]
+}
+
 // --- Поддержка: частые вопросы (FAQ) ---
 export interface FaqItemOut {
   id: number
