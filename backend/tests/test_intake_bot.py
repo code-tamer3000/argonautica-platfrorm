@@ -7,7 +7,7 @@ import importlib.util
 import json
 import random
 import sys
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -22,7 +22,9 @@ from app.models.intake_application import (
     STATUS_AWAITING_RECEIPT,
     STATUS_CHOOSING_PLAN,
     STATUS_CONFIRMED,
+    STATUS_EXPIRED,
     STATUS_PAYMENT_REVIEW,
+    STATUS_SUBMITTED,
     IntakeApplication,
 )
 from app.models.plan import Plan
@@ -187,6 +189,7 @@ async def test_choose_plan_moves_to_awaiting_offer(session: AsyncSession) -> Non
     assert app.status == STATUS_AWAITING_OFFER
     assert app.plan_id == plan.id
     assert app.offer_accepted_at is None
+    assert app.plan_chosen_at is not None  # ARG-107: веб-воронка читает эту метку
     sent = client.payload("sendMessage")
     assert sent["text"] == intake_bot.TEXT_OFFER_PROMPT
     assert "12 000" not in sent["text"]  # реквизиты ещё не раскрыты
@@ -307,6 +310,7 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.commit()
     app = await intake_bot._find_application(session, tg_id)
     assert app is not None and app.status == "submitted"
+    assert app.submitted_at is not None  # ARG-107: веб-воронка считает от этой метки
 
     # Админ принимает заявку из своего DM → участнику приходит экран тарифов.
     await intake_bot._handle_accept(
@@ -320,6 +324,7 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.commit()
     await session.refresh(app)
     assert app.status == STATUS_CHOOSING_PLAN
+    assert app.accepted_at is not None
 
     screen_id = 42
     client = FakeClient()
@@ -358,6 +363,7 @@ async def test_funnel_run_keeps_plan_screen_in_one_message(
     await session.refresh(app)
     assert app.status == STATUS_PAYMENT_REVIEW
     assert app.plan_id == plan.id and app.receipt_file_id == "receipt-1"
+    assert app.receipt_at is not None
 
 
 # --- приветственные задания набора (provision_second_intake.py) --------------
@@ -455,6 +461,7 @@ async def test_confirm_payment_links_application_to_created_user(
 
     assert app.status == STATUS_CONFIRMED
     assert app.user_id is not None
+    assert app.confirmed_at is not None
     user = await session.get(User, app.user_id)
     assert user is not None and user.username == app.tg_username
 
@@ -952,3 +959,215 @@ async def test_log_action_falls_back_to_admin_chat_when_not_configured(
 
     log_sends = [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == admin_chat]
     assert len(log_sends) == 1 and "сменил пароль" in log_sends[0]["text"]
+
+
+# --- Гарантия цены: 24 часа на оплату (ARG-108) --------------------------------
+
+
+def sent_to(client: FakeClient, chat_id: int) -> dict[str, Any]:
+    """Первое sendMessage в конкретный чат."""
+    return next(p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == chat_id)
+
+
+def admin_callback(app_id: int, admin_chat: int, message_id: int = 1) -> dict[str, Any]:
+    return {
+        "id": "cb",
+        "data": f"acc:{app_id}",
+        "message": {"message_id": message_id, "chat": {"id": admin_chat}},
+    }
+
+
+async def make_booked_application(
+    session: AsyncSession, status: str, deadline: datetime | None
+) -> IntakeApplication:
+    """Заявка с уже заведёнными (и, как правило, просроченными) часами брони."""
+    app = await make_application(session, status=status)
+    app.about = "кто я"
+    app.payment_deadline_at = deadline
+    await session.commit()
+    await session.refresh(app)
+    return app
+
+
+async def test_accept_does_not_start_the_payment_clock(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """«Принять» больше не заводит часы — время на выбор тарифа не должно гореть."""
+    admin_chat = 999_101
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_SUBMITTED)
+    client = FakeClient()
+
+    await intake_bot._handle_accept(
+        client, session,
+        admin_callback(app.id, admin_chat),
+    )
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_CHOOSING_PLAN
+    assert app.payment_deadline_at is None
+    # Дедлайна ещё нет, поэтому на экране тарифов о нём ни слова.
+    plans_screen = sent_to(client, app.tg_id)
+    assert plans_screen["text"] == intake_bot.TEXT_PLAN_LIST
+
+
+async def test_offer_accept_starts_the_payment_clock(
+    session: AsyncSession,
+) -> None:
+    """Часы заводятся, когда участник принял оферту, а не раньше (ARG-108 fix)."""
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_AWAITING_OFFER)
+    app.plan_id = plan.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_offer_accept(client, session, callback(app, f"of:{app.id}"))
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.payment_deadline_at is not None
+    window = app.payment_deadline_at - datetime.now(UTC)
+    assert timedelta(hours=23, minutes=59) < window <= timedelta(hours=24)
+    # Дедлайн проговаривается прямо на экране реквизитов.
+    text = client.payload("sendMessage")["text"]
+    assert "12 000 ₽" in text
+    assert intake_bot._deadline_str(app.payment_deadline_at) in text
+
+
+async def test_sweep_expires_overdue_booking(session: AsyncSession, monkeypatch: Any) -> None:
+    admin_chat = 999_102
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = await make_booked_application(
+        session, STATUS_AWAITING_RECEIPT, datetime.now(UTC) - timedelta(minutes=1)
+    )
+    client = FakeClient()
+
+    expired = await intake_bot._expire_overdue(client, session)
+    await session.refresh(app)
+
+    assert expired >= 1
+    assert app.status == STATUS_EXPIRED
+    assert app.expired_at is not None
+    assert sent_to(client, app.tg_id)["text"] == intake_bot.TEXT_EXPIRED
+    to_admin = sent_to(client, admin_chat)
+    assert "истекло" in to_admin["text"]
+    buttons = [b for row in to_admin["reply_markup"]["inline_keyboard"] for b in row]
+    assert any(b["callback_data"] == f"acc:{app.id}" for b in buttons)
+
+
+async def test_sweep_does_not_expire_application_under_review(session: AsyncSession) -> None:
+    """Чек уже прислан — дальше ход админа, и заявка не должна сгореть, пока он спит."""
+    app = await make_booked_application(
+        session, STATUS_PAYMENT_REVIEW, datetime.now(UTC) - timedelta(hours=48)
+    )
+    client = FakeClient()
+
+    await intake_bot._expire_overdue(client, session)
+    await session.refresh(app)
+
+    assert app.status == STATUS_PAYMENT_REVIEW
+    assert app.expired_at is None
+    assert not [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == app.tg_id]
+
+
+async def test_choosing_plan_ignores_stale_deadline(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """choosing_plan не на часах брони (ARG-108 fix) — даже осиротевший дедлайн из
+    прошлого цикла (напр. после ручной правки данных) не должен трогать выбор тарифа."""
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_103)
+    plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 9000)
+    app = await make_booked_application(
+        session, STATUS_CHOOSING_PLAN, datetime.now(UTC) - timedelta(seconds=30)
+    )
+    client = FakeClient()
+
+    data = f"pc:{app.id}:{plan.id}"
+    await intake_bot._handle_plan_choose(client, session, callback(app, data))
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_AWAITING_OFFER
+    assert app.plan_id == plan.id
+
+
+async def test_receipt_after_deadline_is_too_late(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_104)
+    app = await make_booked_application(
+        session, STATUS_AWAITING_RECEIPT, datetime.now(UTC) - timedelta(minutes=5)
+    )
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session,
+        {
+            "chat": {"id": app.tg_id, "type": "private"},
+            "from": {"id": app.tg_id},
+            "photo": [{"file_id": "late-receipt"}],
+        },
+    )
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_EXPIRED
+    assert app.receipt_file_id is None
+    assert sent_to(client, app.tg_id)["text"] == intake_bot.TEXT_EXPIRED
+
+
+async def test_start_on_expired_sends_application_back_to_admin(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_105
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = await make_booked_application(
+        session, STATUS_EXPIRED, datetime.now(UTC) - timedelta(hours=1)
+    )
+    client = FakeClient()
+
+    from_user = {"id": app.tg_id, "username": "arg"}
+    await intake_bot._handle_start(client, session, app.tg_id, from_user)
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_SUBMITTED
+    assert app.payment_deadline_at is None and app.expired_at is None
+    to_admin = sent_to(client, admin_chat)
+    assert "Повторная заявка" in to_admin["text"] and "кто я" in to_admin["text"]
+    buttons = [b for row in to_admin["reply_markup"]["inline_keyboard"] for b in row]
+    assert any(b["callback_data"] == f"acc:{app.id}" for b in buttons)
+
+
+async def test_accept_of_expired_restarts_funnel_without_deadline_yet(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """«Принять снова» — она же «продлить»: тариф и оферта выбираются заново, а часы
+    брони не заводятся, пока участник заново не примет оферту (ARG-108 fix)."""
+    admin_chat = 999_106
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_booked_application(
+        session, STATUS_EXPIRED, datetime.now(UTC) - timedelta(hours=2)
+    )
+    app.expired_at = datetime.now(UTC) - timedelta(hours=2)
+    app.plan_id = plan.id
+    app.offer_accepted_at = datetime.now(UTC) - timedelta(hours=3)
+    app.offer_version = "old"
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_accept(
+        client, session,
+        admin_callback(app.id, admin_chat, message_id=2),
+    )
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_CHOOSING_PLAN
+    assert app.plan_id is None
+    assert app.offer_accepted_at is None and app.offer_version is None
+    assert app.expired_at is None
+    assert app.payment_deadline_at is None

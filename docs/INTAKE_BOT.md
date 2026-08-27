@@ -15,6 +15,9 @@ verbatim from `OldBot/bot_texts.md`.
 ```
 awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_receipt →
   payment_review → confirmed
+                                                    ↓
+                                                 expired   (booking burned, ARG-108 —
+                                                            only reachable from here)
 ```
 
 1. **`/start`** → bot asks the applicant to describe themselves in one message
@@ -25,7 +28,8 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    button removed, «— ✅ Принята» appended to the header, no separate confirmation message —
    before this, the tap fired two *extra* chat messages (a confirmation + a `📋` log echo),
    which made it easy to reply to the wrong bubble later (see the admin-chat bug above).
-   `status=choosing_plan`; bot shows tariffs as buttons, read
+   `status=choosing_plan`; the booking clock does **not** start yet (see «Payment window»
+   below — it starts on offer acceptance, step 5, not here); bot shows tariffs as buttons, read
    from the `plans` table **at request time** (not hardcoded — an admin price edit applies
    immediately, no bot redeploy). **One button per tariff** («Вода — 12 000 ₽») opening a
    description screen: title, price, `plans.description`, and a single row of
@@ -41,7 +45,10 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
 5. Tap **«✅ Согласен, к оплате»** → `intake_applications.offer_accepted_at` = now,
    `offer_version` = the bot's `OFFER_VERSION` constant (bump it whenever the offer text
    changes — the offer itself lives in git, `frontend/src/features/oferta/content/oferta.md`,
-   not in the DB), `status=awaiting_receipt`; **now** the bot sends payment details (the
+   not in the DB), `status=awaiting_receipt`, and **the 24h booking clock starts**
+   (`payment_deadline_at`, see «Payment window» below — from here, not from step 3, so
+   browsing tariffs and reading the offer never eats into the payment window); **now**
+   the bot sends payment details (the
    `accepted` text with `{price}` substituted for the chosen tariff's price) and asks for a
    receipt. Below the text, `_payment_keyboard()` attaches two buttons: **«💬 Связаться по
    техническим вопросам»** (reuses `CB_ASK_QUESTION`/`_handle_ask_question` — this is the
@@ -71,7 +78,9 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
      refused (login = username, must exist) — the admin gets an alert and the applicant is
      asked to set one; nothing else in the funnel is blocked, retry the same button once
      they have.
-8. In-between statuses show `wait_decision` / `wait_payment_check` / the offer prompt again
+8. Waiting on the receipt (step 6) can end in **`expired`** — the booking window ran out.
+   See «Payment window» below.
+9. In-between statuses show `wait_decision` / `wait_payment_check` / the offer prompt again
    (idle waiting on the *other* party, or on the applicant tapping «Согласен») if the
    applicant sends something out of turn.
 
@@ -100,10 +109,57 @@ funnel buttons above. Reads of the old bare-`chat_id` format (questions forwarde
 this changed) still deliver correctly, just without the in-place mark — no stored text to
 edit into.
 
+## Payment window (ARG-108)
+
+A booking is held for **24 hours after the applicant accepts the offer** («✅ Согласен, к
+оплате», not the admin's earlier «Принять»): browsing tariffs and reading the offer must
+not eat into the payment window — only the actual "go pay" window is timed.
+
+- `payment_deadline_at` is set in `_handle_offer_accept`, together with `offer_accepted_at`
+  and `status=awaiting_receipt` — same handler, same moment. `_handle_accept` (admin's
+  «Принять») does **not** touch it any more. The window comes from
+  `INTAKE_PAYMENT_WINDOW_HOURS` (default **24**, hardcoded — prod compose is untouchable;
+  staging passes it through so a run can be forced to burn in minutes:
+  `INTAKE_PAYMENT_WINDOW_HOURS=0.05`).
+- The clock runs **only** in `awaiting_receipt` (`STATUSES_ON_PAYMENT_CLOCK`) and
+  **freezes on `payment_review`**: the receipt is in, the ball is the admin's, and an
+  applicant who paid at 23:59 must not burn because nobody was awake. `choosing_plan` /
+  `awaiting_offer` are never on the clock — `payment_deadline_at` is simply `NULL` there,
+  so no amount of stray/legacy data on those rows can expire an application early.
+- **No reminders before the deadline** — deliberate. Instead the deadline is spelled out
+  once, right on the payment-details screen the moment it starts (`_with_deadline`, «до
+  21:40 27 августа», МСК) — there is no earlier screen where it would apply.
+- Expiry is a **background sweep** (`_expire_sweep_loop`, every 60s, started by `main()`
+  alongside the long-poll loop): an applicant who simply goes quiet never gives the bot a
+  single update to react to. `_expire_overdue` marks the rows and commits **before**
+  sending anything, so a failed commit cannot leave someone told their booking is gone
+  while it is not.
+- The same check also runs **synchronously** in every participant-facing handler
+  (`_expired_guard` on the tariff/offer buttons, one check in `_handle_message` covering a
+  late receipt). Without it, buttons stay live for up to a minute past the deadline. On the
+  tariff/offer buttons this only ever fires for a row that was **already** `expired` from a
+  previous cycle (still un-resubmitted) — those statuses have no live deadline of their own
+  to pass any more.
+- On expiry: `status=expired`, `expired_at` set, the applicant is told the seat is gone,
+  and the admin DM gets a card with **«✅ Принять снова»** — the very same `acc:<app_id>`
+  callback, so "extend" and "accept again" are one button and one handler. Accepting from
+  `expired` clears `plan_id` / `offer_accepted_at` / `offer_version` / `payment_deadline_at`
+  and restarts at the tariff list with **no clock running** — it starts again only once the
+  offer is consented to a second time (consent stays tied to one payment).
+- A tap on any stale funnel button of an expired application answers «Срок брони истёк»,
+  not the usual «Этот шаг уже пройден».
+- **Coming back**: `/start` on an `expired` application returns it to `submitted` with the
+  original anketa (`_resubmit_after_expiry`) — the row is reused, `tg_id` stays unique — and
+  the admin gets a «🔁 Повторная заявка» card. There is no self-service path straight back
+  to the tariff list: a second chance goes through a human.
+- `/confirm @username` still works on an expired application (the money arrived by another
+  route) — `expired_at` just stays as a historical marker.
+
 ## Data model
 
-`plans` (admin CRUD), `intake_applications` (funnel state, no admin API — internal to the
-bot), `users.plan_id` — see [DATA_MODEL.md](DATA_MODEL.md).
+`plans` (admin CRUD), `intake_applications` (funnel state; read-only admin API since
+ARG-107, see below — mutating it is still bot-only), `users.plan_id` — see
+[DATA_MODEL.md](DATA_MODEL.md). Booking columns: `payment_deadline_at`, `expired_at`.
 
 `intake_applications.tg_id` is **unique**: one Telegram account = one application, ever.
 `intake_applications.user_id → users.id` has **no `ON DELETE`**, so the account created at
@@ -154,10 +210,37 @@ be stuck.
   eyeballed.
 - Registered in `ADMIN_COMMANDS` (visible in the admin chat's own menu), unlike `/reset`.
 
+## Web funnel dashboard (admin, ARG-107)
+
+`GET /api/admin/applications` (`app/api/applications.py`, `require_admin`) is a **read-only**
+CRM view of `intake_applications` for the `/admin/funnel` page — a kanban board, one column
+per status, so the admin can see who is stuck without paging through the bot's DM. There is
+no write path here: moving an application through the funnel is still only done from
+Telegram (`✅ Принять`, `✅ Подтвердить оплату`, …), same as before this task.
+
+Response shape: `{total, by_status: {<status>: count, ...all 8 keys always}, items: [...]}`
+— all 8 including `expired` (ARG-108). Each item adds two backend-computed fields the
+frontend must not try to derive itself: `stage_since` (timestamp the application entered
+its *current* status) and `days_in_stage`.
+
+Five nullable timestamp columns back `stage_since`, set by the bot right next to the
+`status` assignment that causes them (`submitted_at`, `accepted_at`, `plan_chosen_at`,
+`receipt_at`, `confirmed_at`). `awaiting_receipt` reuses the pre-existing
+`offer_accepted_at` (ARG-43) instead of a new column — offer consent and entering that
+status happen in the same handler; `expired` reuses ARG-108's `expired_at`. Historical
+rows from before ARG-107 may have earlier timestamps as `NULL` (backfill only recovered
+`confirmed_at`, exactly, and `submitted_at`, approximately — see the migration) — the API
+and the UI both render that as "—", not as an error.
+
+The receipt itself is never proxied to the browser (no `getFile` call): the API only
+exposes `has_receipt`/`receipt_kind`. Checking the actual photo/PDF still means opening the
+admin's Telegram DM.
+
 ## Bot status (`/info`)
 
 Read-only admin command: which intake the bot will attach new users to, which plans it is
-currently offering applicants, and the payment card baked into `TEXT_ACCEPTED`.
+currently offering applicants, the payment card baked into `TEXT_ACCEPTED`, and the
+payment window with the bookings currently ticking (up to 10, soonest deadline first).
 
 - Accepted only from the admin DM, same as `/reset`; from anywhere else it does nothing.
 - Reports the active intake (`intakes` row with the latest `starts_on` — same query the
@@ -199,7 +282,8 @@ temporary placeholder; final copy is a separate follow-up.
   `TELEGRAM_INTAKE_BOT_LOG_CHAT_ID` (optional — redirects `_log_action`'s "📋" echoes, e.g.
   password changes, to a different chat than `ADMIN_CHAT_ID`; falls back to `ADMIN_CHAT_ID`
   when unset, same as before this existed), `INTAKE_BOT_ALLOW_RESET` (staging only, see
-  `/reset`), `TELEGRAM_PROXY` (shared with the access bot), `PLATFORM_URL` (shared — on
+  `/reset`), `INTAKE_PAYMENT_WINDOW_HOURS` (default 24, see «Payment window»),
+  `TELEGRAM_PROXY` (shared with the access bot), `PLATFORM_URL` (shared — on
   staging this should point at `https://staging.argonautica-systems.ru`).
 - Not part of blue-green, no `:8000` healthcheck (long-poller, not an HTTP server) — same
   pattern as `bot` and `transcode-worker`.

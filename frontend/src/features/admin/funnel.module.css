@@ -1,0 +1,66 @@
+/* ── Сводка ── */
+.summaryRow { display: flex; gap: var(--space-5); flex-wrap: wrap; }
+.summaryItem { display: flex; flex-direction: column; gap: 2px; }
+.summaryValue { font-family: var(--font-t1); font-size: 22px; line-height: 1; color: var(--text-primary); }
+.summaryValueAccent { color: var(--accent); }
+.summaryLabel { font-size: 0.75rem; color: var(--text-secondary); }
+
+/* ── Канбан ── */
+.board { display: flex; gap: var(--space-3); overflow-x: auto; padding-bottom: var(--space-2); }
+.column {
+  flex: 0 0 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  padding: var(--space-3);
+  min-height: 160px;
+}
+.columnAccent {
+  border-color: var(--divider-gold);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-surface));
+}
+.columnHead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.columnTitle { font-family: var(--font-t4); font-size: var(--text-ui); color: var(--text-primary); }
+.columnCount { flex: none; font-size: 0.75rem; color: var(--text-secondary); background: var(--divider); border-radius: 9999px; padding: 1px var(--space-2); }
+.columnAccent .columnCount { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.columnCards { display: flex; flex-direction: column; gap: var(--space-2); }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: var(--space-3);
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+}
+.card:hover { border-color: var(--divider-gold); }
+.cardName { font-family: var(--font-t4); color: var(--text-primary); font-size: var(--text-ui); }
+.cardPlan { font-size: 0.75rem; color: var(--text-secondary); }
+.cardMeta { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: 2px; }
+.cardDays { font-size: 0.7rem; color: var(--text-ghost); }
+
+/* ── Карточка заявки в Drawer ── */
+.drawerSection { display: flex; flex-direction: column; gap: var(--space-1); margin-bottom: var(--space-4); }
+.drawerLabel { font-size: 0.7rem; text-transform: uppercase; letter-spacing: var(--ls-label-sm); color: var(--text-ghost); }
+.drawerValue { font-size: var(--text-ui); color: var(--text-primary); white-space: pre-wrap; }
+.drawerLink { color: var(--accent); }
+
+.timeline { display: flex; flex-direction: column; gap: var(--space-2); }
+.timelineRow { display: flex; justify-content: space-between; gap: var(--space-3); font-size: 0.8rem; }
+.timelineStage { color: var(--text-secondary); }
+.timelineDate { color: var(--text-primary); font-family: var(--font-t4); }
+.timelineDatePending { color: var(--text-ghost); }
+
+@media (max-width: 768px) {
+  .board { scroll-snap-type: x mandatory; }
+  .column { flex: 0 0 78vw; scroll-snap-align: start; }
+}
