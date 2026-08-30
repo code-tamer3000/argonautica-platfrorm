@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useAdminApplications } from '../../api/applications'
+import { useAdminPlans } from '../../api/plans'
 import { Chip } from '../../components/Chip'
 import { EmptyState } from '../../components/EmptyState'
 import { Input } from '../../components/Input'
 import { Drawer } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { groupByPlan } from '../../lib/planGroups'
 import type { ApplicationOut, ApplicationStatus } from '../../lib/types'
 import styles from './admin.module.css'
 import funnelStyles from './funnel.module.css'
@@ -174,6 +176,9 @@ function ApplicationDrawer({ item, onClose }: { item: ApplicationOut; onClose: (
 
 export function AdminFunnel() {
   const { data, isLoading } = useAdminApplications()
+  // Тарифы задают порядок групп в колонках (по цене) — берём админский список,
+  // чтобы заявка на уже выключенном тарифе не теряла своё место.
+  const { data: plans = [] } = useAdminPlans()
   const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<number | null>(null)
 
@@ -226,6 +231,7 @@ export function AdminFunnel() {
       <div className={funnelStyles.board}>
         {STAGES.map((stage) => {
           const stageItems = filtered.filter((item) => item.status === stage.status)
+          const stageHasPlan = stageItems.some((item) => item.plan_id != null)
           return (
             <div
               key={stage.status}
@@ -239,8 +245,23 @@ export function AdminFunnel() {
                 {stageItems.length === 0 ? (
                   <EmptyState size="inline">Пусто</EmptyState>
                 ) : (
-                  stageItems.map((item) => (
-                    <ApplicationCard key={item.id} item={item} onOpen={() => setOpenId(item.id)} />
+                  groupByPlan(stageItems, plans, (item) => ({
+                    id: item.plan_id,
+                    name: item.plan_name,
+                  })).map((group) => (
+                    <div key={group.key} className={funnelStyles.planGroup}>
+                      {/* До стадии «Выбирает тариф» тарифа ещё нет ни у кого — в таких
+                          колонках подзаголовок «Без тарифа» только шумел бы. */}
+                      {stageHasPlan && (
+                        <div className={funnelStyles.planGroupHead}>
+                          <span className={funnelStyles.planGroupTitle}>{group.label}</span>
+                          <span className={funnelStyles.planGroupCount}>{group.items.length}</span>
+                        </div>
+                      )}
+                      {group.items.map((item) => (
+                        <ApplicationCard key={item.id} item={item} onOpen={() => setOpenId(item.id)} />
+                      ))}
+                    </div>
                   ))
                 )}
               </div>

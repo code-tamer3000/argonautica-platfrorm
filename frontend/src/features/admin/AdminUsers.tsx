@@ -6,11 +6,13 @@ import {
   useDeleteUser,
   usePatchAdminUser,
 } from '../../api/admin'
+import { useAdminPlans } from '../../api/plans'
 import { useAuth } from '../auth/AuthContext'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { Badge } from '../../components/Badge'
 import { PageHeader } from '../../components/PageHeader'
+import { groupByPlan } from '../../lib/planGroups'
 import { toast } from '../../stores/toast'
 import type { CreateUserResult } from '../../api/admin'
 import type { AdminUserOut, IntakeOut } from '../../lib/types'
@@ -37,6 +39,9 @@ export function AdminUsers() {
   const { data: users = [] } = useAdminUsers(
     selectedIntake === 'all' ? undefined : selectedIntake,
   )
+  // Все тарифы (включая выключенные) — задают порядок групп внутри набора и
+  // держат в списке участников тариф, который админ уже деактивировал.
+  const { data: plans = [] } = useAdminPlans()
   const { user: me } = useAuth()
   const createUser = useCreateUser()
   const patchUser = usePatchAdminUser()
@@ -177,6 +182,25 @@ export function AdminUsers() {
     )
   }
 
+  // Внутри набора участники идут не сплошным списком, а разбивкой по выбранному
+  // тарифу (порядок групп — по цене, «Без тарифа» последней: там админы и те,
+  // кого завели руками мимо воронки).
+  function renderPlanGroups(list: AdminUserOut[]) {
+    return (
+      <div className={styles.planGroups}>
+        {groupByPlan(list, plans, (u) => ({ id: u.plan_id, name: u.plan_name })).map((group) => (
+          <div key={group.key}>
+            <div className={styles.planGroupHead}>
+              <span className={styles.planGroupTitle}>{group.label}</span>
+              <span className={styles.planGroupCount}>{group.items.length}</span>
+            </div>
+            <div className={styles.list}>{group.items.map(renderUser)}</div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className={styles.page}>
       <PageHeader title="Пользователи">
@@ -223,12 +247,11 @@ export function AdminUsers() {
                 {intake.id === activeIntake?.id ? ' — активный' : ''}
               </h2>
             </div>
-            <div className={styles.list}>
-              {groupUsers.map(renderUser)}
-              {groupUsers.length === 0 && (
-                <p style={{ color: 'var(--text-secondary)' }}>В этом наборе пока никого нет.</p>
-              )}
-            </div>
+            {groupUsers.length === 0 ? (
+              <p style={{ color: 'var(--text-secondary)' }}>В этом наборе пока никого нет.</p>
+            ) : (
+              renderPlanGroups(groupUsers)
+            )}
           </section>
         )
       })}
@@ -236,7 +259,7 @@ export function AdminUsers() {
       {orphans.length > 0 && (
         <section>
           <h2 className={styles.sectionTitle}>Без набора</h2>
-          <div className={styles.list}>{orphans.map(renderUser)}</div>
+          {renderPlanGroups(orphans)}
         </section>
       )}
 

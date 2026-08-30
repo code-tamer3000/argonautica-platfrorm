@@ -1,3 +1,4 @@
+import { groupByPlan } from '../../lib/planGroups'
 import type { PlanPublicOut, PublicUserOut, RoomOut } from '../../lib/types'
 
 export function roomTitle(
@@ -34,38 +35,14 @@ export interface DiaryPlanGroup {
   rooms: RoomOut[]
 }
 
-const NO_PLAN_KEY = 'none'
-
 /**
  * Группировка чужих личных дневников по тарифу владельца («Игроки»/«Спецотряд»/
- * «Око» — см. RoomOut.owner_plan_id/owner_plan_name). Порядок групп — как в
- * `usePlans()` (по цене, тот же порядок, что в админке); «Без тарифа» — всегда
- * последней. Тариф, ставший неактивным (выпал из `plans`), всё равно попадает в
- * свою группу — имя берём из самой комнаты (denormalized), просто без стабильной
- * позиции в сортировке (падает в конец, перед «Без тарифа»).
+ * «Око» — см. RoomOut.owner_plan_id/owner_plan_name). Порядок групп и «Без
+ * тарифа» в конце — общие для всего приложения, см. lib/planGroups.
  */
 export function groupDiariesByPlan(rooms: RoomOut[], plans: PlanPublicOut[]): DiaryPlanGroup[] {
-  const order = new Map(plans.map((p, i) => [p.id, i]))
-  const buckets = new Map<string, RoomOut[]>()
-  for (const room of rooms) {
-    const key = room.owner_plan_id != null ? String(room.owner_plan_id) : NO_PLAN_KEY
-    const list = buckets.get(key)
-    if (list) list.push(room)
-    else buckets.set(key, [room])
-  }
-  return [...buckets.entries()]
-    .map(([key, groupRooms]) => ({
-      key,
-      label:
-        key === NO_PLAN_KEY
-          ? 'Без тарифа'
-          : (groupRooms[0]?.owner_plan_name ?? plans.find((p) => String(p.id) === key)?.name ?? 'Тариф'),
-      rooms: groupRooms,
-    }))
-    .sort((a, b) => {
-      if (a.key === NO_PLAN_KEY) return 1
-      if (b.key === NO_PLAN_KEY) return -1
-      return (order.get(Number(a.key)) ?? Number.MAX_SAFE_INTEGER) -
-        (order.get(Number(b.key)) ?? Number.MAX_SAFE_INTEGER)
-    })
+  return groupByPlan(rooms, plans, (room) => ({
+    id: room.owner_plan_id ?? null,
+    name: room.owner_plan_name ?? null,
+  })).map(({ key, label, items }) => ({ key, label, rooms: items }))
 }

@@ -28,6 +28,13 @@
 .columnAccent .columnCount { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .columnCards { display: flex; flex-direction: column; gap: var(--space-2); }
 
+/* Разбивка колонки по тарифам: подзаголовок + счётчик над карточками стадии. */
+.planGroup { display: flex; flex-direction: column; gap: var(--space-2); }
+.planGroup + .planGroup { margin-top: var(--space-2); }
+.planGroupHead { display: flex; align-items: baseline; gap: var(--space-2); }
+.planGroupTitle { font-size: 0.7rem; text-transform: uppercase; letter-spacing: var(--ls-label-sm); color: var(--text-ghost); }
+.planGroupCount { font-size: 0.7rem; color: var(--text-secondary); }
+
 .card {
   display: flex;
   flex-direction: column;
