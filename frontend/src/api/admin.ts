@@ -66,11 +66,17 @@ export function useAdminUsersMap(enabled = true): Map<number, AdminUserOut> {
   }, [data])
 }
 
-/** Наборы, свежие сверху: первый в списке — активный (максимальная starts_on). */
-export function useAdminIntakes() {
+/**
+ * Наборы, свежие сверху: первый в списке — активный (максимальная starts_on).
+ * `enabled=false` — не стрелять запросом там, где вызывающий не гарантированно
+ * admin (эндпоинт иначе 403 для обычного участника), тот же приём, что в
+ * `useAdminUsersMap`.
+ */
+export function useAdminIntakes(enabled = true) {
   return useQuery({
     queryKey: adminIntakesKey,
     queryFn: () => http.get<IntakeOut[]>('/api/admin/intakes'),
+    enabled,
   })
 }
 

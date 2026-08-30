@@ -57,6 +57,11 @@ class RoomOut(BaseModel):
     # (список отдаёт эндпоинт get/create/update канала, не участнику).
     intake_id: int | None = None
     plan_ids: list[int] = []
+    # Только is_personal: тариф ВЛАДЕЛЬЦА дневника (не «изоляция», а denormalized
+    # ярлык), чтобы «Все дневники» можно было сгруппировать по тарифу без похода
+    # в admin-only /api/admin/users. None — владелец без тарифа.
+    owner_plan_id: int | None = None
+    owner_plan_name: str | None = None
 
 
 class AddMemberRequest(BaseModel):

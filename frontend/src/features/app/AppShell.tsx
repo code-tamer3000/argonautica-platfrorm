@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { useAdminIntakes } from '../../api/admin'
 import { useRooms } from '../../api/rooms'
 import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
@@ -29,12 +30,32 @@ export function AppShell() {
   // NewsRedirect в routes.tsx — та же логика).
   const { data: rooms } = useRooms()
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const setCurrentIntakeId = useUiStore((s) => s.setAdminCurrentIntakeId)
   const newsRoomId = useMemo(() => {
     const preferred = accessCtx.isAdmin && currentIntakeId != null
       ? rooms?.find((r) => r.is_news && r.intake_id === currentIntakeId)
       : undefined
     return (preferred ?? rooms?.find((r) => r.is_news))?.id ?? null
   }, [rooms, accessCtx.isAdmin, currentIntakeId])
+
+  // Дефолт «текущей экспедиции» для admin — последний поток, не «Все экспедиции»
+  // (было null → сбивало: Задачи/КБ/Чаты/Дневники сразу показывали весь массив
+  // потоков). Срабатывает РОВНО один раз за сессию — после этого admin волен
+  // выбрать «Все экспедиции» (снова null) в /admin/expeditions, и мы это не
+  // перетираем. currentIntakeId не персистится (stores/ui.ts), поэтому при
+  // каждом новом заходе автовыбор снова ставит актуальный последний поток.
+  const autoSelectedIntake = useRef(false)
+  const { data: adminIntakes } = useAdminIntakes(accessCtx.isAdmin)
+  useEffect(() => {
+    if (!accessCtx.isAdmin || autoSelectedIntake.current) return
+    if (currentIntakeId != null) {
+      autoSelectedIntake.current = true
+      return
+    }
+    if (!adminIntakes || adminIntakes.length === 0) return
+    autoSelectedIntake.current = true
+    setCurrentIntakeId(adminIntakes[0].id)
+  }, [accessCtx.isAdmin, adminIntakes, currentIntakeId, setCurrentIntakeId])
 
   // Реалтайм-соединение живёт, пока юзер залогинен (авто-реконнект внутри).
   useEffect(() => {

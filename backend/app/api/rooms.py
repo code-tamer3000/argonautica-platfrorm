@@ -304,6 +304,20 @@ async def list_rooms(
         room_id: (node_id, task_id) for room_id, node_id, task_id in node_rows.all()
     }
 
+    # Тариф владельца личного дневника — батчем, чтобы «Все дневники» группировались
+    # по тарифу на клиенте без похода в admin-only /api/admin/users (см. RoomOut).
+    owner_ids = {r.created_by for r in rooms if r.is_personal}
+    owner_plan_map: dict[int, tuple[int | None, str | None]] = {}
+    if owner_ids:
+        owner_rows = await session.execute(
+            select(User.id, User.plan_id, Plan.name)
+            .outerjoin(Plan, Plan.id == User.plan_id)
+            .where(User.id.in_(owner_ids))
+        )
+        owner_plan_map = {
+            uid: (plan_id, plan_name) for uid, plan_id, plan_name in owner_rows.all()
+        }
+
     out: list[RoomOut] = []
     for room in rooms:
         item = RoomOut.model_validate(room)
@@ -313,6 +327,10 @@ async def list_rooms(
         node = stream_map.get(room.id)
         if node is not None:
             item.stream_node_id, item.stream_task_id = node
+        if room.is_personal:
+            item.owner_plan_id, item.owner_plan_name = owner_plan_map.get(
+                room.created_by, (None, None)
+            )
         out.append(item)
     return out
 
@@ -335,6 +353,15 @@ async def get_room(
 
     plan_ids = await _room_plan_ids(session, room.id) if room.type == "channel" else []
     item = _room_out(room, plan_ids)
+    if room.is_personal:
+        owner_row = await session.execute(
+            select(User.plan_id, Plan.name)
+            .outerjoin(Plan, Plan.id == User.plan_id)
+            .where(User.id == room.created_by)
+        )
+        owner_plan = owner_row.first()
+        if owner_plan is not None:
+            item.owner_plan_id, item.owner_plan_name = owner_plan
     last_read = (membership.last_read_message_id or 0) if membership else 0
     unread_result = await session.execute(
         select(func.count())

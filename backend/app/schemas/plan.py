@@ -36,3 +36,13 @@ class PlanOut(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class PlanPublicOut(BaseModel):
+    """Тариф для обычного участника — только имя (группировка «Дневников» по
+    тарифу, `GET /api/plans`). Цена/описание/is_active тут не нужны."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
