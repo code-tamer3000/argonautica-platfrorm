@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { PlanOut } from '../lib/types'
+import type { PlanOut, PlanPublicOut } from '../lib/types'
 
 export const adminPlansKey = ['admin', 'plans'] as const
 
@@ -49,5 +49,16 @@ export function useDeletePlan() {
   return useMutation({
     mutationFn: (id: number) => http.del<null>(`/api/admin/plans/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: adminPlansKey }),
+  })
+}
+
+export const plansKey = ['plans'] as const
+
+/** Активные тарифы, отсортированы по цене (любой активный пользователь, id+name
+ * без цены/описания) — группировка «Все дневники» по тарифу владельца. */
+export function usePlans() {
+  return useQuery({
+    queryKey: plansKey,
+    queryFn: () => http.get<PlanPublicOut[]>('/api/plans'),
   })
 }

@@ -161,7 +161,11 @@ export function AdminUsers() {
             <div className={styles.listMeta}>@{user.username}</div>
           </div>
           <Badge tone={user.role === 'admin' ? 'accent' : 'neutral'}>
-            {user.is_observer ? 'наблюдатель' : user.role}
+            {user.is_observer
+              ? 'наблюдатель'
+              : user.role === 'admin'
+                ? 'admin'
+                : (user.plan_name ?? 'participant')}
           </Badge>
         </div>
         <div className={styles.listActions}>

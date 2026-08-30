@@ -53,6 +53,7 @@ personal/news) accept `intake_id`/`plan_ids`.
 - `rooms.is_personal = true` marks a participant's personal homework-diary room. Homework entries are ordinary `messages` there. See [DYNAMICS.md](DYNAMICS.md).
 - **Not owner-only.** The frontend's «Дневники» tab is a real "browse everyone's diary" feature (`RoomList.tsx`: own diary pinned, everyone else's under «Все дневники») — this is deliberate community/accountability UX, not an oversight.
 - **Cohort-gated (ARG-96).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner's and the viewer's `intake_id` **and** `plan_id` directly (`same_cohort` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Both fields must match (`NULL` matches `NULL` — no-intake/no-plan users share a bucket). The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_same_cohort`), so a foreign-cohort diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`.
+- **Grouped by tariff on the client.** `RoomOut.owner_plan_id`/`owner_plan_name` denormalize the diary owner's plan (batch-joined in `list_rooms`/`get_room`, `app/api/rooms.py`) so the frontend can subdivide «Все дневники» by tariff (`groupDiariesByPlan` in `features/chat/util.ts`) without a participant needing admin-only `/api/admin/users`. Group order follows `GET /api/plans` (active plans, price-ascending — the same order as `/api/admin/plans`); a participant with no `plan_id` falls into a trailing «Без тарифа» bucket. `GET /api/plans` (`app/api/plans.py`) is the public counterpart of `/api/admin/plans`: any authenticated user, id+name only (no price/description).
 
 ## News channel & repost
 
@@ -79,6 +80,12 @@ personal/news) accept `intake_id`/`plan_ids`.
   repost from a cross-intake room defaults to being asked about — it does **not** change
   server-side authorization; admin still bypasses the intake/plan gate entirely
   (`user.role == "admin"` in `assert_room_access`/`list_rooms`).
+  - **Auto-defaults to the latest intake.** `AppShell` sets `adminCurrentIntakeId` to
+    `GET /api/admin/intakes`' first row (newest `starts_on`) the first time it loads for
+    an admin whose selector is still untouched (`null`) — otherwise every fresh session
+    opened onto "all intakes at once", which read as noise once there are several. Fires
+    **once per session** (a ref guard): after that, an admin picking «Все экспедиции»
+    (back to `null`) in `/admin/expeditions` sticks — the auto-pick doesn't fight it.
 
 ## Stream subgroup rooms
 

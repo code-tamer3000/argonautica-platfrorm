@@ -248,12 +248,14 @@ async def list_users(
 ) -> list[AdminUserOut]:
     """Список пользователей с admin-полями. `intake_id` фильтрует по набору.
 
-    Дату старта набора отдаём рядом с юзером, чтобы админка группировала список,
-    не сопоставляя его со вторым запросом на клиенте.
+    Дату старта набора и имя тарифа отдаём рядом с юзером, чтобы админка
+    группировала/подписывала список, не сопоставляя его со вторым запросом на
+    клиенте (тот же приём, что и с intake_starts_on).
     """
     stmt = (
-        select(User, Intake.starts_on)
+        select(User, Intake.starts_on, Plan.name)
         .outerjoin(Intake, Intake.id == User.intake_id)
+        .outerjoin(Plan, Plan.id == User.plan_id)
         .order_by(User.display_name)
     )
     if intake_id is not None:
@@ -261,9 +263,9 @@ async def list_users(
     rows = await session.execute(stmt)
     return [
         AdminUserOut.model_validate(user).model_copy(
-            update={"intake_starts_on": starts_on}
+            update={"intake_starts_on": starts_on, "plan_name": plan_name}
         )
-        for user, starts_on in rows.all()
+        for user, starts_on, plan_name in rows.all()
     ]
 
 

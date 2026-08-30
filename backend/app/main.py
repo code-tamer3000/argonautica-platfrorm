@@ -19,6 +19,7 @@ from app.api.media import router as media_router
 from app.api.messages import router as messages_router
 from app.api.metrics import router as metrics_router
 from app.api.notifications import router as notifications_router
+from app.api.plans import router as plans_router
 from app.api.push import router as push_router
 from app.api.rooms import router as rooms_router
 from app.api.stickers import router as stickers_router
@@ -79,6 +80,7 @@ app.include_router(dynamics_router)
 app.include_router(faq_router)
 app.include_router(feedback_router)
 app.include_router(notifications_router)
+app.include_router(plans_router)
 app.include_router(push_router)
 # Поток — до tasks_router: его пути конкретнее, чем /api/tasks/{task_id}.
 app.include_router(stream_router)

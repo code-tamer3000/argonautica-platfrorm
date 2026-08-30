@@ -128,3 +128,7 @@ class AdminUserOut(BaseModel):
     # список без второго запроса). NULL — историческая запись без набора.
     intake_id: int | None = None
     intake_starts_on: date | None = None
+    # Тариф, по которому пришёл (бот-воронка ARG-92) — денормализован тем же
+    # приёмом, что intake_starts_on. NULL — заведён вручную без тарифа.
+    plan_id: int | None = None
+    plan_name: str | None = None
