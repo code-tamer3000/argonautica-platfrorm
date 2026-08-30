@@ -2,8 +2,13 @@
 
 .wrap {
   max-width: 1280px;
+  width: 100%;
   margin: 0 auto;
   padding: 0 var(--space-5) var(--space-24);
+  /* AppShell.content — overflow:hidden; каждый экран владеет своим скроллом. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .head {
@@ -78,6 +83,22 @@
   stroke-width: 0.6;
   stroke-dasharray: 1 7;
   opacity: 0.8;
+}
+
+/* Короткий золотой отблеск, обходящий кольцо по кругу — окружность 2π·224 ≈ 1407. */
+.wheelSweep {
+  fill: none;
+  stroke: var(--accent-bright);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 70 1337;
+  opacity: 0.65;
+  filter: drop-shadow(0 0 6px var(--accent-bright));
+  animation: wheelSweepTravel 70s linear infinite;
+}
+
+@keyframes wheelSweepTravel {
+  to { transform: rotate(360deg); }
 }
 
 /* --- Подписи стихий --- */
@@ -182,10 +203,33 @@
 
 /* --- Центр: инь-ян --- */
 
+.hubGlow {
+  fill: var(--accent);
+  opacity: 0.1;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hubBreathe 5s ease-in-out infinite;
+}
+
+@keyframes hubBreathe {
+  0%, 100% { opacity: 0.06; transform: scale(0.94); }
+  50% { opacity: 0.16; transform: scale(1.06); }
+}
+
 .hubRing {
   fill: var(--bg);
   stroke: var(--accent);
   stroke-width: 1;
+}
+
+.hubSpin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: hubSpinTurn 48s linear infinite;
+}
+
+@keyframes hubSpinTurn {
+  to { transform: rotate(360deg); }
 }
 
 .hubFill {
@@ -418,8 +462,14 @@
 
 @media (prefers-reduced-motion: reduce) {
   .todayHalo,
-  .lockMark[data-state='unlockable'] .lockIcon {
+  .lockMark[data-state='unlockable'] .lockIcon,
+  .hubGlow,
+  .hubSpin,
+  .wheelSweep {
     animation: none;
+  }
+  .wheelSweep {
+    opacity: 0.35;
   }
 }
 

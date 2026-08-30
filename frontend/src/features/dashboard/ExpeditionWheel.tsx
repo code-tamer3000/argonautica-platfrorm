@@ -55,6 +55,15 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         )
       })}
       <circle cx={CX} cy={CY} r={R_DAY} className={styles.wheelRing} />
+      {/* золотой отблеск, неспешно обходящий круг — единственное, что явно движется
+          по всему кольцу, остальное движение локально (сегодня/замки/инь-ян) */}
+      <circle
+        cx={CX}
+        cy={CY}
+        r={R_DAY}
+        className={styles.wheelSweep}
+        style={{ transformOrigin: `${CX}px ${CY}px` }}
+      />
 
       {/* подписи стихий + дата эфира */}
       {ELEMENT_ORDER.map((element) => {
@@ -126,15 +135,19 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         />
       ))}
 
-      {/* центр: инь-ян */}
+      {/* центр: медленно дышащее сияние + неспешно вращающийся инь-ян — круг живой,
+          а не застывшая схема */}
       <g transform={`translate(${CX} ${CY})`}>
+        <circle r={40} className={styles.hubGlow} />
         <circle r={22} className={styles.hubRing} />
-        <path
-          d="M 0 -22 A 22 22 0 0 1 0 22 A 11 11 0 0 1 0 0 A 11 11 0 0 0 0 -22 Z"
-          className={styles.hubFill}
-        />
-        <circle cx={0} cy={-11} r={4} className={styles.hubDotDark} />
-        <circle cx={0} cy={11} r={4} className={styles.hubDotLight} />
+        <g className={styles.hubSpin}>
+          <path
+            d="M 0 -22 A 22 22 0 0 1 0 22 A 11 11 0 0 1 0 0 A 11 11 0 0 0 0 -22 Z"
+            className={styles.hubFill}
+          />
+          <circle cx={0} cy={-11} r={4} className={styles.hubDotDark} />
+          <circle cx={0} cy={11} r={4} className={styles.hubDotLight} />
+        </g>
       </g>
       <text x={CX} y={CY + 78} textAnchor="middle" className={styles.hubTitle}>
         {currentStage ? stageCaption(currentStage.kind).toUpperCase() : 'ТОЧКА БАЛАНСА'}
