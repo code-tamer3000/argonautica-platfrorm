@@ -158,3 +158,9 @@
   /* Медиа-строка в форме БЗ: вложение и кнопка «Открепить» друг под другом. */
   .mediaItem { align-items: stretch; }
 }
+
+/* Разбивка списка участников по тарифам внутри набора: подзаголовок + счётчик. */
+.planGroups { display: flex; flex-direction: column; gap: var(--space-5); }
+.planGroupHead { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-2); }
+.planGroupTitle { font-family: var(--font-t4); font-size: 0.75rem; text-transform: uppercase; letter-spacing: var(--ls-label-sm); color: var(--text-secondary); }
+.planGroupCount { font-size: 0.7rem; color: var(--text-secondary); background: var(--divider); border-radius: 9999px; padding: 1px var(--space-2); }
