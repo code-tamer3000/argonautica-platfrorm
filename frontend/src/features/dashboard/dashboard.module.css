@@ -58,6 +58,9 @@
 
 .stage {
   position: relative;
+  width: min(72vh, 100%, 620px);
+  aspect-ratio: 1;
+  margin: 0 auto;
   border-radius: var(--radius-card);
   background: radial-gradient(closest-side at 50% 50%, color-mix(in oklab, var(--bg-sea) 20%, transparent), transparent 72%);
   padding: var(--space-1);
@@ -70,35 +73,78 @@
   overflow: visible;
 }
 
-/* --- Кольцо путей и границы квадрантов --- */
+/* --- Полоса стихий (кольцевые секторы) --- */
 
-.wheelDivider {
-  stroke: var(--divider);
+.band {
+  stroke: var(--bg);
+  stroke-width: 1;
+  opacity: 0.16;
+  transition: opacity 0.3s ease;
+}
+
+.bandActive {
+  stroke: var(--bg);
+  stroke-width: 1;
+  opacity: 0.34;
+  transition: opacity 0.3s ease;
+}
+
+/* Золотая рамка вокруг сектора текущего этапа — аналог GrowthFrames в колесе
+   Генных Ключей: один закрытый контур, а не мигающая заливка. */
+.currentFrame {
+  fill: none;
+  stroke: var(--divider-gold-strong);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* --- Живая волна: одна анимация на весь круг, задержка растёт с радиусом
+   (см. PULSE_TRAVEL_MS/pulseDelay в ExpeditionWheel.tsx) — единый ритм вместо
+   пяти независимых таймингов, портировано с gkSparkRun/gkRimGlow колеса ГК. --- */
+
+@keyframes wavePulse {
+  0% { opacity: 0; }
+  12% { opacity: 0.7; }
+  42% { opacity: 0.7; }
+  54% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.sectorPulse {
+  pointer-events: none;
+}
+
+.pulseArc,
+.pulseSpoke {
+  fill: none;
+  stroke: var(--accent-bright);
+  filter: drop-shadow(0 0 3px var(--accent));
+  animation: wavePulse 6.5s ease-in-out infinite;
+  opacity: 0;
+}
+
+.pulseArc {
   stroke-width: 1;
 }
 
-.wheelRing {
-  fill: none;
-  stroke: var(--divider);
-  stroke-width: 0.6;
-  stroke-dasharray: 1 7;
-  opacity: 0.8;
+.pulseSpoke {
+  stroke-width: 1;
 }
 
-/* Короткий золотой отблеск, обходящий кольцо по кругу — окружность 2π·224 ≈ 1407. */
-.wheelSweep {
+.rimGlow {
+  pointer-events: none;
   fill: none;
-  stroke: var(--accent-bright);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-dasharray: 70 1337;
-  opacity: 0.65;
-  filter: drop-shadow(0 0 6px var(--accent-bright));
-  animation: wheelSweepTravel 70s linear infinite;
+  stroke: var(--accent);
+  animation: rimPulse 6.5s ease-in-out infinite;
 }
 
-@keyframes wheelSweepTravel {
-  to { transform: rotate(360deg); }
+@keyframes rimPulse {
+  0% { opacity: 0; stroke-width: 1.5; }
+  12% { opacity: 0.5; stroke-width: 2.5; }
+  42% { opacity: 0.5; stroke-width: 2.5; }
+  54% { opacity: 0; stroke-width: 1.5; }
+  100% { opacity: 0; stroke-width: 1.5; }
 }
 
 /* --- Подписи стихий --- */
@@ -131,19 +177,26 @@
 }
 
 /* --- Дни (диски луны) --- */
+/* Три начертания прошлого/будущего — не два: зачтённый день читается отдельно
+   от пропущенного, а не сливается с ещё не наступившим (см. docs/EXPEDITION.md). */
 
-.day,
-.dayToday,
-.dayDim {
+.dayDone,
+.dayMissed,
+.dayFuture,
+.dayToday {
   transition: opacity 0.3s ease;
 }
 
-.day {
-  opacity: 0.3;
+.dayDone {
+  opacity: 0.75;
 }
 
-.dayDim {
-  opacity: 0.42;
+.dayMissed {
+  opacity: 0.35;
+}
+
+.dayFuture {
+  opacity: 0.28;
 }
 
 .dayToday {
@@ -154,10 +207,10 @@
   stroke: var(--accent-bright);
   stroke-width: 1;
   opacity: 0.55;
-  animation: wheelPulse 3.4s ease-in-out infinite;
+  animation: ripplePulse 6.5s ease-in-out infinite;
 }
 
-@keyframes wheelPulse {
+@keyframes ripplePulse {
   0%, 100% { opacity: 0.55; transform: scale(1); }
   50% { opacity: 0; transform: scale(1.35); }
 }
@@ -185,7 +238,10 @@
 
 .lockMark[data-state='unlockable'] .lockIcon {
   color: var(--accent-bright);
-  animation: wheelPulse 2.8s ease-in-out infinite;
+  animation: ripplePulse 6.5s ease-in-out infinite;
+  /* pulseDelay(R_LOCK) из ExpeditionWheel.tsx — загорается ровно когда волна
+     из хаба доходит до кольца замков, а не по своему отдельному ритму. */
+  animation-delay: 888ms;
 }
 
 .hexLine {
@@ -208,7 +264,9 @@
   opacity: 0.1;
   transform-box: fill-box;
   transform-origin: center;
-  animation: hubBreathe 5s ease-in-out infinite;
+  /* Тот же период 6.5s, что и бегущая волна, без задержки — хаб дышит там,
+     где волна рождается. */
+  animation: hubBreathe 6.5s ease-in-out infinite;
 }
 
 @keyframes hubBreathe {
@@ -222,26 +280,15 @@
   stroke-width: 1;
 }
 
+/* transform-origin задаётся ИНЛАЙН в ExpeditionWheel.tsx в координатах круга
+   (`${CX}px ${CY}px`), а не через transform-box:fill-box здесь — тайцзи не
+   центрирован в своём bbox, fill-box увёл бы ось вращения от центра. */
 .hubSpin {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: hubSpinTurn 48s linear infinite;
+  animation: hubSpinTurn 96s linear infinite;
 }
 
 @keyframes hubSpinTurn {
   to { transform: rotate(360deg); }
-}
-
-.hubFill {
-  fill: var(--accent);
-}
-
-.hubDotDark {
-  fill: var(--bg);
-}
-
-.hubDotLight {
-  fill: var(--accent);
 }
 
 .hubTitle {
@@ -465,11 +512,16 @@
   .lockMark[data-state='unlockable'] .lockIcon,
   .hubGlow,
   .hubSpin,
-  .wheelSweep {
+  .pulseArc,
+  .pulseSpoke,
+  .rimGlow {
     animation: none;
   }
-  .wheelSweep {
-    opacity: 0.35;
+  /* Волна остаётся статичным слабым золотым контуром вместо бегущей — круг
+     читается как есть, без движения (см. genkeys.module.css, тот же приём). */
+  .pulseArc,
+  .pulseSpoke {
+    opacity: 0.18;
   }
 }
 

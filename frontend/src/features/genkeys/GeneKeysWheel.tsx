@@ -12,7 +12,7 @@ import {
   sectorSpan,
 } from './wheel'
 import { useRings } from './useRings'
-import { YinYang } from './YinYang'
+import { YinYang } from '../../components/YinYang'
 import styles from './genkeys.module.css'
 
 const SIZE = 820

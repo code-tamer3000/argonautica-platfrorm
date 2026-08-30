@@ -73,6 +73,47 @@ A revealed/entered lock deep-links to its full reading: `/genkeys?key=N`
 (`GeneKeysScreen` already opens a key from a `?key=` param — see
 [GENE_KEYS.md](GENE_KEYS.md) "Book link"; no new resolution logic was needed).
 
+## Visual layer
+
+`ExpeditionWheel.tsx` renders the circle in the same visual language as the Gene Keys
+wheel ([GENE_KEYS.md](GENE_KEYS.md) "Wheel"): the hub's Taiji is the shared
+`components/YinYang.tsx` (extracted from `features/genkeys/YinYang.tsx`, both wheels use
+it now), the element band is drawn with `annularSectorPath` from
+`features/genkeys/wheel.ts` (reused, not reimplemented), and a single 6.5s wave —
+`pulseDelay(r)` in `ExpeditionWheel.tsx`, mirroring `gkSparkRun`/`gkRimGlow` in
+`genkeys.module.css` — drives every pulsing element, delayed in proportion to its
+radius so the glow visibly travels outward from the hub instead of five independent
+timings ticking past each other.
+
+Layers, centre outward (`CX = CY = 330`, viewBox `0 0 660 660`; radii in
+`wheelGeometry.ts`):
+
+| Radius | Layer |
+|---|---|
+| `R_TAIJI` = 52 | Taiji mark |
+| `R_HUB_RIM` = 62 | hub rim circle |
+| `R_CENTER` = 96 | Точка Баланса / Финал day ring |
+| `R_LOCK` = 158 | element locks (hexagrams) |
+| `R_BAND_IN..R_BAND_OUT` = 214..300 | element band (annular sectors) — labels at `R_LABEL`/`R_LABEL_DATE`, day discs at `R_DAY` inside it |
+
+The Taiji's `<g>` rotates continuously (96s, linear) with `transform-origin` set
+**inline in pixel coordinates** (`${CX}px ${CY}px`), not via `transform-box: fill-box` —
+the mark's own path isn't centered in its bounding box, so `fill-box` would spin it
+around an off-center point instead of the circle's centre (this was the pre-rewrite
+bug: the Taiji visibly orbited instead of rotating in place).
+
+A day disc gets one of four states — `dayDone` (closed/credited/today_closed/pardoned,
+opacity 0.75, moon phase filled), `dayMissed` (opacity 0.35, outline only, no phase
+fill), `dayFuture` (opacity 0.28, outline only), `dayToday` (full opacity, larger,
+golden halo synced to the wave via `pulseDelay(d.radius)`) — done and missed are
+visually distinct from each other and from not-yet-arrived days, unlike the earlier
+two-bucket scheme.
+
+The current stage's sector (when it's one of the four elements, not
+balance/final) gets a closed golden outline (`sectorFramePath`, one contour: two
+radial sides + inner/outer arcs) — the same device as `GrowthFrames` in the Gene
+Keys wheel.
+
 ## `GET /api/dashboard`
 
 One aggregate for the landing screen — assembled from existing per-domain functions
@@ -143,6 +184,11 @@ existing intake window editor and `AdminPlans`.
   `lock_states_for`, reused by `app/api/dashboard.py`.
 - `app/api/dashboard.py` — the aggregate endpoint.
 - `frontend/src/features/dashboard/` — `moon.ts` (real lunar phase, pure), `wheelGeometry.ts`
-  (stage/day → SVG angle, pure), `ExpeditionWheel.tsx`, `LockDialog.tsx`,
-  `DashboardScreen.tsx`.
-- `frontend/src/styles/tokens.css` — `--el-air/fire/water/earth`, both theme blocks.
+  (stage/day → SVG angle, pure, including `sectorFramePath`/`elementSectorSpan`),
+  `ExpeditionWheel.tsx`, `LockDialog.tsx`, `DashboardScreen.tsx`.
+- `frontend/src/components/YinYang.tsx` — the Taiji mark, shared with
+  `features/genkeys/GeneKeysWheel.tsx` (extracted from that feature during the visual
+  rewrite; both wheels render the same mark).
+- `frontend/src/styles/tokens.css` — `--el-air/fire/water/earth`, aliased to the existing
+  palette (`--color-krov-yar`/`--color-more-yar`/`--color-latun`/`--color-kamen-tepl`,
+  the same device as `--gk-*` in `genkeys.module.css`), both theme blocks.
