@@ -160,7 +160,9 @@ HOLDS (hover — key stays under the cursor); with it, the outer ring rotates to
 - `wheel.ts` — geometry, palette, lookups, `PLACED`/`LEAVES`, `partnerOf`.
 - `useRings.ts` — rotation state (idle drift + focus easing, hover vs locked).
 - `GeneKeysWheel.tsx` — the SVG (rings, keys, ticks, golden edges, hub).
-- `YinYang.tsx` — Taiji hub mark. `Hexagram.tsx` — hexagram for the reading panel.
+- `Hexagram.tsx` — hexagram for the reading panel. The Taiji hub mark itself now
+  lives at `frontend/src/components/YinYang.tsx` — shared with the Expedition Circle
+  hub ([EXPEDITION.md](EXPEDITION.md) "Visual layer").
 - `GeneKeyReading.tsx` — spectrum triad + characteristics + lazy markdown body + KB book link.
 - `GeneKeyPicker.tsx` — mobile-only by-number / by-hexagram key selection.
 - `GeneKeysScreen.tsx` — composition + hover/select/partner state.

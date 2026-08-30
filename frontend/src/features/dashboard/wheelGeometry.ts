@@ -1,5 +1,7 @@
 // Геометрия Круга Экспедиции — чистые функции, без React/DOM. Портировано и
-// численно сверено с прототипом задачи (артефакт «Круг Экспедиции»).
+// численно сверено с прототипом задачи (артефакт «Круг Экспедиции»); слоистая
+// раскладка радиусов и рамка сектора выровнены с колесом Генных Ключей
+// (features/genkeys/wheel.ts) — тот же язык, другая структура данных.
 //
 // Обход — ПРОТИВ часовой стрелки: Воздух справа (90°) → Огонь сверху (0°) →
 // Вода слева (270°) → Земля снизу (180°) — прочтение исходной схемы (стихии по
@@ -11,10 +13,17 @@ import type { Element, ExpeditionOut, StageSpanOut } from '../../lib/types'
 
 export const CX = 330
 export const CY = 330
-export const R_DAY = 224
-export const R_LABEL = 274
-export const R_LOCK = 150
-export const R_INNER = 44
+
+// Слои от центра наружу (см. docs/EXPEDITION.md «Визуальный слой»).
+export const R_TAIJI = 52 // инь-ян в хабе
+export const R_HUB_RIM = 62 // ободок хаба
+export const R_CENTER = 96 // кольцо дней Точки Баланса / Финала
+export const R_LOCK = 158 // замки стихий (гексаграммы)
+export const R_BAND_IN = 214 // внутренняя граница полосы стихий
+export const R_LABEL = 238 // подпись стихии
+export const R_LABEL_DATE = 250 // подпись даты эфира
+export const R_DAY = 280 // диски-луны дней
+export const R_BAND_OUT = 300 // внешняя граница полосы стихий
 
 export const ELEMENT_ORDER: Element[] = ['air', 'fire', 'water', 'earth']
 export const ELEMENT_CARDINAL: Record<Element, number> = {
@@ -48,6 +57,32 @@ export function centerDayAngle(dayIndex: number, count: number): number {
   return 135 - (dayIndex + 0.5) * (360 / count)
 }
 
+/** Границы 90°-сектора стихии `elementIndex` в порядке [начало, конец] по возрастанию угла. */
+export function elementSectorSpan(elementIndex: number): [number, number] {
+  const start = quadrantStart(elementIndex)
+  return [start - 90, start]
+}
+
+/**
+ * Замкнутый контур кольцевого сектора между углами [a0, a1] (по возрастанию) и
+ * радиусами [r0, r1] — две радиальные стороны + внутренняя и внешняя дуги.
+ * Портировано с `sectorFramePath` из features/genkeys/GeneKeysWheel.tsx.
+ */
+export function sectorFramePath(a0: number, a1: number, r0: number, r1: number): string {
+  const { x: x0o, y: y0o } = polar(a0, r1)
+  const { x: x1o, y: y1o } = polar(a1, r1)
+  const { x: x1i, y: y1i } = polar(a1, r0)
+  const { x: x0i, y: y0i } = polar(a0, r0)
+  const large = a1 - a0 > 180 ? 1 : 0
+  return [
+    `M ${x0o.toFixed(2)} ${y0o.toFixed(2)}`,
+    `A ${r1} ${r1} 0 ${large} 1 ${x1o.toFixed(2)} ${y1o.toFixed(2)}`, // внешняя дуга
+    `L ${x1i.toFixed(2)} ${y1i.toFixed(2)}`, // сторона
+    `A ${r0} ${r0} 0 ${large} 0 ${x0i.toFixed(2)} ${y0i.toFixed(2)}`, // внутренняя дуга
+    'Z', // сторона обратно к старту
+  ].join(' ')
+}
+
 export interface DayMarker {
   day: number
   angle: number
@@ -75,7 +110,7 @@ export function layoutWheel(expedition: ExpeditionOut): WheelLayout {
     for (let i = 0; i < stageDays; i++) {
       const day = stage.day_from + i
       const angle = centerDayCount > 0 ? centerDayAngle(centerCursor, centerDayCount) : 0
-      days.push({ day, angle, radius: R_INNER, element: null })
+      days.push({ day, angle, radius: R_CENTER, element: null })
       centerCursor++
     }
   }

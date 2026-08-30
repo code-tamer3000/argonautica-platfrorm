@@ -1,21 +1,21 @@
-// Taiji (yin-yang) mark for the wheel hub — paths from the supplied SVG
-// (64×64 viewBox, taiji centered at 32,32, r≈30). Always monochrome (bone strand
-// on the dark hub); never gold.
+// Taiji (yin-yang) mark — paths from the supplied SVG (64×64 viewBox, taiji
+// centered at 32,32, r≈30). Monochrome by default (bone strand on a dark hub);
+// pass `fill` to override for a different hub background.
 interface Props {
   cx: number
   cy: number
   r: number
+  fill?: string
 }
 
 // Original geometry (from yin-yang-svgrepo): center (32,32), outer r = 30.
 const SRC_C = 32
 const SRC_R = 30
 
-export function YinYang({ cx, cy, r }: Props) {
+export function YinYang({ cx, cy, r, fill = 'var(--color-kost)' }: Props) {
   const s = r / SRC_R
   // Map the source coordinate frame onto (cx,cy,r).
   const transform = `translate(${cx} ${cy}) scale(${s}) translate(${-SRC_C} ${-SRC_C})`
-  const fill = 'var(--color-kost)'
   return (
     <g transform={transform}>
       {/* filled light field so the S-curve reads as the dark strand's counter */}
