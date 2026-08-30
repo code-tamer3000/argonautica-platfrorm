@@ -1,0 +1,84 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: min(420px, 80vw);
+}
+
+.lead {
+  font-family: var(--font-t3);
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+  margin: 0;
+}
+
+.saving {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-label-md);
+}
+
+.reading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.readingHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.readingNumber {
+  font-family: var(--font-t1);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+}
+
+.readingName {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.spectrum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.band {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-media);
+  padding: var(--space-2) var(--space-3);
+  min-width: 90px;
+  flex: 1;
+}
+
+.bandLabel {
+  font-size: var(--text-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+
+.bandValue {
+  font-size: var(--text-label-md);
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.hint {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+}

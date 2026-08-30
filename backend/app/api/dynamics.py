@@ -142,6 +142,25 @@ def _platform_today() -> date:
     return _platform_day(datetime.now(UTC))
 
 
+def platform_today() -> date:
+    """Публичная обёртка над `_platform_today` — Круг Экспедиции (app/api/dashboard.py)
+    должен считать «сегодня» ровно по той же границе суток, что и дневник, иначе
+    маркер «сегодня» на круге и статус дня в Динамике разойдутся around 00:00–03:00 МСК."""
+    return _platform_today()
+
+
+def frozen_today(current_user: User, window_closed_on: date | None) -> date:
+    """«Сегодня» для юзера, которому Динамика может быть заморожена: выпускник —
+    на дне выпуска, иначе участник с закрытым окном набора — на дате закрытия,
+    иначе платформенное «сегодня». Тот же приоритет, что в `get_all_dynamics`
+    (graduation важнее закрытия окна — она permanent, дата окна нет). Используется
+    и `get_my_day_statuses`, и Кругом Экспедиции (app/api/dashboard.py) — маркер
+    «сегодня» на круге обязан замереть в тот же день, что и статусы Динамики,
+    иначе они разойдутся у выпускника."""
+    graduated_on = _platform_day(current_user.graduated_at) if current_user.graduated_at else None
+    return graduated_on or window_closed_on or platform_today()
+
+
 def _timeline_start(timeline: Timeline) -> date:
     """Запасное начало окна для пользователя без набора.
 
@@ -280,16 +299,20 @@ def _recent_days(
     program_start: date,
     credited: set[date] | None = None,
     today: date | None = None,
+    window_start: date | None = None,
+    window_end: date | None = None,
 ) -> list[RecentDay]:
     # `today` подменяется для выпускника — окно строим вокруг дня выпуска (см. _calc_stats).
     today = today or _platform_today()
     credited = credited or set()
     program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
-    # Окно: WINDOW_PAST дней назад → сегодня → WINDOW_FUTURE дней вперёд.
+    # Окно по умолчанию: WINDOW_PAST дней назад → сегодня → WINDOW_FUTURE дней
+    # вперёд. Круг Экспедиции запрашивает статус ВСЕХ 28 дней разом — передаёт
+    # свои границы вместо этого дефолта (см. app/services/expedition.py).
     # Хронологический порядок: старые слева, новые справа.
-    window_start = today - timedelta(days=WINDOW_PAST)
-    window_end = today + timedelta(days=WINDOW_FUTURE)
+    window_start = window_start if window_start is not None else today - timedelta(days=WINDOW_PAST)
+    window_end = window_end if window_end is not None else today + timedelta(days=WINDOW_FUTURE)
 
     result: list[RecentDay] = []
     d = window_start
@@ -350,6 +373,42 @@ async def _load_credits(session: AsyncSession, user_id: int) -> list[date]:
         select(JournalCredit.date).where(JournalCredit.user_id == user_id)
     )
     return [r[0] for r in rows.all()]
+
+
+async def get_my_day_statuses(
+    session: AsyncSession,
+    current_user: User,
+    window_start: date,
+    window_end: date,
+) -> list[RecentDay]:
+    """Публичная обёртка над той же арифметикой, что `my-stats`/админ-обзор, но
+    для явного диапазона дат вместо ±окна вокруг сегодня — нужна Кругу Экспедиции
+    (см. app/api/dashboard.py), которому требуется статус ВСЕХ 28 дней разом.
+
+    В отличие от `get_my_stats` (закрыт выпускнику через `require_ongoing_participant`
+    на уровне роутера), сюда выпускник добирается — Круг остаётся доступен после
+    финиша (см. app/api/expedition.py). Поэтому здесь, как и в админ-обзоре
+    (`get_all_dynamics`), замораживаем на дне выпуска сами, а не полагаемся на 403.
+    """
+    timeline = await load_timeline(session)
+    program_start = await load_program_start(session, current_user, timeline)
+    window_closed_on = await intake_window_closed(session, current_user.intake_id)
+    as_of = frozen_today(current_user, window_closed_on)
+    room_id = await _personal_room_id(session, current_user.id)
+    messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
+    pardons = await _load_pardons(session, current_user.id)
+    credits = await _load_credits(session, current_user.id)
+    per_day = _calc_closed_days(messages)
+    stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+    return _recent_days(
+        stats["closed_days"],
+        stats["pardoned"],
+        program_start,
+        set(credits),
+        today=as_of,
+        window_start=window_start,
+        window_end=window_end,
+    )
 
 
 # ─── Пользовательские эндпоинты ─────────────────────────────────────────────

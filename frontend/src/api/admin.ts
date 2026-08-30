@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { http } from '../lib/apiClient'
-import type { AdminUserOut, IntakeOut, UserOut } from '../lib/types'
+import type { AdminUserOut, IntakeOut, StageIn, UserOut } from '../lib/types'
 import { usersKey } from './users'
 
 export const adminUsersKey = ['admin', 'users'] as const
@@ -99,6 +99,33 @@ export function useUpdateIntake() {
       http.patch<IntakeOut>(`/api/admin/intakes/${id}`, { ends_on }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: adminIntakesKey })
+    },
+  })
+}
+
+// --- Круг Экспедиции: расписание этапов потока ------------------------------
+
+export const intakeStagesKey = (intakeId: number) => ['admin', 'intakes', intakeId, 'stages'] as const
+
+// Ответ бэкенда (schemas.expedition.StageOut) структурно совпадает с StageIn
+// (kind/air_date/air_time/task_id) — отдельный тип на фронте не заводим.
+/** Расписание этапов потока. Пустой список — не заведено (см. StagesUpdate). */
+export function useIntakeStages(intakeId: number | null) {
+  return useQuery({
+    queryKey: intakeStagesKey(intakeId ?? -1),
+    queryFn: () => http.get<StageIn[]>(`/api/admin/intakes/${intakeId}/stages`),
+    enabled: intakeId != null,
+  })
+}
+
+/** Заменяет расписание целиком — ровно шесть этапов, один раз каждой стихии. */
+export function useSetIntakeStages() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ intakeId, stages }: { intakeId: number; stages: StageIn[] }) =>
+      http.put<StageIn[]>(`/api/admin/intakes/${intakeId}/stages`, { stages }),
+    onSuccess: (_data, { intakeId }) => {
+      qc.invalidateQueries({ queryKey: intakeStagesKey(intakeId) })
     },
   })
 }
