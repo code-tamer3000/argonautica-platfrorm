@@ -12,7 +12,7 @@ import type { Element } from '../../lib/types'
 import { plural } from '../../lib/format'
 import { ExpeditionWheel } from './ExpeditionWheel'
 import { LockDialog } from './LockDialog'
-import { ELEMENT_ORDER, elementName } from './wheelGeometry'
+import { ELEMENT_ORDER, elementName, stageName } from './wheelGeometry'
 import styles from './dashboard.module.css'
 
 const fmtShort = (iso: string) => format(new Date(iso), 'dd.MM')
@@ -45,12 +45,23 @@ export function DashboardScreen() {
   }
 
   const { expedition } = data
+  const today = expedition?.today ?? null
+  const currentStage =
+    today != null ? expedition!.stages.find((s) => today >= s.day_from && today <= s.day_to) : undefined
+
+  const tagline = isPending
+    ? `До старта осталось ${beforeStart} ${plural(beforeStart, ['день', 'дня', 'дней'])}`
+    : expedition == null
+      ? 'Ваш путь ещё не начался'
+      : currentStage
+        ? `День ${today} · ${stageName(currentStage.kind)}`
+        : 'Экспедиция пройдена'
 
   return (
     <div className={styles.wrap}>
       <div className={styles.head}>
-        <h1>Круг Экспедиции</h1>
-        <div className={styles.headSub}>Точка баланса, четыре стихии — путь от старта до финала.</div>
+        <h1>Экспедиция</h1>
+        <div className={styles.headSub}>{tagline}</div>
       </div>
 
       <div className={styles.grid}>
@@ -72,11 +83,6 @@ export function DashboardScreen() {
               ))}
             </div>
           )}
-          {isPending && (
-            <p className={styles.headSub} style={{ marginTop: 'var(--space-3)' }}>
-              До старта осталось {beforeStart} {plural(beforeStart, ['день', 'дня', 'дней'])}.
-            </p>
-          )}
         </section>
 
         <section className={styles.rail} aria-label="Что сейчас">
@@ -85,9 +91,9 @@ export function DashboardScreen() {
               <div className={styles.cardHead}>
                 <h3>Сегодня</h3>
               </div>
-              {expedition?.today != null && (
+              {today != null && expedition && (
                 <div className={styles.todayRow}>
-                  <span className={styles.dayNo}>{expedition.today}</span>
+                  <span className={styles.dayNo}>{today}</span>
                   <span className={styles.dayOf}>день из {expedition.total_days}</span>
                 </div>
               )}
