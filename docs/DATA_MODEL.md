@@ -145,6 +145,42 @@ Full CRUD under `require_admin`: `GET/POST /api/admin/plans`, `PATCH/DELETE
 /api/admin/plans/{id}`. Deleting a plan still referenced by `users.plan_id` or
 `intake_applications.plan_id` 409s — deactivate instead.
 
+## intake_stages / expedition_locks
+Круг Экспедиции — see [EXPEDITION.md](EXPEDITION.md) for the full contract.
+`intake_stages` — one intake's schedule (6 rows, one per `kind`); a stage's length is
+**derived** from the neighbouring `air_date`s, never stored (see
+`services/expedition.layout_stages`). `expedition_locks` — the four hexagrams a
+participant has entered into their element locks.
+
+**intake_stages**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| intake_id | BIGINT | FK intakes ON DELETE CASCADE, NOT NULL | |
+| kind | TEXT | CHECK IN (balance, air, fire, water, earth, final) | order is fixed by this list, not by `air_date` |
+| air_date | DATE | NOT NULL | the broadcast that **opens** this stage |
+| air_time | TIME | NULL | MSK; NULL = unlock moment is midnight MSK of `air_date` |
+| task_id | BIGINT | FK tasks ON DELETE SET NULL, NULL | task whose acceptance reveals this element's lock; NULL = lock stops at "entered" |
+
+`UNIQUE (intake_id, kind)`. Admin CRUD: `GET/PUT /api/admin/intakes/{id}/stages` (PUT
+replaces all six rows at once — see EXPEDITION.md "Admin API").
+
+**expedition_locks**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| user_id | BIGINT | FK users, NOT NULL | |
+| element | TEXT | CHECK IN (air, fire, water, earth) | |
+| key_number | INT | NOT NULL, 1..64 | |
+| hexagram | TEXT | NOT NULL | 6 chars, line1(bottom)..line6(top); derived server-side from `key_number` via the King Wen table (`services/expedition.KING_WEN`), never accepted from the client |
+| created_at / updated_at | TIMESTAMPTZ | NOT NULL | |
+
+`UNIQUE (user_id, element)` — four fixed slots per participant. `PUT
+/api/expedition/locks/{element}` is an upsert (idempotent, not a one-shot roll): a
+participant may correct their entry any time after the element unlocks.
+
 ## intake_applications
 Funnel state for the intake/payment bot (ARG-92): one row per Telegram chat (`tg_id`
 unique). Postgres, not sqlite/Redis — the funnel must survive a container restart
@@ -662,6 +698,9 @@ Short-lived realtime state lives only in Redis. This is the single list of Redis
 
 ```
 users --> intakes                      (intake_id nullable; cohort → Dynamics window start+end)
+intakes --< intake_stages              (UNIQUE intake_id+kind; 6-stage Круг Экспедиции schedule)
+users --< expedition_locks             (UNIQUE user_id+element; 4 hexagram slots)
+intake_stages --> tasks                (task_id nullable; task that reveals the element's lock)
 rooms --> intakes ; rooms --< room_plans >-- plans       (channel-only isolation, ARG-96)
 tasks --> intakes ; tasks --< task_plans >-- plans       (common-only isolation, ARG-96)
 kb_items --> intakes ; kb_items --< kb_item_plans >-- plans  (isolation, ARG-96)

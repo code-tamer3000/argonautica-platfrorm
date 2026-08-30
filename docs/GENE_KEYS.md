@@ -6,6 +6,13 @@
 > UI label is **«Генные замки»** (nav item, wheel caption). The route, code
 > identifiers, and content filenames stay `genkeys`/`GeneKeys` — the rename is
 > user-facing text only.
+>
+> Круг Экспедиции ([EXPEDITION.md](EXPEDITION.md)) is a second entry point: its four
+> element locks deep-link into a key's reading (`/genkeys?key=N`, resolved by the
+> `?key=` handling `GeneKeysScreen` already has) and reuse `GeneKeyPicker.tsx` as-is
+> for entering a lock's hexagram. `expedition_locks.key_number`/`hexagram` are the only
+> Gene Keys data that now also lives in Postgres — this module itself is still
+> frontend-only, static content, no DB.
 
 ## What it is
 

@@ -1,0 +1,433 @@
+/* Стартовый экран: круг слева, карточки состояния справа. */
+
+.wrap {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--space-5) var(--space-24);
+}
+
+.head {
+  padding: var(--space-8) 0 var(--space-6);
+}
+
+.head h1 {
+  font-family: var(--font-t1);
+  font-weight: 400;
+  font-size: var(--text-h1);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.headSub {
+  font-family: var(--font-t3);
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+  margin-top: var(--space-2);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.85fr);
+  gap: var(--space-8);
+  align-items: start;
+}
+
+@media (max-width: 1000px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+}
+
+.circleCol {
+  position: sticky;
+  top: var(--space-5);
+}
+
+@media (max-width: 1000px) {
+  .circleCol {
+    position: static;
+  }
+}
+
+.stage {
+  position: relative;
+  border-radius: var(--radius-card);
+  background: radial-gradient(closest-side at 50% 50%, color-mix(in oklab, var(--bg-sea) 20%, transparent), transparent 72%);
+  padding: var(--space-1);
+}
+
+.wheel {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* --- Кольцо путей и границы квадрантов --- */
+
+.wheelDivider {
+  stroke: var(--divider);
+  stroke-width: 1;
+}
+
+.wheelRing {
+  fill: none;
+  stroke: var(--divider);
+  stroke-width: 0.6;
+  stroke-dasharray: 1 7;
+  opacity: 0.8;
+}
+
+/* --- Подписи стихий --- */
+
+.label,
+.labelActive {
+  transition: opacity 0.3s ease;
+}
+
+.label {
+  opacity: 0.55;
+}
+
+.labelActive {
+  opacity: 1;
+}
+
+.labelText {
+  font-family: var(--font-t1);
+  font-size: 17px;
+  letter-spacing: 0.22em;
+  fill: var(--text-primary);
+}
+
+.labelDate {
+  font-family: var(--font-t4);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  fill: var(--text-muted);
+}
+
+/* --- Дни (диски луны) --- */
+
+.day,
+.dayToday,
+.dayDim {
+  transition: opacity 0.3s ease;
+}
+
+.day {
+  opacity: 0.3;
+}
+
+.dayDim {
+  opacity: 0.42;
+}
+
+.dayToday {
+  opacity: 1;
+}
+
+.todayHalo {
+  stroke: var(--accent-bright);
+  stroke-width: 1;
+  opacity: 0.55;
+  animation: wheelPulse 3.4s ease-in-out infinite;
+}
+
+@keyframes wheelPulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0; transform: scale(1.35); }
+}
+
+/* --- Замки стихий --- */
+
+.lockMark {
+  cursor: default;
+}
+
+.lockMark[data-state='unlockable'],
+.lockMark[data-state='entered'],
+.lockMark[data-state='revealed'] {
+  cursor: pointer;
+}
+
+.lockIcon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-ghost);
+}
+
+.lockMark[data-state='unlockable'] .lockIcon {
+  color: var(--accent-bright);
+  animation: wheelPulse 2.8s ease-in-out infinite;
+}
+
+.hexLine {
+  fill: var(--accent);
+}
+
+.lockMark[data-state='revealed'] .hexLine {
+  fill: var(--accent-bright);
+}
+
+.lockMark:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 3px;
+}
+
+/* --- Центр: инь-ян --- */
+
+.hubRing {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.hubFill {
+  fill: var(--accent);
+}
+
+.hubDotDark {
+  fill: var(--bg);
+}
+
+.hubDotLight {
+  fill: var(--accent);
+}
+
+.hubTitle {
+  font-family: var(--font-t1);
+  font-size: 19px;
+  letter-spacing: 0.11em;
+  fill: var(--text-primary);
+  text-anchor: middle;
+}
+
+.hubSub {
+  font-family: var(--font-t4);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  fill: var(--text-muted);
+  text-anchor: middle;
+}
+
+/* --- Легенда под кругом --- */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* --- Правая колонка --- */
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cardHead h3 {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  margin: 0;
+}
+
+.cardHeadSpacer {
+  flex: 1;
+}
+
+.cardMore {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-t4);
+}
+
+.cardMore:hover {
+  color: var(--accent);
+}
+
+.today {
+  border-color: var(--divider-gold-strong);
+  box-shadow: var(--glow-gold);
+}
+
+.todayRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.dayNo {
+  font-family: var(--font-t1);
+  font-size: 34px;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.dayOf {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.section {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-label-md);
+  padding: 3px var(--space-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--divider);
+  color: var(--text-secondary);
+}
+
+.sectionDone {
+  border-color: color-mix(in oklab, var(--bg-sea) 60%, var(--divider));
+  color: var(--text-primary);
+  background: color-mix(in oklab, var(--bg-sea) 16%, transparent);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--divider);
+}
+
+.item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.itemWhen {
+  font-size: var(--text-label);
+  color: var(--text-ghost);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 52px;
+  padding-top: 2px;
+}
+
+.itemBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.itemTitle {
+  font-size: var(--text-label-md);
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.itemMeta {
+  font-size: var(--text-label);
+  color: var(--text-muted);
+}
+
+.newsAuthor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.newsAuthorName {
+  font-size: var(--text-label-md);
+  color: var(--text-primary);
+}
+
+.newsDate {
+  font-size: var(--text-label);
+  color: var(--text-ghost);
+  margin-left: auto;
+}
+
+.newsBody {
+  font-family: var(--font-t3);
+  font-size: var(--text-ui);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.pending {
+  text-align: center;
+  padding: var(--space-8) 0;
+}
+
+.pendingTitle {
+  font-family: var(--font-t1);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin: 0 0 var(--space-2);
+}
+
+.pendingText {
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todayHalo,
+  .lockMark[data-state='unlockable'] .lockIcon {
+    animation: none;
+  }
+}
+
+/* --- Мобилка: круг только для просмотра, замки крупнее для тапа --- */
+
+@media (max-width: 640px) {
+  .lockIcon svg {
+    width: 22px;
+    height: 22px;
+  }
+}

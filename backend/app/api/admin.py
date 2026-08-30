@@ -21,6 +21,7 @@ from app.api.dynamics import (
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
+from app.models.expedition import STAGE_KINDS, IntakeStage
 from app.models.feedback import Feedback
 from app.models.intake import Intake
 from app.models.kb import KbItem, KbItemMedia
@@ -33,6 +34,7 @@ from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
 from app.models.task import TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
 from app.models.user import User
+from app.schemas.expedition import StageOut, StagesUpdate
 from app.schemas.feedback import (
     FeedbackListOut,
     FeedbackOut,
@@ -172,6 +174,68 @@ async def update_intake(
         created_at=intake.created_at,
         user_count=user_count,
     )
+
+
+@router.get("/intakes/{intake_id}/stages", response_model=list[StageOut])
+async def get_intake_stages(
+    intake_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[IntakeStage]:
+    """Расписание Круга Экспедиции потока. Пустой список — не заведено: фронт/агрегат
+    дашборда падает на равные четверти (см. app/services/expedition.fallback_stages)."""
+    if await session.get(Intake, intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Набор не найден")
+    rows = await session.execute(
+        select(IntakeStage).where(IntakeStage.intake_id == intake_id)
+    )
+    by_kind = {s.kind: s for s in rows.scalars().all()}
+    return [by_kind[k] for k in STAGE_KINDS if k in by_kind]
+
+
+@router.put("/intakes/{intake_id}/stages", response_model=list[StageOut])
+async def set_intake_stages(
+    intake_id: int,
+    body: StagesUpdate,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[IntakeStage]:
+    """Заменяет расписание целиком — фиксированные шесть этапов, частичный PATCH
+    только плодил бы несогласованные графики (пропущенный этап посреди круга)."""
+    if await session.get(Intake, intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Набор не найден")
+
+    kinds = [s.kind for s in body.stages]
+    if set(kinds) != set(STAGE_KINDS):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Нужны все шесть этапов, каждый ровно один раз"
+        )
+    order_index = {k: i for i, k in enumerate(STAGE_KINDS)}
+    ordered = sorted(body.stages, key=lambda s: order_index[s.kind])
+    for prev, nxt in zip(ordered, ordered[1:], strict=False):
+        if nxt.air_date <= prev.air_date:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Эфир «{nxt.kind}» должен быть позже эфира «{prev.kind}»",
+            )
+
+    await session.execute(delete(IntakeStage).where(IntakeStage.intake_id == intake_id))
+    rows = [
+        IntakeStage(
+            intake_id=intake_id,
+            kind=s.kind,
+            air_date=s.air_date,
+            air_time=s.air_time,
+            task_id=s.task_id,
+        )
+        for s in ordered
+    ]
+    session.add_all(rows)
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Одно из заданий не существует"
+        ) from exc
+    return rows
 
 
 @router.get("/plans", response_model=list[PlanOut])

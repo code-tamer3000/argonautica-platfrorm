@@ -81,6 +81,15 @@ Homework entries are ordinary **`messages` in the participant's personal diary r
   - `POST /api/admin/dynamics/credit` always answers with the **unfiltered** overview; the client therefore invalidates its cache instead of writing that body into a filtered cache entry.
 - Admin structure: `GET/POST /api/admin/journal/programs`, `PATCH/DELETE /api/admin/journal/programs/{id}` (create/edit/delete задания; can't delete the earliest; `starts_on` unique).
 
+## Reuse: Круг Экспедиции
+
+`GET /api/dashboard` ([EXPEDITION.md](EXPEDITION.md)) needs a day-status list for the
+**whole** 28-day circle, not the ±window `my-stats` returns. Rather than duplicate the
+streak/closed-day arithmetic, `_recent_days` (`api/dynamics.py`) grew optional
+`window_start`/`window_end` params (default unchanged — every existing caller is
+unaffected) and a public wrapper, `get_my_day_statuses`, exposes it to other API modules
+the same way `intake_window_closed`/`load_program_start` already were.
+
 ## Related
 
 A missed day generates a `journal_missed` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md).

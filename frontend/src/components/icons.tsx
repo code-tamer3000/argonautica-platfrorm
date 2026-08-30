@@ -27,6 +27,7 @@ import {
   Play,
   Plus,
   ListChecks,
+  Lock,
   Menu,
   Settings,
   Smile,
@@ -88,3 +89,4 @@ export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
 export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />
 export const IconSun = (p: IconProps) => <Sun {...DEFAULTS} {...p} />
 export const IconMoon = (p: IconProps) => <Moon {...DEFAULTS} {...p} />
+export const IconLock = (p: IconProps) => <Lock {...DEFAULTS} {...p} />
