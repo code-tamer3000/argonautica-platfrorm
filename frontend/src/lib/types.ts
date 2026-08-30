@@ -76,6 +76,9 @@ export interface RoomOut {
   // Только channel: изоляция по потоку/тарифу (ARG-96).
   intake_id?: number | null
   plan_ids?: number[]
+  // Только is_personal: тариф владельца дневника (группировка «Все дневники»).
+  owner_plan_id?: number | null
+  owner_plan_name?: string | null
 }
 
 export interface MemberOut {
@@ -298,6 +301,15 @@ export interface AdminUserOut {
   intake_id: number | null
   /** Дата старта набора (YYYY-MM-DD) — приходит рядом с юзером для группировки. */
   intake_starts_on: string | null
+  plan_id: number | null
+  /** Имя тарифа — приходит рядом с юзером (тот же приём, что intake_starts_on). */
+  plan_name: string | null
+}
+
+/** Тариф для обычного участника — `GET /api/plans` (только активные, id+name). */
+export interface PlanPublicOut {
+  id: number
+  name: string
 }
 
 /** Набор (когорта): дата старта задаёт начало 28-дневного окна Динамики.

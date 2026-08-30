@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAdminUsersMap } from '../../api/admin'
+import { usePlans } from '../../api/plans'
 import { useRooms } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
@@ -13,7 +14,7 @@ import { useAuth } from '../auth/AuthContext'
 import styles from './chat.module.css'
 import { NewChatModal } from './NewChatModal'
 import { NewGroupModal } from './NewGroupModal'
-import { roomAvatarUrl, roomTitle } from './util'
+import { groupDiariesByPlan, roomAvatarUrl, roomTitle } from './util'
 
 export type Tab = 'chats' | 'channels'
 
@@ -83,11 +84,12 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   // admin-ручку /api/admin/users. enabled=isAdmin: для обычного участника не стреляем
   // запросом вовсе (эндпоинт всё равно 403 для не-admin).
   const adminUsers = useAdminUsersMap(isAdmin)
+  const { data: plans = [] } = usePlans()
   const [q, setQ] = useState('')
   const [modal, setModal] = useState<'chat' | 'group' | null>(null)
   const badges = useNavBadges()
 
-  const { dms, groups, pinnedChannels, otherChannels } = useMemo(() => {
+  const { dms, groups, pinnedChannels, diaryGroups, otherChannels } = useMemo(() => {
     const list = rooms ?? []
     const needle = q.trim().toLowerCase()
     const filtered = needle
@@ -134,16 +136,25 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       })
     }
 
+    // «Все дневники» делится на группы по тарифу владельца (игроки/спецотряд/
+    // око и т.п.) — личные дневники группируются, обычные «Дневник»-каналы
+    // (не personal, редкий случай) тарифа не несут и остаются отдельным хвостом.
+    const others = channels.filter((r) => !pinnedIds.has(r.id))
+    const otherPersonal = others.filter((r) => r.is_personal)
+    const otherRegular = others.filter((r) => !r.is_personal)
+
     return {
       dms,
       groups,
       pinnedChannels: pinned,
-      otherChannels: channels.filter((r) => !pinnedIds.has(r.id)),
+      diaryGroups: groupDiariesByPlan(otherPersonal, plans),
+      otherChannels: otherRegular,
     }
-  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers])
+  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers, plans])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
-  const channelsEmpty = pinnedChannels.length === 0 && otherChannels.length === 0
+  const channelsEmpty =
+    pinnedChannels.length === 0 && diaryGroups.length === 0 && otherChannels.length === 0
 
   return (
     <aside className={styles.list}>
@@ -256,9 +267,15 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
                 {pinnedChannels.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} pinned />)}
               </>
             )}
+            {diaryGroups.map((group) => (
+              <div key={group.key}>
+                <div className={styles.sectionHeader}>{group.label}</div>
+                {group.rooms.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+              </div>
+            ))}
             {otherChannels.length > 0 && (
               <>
-                <div className={styles.sectionHeader}>Все дневники</div>
+                <div className={styles.sectionHeader}>Каналы</div>
                 {otherChannels.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
               </>
             )}
