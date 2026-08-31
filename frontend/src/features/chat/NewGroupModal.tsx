@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import { addRoomMember, useCreateRoom } from '../../api/rooms'
-import { useUsers } from '../../api/users'
+import { useContacts } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import { groupPreOrdered } from '../../lib/planGroups'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
 import styles from './chat.module.css'
 
@@ -15,8 +17,11 @@ interface Props {
 }
 
 export function NewGroupModal({ onClose, onCreated }: Props) {
-  const { data: users, isLoading } = useUsers()
   const { user: me } = useAuth()
+  const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const { data: users, isLoading } = useContacts(
+    me?.role === 'admin' ? adminCurrentIntakeId : undefined,
+  )
   const createRoom = useCreateRoom()
   const [name, setName] = useState('')
   const [q, setQ] = useState('')
@@ -24,7 +29,7 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
   const [submitting, setSubmitting] = useState(false)
 
   const filtered = useMemo(() => {
-    const list = (users ?? []).filter((u) => u.id !== me?.id)
+    const list = users ?? []
     const needle = q.trim().toLowerCase()
     if (!needle) return list
     return list.filter(
@@ -32,7 +37,12 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
         u.display_name.toLowerCase().includes(needle) ||
         u.username.toLowerCase().includes(needle),
     )
-  }, [users, me?.id, q])
+  }, [users, q])
+
+  const groups = useMemo(
+    () => groupPreOrdered(filtered, (u) => ({ id: u.plan_id, name: u.plan_name })),
+    [filtered],
+  )
 
   // Все ли отфильтрованные пользователи уже выбраны.
   const allSelected =
@@ -123,37 +133,44 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
         {users && filtered.length === 0 && (
           <div className={styles.emptyUsers}>Никого не найдено</div>
         )}
-        {filtered.map((u) => {
-          const on = selected.has(u.id)
-          return (
-            <button
-              key={u.id}
-              type="button"
-              className={`${styles.userRow} ${on ? styles.userRowSelected : ''}`}
-              onClick={() => toggle(u.id)}
-              aria-pressed={on}
-            >
-              <Avatar name={u.display_name} url={u.avatar_url} size={36} />
-              <div className={styles.userRowMain}>
-                <div className={styles.userRowName}>{u.display_name}</div>
-                <div className={styles.userRowSub}>@{u.username}</div>
-              </div>
-              <span className={`${styles.userCheck} ${on ? styles.userCheckOn : ''}`}>
-                {on && (
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M5 12.5l4.5 4.5L19 7"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                )}
-              </span>
-            </button>
-          )
-        })}
+        {groups.map((group) => (
+          <div key={group.key}>
+            {groups.length > 1 && (
+              <div className={styles.userSectionTitle}>{group.label}</div>
+            )}
+            {group.items.map((u) => {
+              const on = selected.has(u.id)
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  className={`${styles.userRow} ${on ? styles.userRowSelected : ''}`}
+                  onClick={() => toggle(u.id)}
+                  aria-pressed={on}
+                >
+                  <Avatar name={u.display_name} url={u.avatar_url} size={36} />
+                  <div className={styles.userRowMain}>
+                    <div className={styles.userRowName}>{u.display_name}</div>
+                    <div className={styles.userRowSub}>@{u.username}</div>
+                  </div>
+                  <span className={`${styles.userCheck} ${on ? styles.userCheckOn : ''}`}>
+                    {on && (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                        <path
+                          d="M5 12.5l4.5 4.5L19 7"
+                          stroke="currentColor"
+                          strokeWidth="3"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ))}
       </div>
 
       <div className={styles.modalActions}>

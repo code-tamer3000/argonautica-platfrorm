@@ -106,6 +106,7 @@ async def make_user(session: AsyncSession) -> MakeUser:
         can_create_groups: bool = True,
         can_access_cabin: bool = False,
         is_observer: bool = False,
+        is_navigator: bool = False,
         graduated_at: datetime | None = None,
         intake_starts_on: date | None = None,
         intake_ends_on: date | None = None,
@@ -132,6 +133,7 @@ async def make_user(session: AsyncSession) -> MakeUser:
             can_create_groups=can_create_groups,
             can_access_cabin=can_access_cabin,
             is_observer=is_observer,
+            is_navigator=is_navigator,
             graduated_at=graduated_at,
         )
         session.add(user)

@@ -410,9 +410,12 @@ async def test_create_intake_requires_ends_on_after_starts_on(
 # --- личные дневники в разделе «Все дневники» ------------------------------------
 #
 # Дневник виден не только владельцу («Все дневники» — реальная фича, не утечка):
-# чужой дневник открыт, только если у смотрящего совпали И поток, И тариф с
-# владельцем (см. same_cohort в app/services/visibility.py). Сама комната своего
-# intake_id не несёт — сравниваются владелец и смотрящий напрямую.
+# чужой дневник открыт, только если тот же поток и ранг тарифа владельца <= рангу
+# смотрящего — каскад (см. diary_visible в app/services/visibility.py, ARG-110).
+# Сама комната своего intake_id не несёт — сравниваются владелец и смотрящий
+# напрямую. Тесты ниже используют одинаковый тариф (rank(owner) == rank(peer)) —
+# каскад тривиально сводится к прежнему точному равенству; test_rank_visibility.py
+# проверяет собственно асимметрию (разные ранги внутри потока).
 
 
 async def test_personal_diary_visible_within_same_cohort(
@@ -424,7 +427,7 @@ async def test_personal_diary_visible_within_same_cohort(
     owner = await make_user(
         intake_starts_on=date.today() - timedelta(days=50), plan_id=plan_a
     )
-    # Тот же набор (intake_id) и тариф, что и owner — совпадает по same_cohort.
+    # Тот же набор (intake_id) и тариф, что и owner — одинаковый ранг.
     peer = await make_user(intake_id=owner.intake_id, plan_id=plan_a)
     room = await _make_personal_room(session, owner.id)
 

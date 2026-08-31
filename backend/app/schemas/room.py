@@ -62,6 +62,11 @@ class RoomOut(BaseModel):
     # в admin-only /api/admin/users. None — владелец без тарифа.
     owner_plan_id: int | None = None
     owner_plan_name: str | None = None
+    # Только dm: одностороннее ограничение записи (ARG-110, часть B) — пир этой
+    # dm-комнаты админ без is_navigator, а у смотрящего нет права ему писать
+    # (не топ-2 тарифа потока). True — фронт скрывает композер; сервер 403-ит тот
+    # же путь (assert_can_write) независимо от этого поля.
+    dm_write_locked: bool = False
 
 
 class AddMemberRequest(BaseModel):

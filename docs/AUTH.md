@@ -22,6 +22,12 @@
     `require_participant` (whole-router on tasks/calendar/dynamics/notifications),
     `assert_room_access` (403 on every room for observers) for chat, and
     `require_cabin_access`.
+  - `is_navigator` (default false, only meaningful with `role=admin`) — this
+    specific admin is visible and messageable in «начать чат» for EVERY tariff
+    rank of their own intake, bypassing the top-2-tariff write-permission rule
+    (ARG-110, see [ROOMS.md](ROOMS.md) "Contact visibility & rank cascade").
+    Setting it on a non-admin → 400. Doesn't change anything else about the
+    account — a navigator is a full admin everywhere else.
 
 ## JWT flow
 
@@ -49,7 +55,7 @@
 
 - Whole router under `require_admin`.
 - `POST /users` — server generates a one-time password, returns it **once**, sets `must_change_password=true`.
-- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, …). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive).
+- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, `is_navigator`, `intake_id`). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive); setting `is_navigator=true` on a non-admin → 400.
 - Bulk account creation runbook and the password-delivery bot: [OPERATIONS in archive] and [TELEGRAM_BOT.md](TELEGRAM_BOT.md).
 - **First admin (chicken-and-egg):** `POST /users` requires an admin already logged in, so the very first account on a fresh stack can't come from it. `backend/scripts/bootstrap_admin.py` is the one exception — run inside the backend container (`python -m scripts.bootstrap_admin <username>`): creates the user with `role=admin` if new (one-time password printed once), or promotes it in place if it already exists. Idempotent, safe to rerun. `make local-up` runs it automatically for `admin` on the local stack.
 

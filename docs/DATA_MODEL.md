@@ -33,6 +33,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | can_create_groups | BOOLEAN | NOT NULL, default true | admin can revoke |
 | can_access_cabin | BOOLEAN | NOT NULL, default false | grants Cabin; admin has it implicitly. See [CABIN.md](CABIN.md) |
 | is_observer | BOOLEAN | NOT NULL, default false | observer mode: materials-only, passive access. Mutually exclusive with `role='admin'`. See [AUTH.md](AUTH.md) |
+| is_navigator | BOOLEAN | NOT NULL, default false | only meaningful with `role='admin'`: visible/messageable in «начать чат» for every tariff rank of the intake, bypassing the top-2-tariff write rule. See [AUTH.md](AUTH.md), [ROOMS.md](ROOMS.md) |
 | survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
 | graduated_at | TIMESTAMPTZ | NULL | экспедиция пройдена: set on survey submit, never cleared. Dynamics hidden, Tasks collapse to submitted, Рубка read-only. See [SURVEY.md](SURVEY.md) |
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
@@ -102,8 +103,9 @@ channel (ARG-104 — was a platform-wide singleton with `intake_id` always NULL 
 singleton backfilled onto the historical intake). Personal diary rooms (`rooms.is_personal`)
 also keep `intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
 [ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
-gated by comparing the owner's and the viewer's `intake_id`/`plan_id` directly
-(`same_cohort`), not via a column on the room itself.
+gated by comparing the owner and the viewer directly — same intake, plus the owner's
+tariff rank ≤ the viewer's (`diary_visible`, cascade rule, ARG-110), not via a column on
+the room itself.
 
 **Plan (`<entity>_plans`)** — many-to-many, not a column: an empty set of rows = visible to
 every plan of the user's intake; a non-empty set = only the listed plans. This is the only

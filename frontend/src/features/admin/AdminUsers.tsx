@@ -63,6 +63,7 @@ export function AdminUsers() {
   const [editCanCreate, setEditCanCreate] = useState(false)
   const [editCanCabin, setEditCanCabin] = useState(false)
   const [editObserver, setEditObserver] = useState(false)
+  const [editNavigator, setEditNavigator] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
   const [editIntake, setEditIntake] = useState<number | null>(null)
 
@@ -114,6 +115,7 @@ export function AdminUsers() {
     setEditCanCreate(user.can_create_groups)
     setEditCanCabin(user.can_access_cabin)
     setEditObserver(user.is_observer)
+    setEditNavigator(user.is_navigator)
     setEditRole(user.role as 'participant' | 'admin')
     setEditIntake(user.intake_id)
   }
@@ -141,6 +143,8 @@ export function AdminUsers() {
         can_access_cabin: editCanCabin,
         // Наблюдатель и админ взаимоисключаемы — у админа флаг всегда снят.
         is_observer: editRole === 'admin' ? false : editObserver,
+        // Навигатор имеет смысл только у админа — у участника флаг всегда снят.
+        is_navigator: editRole === 'admin' ? editNavigator : false,
         role: editRole,
         // Набор отправляем только если он выбран — отвязать участника нельзя.
         ...(editIntake !== null ? { intake_id: editIntake } : {}),
@@ -439,6 +443,19 @@ export function AdminUsers() {
               <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
                 Закрывает Рубку, Новости, Задачи, Календарь, Каюту, Динамику и уведомления.
               </p>
+            )}
+            {editRole === 'admin' && (
+              <div className={styles.checkRow}>
+                <input
+                  type="checkbox"
+                  id="is_navigator"
+                  checked={editNavigator}
+                  onChange={(e) => setEditNavigator(e.target.checked)}
+                />
+                <label htmlFor="is_navigator" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
+                  Навигатор (виден и доступен для лички любому тарифу потока)
+                </label>
+              </div>
             )}
             <div className={styles.formActions}>
               {editUser.id !== me?.id && (
