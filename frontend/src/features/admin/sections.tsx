@@ -52,3 +52,10 @@ export const ADMIN_SECTIONS: AdminSection[] = [
 // Раздел, открывающийся по умолчанию при заходе на /admin (как было раньше —
 // не завязан на порядок массива, чтобы перестановка групп не меняла лендинг).
 export const ADMIN_DEFAULT_PATH = 'dynamics'
+
+// Навигатор (ARG-110, users.is_navigator) — админ, «повёрнутый» к участникам как
+// живой контакт в Рубке, не к воронке продаж. Раздел ему не нужен и не должен
+// маячить — ни в меню (AdminLayout), ни доступным по прямому URL (AdminRoutes).
+export function visibleSections(isNavigator: boolean): AdminSection[] {
+  return isNavigator ? ADMIN_SECTIONS.filter((s) => s.path !== 'funnel') : ADMIN_SECTIONS
+}

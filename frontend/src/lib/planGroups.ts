@@ -79,3 +79,17 @@ export function groupPreOrdered<T>(
   }
   return groups
 }
+
+/**
+ * Ключ секции для контакт-листа (ARG-110, `GET /api/users/contacts`): у admin
+ * обычно нет `plan_id`, но это не «Без тарифа» — отдельная секция «Админ»
+ * (сервер сортирует админов хвостовым блоком, см. `list_contacts`, так что здесь
+ * достаточно завести для них свой ключ, соседство уже гарантировано).
+ */
+export function contactPlanKey(u: {
+  role: string
+  plan_id: number | null
+  plan_name: string | null
+}): { id: number | null; name: string | null } {
+  return u.role === 'admin' ? { id: -1, name: 'Админ' } : { id: u.plan_id, name: u.plan_name }
+}

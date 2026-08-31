@@ -3,7 +3,7 @@ import { useContacts } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
-import { groupPreOrdered } from '../../lib/planGroups'
+import { contactPlanKey, groupPreOrdered } from '../../lib/planGroups'
 import type { PublicUserOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
@@ -40,7 +40,7 @@ export function NewChatModal({ onClose, onOpenDm }: Props) {
   // Секции по тарифу (дешёвый → дорогой), в порядке, который уже отдал сервер —
   // поиск разбивает список на подмножество, но не ломает соседство/порядок.
   const groups = useMemo(
-    () => groupPreOrdered(filtered, (u) => ({ id: u.plan_id, name: u.plan_name })),
+    () => groupPreOrdered(filtered, contactPlanKey),
     [filtered],
   )
 

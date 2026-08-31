@@ -5,7 +5,7 @@ import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
-import { groupPreOrdered } from '../../lib/planGroups'
+import { contactPlanKey, groupPreOrdered } from '../../lib/planGroups'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
@@ -40,7 +40,7 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
   }, [users, q])
 
   const groups = useMemo(
-    () => groupPreOrdered(filtered, (u) => ({ id: u.plan_id, name: u.plan_name })),
+    () => groupPreOrdered(filtered, contactPlanKey),
     [filtered],
   )
 

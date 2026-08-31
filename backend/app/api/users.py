@@ -110,7 +110,9 @@ async def list_contacts(
             u for u in candidates_all if contact_visible(current_user, u, ranks)
         ]
 
-    candidates.sort(key=lambda u: (user_rank(u, ranks), u.display_name))
+    # Админы — отдельным хвостовым блоком (роль, не ранг тарифа), иначе безтарифный
+    # админ и безтарифный участник (оба ранга 0) перемешались бы по алфавиту.
+    candidates.sort(key=lambda u: (u.role == "admin", user_rank(u, ranks), u.display_name))
     media_ids = {u.avatar_media_id for u in candidates if u.avatar_media_id is not None}
     signed = await presign_asset_urls(session, media_ids)
     plan_names = await _plan_names(session, candidates)
