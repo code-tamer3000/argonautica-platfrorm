@@ -569,20 +569,24 @@
   font-family: var(--font-t4); font-size: var(--text-label-md); line-height: 1.5;
 }
 
-/* Чип реакции под сообщением — картинка + счётчик, подсветка если reacted_by_me. */
+/* Чип реакции под сообщением — картинка + счётчик, подсветка если reacted_by_me.
+   Звезда мелко детализированная (тонкие лучи) — на 16px и нейтральном бордере
+   терялась на обеих темах; крупнее иконка + тёплый золотой бордер по умолчанию
+   (не только на hover) держат чип читаемым и в тёмной, и в светлой теме. */
 .reactionChip {
-  display: inline-flex; align-items: center; gap: 5px; margin-top: var(--space-1);
-  padding: 2px 8px; border-radius: var(--radius-pill);
-  border: 1px solid var(--divider); background: var(--bg-surface);
+  display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-1);
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  border: 1px solid var(--divider-gold-strong); background: var(--bg-surface);
   font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-secondary);
   cursor: pointer;
 }
 .reactionChip:hover { border-color: var(--accent); }
 .reactionChipActive {
-  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent);
-  color: var(--accent);
+  border-color: var(--accent-bright);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-surface));
+  color: var(--accent-bright);
 }
-.reactionIcon { width: 16px; height: 16px; object-fit: contain; }
+.reactionIcon { width: 22px; height: 22px; object-fit: contain; }
 
 /* ── Инлайн-тред: ветка ответов раскрывается прямо под корнем (аккордеон) ─────────
    Плавное раскрытие без измерения высоты в JS: grid-строка едет 0fr → 1fr, внутренний
