@@ -326,3 +326,19 @@ async def test_diary_cascade_visibility(
     ids = {r["id"] for r in own_listed.json()}
     assert squad_room.id not in ids
     assert player_room.id in ids  # свой собственный виден всегда
+
+
+async def test_admin_diary_hidden_from_others(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """`create_user` заводит личный дневник любому аккаунту, включая admin — но
+    Динамика не для админов, так что чужой admin-дневник не должен светиться в
+    «Все дневники». Без плана (rank 0) он иначе был бы виден вообще всем."""
+    _, users = await _three_tier_cohort(client, make_user)
+    admin_room = await _make_personal_room(session, users["admin"].id)
+
+    oko_h = await _headers(client, users["oko"])  # верхний ранг — самый разрешающий случай
+    hidden = await client.get(f"/api/rooms/{admin_room.id}", headers=oko_h)
+    assert hidden.status_code == 403
+    listed = await client.get("/api/rooms", headers=oko_h)
+    assert admin_room.id not in {r["id"] for r in listed.json()}
