@@ -61,10 +61,16 @@ interface Props {
   onSelect: (id: number) => void
 }
 
-const subLabel = (r: RoomOut): string =>
-  r.is_news ? 'Новостной канал' :
-    r.is_personal ? 'Личный дневник' :
-      r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
+const subLabel = (r: RoomOut): string => {
+  if (r.is_news) return 'Новостной канал'
+  if (r.is_personal) {
+    // Тариф/«Админ» владельца — та же денормализация, что группирует «Все
+    // дневники» (RoomOut.owner_plan_name, см. docs/ROOMS.md); пусто — старый
+    // владелец без тарифа (не относится к самой видимости, только к подписи).
+    return r.owner_plan_name ? `Личный дневник · ${r.owner_plan_name}` : 'Личный дневник'
+  }
+  return r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
+}
 
 export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()

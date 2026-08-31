@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { IconClose, IconMenu } from '../../components/icons'
 import { useIsMobile } from '../../hooks/useIsMobile'
-import { ADMIN_GROUPS, ADMIN_SECTIONS } from './sections'
+import { useAuth } from '../auth/AuthContext'
+import { ADMIN_GROUPS, visibleSections } from './sections'
 import styles from './admin.module.css'
 
 // Проверка role === 'admin' живёт в RequireAccess (см. features/app/routes.tsx,
@@ -14,6 +15,8 @@ export function AdminLayout() {
   const isMobile = useIsMobile()
   const location = useLocation()
   const [navOpen, setNavOpen] = useState(false)
+  const { user } = useAuth()
+  const sections = visibleSections(!!user?.is_navigator)
 
   // На мобиле после перехода в раздел меню сворачивается само.
   useEffect(() => { setNavOpen(false) }, [location.pathname])
@@ -36,7 +39,7 @@ export function AdminLayout() {
           {ADMIN_GROUPS.map((group) => (
             <div key={group.key} className={styles.adminNavGroup}>
               <div className={styles.adminNavGroupTitle}>{group.label}</div>
-              {ADMIN_SECTIONS.filter((section) => section.group === group.key).map((section) => (
+              {sections.filter((section) => section.group === group.key).map((section) => (
                 <NavLink
                   key={section.path}
                   to={`/admin/${section.path}`}

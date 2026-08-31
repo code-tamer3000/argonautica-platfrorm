@@ -342,3 +342,42 @@ async def test_admin_diary_hidden_from_others(
     assert hidden.status_code == 403
     listed = await client.get("/api/rooms", headers=oko_h)
     assert admin_room.id not in {r["id"] for r in listed.json()}
+
+
+async def test_admin_diary_labeled_admin_for_admin_viewer(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Другой admin по-прежнему видит чужой admin-дневник (полный оверсайт), и он
+    подписан «Админ» вместо пустого/тарифного ярлыка (см. _owner_plan_label)."""
+    _, users = await _three_tier_cohort(client, make_user)
+    admin_room = await _make_personal_room(session, users["admin"].id)
+    other_admin = await make_user(role="admin", intake_id=users["admin"].intake_id)
+
+    seen = await client.get(
+        f"/api/rooms/{admin_room.id}", headers=await _headers(client, other_admin)
+    )
+    assert seen.status_code == 200
+    assert seen.json()["owner_plan_name"] == "Админ"
+
+    listed = await client.get("/api/rooms", headers=await _headers(client, other_admin))
+    row = next(r for r in listed.json() if r["id"] == admin_room.id)
+    assert row["owner_plan_name"] == "Админ"
+
+
+# --- Контакт-лист: админ хвостовым блоком, не «Без тарифа» ---------------------
+
+
+async def test_contacts_admin_sorted_after_participants(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Безтарифный admin не должен перемешиваться по алфавиту с безтарифными
+    участниками (оба ранга 0) — сортировка кладёт всех admin хвостовым блоком."""
+    _, users = await _three_tier_cohort(client, make_user)
+    # Имя нарочно ПОСЛЕ "Test User" (display_name admin'а по умолчанию) по алфавиту —
+    # без отдельного ключа по роли чистая сортировка по display_name поставила бы
+    # admin ПЕРВЫМ, и тест не поймал бы регресс, если роль-ключ убрать.
+    plain = await make_user(intake_id=users["oko"].intake_id, display_name="Zzz Participant")
+
+    resp = await client.get("/api/users/contacts", headers=await _headers(client, users["oko"]))
+    ids = [u["id"] for u in resp.json()]
+    assert ids.index(plain.id) < ids.index(users["admin"].id)

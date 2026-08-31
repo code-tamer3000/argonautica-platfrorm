@@ -37,9 +37,14 @@ used across 15+ frontend files), never sliced by visibility. The roster for
   `intake_id` (the frontend's session-only `adminCurrentIntakeId`, see "Admin
   current intake selector" below) and returns the whole intake, unrestricted —
   admin keeps full oversight, this endpoint only narrows *participants'* view.
-  Response is pre-sorted by tariff rank ascending so the client can group it into
-  sections by just watching `plan_id` change between consecutive items, without
-  recomputing ranks itself.
+  Response is pre-sorted by tariff rank ascending (`list_contacts` in
+  `app/api/users.py`) so the client can group it into sections by just watching
+  `plan_id` change between consecutive items, without recomputing ranks itself —
+  `role == "admin"` sorts as its own trailing block ahead of rank, so a tariff-less
+  admin doesn't interleave alphabetically with tariff-less participants (both rank
+  0). The frontend labels that trailing block «Админ» rather than «Без тарифа»
+  (`contactPlanKey` in `frontend/src/lib/planGroups.ts`, used by `NewChatModal`/
+  `NewGroupModal`) — a role marker, not a real tariff.
 - **Rank** (`services/visibility.py` `cohort_plan_ranks`) — tariffs (`plans`) have
   no FK to `intakes`; "the tariffs of a stream" is derived at query time as the
   distinct `is_active` plans actually held by that intake's users, sorted by
@@ -97,7 +102,7 @@ personal/news) accept `intake_id`/`plan_ids`.
 
 - `rooms.is_personal = true` marks a participant's personal homework-diary room. Homework entries are ordinary `messages` there. See [DYNAMICS.md](DYNAMICS.md).
 - **Not owner-only.** The frontend's «Дневники» tab is a real "browse everyone's diary" feature (`RoomList.tsx`: own diary pinned, everyone else's under «Все дневники») — this is deliberate community/accountability UX, not an oversight.
-- **Cohort-gated, rank cascade (ARG-96, cascade rule ARG-110).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner and the viewer directly (`diary_visible` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Same intake required, plus the owner's tariff rank must be ≤ the viewer's (see "Contact visibility & rank cascade" above — same rank helper, not a second rule): a higher-rank viewer sees a lower-rank owner's diary, never the reverse. The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_visible`), so an out-of-reach diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`. **An admin-owned diary is never shown to anyone else** (`diary_visible` returns `False` outright for an `admin` owner) — Dynamics isn't an admin feature, but `create_user` provisions a personal room for every new account regardless of role, so one can exist; this just keeps it out of other people's «Все дневники» (an admin still sees their own, same as any owner).
+- **Cohort-gated, rank cascade (ARG-96, cascade rule ARG-110).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner and the viewer directly (`diary_visible` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Same intake required, plus the owner's tariff rank must be ≤ the viewer's (see "Contact visibility & rank cascade" above — same rank helper, not a second rule): a higher-rank viewer sees a lower-rank owner's diary, never the reverse. The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_visible`), so an out-of-reach diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`. **An admin-owned diary is never shown to a participant** (`diary_visible` returns `False` outright for an `admin` owner) — Dynamics isn't an admin feature, but `create_user` provisions a personal room for every new account regardless of role, so one can exist; this just keeps it out of participants' «Все дневники» (`diary_visible` is only consulted for a non-admin *viewer* to begin with — see the personal branch of `assert_room_access`). It stays fully visible to **other admins** (unrestricted oversight, unaffected by `diary_visible`), labeled `owner_plan_name: "Админ"` instead of a tariff (`_owner_plan_label` in `app/api/rooms.py`, mirrored client-side as `Личный дневник · Админ` in `RoomList.tsx`'s `subLabel`) so it doesn't read as tariff-less. An admin always sees their own diary the same way any owner does.
 - **Owner's tariff is denormalized, not yet grouped on the client.** `RoomOut.owner_plan_id`/`owner_plan_name` carry the diary owner's plan (batch-joined in `list_rooms`/`get_room`, `app/api/rooms.py`) so a participant could subdivide «Все дневники» by tariff without admin-only `/api/admin/users` — but `RoomList.tsx` currently renders it as one flat list under «Все дневники» (own diary pinned first); no client-side grouping consumes these two fields yet.
 
 ## News channel & repost

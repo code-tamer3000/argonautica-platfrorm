@@ -26,8 +26,13 @@
     specific admin is visible and messageable in «начать чат» for EVERY tariff
     rank of their own intake, bypassing the top-2-tariff write-permission rule
     (ARG-110, see [ROOMS.md](ROOMS.md) "Contact visibility & rank cascade").
-    Setting it on a non-admin → 400. Doesn't change anything else about the
-    account — a navigator is a full admin everywhere else.
+    Setting it on a non-admin → 400. A navigator is a full admin everywhere else
+    with one frontend-only exception: the «Воронка» admin section is hidden from
+    their nav and route table (`ADMIN_SECTIONS`/`visibleSections` in
+    `frontend/src/features/admin/sections.tsx`) — a navigator's job is to be a
+    reachable contact for participants, not to work the sales funnel; this is a
+    UI declutter, not a new server-side permission (the backend endpoints behind
+    it are unaffected, still gated by plain `require_admin`).
 
 ## JWT flow
 

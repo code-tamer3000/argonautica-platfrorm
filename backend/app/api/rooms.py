@@ -88,6 +88,19 @@ def _room_out(room: Room, plan_ids: list[int]) -> RoomOut:
     return out
 
 
+def _owner_plan_label(
+    plan_id: int | None, plan_name: str | None, role: str
+) -> tuple[int | None, str | None]:
+    """Ярлык владельца личного дневника для «Все дневники» (RoomOut.owner_plan_*).
+
+    admin-владелец подписывается «Админ» вместо пустого/тарифного ярлыка — не
+    настоящий plan_id (у него обычно его и нет), просто явная метка роли, той же
+    формы, что и у тарифов, чтобы фронт не заводил отдельное поле под это."""
+    if role == "admin":
+        return None, "Админ"
+    return plan_id, plan_name
+
+
 async def _create_dm(
     session: AsyncSession, current: User, peer_id: int | None, response: Response
 ) -> Room:
@@ -352,12 +365,13 @@ async def list_rooms(
     owner_plan_map: dict[int, tuple[int | None, str | None]] = {}
     if owner_ids:
         owner_rows = await session.execute(
-            select(User.id, User.plan_id, Plan.name)
+            select(User.id, User.plan_id, Plan.name, User.role)
             .outerjoin(Plan, Plan.id == User.plan_id)
             .where(User.id.in_(owner_ids))
         )
         owner_plan_map = {
-            uid: (plan_id, plan_name) for uid, plan_id, plan_name in owner_rows.all()
+            uid: _owner_plan_label(plan_id, plan_name, role)
+            for uid, plan_id, plan_name, role in owner_rows.all()
         }
 
     out: list[RoomOut] = []
@@ -398,13 +412,13 @@ async def get_room(
     item = _room_out(room, plan_ids)
     if room.is_personal:
         owner_row = await session.execute(
-            select(User.plan_id, Plan.name)
+            select(User.plan_id, Plan.name, User.role)
             .outerjoin(Plan, Plan.id == User.plan_id)
             .where(User.id == room.created_by)
         )
-        owner_plan = owner_row.first()
-        if owner_plan is not None:
-            item.owner_plan_id, item.owner_plan_name = owner_plan
+        owner = owner_row.first()
+        if owner is not None:
+            item.owner_plan_id, item.owner_plan_name = _owner_plan_label(*owner)
     last_read = (membership.last_read_message_id or 0) if membership else 0
     unread_result = await session.execute(
         select(func.count())
