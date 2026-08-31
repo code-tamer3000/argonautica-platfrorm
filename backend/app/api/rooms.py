@@ -88,16 +88,22 @@ def _room_out(room: Room, plan_ids: list[int]) -> RoomOut:
     return out
 
 
+_ADMIN_OWNER_PLAN_ID = -1  # заведомо не существующий id тарифа — см. _owner_plan_label
+
+
 def _owner_plan_label(
     plan_id: int | None, plan_name: str | None, role: str
 ) -> tuple[int | None, str | None]:
-    """Ярлык владельца личного дневника для «Все дневники» (RoomOut.owner_plan_*).
+    """Ярлык владельца личного дневника для «Все дневники» (RoomOut.owner_plan_*),
+    группируется на клиенте через `groupDiariesByPlan`/`groupByPlan`
+    (`frontend/src/features/chat/util.ts`, `lib/planGroups.ts`).
 
-    admin-владелец подписывается «Админ» вместо пустого/тарифного ярлыка — не
-    настоящий plan_id (у него обычно его и нет), просто явная метка роли, той же
-    формы, что и у тарифов, чтобы фронт не заводил отдельное поле под это."""
+    admin-владелец подписывается «Админ» вместо пустого/тарифного ярлыка — НЕ
+    настоящий plan_id (у него обычно его и нет), sentinel-id нужен, чтобы
+    `groupByPlan` завела для него отдельную секцию по `id`, а не свалила в
+    «Без тарифа» (та группировка ключуется по id, а не по name)."""
     if role == "admin":
-        return None, "Админ"
+        return _ADMIN_OWNER_PLAN_ID, "Админ"
     return plan_id, plan_name
 
 

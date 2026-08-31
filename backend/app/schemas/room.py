@@ -59,7 +59,9 @@ class RoomOut(BaseModel):
     plan_ids: list[int] = []
     # Только is_personal: тариф ВЛАДЕЛЬЦА дневника (не «изоляция», а denormalized
     # ярлык), чтобы «Все дневники» можно было сгруппировать по тарифу без похода
-    # в admin-only /api/admin/users. None — владелец без тарифа.
+    # в admin-only /api/admin/users. None — владелец без тарифа. admin-владелец —
+    # sentinel id (_ADMIN_OWNER_PLAN_ID, не настоящий plans.id) и name="Админ",
+    # своя секция группировки (см. groupDiariesByPlan, ARG-110).
     owner_plan_id: int | None = None
     owner_plan_name: str | None = None
     # Только dm: одностороннее ограничение записи (ARG-110, часть B) — пир этой
