@@ -19,6 +19,8 @@ EVENT_MESSAGE_EDITED = "message.edited"
 EVENT_MESSAGE_DELETED = "message.deleted"
 EVENT_PIN_ADDED = "pin.added"
 EVENT_PIN_REMOVED = "pin.removed"
+EVENT_REACTION_ADDED = "reaction.added"
+EVENT_REACTION_REMOVED = "reaction.removed"
 EVENT_READ = "read"
 EVENT_TYPING = "typing"
 EVENT_PRESENCE = "presence"
@@ -83,6 +85,32 @@ def pin_added_event(room_id: int, message_id: int, pinned_by: int) -> dict[str, 
 
 def pin_removed_event(room_id: int, message_id: int) -> dict[str, Any]:
     return {"type": EVENT_PIN_REMOVED, "room_id": room_id, "message_id": message_id}
+
+
+def reaction_added_event(
+    room_id: int, message_id: int, user_id: int, count: int
+) -> dict[str, Any]:
+    """Payload намеренно не несёт MessageOut — только счётчик и кто нажал. Каждый
+    клиент сам выводит reacted_by_me, сравнивая user_id со своим (см. docs/MESSAGES.md)."""
+    return {
+        "type": EVENT_REACTION_ADDED,
+        "room_id": room_id,
+        "message_id": message_id,
+        "user_id": user_id,
+        "count": count,
+    }
+
+
+def reaction_removed_event(
+    room_id: int, message_id: int, user_id: int, count: int
+) -> dict[str, Any]:
+    return {
+        "type": EVENT_REACTION_REMOVED,
+        "room_id": room_id,
+        "message_id": message_id,
+        "user_id": user_id,
+        "count": count,
+    }
 
 
 def read_event(room_id: int, user_id: int, last_read_message_id: int | None) -> dict[str, Any]:

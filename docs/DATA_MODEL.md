@@ -291,6 +291,21 @@ Separate table (not a flag) to keep several pins, order, and who pinned. See [ME
 
 **PK:** (`room_id`, `message_id`).
 
+## message_reactions
+One fixed reaction image (MVP, no picker). Composite PK doubles as the uniqueness
+constraint (one reaction per user per message) and the index for the count/
+reacted-by-me aggregate query. See [MESSAGES.md](MESSAGES.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| message_id | BIGINT | FK messages, PK | |
+| user_id | BIGINT | FK users, PK | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**PK:** (`message_id`, `user_id`). No cleanup on message soft-delete needed — unlike
+pins, reactions have no standalone list endpoint; they only surface embedded in
+`MessageOut`, and deleted messages are already excluded from every feed query.
+
 ## media_assets
 Metadata for all files; bytes live in MinIO. See [FILES.md](FILES.md).
 
@@ -712,6 +727,7 @@ messages --+ (thread_root_id -> messages.id, self-FK to root)
 messages --< message_attachments >-- media_assets
 messages --> stickers --> stickerpacks
 rooms --< pinned_messages >-- messages
+messages --< message_reactions >-- users
 rooms --< calendar_events              (room_id nullable)
 users --< cabin_entries                (JSONB data by kind)
 users --< journal_pardons / journal_credits

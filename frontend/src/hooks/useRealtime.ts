@@ -1,6 +1,7 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import {
+  applyReaction,
   appendMessage,
   bumpReplyCount,
   removeMessage,
@@ -177,6 +178,14 @@ export function useRealtime(): void {
         case 'pin.added':
         case 'pin.removed':
           qc.invalidateQueries({ queryKey: pinsKey(e.room_id) })
+          break
+        case 'reaction.added':
+        case 'reaction.removed':
+          // Патчим ленту (реакция на топ-уровневое сообщение); реакция на ответ в
+          // треде живёт в другом кэше (threadKey) — рефетчим его целиком, как и
+          // attachment.updated (message_id сам по себе не говорит, чей это тред).
+          applyReaction(qc, e.room_id, e.message_id, e.count, e.user_id, me, e.type === 'reaction.added')
+          qc.invalidateQueries({ queryKey: ['thread', e.room_id] })
           break
         case 'typing':
           if (e.user_id !== me) markTyping(e.room_id, e.user_id)

@@ -1,7 +1,7 @@
 # Messages, Threads & Realtime
 
 > Source: docs/archive/{DATA_MODEL.md, PLATFORM_SPEC.md §4.3–4.8/§4.14, DECISIONS.md}, restructured 2026-07-06.
-> Endpoints: `/api/rooms/...`, WS `/ws`. Tables: `messages`, `message_attachments`, `pinned_messages`, `stickers` (see [DATA_MODEL.md](DATA_MODEL.md)). Every action re-checks room access (`load_room` + `assert_room_access`).
+> Endpoints: `/api/rooms/...`, WS `/ws`. Tables: `messages`, `message_attachments`, `pinned_messages`, `stickers`, `message_reactions` (see [DATA_MODEL.md](DATA_MODEL.md)). Every action re-checks room access (`load_room` + `assert_room_access`).
 
 ## Send / edit / delete
 
@@ -44,6 +44,14 @@
 
 - Sticker message: `content = NULL`, `sticker_id` set. Packs are admin-managed; participants read `GET /api/stickerpacks` (images presigned). See sticker tables in [DATA_MODEL.md](DATA_MODEL.md). Stickers are never deleted (FK from `messages.sticker_id`).
 
+## Reactions (MVP: one fixed image)
+
+- `POST /api/rooms/{room_id}/messages/{message_id}/reaction` (idempotent, 201/200), `DELETE …/reaction` (204, 404 if the caller never reacted). One reaction per user per message (`message_reactions`, PK `(message_id, user_id)` — no emoji column, there is exactly one reaction image, hardcoded as a frontend asset; the backend never stores or serves it).
+- Right to react = right to write (`assert_room_access` + `assert_can_write`) — **no extra role gate**, unlike pins: any non-observer/non-graduated member can react, even in rooms where posting itself is restricted (news channel, personal diary).
+- `MessageOut.reaction_count` (total) / `reacted_by_me` (for the requesting viewer) are computed at read time from `message_reactions`, batched per page/thread (no N+1) — same style as `unread_reply_count`.
+- No standalone reactions list and no cleanup on message soft-delete: a deleted message just drops out of every feed query, so orphaned reaction rows are harmless.
+- Toggle UX: tap adds your reaction; tapping your own already-placed reaction removes it (like Telegram). Entry points: the reaction chip once `reaction_count > 0`, or "Поставить/убрать реакцию" in the message action menu to place the first one.
+
 ## Refs (link to a KB item / task)
 
 - A message may carry **one** reference to a **KB item** or a **task** (`messages.ref_kind ∈ {'kb','task'}` + `ref_id`, both or neither — CHECK in [DATA_MODEL.md](DATA_MODEL.md)), **alongside** any media/text/sticker. No FK on the target: it's resolved lazily, so a deleted/unpublished target degrades to «недоступно» rather than breaking the message.
@@ -69,9 +77,10 @@
 
 **Client → server:** `{"type":"subscribe"|"unsubscribe"|"typing", "room_id":int}`, `{"type":"ping"}`.
 
-**Server → client events** (`{"type": ...}`): `message.new`, `message.edited`, `message.deleted`, `attachment.updated`, `pin.added`, `pin.removed`, `read`, `typing`, `presence`, `subscribed`, `unsubscribed`, `error`, `pong`, `notification.new`, `notification.removed`, plus task events (`task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` — see [TASKS.md](TASKS.md)) and `room.created`.
+**Server → client events** (`{"type": ...}`): `message.new`, `message.edited`, `message.deleted`, `attachment.updated`, `pin.added`, `pin.removed`, `reaction.added`, `reaction.removed`, `read`, `typing`, `presence`, `subscribed`, `unsubscribed`, `error`, `pong`, `notification.new`, `notification.removed`, plus task events (`task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` — see [TASKS.md](TASKS.md)) and `room.created`.
 
 - `message.*` carry fully-resolved attachments (presigned url/thumb_url) in the payload — see [FILES.md](FILES.md).
+- **`reaction.added`/`reaction.removed`** (`{room_id, message_id, user_id, count}`) — deliberately **not** a full `MessageOut`: `count` is the same for every subscriber, but `reacted_by_me` is per-viewer and doesn't belong in one shared broadcast payload. Each client patches only the matching message's `reaction_count` and sets its own `reacted_by_me` iff `user_id` is its own id. Consequence: `message.edited` (which *does* replace the whole cached message) must not clobber a viewer's own `reacted_by_me` — the frontend cache merge preserves it across an edit.
 - **`room.created`** (`{room_id}`) — the server added the user to a room it created itself (stream subgroup rooms, see [ROOMS.md](ROOMS.md)). Delivered on the per-user channel; the client just invalidates the rooms list. Without it a server-made room only shows up after a WS reconnect.
 - **`attachment.updated`** (`{room_id, message_id, attachment}`) — a server video transcode finished: the payload is the fresh `AttachmentOut` (new `transcode_status` + variant url when `done`). The client finds the attachment by `asset_id` inside the message and swaps it in place (`processing` → playable, or → `failed`). Published to the room channel by the transcode worker (not the request path) once the variant is ready or the job terminally failed. Task/KB videos have no room channel, so they pick up the variant on the next fetch instead. See [FILES.md](FILES.md) "Video transcode".
 - Blue-green deploy tears sockets down; the client reconnects and re-subscribes — see [FRONTEND.md](FRONTEND.md).

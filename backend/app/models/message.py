@@ -104,3 +104,19 @@ class PinnedMessage(Base):
     pinned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class MessageReaction(Base):
+    """Реакция на сообщение — один фиксированный образ, максимум одна на юзера."""
+
+    __tablename__ = "message_reactions"
+
+    message_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("messages.id"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
