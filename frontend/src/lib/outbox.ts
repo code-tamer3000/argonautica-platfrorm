@@ -209,6 +209,8 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
     attachment_ids: item.body.attachment_ids ?? [],
     attachments: item.attachments,
     ref: item.optimisticRef ?? null,
+    reaction_count: 0,
+    reacted_by_me: false,
     _outbox: { clientId: item.clientId, status: 'pending' },
   }
 }

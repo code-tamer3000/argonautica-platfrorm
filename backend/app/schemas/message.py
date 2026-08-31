@@ -71,6 +71,9 @@ class MessageOut(BaseModel):
     attachments: list[AttachmentOut] = []
     # Ссылка на материал КБ / задачу, разрешённая для зрителя. None = ссылки нет.
     ref: MessageRefOut | None = None
+    # Реакция (один фиксированный образ, MVP): общий счётчик + реагировал ли зритель.
+    reaction_count: int = 0
+    reacted_by_me: bool = False
 
 
 class ThreadOut(BaseModel):

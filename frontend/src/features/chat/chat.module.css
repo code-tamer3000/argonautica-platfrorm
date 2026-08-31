@@ -465,7 +465,13 @@
   cursor: pointer;
   object-fit: contain;
 }
-/* Легаси без width/height: у коробки нет aspect-ratio → пусть высоту задаёт сама картинка. */
+/* Легаси без width/height: у коробки нет aspect-ratio → пусть высоту задаёт сама картинка.
+   До загрузки/декодирования у img нет собственных размеров — без min-height коробка
+   схлопывается в тонкую полоску (незаметно на быстрой сети, но на медленной／iOS видно
+   явно: вместо места под фото — одна строка). min-height держит разумный плейсхолдер,
+   пока не пришли реальные размеры; финальная картинка может быть выше — это осознанный
+   компромисс для случая, где мы заранее не знаем пропорций. */
+.attImageWrap:not([style*='aspect-ratio']) { min-height: 160px; }
 .attImageWrap:not([style*='aspect-ratio']) .attImage { height: auto; }
 .attVideo { max-width: 320px; max-height: 280px; border-radius: var(--radius-media); }
 .attFile {
@@ -568,6 +574,28 @@
   background: var(--accent); color: var(--color-bezdna);
   font-family: var(--font-t4); font-size: var(--text-label-md); line-height: 1.5;
 }
+
+/* Чип реакции под сообщением — картинка + счётчик, подсветка если reacted_by_me.
+   Звезда мелко детализированная (тонкие лучи) — на 16px и нейтральном бордере
+   терялась на обеих темах; крупнее иконка + тёплый золотой бордер по умолчанию
+   (не только на hover) держат чип читаемым и в тёмной, и в светлой теме. */
+.reactionChip {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-1);
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  border: 1px solid var(--divider-gold-strong); background: var(--bg-surface);
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-secondary);
+  cursor: pointer;
+}
+.reactionChip:hover { border-color: var(--accent); }
+.reactionChipActive {
+  border-color: var(--accent-bright);
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-surface));
+  color: var(--accent-bright);
+}
+.reactionIcon { width: 22px; height: 22px; object-fit: contain; }
+/* Светлая тема: та же светлая золотая звезда на кремовом фоне бледнее, чем на
+   тёмном грунте — притемняем и добавляем насыщенности, в тёмной теме не трогаем. */
+:global([data-theme='light']) .reactionIcon { filter: brightness(0.72) saturate(1.2) contrast(1.1); }
 
 /* ── Инлайн-тред: ветка ответов раскрывается прямо под корнем (аккордеон) ─────────
    Плавное раскрытие без измерения высоты в JS: grid-строка едет 0fr → 1fr, внутренний

@@ -58,7 +58,8 @@ export function useImageDownload(url: string): State {
           }
         }
         if (cancelled) return
-        const blob = new Blob(chunks as BlobPart[])
+        const contentType = res.headers.get('Content-Type') || undefined
+        const blob = new Blob(chunks as BlobPart[], { type: contentType })
         revoke()
         const objectUrl = URL.createObjectURL(blob)
         objectUrlRef.current = objectUrl

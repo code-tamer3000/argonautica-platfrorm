@@ -16,9 +16,20 @@ export function appendMessage(qc: QueryClient, roomId: number, msg: MessageOut):
   })
 }
 
+// message.edited присылает бродкаст на всю комнату одним payload'ом — reacted_by_me
+// в нём viewer-specific и сервер его не считает (см. docs/MESSAGES.md «Реакции»).
+// Сохраняем локальный reacted_by_me из уже закэшированного сообщения, иначе любая
+// правка текста сбрасывала бы подсветку «я реагировал» у того, кто её поставил.
 export function replaceMessage(qc: QueryClient, roomId: number, msg: MessageOut): void {
   qc.setQueryData<MessagesData>(messagesKey(roomId), (old) =>
-    old ? { ...old, pages: old.pages.map((p) => p.map((m) => (m.id === msg.id ? msg : m))) } : old,
+    old
+      ? {
+          ...old,
+          pages: old.pages.map((p) =>
+            p.map((m) => (m.id === msg.id ? { ...msg, reacted_by_me: m.reacted_by_me } : m)),
+          ),
+        }
+      : old,
   )
 }
 
@@ -131,6 +142,30 @@ export function resolveOptimistic(
     )
     return { ...old, pages }
   })
+}
+
+// Реакция: событие несёт только общий count + user_id нажавшего (см. docs/MESSAGES.md).
+// reacted_by_me меняем ТОЛЬКО если нажал сам зритель — иначе не трогаем его локальный флаг.
+export function applyReaction(
+  qc: QueryClient,
+  roomId: number,
+  messageId: number,
+  count: number,
+  actorUserId: number,
+  myUserId: number,
+  added: boolean,
+): void {
+  const patch = (m: MessageOut): MessageOut =>
+    m.id !== messageId
+      ? m
+      : {
+          ...m,
+          reaction_count: count,
+          reacted_by_me: actorUserId === myUserId ? added : m.reacted_by_me,
+        }
+  qc.setQueryData<MessagesData>(messagesKey(roomId), (old) =>
+    old ? { ...old, pages: old.pages.map((p) => p.map(patch)) } : old,
+  )
 }
 
 // Ответ в тред: денормализованный счётчик на корне в ленте (root не приходит в событии).

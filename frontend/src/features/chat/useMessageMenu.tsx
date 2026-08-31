@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useDeleteMessage } from '../../api/messages'
 import { usePin } from '../../api/pins'
+import { useToggleReaction } from '../../api/reactions'
+import reactionIcon from '../../assets/reactions/star.webp'
 import {
   IconCopy, IconEdit, IconNews, IconPin, IconReply, IconTrash,
 } from '../../components/icons'
@@ -28,6 +30,7 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
   const { user } = useAuth()
   const pin = usePin(roomId)
   const del = useDeleteMessage(roomId)
+  const reaction = useToggleReaction(roomId)
   const [menu, setMenu] = useState<{ msg: MessageOut; anchor: DOMRect } | null>(null)
 
   // Смена комнаты закрывает открытое меню (его якорь уже неактуален).
@@ -51,6 +54,16 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
     }
     if (user?.id === msg.sender_id && msg.content != null && !isGraduated) {
       items.push({ key: 'edit', label: 'Редактировать', icon: <IconEdit size={18} />, onClick: () => onEdit(msg) })
+    }
+    if (!isGraduated) {
+      // Единственный способ поставить ПЕРВУЮ реакцию (пока чипа под сообщением
+      // ещё нет) — дальше можно тапать по самому чипу (см. ReactionChip.tsx).
+      items.push({
+        key: 'reaction',
+        label: msg.reacted_by_me ? 'Убрать реакцию' : 'Поставить реакцию',
+        icon: <img src={reactionIcon} width={18} height={18} alt="" />,
+        onClick: () => reaction.mutate(msg),
+      })
     }
     if (canPin && !isGraduated) {
       items.push({ key: 'pin', label: 'Закрепить', icon: <IconPin size={18} />, onClick: () => pin.mutate(msg.id) })
