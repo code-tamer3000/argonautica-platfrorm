@@ -21,3 +21,21 @@ export function useUsersMap(): Map<number, PublicUserOut> {
     return m
   }, [data])
 }
+
+/**
+ * Ростер кандидатов для «начать чат»/группу (ARG-110) — каскадно отфильтрован по
+ * рангу тарифа на сервере, отсортирован по рангу (для группировки секциями на
+ * клиенте). Не путать с `useUsers()` — та lookup-таблица не сужается (см. её doc).
+ * `intakeId` имеет смысл только для admin (сессионный фильтр `adminCurrentIntakeId`
+ * из AdminLayout) — участнику сервер его молча игнорирует.
+ */
+export function useContacts(intakeId?: number | null) {
+  return useQuery({
+    queryKey: [...usersKey, 'contacts', intakeId ?? null] as const,
+    queryFn: () =>
+      http.get<PublicUserOut[]>(
+        intakeId != null ? `/api/users/contacts?intake_id=${intakeId}` : '/api/users/contacts',
+      ),
+    staleTime: 60_000,
+  })
+}

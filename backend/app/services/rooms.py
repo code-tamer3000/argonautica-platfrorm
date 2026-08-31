@@ -14,7 +14,15 @@ from app.models.room import Room, RoomMember, RoomPlan
 from app.models.task import TaskStreamNode
 from app.models.user import User
 from app.services.graduation import assert_not_graduated
-from app.services.visibility import intake_visible, plan_visible, same_cohort
+from app.services.visibility import (
+    can_message_admin,
+    cohort_plan_ranks,
+    contact_visible,
+    diary_visible,
+    intake_visible,
+    plan_visible,
+    user_rank,
+)
 
 NEWS_CHANNEL_NAME = "Новости"
 
@@ -64,9 +72,9 @@ async def assert_room_access(
     перечисленным тарифам.
 
     Личный дневник — особый канал: виден не только владельцу («Все дневники»),
-    поэтому чужой дневник дополнительно гейтится тем же потоком+тарифом, но через
-    `same_cohort` (сравнение владельца и смотрящего), а не через intake_id самой
-    комнаты (та колонка у личных комнат намеренно всегда NULL).
+    поэтому чужой дневник дополнительно гейтится каскадным рангом тарифа
+    (`diary_visible`, ARG-110), а не через intake_id самой комнаты (та колонка у
+    личных комнат намеренно всегда NULL).
     """
     if user.is_observer:
         raise HTTPException(
@@ -77,7 +85,8 @@ async def assert_room_access(
     if room.type == "channel":
         if user.role != "admin" and room.is_personal and room.created_by != user.id:
             owner = await session.get(User, room.created_by)
-            if owner is None or not same_cohort(owner, user):
+            ranks = await cohort_plan_ranks(session, user.intake_id)
+            if owner is None or not diary_visible(owner, user, ranks):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         elif user.role != "admin" and not room.is_personal:
             if not intake_visible(room.intake_id, user):
@@ -98,20 +107,68 @@ async def assert_room_access(
     return membership
 
 
-def assert_can_write(user: User) -> None:
+async def _dm_peer(session: AsyncSession, room: Room, user: User) -> User | None:
+    """Второй участник dm-комнаты (не user). None, если состав странный (не dm)."""
+    row = (
+        await session.execute(
+            select(RoomMember.user_id).where(
+                RoomMember.room_id == room.id, RoomMember.user_id != user.id
+            )
+        )
+    ).scalar_one_or_none()
+    return await session.get(User, row) if row is not None else None
+
+
+async def dm_write_allowed(session: AsyncSession, room: Room, user: User) -> bool:
+    """Односторонний DM админ→игрок (ARG-110, часть B): в dm с НЕ-навигатор-админом
+    писать может только участник с рангом тарифа в топ-2 потока (см. visibility.py
+    `can_message_admin`) — иначе принять сообщение можно, ответить нельзя. Админ
+    (в т.ч. навигатор) и любой dm без админа-собеседника не ограничены."""
+    if room.type != "dm" or user.role == "admin":
+        return True
+    peer = await _dm_peer(session, room, user)
+    if peer is None or peer.role != "admin" or peer.is_navigator:
+        return True
+    ranks = await cohort_plan_ranks(session, user.intake_id)
+    return can_message_admin(user_rank(user, ranks), ranks)
+
+
+async def assert_can_write(session: AsyncSession, room: Room, user: User) -> None:
     """Наблюдателю запись в любую комнату запрещена. Формально избыточно (он и на
     чтение комнату не проходит, см. assert_room_access) — оставлено как явный
     защитный барьер на пишущих путях (отправка/правка/удаление/закреп/typing).
 
     Выпускник (`graduated_at`) тем же барьером теряет запись во ВСЕЙ Рубке —
     личные чаты, дневник, каналы: история остаётся, новых сообщений нет
-    (см. app/services/graduation.py)."""
+    (см. app/services/graduation.py).
+
+    Односторонний dm с админом (ARG-110, часть B) — та же 403-граница, не только
+    фронтовая маскировка композера (см. dm_write_allowed)."""
     if user.is_observer:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Observer mode: this section is read-only for you",
         )
     assert_not_graduated(user)
+    if not await dm_write_allowed(session, room, user):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Cannot write to this admin — no reply permission for your tariff",
+        )
+
+
+async def assert_peer_visible(session: AsyncSession, current_user: User, peer: User) -> None:
+    """Точечная проверка на POST /api/rooms (dm/group-invite, ARG-110, часть A):
+    peer/приглашаемый должен входить в видимый для current_user круг — та же
+    функция, что и GET /api/users/contacts (не дублируем правило). Admin
+    неограничен (полный оверсайт, как везде в сервисе)."""
+    if current_user.role == "admin":
+        return
+    ranks = await cohort_plan_ranks(session, current_user.intake_id)
+    if not contact_visible(current_user, peer, ranks):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "User is outside your visible circle"
+        )
 
 
 def assert_can_pin(room: Room, user: User, membership: RoomMember | None) -> None:

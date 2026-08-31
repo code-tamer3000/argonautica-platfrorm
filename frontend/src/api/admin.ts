@@ -26,6 +26,7 @@ export interface PatchAdminUserBody {
   can_create_groups?: boolean
   can_access_cabin?: boolean
   is_observer?: boolean
+  is_navigator?: boolean
   role?: 'participant' | 'admin'
   display_name?: string
   email?: string | null

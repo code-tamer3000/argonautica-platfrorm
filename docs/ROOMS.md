@@ -7,8 +7,8 @@
 
 | Type | Created by | Visibility |
 |---|---|---|
-| `dm` | any participant | the two participants only |
-| `group` | any participant with `can_create_groups` (owner = creator) | invited members only |
+| `dm` | any participant, peer must be in their visible circle (ARG-110, see below) | the two participants only |
+| `group` | any participant with `can_create_groups`, invitees must be in their visible circle (owner = creator) | invited members only |
 | `channel` | admin only | all participants (implicit) |
 
 Differences are behavior in code, not schema. Group/channel have their own `avatar_url`; a dm shows the peer's avatar.
@@ -24,6 +24,51 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)): **no room access at all** — `assert_room_access` returns 403 for every room type, including channels and the news channel. `GET /api/rooms` returns them an **empty list**; `GET /api/rooms/personal` → 403. Chat is entirely closed for them (materials-only). `assert_can_write` stays as a redundant write-path barrier.
 - **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)): rooms stay fully readable (list, history, personal diary), but every write path is closed by `assert_can_write` → 403. The «Новый чат»/«Группа» buttons are hidden for them — a room they cannot write in is a dead end.
 - **Cohort not started yet** (`today < intake.starts_on`, ARG-106): the whole Рубка (`/chats`, `/diaries` — `ChatLayout`) is replaced client-side with a "N days until start" placeholder, **except the news channel** (`rooms.is_news`) — reachable via the «Новости» nav item (`/news` → `NewsRedirect`), since the welcome popup content is itself a news post and must stay readable during the wait. Opening it this way still hides the room list/Чаты·Дневники switcher around it (`ChatLayout.hideRoomList`, set by `routes.tsx`'s `withCohortGate` when the open room is news) — it would only dead-end back into the same placeholder for every other room. Frontend-only — no backend gate, since it's the participant's own not-yet-relevant content, not another user's (unlike the Observer 403 above). See [DATA_MODEL.md](DATA_MODEL.md) "Cohort-pending gate".
+
+## Contact visibility & rank cascade (ARG-110)
+
+`GET /api/users` is a lookup table (message senders, task/КБ authors, mentions —
+used across 15+ frontend files), never sliced by visibility. The roster for
+«начать чат»/«начать группу» is a separate, cascade-filtered endpoint:
+
+- **`GET /api/users/contacts`** — candidates for a participant caller, scoped to
+  their own `intake_id` (client-supplied `intake_id` is ignored for participants —
+  never trust client ids, CLAUDE.md p.1). For an `admin` caller it accepts
+  `intake_id` (the frontend's session-only `adminCurrentIntakeId`, see "Admin
+  current intake selector" below) and returns the whole intake, unrestricted —
+  admin keeps full oversight, this endpoint only narrows *participants'* view.
+  Response is pre-sorted by tariff rank ascending so the client can group it into
+  sections by just watching `plan_id` change between consecutive items, without
+  recomputing ranks itself.
+- **Rank** (`services/visibility.py` `cohort_plan_ranks`) — tariffs (`plans`) have
+  no FK to `intakes`; "the tariffs of a stream" is derived at query time as the
+  distinct `is_active` plans actually held by that intake's users, sorted by
+  `price` ascending, numbered 1..N. No plan / plan not in the map → rank 0 (the
+  floor — also the degraded state for legacy plan-less users, not a special case).
+- **Cascade rule** (`contact_visible`) — a participant of rank R sees platform
+  participants of their own intake with rank ≤ R (their own tariff and everything
+  cheaper), never a higher one. Writing to a **non-navigator** admin requires rank
+  in the top 2 of the intake (`can_message_admin`) — below that, the admin isn't
+  even listed as a contact.
+- **`is_navigator`** (`users.is_navigator`, admin-only flag, see [AUTH.md](AUTH.md))
+  — this specific admin bypasses the top-2 rule entirely: listed as a contact for,
+  and reachable by, every rank of their intake.
+- **`POST /api/rooms`** (dm creation, group member invite) calls the same
+  `contact_visible` check server-side (`assert_peer_visible`) — the visibility
+  rule isn't just a UI filter, it's the actual authorization (closes the IDOR
+  where any `peer_id`/`user_id` could be used to force a room with anyone). Admin
+  as the acting caller is exempt (unrestricted, as everywhere else in this file).
+- **Asymmetric dm write** — a **non-navigator** admin can freely start/write a dm
+  with any participant (admin write is never restricted), but the participant can
+  reply only if their rank is in the intake's top 2. Enforced server-side in
+  `assert_can_write`/`dm_write_allowed` (403 on the write path itself, not just a
+  hidden composer) and surfaced to the client as `RoomOut.dm_write_locked` (dm-only,
+  computed per-viewer in `list_rooms`/`get_room`) so the frontend can hide the
+  composer instead of letting the participant hit a dead-end send button. A
+  navigator has no such asymmetry — a normal two-way dm.
+- Not a second copy of the ranking rule: contacts, the dm peer-check, the dm write
+  asymmetry, and personal-diary visibility (below) all call the same
+  `cohort_plan_ranks`/rank-comparison helpers in `services/visibility.py`.
 
 ## Channels — implicit access (variant А)
 
@@ -52,8 +97,8 @@ personal/news) accept `intake_id`/`plan_ids`.
 
 - `rooms.is_personal = true` marks a participant's personal homework-diary room. Homework entries are ordinary `messages` there. See [DYNAMICS.md](DYNAMICS.md).
 - **Not owner-only.** The frontend's «Дневники» tab is a real "browse everyone's diary" feature (`RoomList.tsx`: own diary pinned, everyone else's under «Все дневники») — this is deliberate community/accountability UX, not an oversight.
-- **Cohort-gated (ARG-96).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner's and the viewer's `intake_id` **and** `plan_id` directly (`same_cohort` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Both fields must match (`NULL` matches `NULL` — no-intake/no-plan users share a bucket). The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_same_cohort`), so a foreign-cohort diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`.
-- **Grouped by tariff on the client.** `RoomOut.owner_plan_id`/`owner_plan_name` denormalize the diary owner's plan (batch-joined in `list_rooms`/`get_room`, `app/api/rooms.py`) so the frontend can subdivide «Все дневники» by tariff (`groupDiariesByPlan` in `features/chat/util.ts`) without a participant needing admin-only `/api/admin/users`. Group order follows `GET /api/plans` (active plans, price-ascending — the same order as `/api/admin/plans`); a participant with no `plan_id` falls into a trailing «Без тарифа» bucket. `GET /api/plans` (`app/api/plans.py`) is the public counterpart of `/api/admin/plans`: any authenticated user, id+name only (no price/description).
+- **Cohort-gated, rank cascade (ARG-96, cascade rule ARG-110).** A diary room's own `intake_id` stays NULL on purpose (it's tied to a user, and the user already carries `intake_id`/`plan_id`) — so visibility of an *other* user's diary is computed by comparing the diary owner and the viewer directly (`diary_visible` in `app/services/visibility.py`), not through the room's own columns or `room_plans`. Same intake required, plus the owner's tariff rank must be ≤ the viewer's (see "Contact visibility & rank cascade" above — same rank helper, not a second rule): a higher-rank viewer sees a lower-rank owner's diary, never the reverse. The owner always sees their own diary regardless; admin sees every diary. Checked in `assert_room_access` (personal branch) and mirrored in `list_rooms`' query filter (`others_personal_visible`), so an out-of-reach diary is both invisible in the list and 403 on direct `GET /api/rooms/{id}`.
+- **Owner's tariff is denormalized, not yet grouped on the client.** `RoomOut.owner_plan_id`/`owner_plan_name` carry the diary owner's plan (batch-joined in `list_rooms`/`get_room`, `app/api/rooms.py`) so a participant could subdivide «Все дневники» by tariff without admin-only `/api/admin/users` — but `RoomList.tsx` currently renders it as one flat list under «Все дневники» (own diary pinned first); no client-side grouping consumes these two fields yet.
 
 ## News channel & repost
 
@@ -75,11 +120,16 @@ personal/news) accept `intake_id`/`plan_ids`.
   of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
 - **Admin "current intake" selector** — a session-only (not persisted) UI context set in
   `AdminLayout`, shared across the Задачи/КБ/Чаты admin screens (`stores/ui.ts`
-  `adminCurrentIntakeId`). It only changes what the admin sees by default in those lists
-  (a client-side filter, with a "filtered, not the full list" banner) and which intake a
-  repost from a cross-intake room defaults to being asked about — it does **not** change
-  server-side authorization; admin still bypasses the intake/plan gate entirely
-  (`user.role == "admin"` in `assert_room_access`/`list_rooms`).
+  `adminCurrentIntakeId`). For most of those lists it's a client-side filter (a
+  "filtered, not the full list" banner over an already-fetched full list) and it
+  decides which intake a repost from a cross-intake room defaults to being asked
+  about — it does **not** change server-side authorization there; admin still
+  bypasses the intake/plan gate entirely (`user.role == "admin"` in
+  `assert_room_access`/`list_rooms`). The one exception is `GET /api/users/contacts`
+  (ARG-110, "Contact visibility & rank cascade" above): the frontend sends it as
+  the `intake_id` query param and the server actually scopes the query to it —
+  still not a new *restriction* (admin sees the whole selected intake, unranked),
+  just where the narrowing happens.
   - **Auto-defaults to the latest intake.** `AppShell` sets `adminCurrentIntakeId` to
     `GET /api/admin/intakes`' first row (newest `starts_on`) the first time it loads for
     an admin whose selector is still untouched (`null`) — otherwise every fresh session
