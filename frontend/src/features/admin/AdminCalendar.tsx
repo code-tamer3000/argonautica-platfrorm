@@ -10,6 +10,7 @@ import { useAdminPlans } from '../../api/plans'
 import type { CalendarEventOut } from '../../lib/types'
 import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { PageHeader } from '../../components/PageHeader'
@@ -55,6 +56,7 @@ interface EventFormProps {
 }
 
 function EventForm({ initial, onSubmit }: EventFormProps) {
+  const editing = !!initial
   const [title, setTitle] = useState(initial?.title ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [startsAt, setStartsAt] = useState(
@@ -64,7 +66,12 @@ function EventForm({ initial, onSubmit }: EventFormProps) {
     initial?.ends_at ? toDatetimeLocalMsk(initial.ends_at) : '',
   )
   const [allDay, setAllDay] = useState(initial?.all_day ?? false)
-  const [intakeId, setIntakeId] = useState<number | null>(initial?.intake_id ?? null)
+  // Новое событие по умолчанию берёт «текущий поток» админа (ARG-104); при
+  // редактировании — сохранённое значение как есть, даже если это null.
+  const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const [intakeId, setIntakeId] = useState<number | null>(
+    editing ? (initial?.intake_id ?? null) : adminCurrentIntakeId,
+  )
   const [planIds, setPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
   const { data: intakes = [] } = useAdminIntakes()
   const { data: plans = [] } = useAdminPlans()

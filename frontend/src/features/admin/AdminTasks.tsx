@@ -99,7 +99,12 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
   )
   // Изоляция общей задачи по потоку/тарифу (ARG-96) — не действует на
   // individual/pair/stream, там видимость уже держится на назначении/членстве.
-  const [taskIntakeId, setTaskIntakeId] = useState<number | null>(initial?.intake_id ?? null)
+  // Новая задача по умолчанию берёт «текущий поток» админа (ARG-104); при
+  // редактировании — сохранённое значение как есть, даже если это null.
+  const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const [taskIntakeId, setTaskIntakeId] = useState<number | null>(
+    editing ? (initial?.intake_id ?? null) : adminCurrentIntakeId,
+  )
   const [taskPlanIds, setTaskPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
   const { data: plans = [] } = useAdminPlans()
 
