@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { type SyntheticEvent, useRef, useState } from 'react'
 import { useMediaUrl } from '../../api/media'
 import { IconAttach } from '../../components/icons'
 import { Lightbox } from '../../components/Overlay'
@@ -112,16 +112,38 @@ export function Attachment({
   )
 }
 
+/** Потолок коробки картинки в ленте (px). Больше не растягиваем — это лента, не просмотр. */
+const FEED_MAX_W = 280
+const FEED_MAX_H = 360
+
+/**
+ * Ширина коробки под картинку с известными пропорциями: вписываем в FEED_MAX_W×FEED_MAX_H,
+ * маленькие картинки не растягиваем (scale ≤ 1). Высоту задавать не нужно — её даст сама
+ * картинка по своим пропорциям, а на узком экране коробка сожмётся по max-width: 100%.
+ */
+function feedBoxWidth(w: number, h: number): number {
+  const scale = Math.min(FEED_MAX_W / w, FEED_MAX_H / h, 1)
+  return Math.round(w * scale)
+}
+
 /**
  * Картинка в ленте: нативный <img>, без blob-прогресса и крутилки.
  * В ленте грузим лёгкое превью (thumbUrl); по клику лайтбокс открывает средний
  * дериват (previewUrl, ~1600px WebP) и лишь при его отсутствии — оригинал (url),
- * так что мегабайтные оригиналы не тянутся ни в ленте, ни при просмотре. Коробка
- * резервируется по aspect-ratio из width/height (см. backfill_image_dims для
- * легаси-картинок) плюс нативные width/height у самого <img> — двойная защита
- * от «тонкой полоски» вместо места под фото, пока картинка ещё не пришла (особо
- * заметно на медленных сетях/iOS). Для строк без width/height вообще — min-height
- * в CSS (chat.module.css). До декодирования виден только фон коробки, без индикатора.
+ * так что мегабайтные оригиналы не тянутся ни в ленте, ни при просмотре.
+ *
+ * РАЗМЕР КОРОБКИ СЧИТАЕМ САМИ (feedBoxWidth) и ставим ШИРИНОЙ в px, а высоту отдаём
+ * нативным width/height у <img> (height: auto в CSS). Это принципиально: раньше
+ * коробка полагалась на inline aspect-ratio, а картинка внутри — на height: 100%,
+ * то есть ширина коробки зависела от ещё не загруженной картинки, а высота картинки —
+ * от высоты коробки. В WebKit (iOS Safari и установленное PWA) этот круг схлопывал
+ * коробку в тонкую полоску и НЕ пересчитывался после прихода байтов: фото не
+ * появлялось, сколько ни жди, хотя nginx отдавал превью 200-м и целиком (проверено
+ * по логам шлюза). Повторный заход в комнату «чинил» показ только потому, что во
+ * второй раз размеры картинки уже известны браузеру из его кэша в первом же проходе
+ * раскладки. Теперь коробка знает свой размер до первого байта и ни от чего не зависит.
+ * Для легаси-строк без width/height коробка-плейсхолдер (attImagePending) держит место,
+ * пока картинка не декодируется, а по onLoad берём naturalWidth/naturalHeight.
  *
  * БЕЗ loading="lazy": в мобильном WebKit/Chrome-standalone (установленное PWA)
  * нативный lazy-load ненадёжен именно внутри вложенного скролл-контейнера
@@ -149,7 +171,11 @@ function ImageAttachment({
   // Фолбэк на оригинал обязателен: у легаси-вложений и при неудавшейся генерации
   // preview_url = null, и просмотр должен работать как раньше.
   const lightboxUrl = previewUrl ?? url
-  const ratio = width && height ? width / height : undefined
+  // Пропорции: из метаданных вложения, а у легаси-строк без них — из самой картинки,
+  // как только она декодировалась (до этого стоит коробка-плейсхолдер).
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
+  const dims = width && height ? { w: width, h: height } : natural
+  const boxWidth = dims ? feedBoxWidth(dims.w, dims.h) : undefined
 
   // Измерительный слой: сколько реально грузится картинка ленты на устройстве.
   // Засекаем не от монтирования, а от первого события загрузки (load start
@@ -158,7 +184,14 @@ function ImageAttachment({
   const startRef = useRef<number | null>(null)
   if (startRef.current === null) startRef.current = performance.now()
   const reported = useRef(false)
-  const onImgLoad = () => {
+  const onImgLoad = (e: SyntheticEvent<HTMLImageElement>) => {
+    // Легаси без размеров в базе: узнаём их у самой картинки и фиксируем коробку —
+    // дальше её ширина так же не зависит от загрузки (важно при перерисовках ленты).
+    if (!dims) {
+      const img = e.currentTarget
+      if (img.naturalWidth > 0 && img.naturalHeight > 0)
+        setNatural({ w: img.naturalWidth, h: img.naturalHeight })
+    }
     if (reported.current || startRef.current === null) return
     reported.current = true
     reportMetric({
@@ -171,19 +204,19 @@ function ImageAttachment({
   }
 
   return (
-    <div className={styles.attImageWrap} style={ratio ? { aspectRatio: String(ratio) } : undefined}>
+    <div
+      className={boxWidth ? styles.attImageWrap : `${styles.attImageWrap} ${styles.attImagePending}`}
+      style={boxWidth ? { width: boxWidth } : undefined}
+    >
       <img
         className={styles.attImage}
         src={feedUrl}
         alt=""
-        // width/height (не только aspect-ratio у обёртки) — браузер резервирует
-        // место по НИМ ещё до первого байта картинки, это отдельный от CSS
-        // механизм и не зависит от того, как конкретный движок посчитал
-        // aspect-ratio у родителя. На iOS, где картинка может грузиться заметно
-        // дольше (см. историю бага), без этого место под неё не резервируется
-        // вообще и видна только тонкая полоска, не похожая на коробку с фото.
-        width={width ?? undefined}
-        height={height ?? undefined}
+        // Нативные width/height задают пропорции ещё до первого байта: браузер сам
+        // считает высоту при height: auto. Вместе с заданной шириной коробки это и
+        // есть резерв места, не зависящий от того, загрузилась картинка или нет.
+        width={dims?.w}
+        height={dims?.h}
         onClick={() => setOpen(true)}
         onLoad={onImgLoad}
       />
