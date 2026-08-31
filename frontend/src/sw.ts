@@ -1,69 +1,27 @@
 /// <reference lib="webworker" />
-// Кастомный service worker (injectManifest). Делает три вещи:
+// Кастомный service worker (injectManifest). Делает две вещи:
 //  1) прекэш оболочки + управляемое обновление (сохраняем UX баннера «обновить»);
-//  2) рантайм-кэш картинок медиа с ключом без presigned-подписи (см. ниже);
-//  3) нативные push-уведомления: показ по событию `push` и навигация по клику.
+//  2) нативные push-уведомления: показ по событию `push` и навигация по клику.
 // API/WS никогда не кэшируем — precacheAndRoute трогает только собранные ассеты,
 // а навигационный fallback исключает /api и /ws.
-import { ExpirationPlugin } from 'workbox-expiration'
+//
+// Рантайм-кэша картинок (второй эшелон поверх обычного HTTP-кэша) больше нет —
+// убран после того, как дважды за один день оказался источником реальных
+// поломок на iOS: (1) CacheFirst без проверки ответа залипал на неудачном
+// fetch навсегда, (2) на «холодном» старте PWA (killed → заново открыли)
+// первый же перехваченный SW запрос картинки иногда зависал безвозвратно —
+// SW ещё не «проснулся» до конца, а повторный fetch тем же <img> не
+// переотправляется. Обычный браузерный HTTP-кэш (см. lib/mediaCache.ts и
+// docs/FRONTEND.md) с ARG-75 и так покрывает картинки: presigned-URL
+// стабилен весь день, значит ключ (полный URL) совпадает при повторной
+// отдаче — кэш просто работает без нашего вмешательства и без этого риска.
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching'
-import { registerRoute } from 'workbox-routing'
-import { CacheFirst } from 'workbox-strategies'
-import { MEDIA_CACHE_NAME, isMediaPath, mediaCacheKey } from './lib/mediaCache'
 
 declare const self: ServiceWorkerGlobalScope
 
 // __WB_MANIFEST — сюда Workbox инжектит список прекэш-ассетов на сборке.
 precacheAndRoute(self.__WB_MANIFEST)
 cleanupOutdatedCaches()
-
-// --- Рантайм-кэш картинок медиа -------------------------------------------
-//
-// Медиа лежит на том же origin (/chat-media/, /kb-media/), ответы не opaque —
-// кэшируются нормально. Проблема была только в ключе: presigned-URL меняется на
-// каждой отдаче ленты, поэтому кэшируем по origin+pathname (см. lib/mediaCache).
-//
-// Осознанно кэшируем ТОЛЬКО картинки:
-//  • видео крупное и убивает квоту на телефоне, а главное — играется range-запросами;
-//    CacheFirst поверх range сломал бы перемотку (известные грабли проекта);
-//  • поэтому дополнительно пропускаем мимо кэша ЛЮБОЙ запрос с заголовком Range.
-// Расширения — потому что лайтбокс тянет картинку через fetch (destination '' ,
-// не 'image'), и без проверки пути под правило попало бы и видео.
-const IMAGE_EXT_RE = /\.(webp|jpe?g|png|gif|avif|bmp|heic|heif)$/i
-
-registerRoute(
-  ({ url, request, sameOrigin }) =>
-    sameOrigin &&
-    isMediaPath(url.pathname) &&
-    // Range → мимо кэша: это стриминг (видео/аудио), CacheFirst его сломает.
-    !request.headers.has('range') &&
-    request.destination !== 'video' &&
-    request.destination !== 'audio' &&
-    (request.destination === 'image' || IMAGE_EXT_RE.test(url.pathname)),
-  new CacheFirst({
-    cacheName: MEDIA_CACHE_NAME,
-    plugins: [
-      {
-        // Ключевое место всей фичи: ключ без query, иначе кэш снова не попадает.
-        cacheKeyWillBeUsed: async ({ request }) => mediaCacheKey(request.url),
-        // Кэшируем только реально успешный ответ (200). Без этой проверки любой
-        // сбой в момент деплоя/сети (502 от только что пересозданного nginx,
-        // оборванная выдача) навсегда «залипает» в CacheFirst — картинка не
-        // грузится уже независимо от сети, пока не истечёт maxAgeSeconds или не
-        // снесут кэш вручную. Отдаём null — Workbox не кладёт такой ответ в кэш,
-        // но всё равно возвращает его вызывающей стороне (картинка просто не
-        // покажется в этот раз, следующий заход честно сходит в сеть заново).
-        cacheWillUpdate: async ({ response }) => (response.status === 200 ? response : null),
-      },
-      // Ограничиваем рост: телефон не должен копить гигабайты картинок.
-      new ExpirationPlugin({
-        maxEntries: 60,
-        maxAgeSeconds: 7 * 24 * 60 * 60,
-        purgeOnQuotaError: true,
-      }),
-    ],
-  }),
-)
 
 // registerType:'prompt' + useRegisterSW: клиент шлёт SKIP_WAITING, когда юзер
 // нажал «Обновить» в баннере. Без этого новый SW висел бы в waiting.
