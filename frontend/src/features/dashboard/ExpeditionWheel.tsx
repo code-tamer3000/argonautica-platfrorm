@@ -17,6 +17,8 @@ import {
   R_LABEL,
   R_LABEL_DATE,
   R_LOCK,
+  R_SPOKE_IN,
+  R_SPOKE_OUT,
   R_TAIJI,
   elementName,
   elementSectorSpan,
@@ -34,11 +36,10 @@ interface Props {
 
 const fmtShort = (iso: string) => format(new Date(`${iso}T00:00:00`), 'dd.MM')
 
-// Волна пульса проходит от ободка хаба до внешнего края полосы стихий за это
-// время — задержка каждого элемента (арки, спицы) растёт с его радиусом, чтобы
-// свечение шло от центра наружу одним фронтом (см. dashboard.module.css).
+// «Сегодня»-гало и пульс открытого замка чуть смещены по радиусу друг от
+// друга, чтобы не мигать синхронной вспышкой — тот же приём, что раньше
+// разводил волну по концентрическим слоям.
 const PULSE_TRAVEL_MS = 2200
-const PULSE_LAYERS = [R_HUB_RIM, R_CENTER, R_LOCK, R_BAND_IN, R_BAND_OUT]
 const pulseDelay = (r: number) => ((r - R_HUB_RIM) / (R_BAND_OUT - R_HUB_RIM)) * PULSE_TRAVEL_MS
 
 export function ExpeditionWheel({ expedition, onLockClick }: Props) {
@@ -76,21 +77,12 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         />
       ))}
 
-      {/* живая волна: арки на границах слоёв + спицы стихий, фронт идёт от хаба наружу */}
+      {/* диагональные лучи от хаба — между кардинальными точками стихий/замков,
+          не пересекаются ни с подписями, ни с замками; тихо пульсируют золотом */}
       <g aria-hidden="true" className={styles.sectorPulse}>
-        {PULSE_LAYERS.map((r) => (
-          <circle
-            key={r}
-            cx={CX}
-            cy={CY}
-            r={r}
-            className={styles.pulseArc}
-            style={{ animationDelay: `${pulseDelay(r).toFixed(0)}ms` }}
-          />
-        ))}
         {[45, 135, 225, 315].map((a) => {
-          const inner = polar(a, R_BAND_IN)
-          const outer = polar(a, R_BAND_OUT)
+          const inner = polar(a, R_SPOKE_IN)
+          const outer = polar(a, R_SPOKE_OUT)
           return (
             <line
               key={a}
@@ -99,18 +91,10 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
               x2={outer.x}
               y2={outer.y}
               className={styles.pulseSpoke}
-              style={{ animationDelay: `${pulseDelay(R_BAND_IN).toFixed(0)}ms` }}
             />
           )
         })}
       </g>
-      <circle
-        cx={CX}
-        cy={CY}
-        r={R_BAND_OUT}
-        className={styles.rimGlow}
-        style={{ animationDelay: `${PULSE_TRAVEL_MS}ms` }}
-      />
 
       {/* золотая рамка вокруг сектора текущего этапа */}
       {currentElementIndex >= 0 && (
@@ -155,7 +139,6 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         const isDone = status === 'closed' || status === 'credited' || status === 'today_closed' || status === 'pardoned'
         const isMissed = status === 'missed'
         const dayClass = isToday ? styles.dayToday : isDone ? styles.dayDone : isMissed ? styles.dayMissed : styles.dayFuture
-        const showMoon = phase != null && (isToday || isDone)
 
         return (
           <g key={d.day} transform={`translate(${pos.x.toFixed(1)} ${pos.y.toFixed(1)})`} className={dayClass}>
@@ -166,7 +149,7 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
               {isToday ? ' · сегодня' : ''}
             </title>
             <circle r={r} fill="none" stroke={color} strokeWidth={isToday ? 1.4 : 1} />
-            {showMoon && phase && (
+            {phase && (
               <path
                 d={moonLitPath(r, phase)}
                 fill={color}
@@ -207,9 +190,11 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
       <text x={CX} y={CY + 72} textAnchor="middle" className={styles.hubTitle}>
         {currentStage ? stageCaption(currentStage.kind).toUpperCase() : 'ТОЧКА БАЛАНСА'}
       </text>
-      <text x={CX} y={CY + 88} textAnchor="middle" className={styles.hubSub}>
-        {today != null ? `день ${today} из ${expedition.total_days}` : 'вне круга'}
-      </text>
+      {today != null && (
+        <text x={CX} y={CY + 88} textAnchor="middle" className={styles.hubSub}>
+          {`день ${today} из ${expedition.total_days}`}
+        </text>
+      )}
     </svg>
   )
 }
