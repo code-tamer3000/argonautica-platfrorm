@@ -22,7 +22,6 @@ import {
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
-  IconPin,
   IconTasks,
 } from '../../components/icons'
 import { dayKeyMsk, timeHMMsk } from '../../lib/format'
@@ -126,13 +125,7 @@ export function CalendarView() {
                   {events.slice(0, 3).map((ev) => (
                     <span
                       key={ev.id}
-                      className={`${styles.dot} ${
-                        ev.task_id != null
-                          ? styles.dotTask
-                          : ev.room_id != null
-                            ? styles.dotRoom
-                            : ''
-                      }`}
+                      className={`${styles.dot} ${ev.task_id != null ? styles.dotTask : ''}`}
                     />
                   ))}
                 </span>
@@ -162,11 +155,11 @@ export function CalendarView() {
   )
 }
 
-// Карточка события. Три интуитивно разных вида:
+// Карточка события. Два интуитивно разных вида:
 //  • дедлайн задачи (task_id) — мягкий, с иконкой задачи, кликабелен → к себе в
 //    раздел «Задачи»; у выполненной галочка, у админа — прогресс «сдали X из Y»;
-//  • событие комнаты — с меткой «В комнате»;
-//  • анонс проекта — обычное событие.
+//  • анонс проекта — обычное событие (может быть изолировано по потоку/тарифу,
+//    но участник его либо видит целиком, либо не видит вовсе — метка не нужна).
 function EventCard({ ev, isAdmin }: { ev: CalendarEventOut; isAdmin: boolean }) {
   const timeLabel = ev.all_day
     ? 'Весь день'
@@ -206,11 +199,6 @@ function EventCard({ ev, isAdmin }: { ev: CalendarEventOut; isAdmin: boolean }) 
       <div className={styles.eventBody}>
         <div className={styles.eventTitle}>{ev.title}</div>
         {ev.description && <div className={styles.eventDesc}>{ev.description}</div>}
-        {ev.room_id != null && (
-          <span className={styles.roomTag}>
-            <IconPin size={13} /> В комнате
-          </span>
-        )}
       </div>
     </div>
   )

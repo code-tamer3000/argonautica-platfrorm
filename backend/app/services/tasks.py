@@ -11,10 +11,11 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import delete as sa_delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.calendar import CalendarEvent
+from app.models.calendar import CalendarEvent, CalendarEventPlan
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -293,14 +294,19 @@ async def sync_task_calendar_event(session: AsyncSession, task: Task) -> None:
     """Привести дедлайн-событие календаря в соответствие задаче.
 
     Дедлайн задан и задача жива → upsert события (адресность наследуется от задачи —
-    room_id=None, а видимость гейтит эндпоинт календаря по task_id). Дедлайн снят или
-    задача удалена → удалить связанное событие.
+    видимость гейтит эндпоинт календаря по task_id). Дедлайн снят или задача удалена
+    → удалить связанное событие.
     """
     event = await _linked_event(session, task.id)
     should_exist = task.deadline_at is not None and task.deleted_at is None
 
     if not should_exist:
         if event is not None:
+            await session.execute(
+                sa_delete(CalendarEventPlan).where(
+                    CalendarEventPlan.calendar_event_id == event.id
+                )
+            )
             await session.delete(event)
             await session.flush()
         return
@@ -312,7 +318,6 @@ async def sync_task_calendar_event(session: AsyncSession, task: Task) -> None:
             title=title,
             starts_at=task.deadline_at,
             all_day=False,
-            room_id=None,
             task_id=task.id,
             created_by=task.created_by,
         )
