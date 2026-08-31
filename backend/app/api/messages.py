@@ -151,7 +151,8 @@ async def send_message(
     )
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
-    await assert_can_write(session, room, current_user)  # наблюдатель не пишет никуда (в т.ч. в новости)
+    # Наблюдатель не пишет никуда (в т.ч. в новости).
+    await assert_can_write(session, room, current_user)
 
     # Личный канал: верхнеуровневые сообщения только от владельца.
     # Thread-ответы (reply_to_message_id задан) разрешены всем — это «комментарии».
