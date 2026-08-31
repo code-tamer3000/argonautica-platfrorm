@@ -241,16 +241,16 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
             {rooms && chatsEmpty && (
               <div className="muted" style={{ padding: 16, fontSize: 14 }}>Чатов нет</div>
             )}
-            {dms.length > 0 && (
-              <>
-                <div className={styles.sectionHeader}>Чаты</div>
-                {dms.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
-              </>
-            )}
             {groups.length > 0 && (
               <>
                 <div className={styles.sectionHeader}>Группы</div>
                 {groups.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
+              </>
+            )}
+            {dms.length > 0 && (
+              <>
+                <div className={styles.sectionHeader}>Чаты</div>
+                {dms.map((r) => <RoomButton key={r.id} r={r} selectedId={selectedId} onSelect={onSelect} dmPeers={dmPeers} online={online} users={users} />)}
               </>
             )}
           </>
