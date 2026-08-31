@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { IconChevronRight } from '../../components/icons'
+import { renderMarkdown } from '../../lib/markdown'
 import { toast } from '../../stores/toast'
 import styles from './support.module.css'
 
@@ -90,7 +91,12 @@ function FaqSection() {
               </span>
               <span>{item.question}</span>
             </button>
-            {open && <div className={styles.faqAnswer}>{item.answer}</div>}
+            {open && (
+              <div
+                className={`${styles.faqAnswer} ${styles.markdown}`}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(item.answer) }}
+              />
+            )}
           </div>
         )
       })}
