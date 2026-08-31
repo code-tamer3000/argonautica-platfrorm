@@ -105,9 +105,9 @@ channel (ARG-104 — was a platform-wide singleton with `intake_id` always NULL 
 singleton backfilled onto the historical intake). Personal diary rooms (`rooms.is_personal`)
 also keep `intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
 [ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
-gated by comparing the owner and the viewer directly — same intake, plus the owner's
-tariff rank ≤ the viewer's (`diary_visible`, cascade rule, ARG-110), not via a column on
-the room itself.
+gated by comparing the owner and the viewer directly — same intake only, tariff plays no
+role (`diary_visible`, ARG-112 — dropped the ARG-110 rank cascade for diaries on purpose),
+not via a column on the room itself.
 
 **Plan (`<entity>_plans`)** — many-to-many, not a column: an empty set of rows = visible to
 every plan of the user's intake; a non-empty set = only the listed plans. This is the only

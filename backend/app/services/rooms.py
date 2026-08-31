@@ -72,9 +72,10 @@ async def assert_room_access(
     перечисленным тарифам.
 
     Личный дневник — особый канал: виден не только владельцу («Все дневники»),
-    поэтому чужой дневник дополнительно гейтится каскадным рангом тарифа
-    (`diary_visible`, ARG-110), а не через intake_id самой комнаты (та колонка у
-    личных комнат намеренно всегда NULL).
+    поэтому чужой дневник дополнительно гейтится потоком владельца (`diary_visible`,
+    ARG-112) — не через intake_id самой комнаты (та колонка у личных комнат
+    намеренно всегда NULL), а прямым сравнением `intake_id` владельца и смотрящего.
+    Тариф владельца не учитывается.
     """
     if user.is_observer:
         raise HTTPException(
@@ -85,8 +86,7 @@ async def assert_room_access(
     if room.type == "channel":
         if user.role != "admin" and room.is_personal and room.created_by != user.id:
             owner = await session.get(User, room.created_by)
-            ranks = await cohort_plan_ranks(session, user.intake_id)
-            if owner is None or not diary_visible(owner, user, ranks):
+            if owner is None or not diary_visible(owner, user):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         elif user.role != "admin" and not room.is_personal:
             if not intake_visible(room.intake_id, user):
