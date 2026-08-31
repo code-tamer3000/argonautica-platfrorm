@@ -91,7 +91,14 @@ def contact_visible(viewer: User, candidate: User, ranks: dict[int, int]) -> boo
 
 def diary_visible(owner: User, viewer: User, ranks: dict[int, int]) -> bool:
     """Чужой личный дневник виден, если владелец того же потока и его ранг тарифа
-    <= рангу смотрящего (каскад, замена строгому `same_cohort`-равенству)."""
+    <= рангу смотрящего (каскад, замена строгому `same_cohort`-равенству).
+
+    Дневник admin-владельца в чужом «Все дневники» не показываем — Динамика не для
+    админов, но `create_user` заводит личный канал любому новому аккаунту без учёта
+    роли, так что такой дневник может существовать. Не влияет на просмотр СВОЕГО
+    дневника (та ветка в assert_room_access/list_rooms не зовёт эту функцию)."""
+    if owner.role == "admin":
+        return False
     if owner.intake_id != viewer.intake_id:
         return False
     return user_rank(owner, ranks) <= user_rank(viewer, ranks)

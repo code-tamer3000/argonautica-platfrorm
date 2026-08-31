@@ -246,6 +246,7 @@ async def list_rooms(
             Room.created_by != current_user.id,
             exists().where(
                 Owner.id == Room.created_by,
+                Owner.role != "admin",
                 Owner.intake_id.is_not_distinct_from(current_user.intake_id),
                 or_(Owner.plan_id.is_(None), Owner.plan_id.in_(visible_plan_ids)),
             ),
