@@ -54,3 +54,28 @@ export function groupByPlan<T>(
       )
     })
 }
+
+/**
+ * Группировка списка, УЖЕ отсортированного сервером по рангу тарифа (ARG-110,
+ * `GET /api/users/contacts`) — просто режет на секции по смене соседнего
+ * plan_id/plan_name, не пересчитывая порядок тарифов самостоятельно. В отличие
+ * от `groupByPlan`, не требует полного списка тарифов (участнику `/api/admin/plans`
+ * недоступен) — годится только когда порядок элементов уже канонический.
+ */
+export function groupPreOrdered<T>(
+  items: T[],
+  getPlan: (item: T) => { id: number | null; name: string | null },
+): PlanGroup<T>[] {
+  const groups: PlanGroup<T>[] = []
+  for (const item of items) {
+    const { id, name } = getPlan(item)
+    const key = id != null ? String(id) : NO_PLAN_KEY
+    const last = groups[groups.length - 1]
+    if (last && last.key === key) {
+      last.items.push(item)
+    } else {
+      groups.push({ key, label: key === NO_PLAN_KEY ? NO_PLAN_LABEL : (name ?? 'Тариф'), items: [item] })
+    }
+  }
+  return groups
+}

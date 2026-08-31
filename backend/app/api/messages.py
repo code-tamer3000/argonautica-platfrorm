@@ -151,7 +151,7 @@ async def send_message(
     )
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
-    assert_can_write(current_user)  # наблюдатель не пишет никуда (в т.ч. в новости)
+    await assert_can_write(session, room, current_user)  # наблюдатель не пишет никуда (в т.ч. в новости)
 
     # Личный канал: верхнеуровневые сообщения только от владельца.
     # Thread-ответы (reply_to_message_id задан) разрешены всем — это «комментарии».
@@ -463,7 +463,7 @@ async def edit_message(
     удаления). Стикер/вложение-only править нечего → 400. Удалённое → 404."""
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
-    assert_can_write(current_user)
+    await assert_can_write(session, room, current_user)
 
     message = await session.get(Message, message_id)
     if (
@@ -508,7 +508,7 @@ async def delete_message(
     """Мягкое удаление: автор — своё, admin — любое. Удалённое не попадает в ленту."""
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
-    assert_can_write(current_user)
+    await assert_can_write(session, room, current_user)
 
     message = await session.get(Message, message_id)
     if (
@@ -628,7 +628,7 @@ async def pin_message(
     """Закрепить сообщение. Право — owner/admin (для dm — любой участник). Идемпотентно."""
     room = await load_room(session, room_id)
     membership = await assert_room_access(session, room, current_user)
-    assert_can_write(current_user)
+    await assert_can_write(session, room, current_user)
     assert_can_pin(room, current_user, membership)
 
     message = await session.get(Message, message_id)
@@ -671,7 +671,7 @@ async def unpin_message(
     """Открепить сообщение. Право — то же, что и для закрепления."""
     room = await load_room(session, room_id)
     membership = await assert_room_access(session, room, current_user)
-    assert_can_write(current_user)
+    await assert_can_write(session, room, current_user)
     assert_can_pin(room, current_user, membership)
 
     pin = await session.get(PinnedMessage, (room_id, message_id))

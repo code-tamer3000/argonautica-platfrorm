@@ -38,6 +38,8 @@ export interface UserOut {
   can_access_cabin: boolean
   // Режим наблюдателя: пассивный доступ «только к материалам» (см. AppShell).
   is_observer: boolean
+  // Навигатор (ARG-110): только у role='admin'.
+  is_navigator: boolean
   // Ждём выпускную анкету — AuthGuard перекрывает платформу её экраном.
   survey_required: boolean
   // Экспедиция пройдена (анкета сдана): Динамика скрыта, в Задачах только сданное,
@@ -57,6 +59,9 @@ export interface PublicUserOut {
   avatar_url: string | null
   bio: string | null
   role: Role
+  // Тариф (ARG-110) — денормализован для группировки контакт-листа по секциям.
+  plan_id: number | null
+  plan_name: string | null
 }
 
 export interface RoomOut {
@@ -79,6 +84,9 @@ export interface RoomOut {
   // Только is_personal: тариф владельца дневника (группировка «Все дневники»).
   owner_plan_id?: number | null
   owner_plan_name?: string | null
+  // Только dm: односторонний запрет ответа админу без is_navigator (ARG-110) —
+  // прячем композер, сервер 403-ит тот же путь независимо от этого поля.
+  dm_write_locked?: boolean
 }
 
 export interface MemberOut {
@@ -295,6 +303,9 @@ export interface AdminUserOut {
   can_create_groups: boolean
   can_access_cabin: boolean
   is_observer: boolean
+  // Навигатор (ARG-110): только у role='admin' — доступен для лички любому
+  // тарифу своего потока, минуя ранговое ограничение.
+  is_navigator: boolean
   is_active: boolean
   graduated_at: string | null
   created_at: string

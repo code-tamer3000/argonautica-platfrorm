@@ -55,6 +55,12 @@ class User(Base):
     is_observer: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Навигатор (ARG-110): только у role='admin' — доступен для лички ЛЮБОМУ тарифу
+    # своего потока (обходит ранговое ограничение «пишут только топ-2 тарифа»).
+    # Обычный админ без флага остаётся невидим игроку/наблюдателю в «начать чат».
+    is_navigator: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     # Выпускная анкета экспедиции: админ поднимает флаг — платформа целиком
     # перекрыта экраном анкеты (см. deps.get_current_active_user), пока человек
     # её не отправит. Снимается автоматически при отправке.

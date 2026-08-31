@@ -77,6 +77,7 @@ _PATCHABLE_FIELDS = {
     "can_create_groups",
     "can_access_cabin",
     "is_observer",
+    "is_navigator",
     "role",
     "intake_id",
 }
@@ -418,6 +419,13 @@ async def update_user(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Админ не может быть наблюдателем — это взаимоисключающие режимы",
+        )
+    # Навигатор (ARG-110) имеет смысл только у admin — по образцу is_observer выше.
+    final_navigator = changes.get("is_navigator", user.is_navigator)
+    if final_role != "admin" and final_navigator:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Навигатором может быть только админ",
         )
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:

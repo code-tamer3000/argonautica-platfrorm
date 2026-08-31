@@ -393,7 +393,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           (journalFreeEntry): нельзя написать «просто так», не выбрав ничего.
           НО когда открыт тред — композер показываем всегда (в режиме ответа): ответить
           в тред можно везде, даже там, где верхний уровень запрещён (комментарии). */}
-      {!isGraduated && !isWindowClosed && (threadRootId != null ||
+      {!isGraduated && !isWindowClosed && !room.dm_write_locked && (threadRootId != null ||
         ((!room.is_personal || room.created_by === user?.id) &&
           (!room.is_news || user?.role === 'admin') &&
           (!isOwnPersonal || journalChosen))) && (

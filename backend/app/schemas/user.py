@@ -44,6 +44,9 @@ class AdminUpdateUserRequest(BaseModel):
     can_create_groups: bool | None = None
     can_access_cabin: bool | None = None
     is_observer: bool | None = None
+    # Навигатор (ARG-110): смысл только при role='admin' — валидируется в эндпоинте
+    # (по образцу is_observer/role=admin).
+    is_navigator: bool | None = None
     role: Role | None = None
     # Перевод участника в другой набор — двигает начало его окна Динамики.
     intake_id: int | None = None
@@ -80,6 +83,7 @@ class UserOut(BaseModel):
     can_create_groups: bool
     can_access_cabin: bool
     is_observer: bool = False
+    is_navigator: bool = False
     # Ждём выпускную анкету — фронт перекрывает платформу её экраном (AuthGuard).
     survey_required: bool = False
     # Экспедиция пройдена (анкета сдана): Динамика скрыта, Задачи только сданные,
@@ -94,7 +98,11 @@ class UserOut(BaseModel):
 
 
 class PublicUserOut(BaseModel):
-    """Публичный профиль (директория/по id) — без email/settings."""
+    """Публичный профиль (директория/по id) — без email/settings.
+
+    `plan_id`/`plan_name` (ARG-110) — денормализация тарифа для группировки
+    контакт-листа по секциям на клиенте без второго похода в admin-only API.
+    """
 
     id: int
     username: str
@@ -102,6 +110,8 @@ class PublicUserOut(BaseModel):
     avatar_url: str | None = None
     bio: str | None = None
     role: str
+    plan_id: int | None = None
+    plan_name: str | None = None
 
 
 class AdminUserOut(BaseModel):
@@ -121,6 +131,7 @@ class AdminUserOut(BaseModel):
     can_create_groups: bool
     can_access_cabin: bool
     is_observer: bool = False
+    is_navigator: bool = False
     is_active: bool = True
     graduated_at: datetime | None = None
     created_at: datetime

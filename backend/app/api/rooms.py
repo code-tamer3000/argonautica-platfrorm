@@ -31,8 +31,18 @@ from app.schemas.room import (
     RoomOut,
     UpdateChannelRequest,
 )
-from app.services.rooms import assert_room_access, load_room
-from app.services.visibility import plan_visibility_clause
+from app.services.rooms import (
+    assert_peer_visible,
+    assert_room_access,
+    dm_write_allowed,
+    load_room,
+)
+from app.services.visibility import (
+    can_message_admin,
+    cohort_plan_ranks,
+    plan_visibility_clause,
+    user_rank,
+)
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -83,8 +93,10 @@ async def _create_dm(
 ) -> Room:
     if peer_id is None or peer_id == current.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valid peer_id required for dm")
-    if await session.get(User, peer_id) is None:
+    peer = await session.get(User, peer_id)
+    if peer is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Peer user not found")
+    await assert_peer_visible(session, current, peer)
 
     dm_key = _dm_key(current.id, peer_id)
     existing = (
@@ -210,23 +222,32 @@ async def list_rooms(
     # Каналы: admin видит все; участник — с двойным фильтром поток+тариф (ARG-96),
     # новостной канал больше не исключение (ARG-104) — гейтится тем же правилом,
     # что обычный канал. Личный дневник — особый случай («Все дневники» показывает
-    # и чужие): свой виден всегда, чужой — только тем, у кого совпал и поток, и
-    # тариф с владельцем (сравниваем пользователей напрямую, не intake_id самой
-    # комнаты — та колонка у личных комнат намеренно всегда NULL, см. same_cohort).
+    # и чужие): свой виден всегда, чужой — каскадно по рангу тарифа владельца
+    # (сравниваем пользователей напрямую, не intake_id самой комнаты — та колонка у
+    # личных комнат намеренно всегда NULL, см. diary_visible/ARG-110).
+    ranks: dict[int, int] = {}
     if current_user.role == "admin":
         channel_clause = Room.type == "channel"
     else:
+        ranks = await cohort_plan_ranks(session, current_user.intake_id)
+        # Каскад по рангу тарифа (ARG-110): видны тарифы с рангом <= своему. NULL
+        # (нет тарифа) — ранг 0, отдельная ветка ниже (visible_plan_ids его не несёт).
+        visible_plan_ids = [
+            plan_id
+            for plan_id, rank in ranks.items()
+            if rank <= user_rank(current_user, ranks)
+        ]
         Owner = aliased(User)
         own_personal = and_(
             Room.is_personal.is_(True), Room.created_by == current_user.id
         )
-        others_personal_same_cohort = and_(
+        others_personal_visible = and_(
             Room.is_personal.is_(True),
             Room.created_by != current_user.id,
             exists().where(
                 Owner.id == Room.created_by,
                 Owner.intake_id.is_not_distinct_from(current_user.intake_id),
-                Owner.plan_id.is_not_distinct_from(current_user.plan_id),
+                or_(Owner.plan_id.is_(None), Owner.plan_id.in_(visible_plan_ids)),
             ),
         )
         regular_channel_visible = and_(
@@ -243,7 +264,7 @@ async def list_rooms(
             Room.type == "channel",
             or_(
                 own_personal,
-                others_personal_same_cohort,
+                others_personal_visible,
                 regular_channel_visible,
             ),
         )
@@ -291,6 +312,26 @@ async def list_rooms(
         )
         dm_peer_map = {rid: uid for rid, uid in peer_rows.all()}
 
+    # Одностороннее ограничение записи в dm с админом (ARG-110, часть B): пир —
+    # НЕ-навигатор-админ и у смотрящего нет рангового права ему писать. Админ
+    # сам никогда не блокируется (dm_peer_map тут ни при чём для него).
+    dm_write_locked: dict[int, bool] = {}
+    if current_user.role != "admin" and dm_peer_map:
+        peer_admins = (
+            await session.execute(
+                select(User.id, User.is_navigator).where(
+                    User.id.in_(set(dm_peer_map.values())), User.role == "admin"
+                )
+            )
+        ).all()
+        admin_navigator_map = {uid: nav for uid, nav in peer_admins}
+        for room_id, peer_id in dm_peer_map.items():
+            is_navigator = admin_navigator_map.get(peer_id)
+            if is_navigator is False:
+                dm_write_locked[room_id] = not can_message_admin(
+                    user_rank(current_user, ranks), ranks
+                )
+
     # Комнаты подгрупп потока — тоже батчем: клиент вешает на них виджет голосования.
     node_rows = await session.execute(
         select(
@@ -324,6 +365,7 @@ async def list_rooms(
         item.unread_count = unread.get(room.id, 0)
         if room.type == "dm":
             item.peer_id = dm_peer_map.get(room.id)
+            item.dm_write_locked = dm_write_locked.get(room.id, False)
         node = stream_map.get(room.id)
         if node is not None:
             item.stream_node_id, item.stream_task_id = node
@@ -383,6 +425,7 @@ async def get_room(
             )
         )
         item.peer_id = peer_row.scalar_one_or_none()
+        item.dm_write_locked = not await dm_write_allowed(session, room, current_user)
 
     node_row = await session.execute(
         select(TaskStreamNode.id, TaskStreamNode.task_id).where(
@@ -490,6 +533,7 @@ async def add_member(
     target = await session.get(User, body.user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    await assert_peer_visible(session, current_user, target)
 
     existing = await session.get(RoomMember, (room_id, body.user_id))
     if existing is not None:
