@@ -78,21 +78,25 @@ A revealed/entered lock deep-links to its full reading: `/genkeys?key=N`
 `ExpeditionWheel.tsx` renders the circle in the same visual language as the Gene Keys
 wheel ([GENE_KEYS.md](GENE_KEYS.md) "Wheel"): the hub's Taiji is the shared
 `components/YinYang.tsx` (extracted from `features/genkeys/YinYang.tsx`, both wheels use
-it now, kept small — a mark in the hub, not a shape that fills it) and the element band
-is drawn with `annularSectorPath` from `features/genkeys/wheel.ts` (reused, not
-reimplemented).
+it now, kept small — a mark in the hub, not a shape that fills it, and with no rim
+circle or glow drawn around it — just the mark itself). Element colour lives
+**only** on the day discs (`var(--el-*)`, both stroke and moon-phase fill) — there is
+no colour-filled background wedge per element; a flat coloured quadrant read as too
+literal a "pie chart" and was tried and dropped. `sectorFramePath` (own pure function
+in `wheelGeometry.ts`, the same device as `GrowthFrames` in the Gene Keys wheel) still
+draws a closed golden outline around the *current* stage's quadrant — that's the only
+per-quadrant graphic left besides the day discs and labels.
 
 Layers, centre outward (`CX = CY = 330`, viewBox `0 0 660 660`; radii in
 `wheelGeometry.ts`):
 
 | Radius | Layer |
 |---|---|
-| `R_TAIJI` = 36 | Taiji mark |
-| `R_HUB_RIM` = 62 | hub rim circle |
+| `R_TAIJI` = 36 | Taiji mark (no surrounding ring) |
 | `R_SPOKE_IN..R_SPOKE_OUT` = 62..290 | four diagonal rays at 45°/135°/225°/315° — the cardinal gaps between element labels/locks (which sit at 0/90/180/270), so they never cross either |
 | `R_CENTER` = 96 | Точка Баланса / Финал day ring |
 | `R_LOCK` = 158 | element locks (hexagrams) |
-| `R_BAND_IN..R_BAND_OUT` = 214..300 | element band (annular sectors) — labels at `R_LABEL`/`R_LABEL_DATE`, day discs at `R_DAY` inside it |
+| `R_BAND_IN..R_BAND_OUT` = 214..300 | element band (no fill — day discs at `R_DAY`, element label + air-date at `R_LABEL`) |
 
 The Taiji's `<g>` rotates continuously (96s, linear) with `transform-origin` set
 **inline in pixel coordinates** (`${CX}px ${CY}px`), not via `transform-box: fill-box` —
@@ -101,23 +105,30 @@ around an off-center point instead of the circle's centre (this was the pre-rewr
 bug: the Taiji visibly orbited instead of rotating in place).
 
 The four diagonal rays breathe gold on a shared 6.5s cycle (`wavePulse` in
-`dashboard.module.css`) — the wheel's earlier concentric pulse rings read as a
-distracting bullseye and were replaced with these rays, closer to the plain quadrant
-dividers the very first version had. The "today" halo and an unlockable lock's pulse
-keep their own `pulseDelay(r)` offset (radius-proportional, still in
-`ExpeditionWheel.tsx`) so the two don't flash in lockstep with the rays.
+`dashboard.module.css`) — an earlier version pulsed five concentric rings instead,
+which read as a distracting bullseye; these rays are closer to the plain quadrant
+dividers the very first version had, just animated. The "today" halo and an
+unlockable lock's pulse keep their own `pulseDelay(r)` offset (radius-proportional,
+still in `ExpeditionWheel.tsx`) so the two don't flash in lockstep with the rays.
 
 Every day disc shows its real moon phase (`moon.ts`, filled via `moonLitPath`)
 regardless of state, and additionally gets one of four visual weights — `dayDone`
 (closed/credited/today_closed/pardoned, opacity 0.75), `dayMissed` (opacity 0.35),
 `dayFuture` (opacity 0.28), `dayToday` (full opacity, larger, golden halo) — so a
 completed day, a missed one, and one still ahead read as three distinct states, not
-two conflated ones.
+two conflated ones. The handful of days on the centre ring (`R_CENTER`) render a touch
+larger (r 6.5, today 8) than band days (r 9, today 12.5 — larger still since there are
+many more of them, so a slightly smaller base radius keeps the ring from crowding) so
+they don't get lost that close to the hub.
 
-The current stage's sector (when it's one of the four elements, not
-balance/final) gets a closed golden outline (`sectorFramePath`, one contour: two
-radial sides + inner/outer arcs) — the same device as `GrowthFrames` in the Gene
-Keys wheel.
+The element name and its "эфир dd.MM" sub-label share **one** polar position
+(`R_LABEL`, at the element's cardinal angle) — the date is offset `+16` in **screen** y,
+not a second polar radius. An earlier version placed the date on its own outer radius,
+which is "outward" in a consistent geometric sense but reads inconsistently on screen:
+at the top of the circle "outward" points up, so the date ended up drawn *above* the
+element name instead of below it, while at the bottom it correctly landed below —
+same code, opposite reading order depending which side of the circle you're looking
+at. A fixed screen-space offset reads the same everywhere.
 
 Outside the circle (`expedition.today == null` — before start or after the window
 closes) the hub simply omits its second line rather than showing placeholder text; the

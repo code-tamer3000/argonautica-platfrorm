@@ -73,21 +73,9 @@
   overflow: visible;
 }
 
-/* --- Полоса стихий (кольцевые секторы) --- */
-
-.band {
-  stroke: var(--bg);
-  stroke-width: 1;
-  opacity: 0.16;
-  transition: opacity 0.3s ease;
-}
-
-.bandActive {
-  stroke: var(--bg);
-  stroke-width: 1;
-  opacity: 0.34;
-  transition: opacity 0.3s ease;
-}
+/* Цвет стихии живёт ТОЛЬКО на лунах дней (day.element → --el-*, см. ExpeditionWheel.tsx)
+   — закрашенная кольцевая полоса-фон убрана: явно раскрашенный квадрант читался
+   слишком буквально, «где какая стихия» и так видно по цвету лун и подписи. */
 
 /* Золотая рамка вокруг сектора текущего этапа — аналог GrowthFrames в колесе
    Генных Ключей: один закрытый контур, а не мигающая заливка. */
@@ -230,27 +218,8 @@
 }
 
 /* --- Центр: инь-ян --- */
-
-.hubGlow {
-  fill: var(--accent);
-  opacity: 0.1;
-  transform-box: fill-box;
-  transform-origin: center;
-  /* Тот же период 6.5s, что и бегущая волна, без задержки — хаб дышит там,
-     где волна рождается. */
-  animation: hubBreathe 6.5s ease-in-out infinite;
-}
-
-@keyframes hubBreathe {
-  0%, 100% { opacity: 0.06; transform: scale(0.94); }
-  50% { opacity: 0.16; transform: scale(1.06); }
-}
-
-.hubRing {
-  fill: var(--bg);
-  stroke: var(--accent);
-  stroke-width: 1;
-}
+/* Без обводки/подсветки вокруг знака — только сам инь-ян, кольцо и дышащий
+   ореол читались лишним «внутренним кругом» рядом с ним. */
 
 /* transform-origin задаётся ИНЛАЙН в ExpeditionWheel.tsx в координатах круга
    (`${CX}px ${CY}px`), а не через transform-box:fill-box здесь — тайцзи не
@@ -458,7 +427,6 @@
 @media (prefers-reduced-motion: reduce) {
   .todayHalo,
   .lockMark[data-state='unlockable'] .lockIcon,
-  .hubGlow,
   .hubSpin,
   .pulseSpoke {
     animation: none;

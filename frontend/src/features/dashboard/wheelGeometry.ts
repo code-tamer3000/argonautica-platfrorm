@@ -16,12 +16,11 @@ export const CY = 330
 
 // Слои от центра наружу (см. docs/EXPEDITION.md «Визуальный слой»).
 export const R_TAIJI = 36 // инь-ян в хабе — компактный знак, не заполняет весь хаб
-export const R_HUB_RIM = 62 // ободок хаба
+export const R_HUB_RIM = 62 // граница хаба — откуда начинаются диагональные лучи (нет отдельного видимого кольца)
 export const R_CENTER = 96 // кольцо дней Точки Баланса / Финала
 export const R_LOCK = 158 // замки стихий (гексаграммы)
 export const R_BAND_IN = 214 // внутренняя граница полосы стихий
-export const R_LABEL = 238 // подпись стихии
-export const R_LABEL_DATE = 250 // подпись даты эфира
+export const R_LABEL = 238 // подпись стихии (дата эфира — тем же радиусом, +16px вниз в ExpeditionWheel.tsx)
 export const R_DAY = 280 // диски-луны дней
 export const R_BAND_OUT = 300 // внешняя граница полосы стихий
 
