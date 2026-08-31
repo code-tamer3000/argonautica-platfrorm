@@ -1133,6 +1133,12 @@
   transition: background 0.14s ease, border-color 0.14s ease;
 }
 .refRow:hover { background: rgba(194, 154, 72, 0.07); }
+.refCategoryTitle {
+  font-family: var(--font-t4); font-size: var(--text-label); text-transform: uppercase;
+  letter-spacing: var(--ls-label); color: var(--text-ghost);
+  padding: var(--space-2) var(--space-3) 2px;
+}
+.refCategoryTitle:first-child { padding-top: 0; }
 .refRowIcon { flex: 0 0 auto; font-size: 16px; }
 .refRowTitle {
   flex: 1; min-width: 0; font-size: var(--text-ui);
