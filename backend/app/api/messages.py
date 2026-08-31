@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.media import MediaAsset
-from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.message import Message, MessageAttachment, MessageReaction, PinnedMessage
 from app.models.sticker import Sticker
 from app.models.user import User
 from app.schemas.media import AttachmentOut
@@ -95,6 +95,33 @@ async def _unread_replies_map(
     return {root_id: count for root_id, count in rows.all()}
 
 
+async def _reactions_map(
+    session: AsyncSession, message_ids: list[int], viewer_id: int
+) -> dict[int, tuple[int, bool]]:
+    """message_id -> (count, reacted_by_viewer), одним запросом (без N+1)."""
+    if not message_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            MessageReaction.message_id,
+            func.count(),
+            func.bool_or(MessageReaction.user_id == viewer_id),
+        )
+        .where(MessageReaction.message_id.in_(message_ids))
+        .group_by(MessageReaction.message_id)
+    )
+    return {message_id: (count, reacted) for message_id, count, reacted in rows.all()}
+
+
+async def _reaction_count(session: AsyncSession, message_id: int) -> int:
+    result = await session.execute(
+        select(func.count())
+        .select_from(MessageReaction)
+        .where(MessageReaction.message_id == message_id)
+    )
+    return result.scalar_one()
+
+
 async def _refs_map(
     session: AsyncSession, messages: list[Message], viewer: User
 ) -> dict[tuple[str, int], MessageRefOut]:
@@ -113,6 +140,7 @@ def _to_out(
     message: Message,
     attachments: list[AttachmentOut],
     refs: dict[tuple[str, int], MessageRefOut] | None = None,
+    reaction: tuple[int, bool] | None = None,
 ) -> MessageOut:
     out = MessageOut.model_validate(message)
     out.attachments = attachments
@@ -120,6 +148,8 @@ def _to_out(
     out.attachment_ids = [att.asset_id for att in attachments]
     if message.ref_kind is not None and message.ref_id is not None and refs is not None:
         out.ref = refs.get((message.ref_kind, message.ref_id))
+    if reaction is not None:
+        out.reaction_count, out.reacted_by_me = reaction
     return out
 
 
@@ -128,13 +158,14 @@ def _pinned_out(
     message: Message,
     attachments: list[AttachmentOut],
     refs: dict[tuple[str, int], MessageRefOut] | None = None,
+    reaction: tuple[int, bool] | None = None,
 ) -> PinnedOut:
     return PinnedOut(
         room_id=pin.room_id,
         message_id=pin.message_id,
         pinned_by=pin.pinned_by,
         pinned_at=pin.pinned_at,
-        message=_to_out(message, attachments, refs),
+        message=_to_out(message, attachments, refs, reaction),
     )
 
 
@@ -396,12 +427,13 @@ async def list_messages(
     messages = list((await session.execute(stmt)).scalars().all())
     attachments = await resolve_attachments(session, [m.id for m in messages])
     refs = await _refs_map(session, messages, current_user)
+    reactions = await _reactions_map(session, [m.id for m in messages], current_user.id)
     # Непрочитанные ответы в тредах — только для корней с ответами (иначе лишний скан).
     roots_with_replies = [m.id for m in messages if m.reply_count > 0]
     unread = await _unread_replies_map(session, roots_with_replies, last_read)
     out = []
     for m in messages:
-        item = _to_out(m, attachments.get(m.id, []), refs)
+        item = _to_out(m, attachments.get(m.id, []), refs, reactions.get(m.id))
         item.unread_reply_count = unread.get(m.id, 0)
         out.append(item)
     return out
@@ -446,9 +478,15 @@ async def get_thread(
         session, [root.id, *[r.id for r in replies]]
     )
     refs = await _refs_map(session, [root, *replies], current_user)
+    reactions = await _reactions_map(
+        session, [root.id, *[r.id for r in replies]], current_user.id
+    )
     return ThreadOut(
-        root=_to_out(root, attachments.get(root.id, []), refs),
-        replies=[_to_out(r, attachments.get(r.id, []), refs) for r in replies],
+        root=_to_out(root, attachments.get(root.id, []), refs, reactions.get(root.id)),
+        replies=[
+            _to_out(r, attachments.get(r.id, []), refs, reactions.get(r.id))
+            for r in replies
+        ],
     )
 
 
@@ -488,8 +526,13 @@ async def edit_message(
 
     attachments = await resolve_attachments(session, [message.id])
     refs = await _refs_map(session, [message], current_user)
-    out = _to_out(message, attachments.get(message.id, []), refs)
-    ws_out = _to_out(message, attachments.get(message.id, []))
+    reaction = (await _reactions_map(session, [message.id], current_user.id)).get(message.id)
+    out = _to_out(message, attachments.get(message.id, []), refs, reaction)
+    # ws_out идёт в общий бродкаст на всю комнату: reacted_by_me — персональное для
+    # каждого зрителя поле, кладём в бродкаст только свежий count (см. docs/MESSAGES.md,
+    # frontend сохраняет свой локальный reacted_by_me при обработке message.edited).
+    ws_reaction = (reaction[0], False) if reaction is not None else None
+    ws_out = _to_out(message, attachments.get(message.id, []), reaction=ws_reaction)
     if message.ref_kind is not None and message.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
@@ -656,7 +699,8 @@ async def pin_message(
 
     attachments = await resolve_attachments(session, [message.id])
     refs = await _refs_map(session, [message], current_user)
-    return _pinned_out(pin, message, attachments.get(message.id, []), refs)
+    reaction = (await _reactions_map(session, [message.id], current_user.id)).get(message.id)
+    return _pinned_out(pin, message, attachments.get(message.id, []), refs, reaction)
 
 
 @router.delete(
@@ -686,6 +730,69 @@ async def unpin_message(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+# --- реакции (один фиксированный образ, MVP) --------------------------------
+
+
+@router.post("/{room_id}/messages/{message_id}/reaction", status_code=201)
+async def add_reaction(
+    room_id: int,
+    message_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Поставить реакцию. Право — любой пишущий участник комнаты (без ролевого
+    гейта пина — реакция не пост). Идемпотентно: повторный вызов — 200, без дубля."""
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+    await assert_can_write(session, room, current_user)
+
+    message = await session.get(Message, message_id)
+    if (
+        message is None
+        or message.room_id != room_id
+        or message.deleted_at is not None
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
+
+    existing = await session.get(MessageReaction, (message_id, current_user.id))
+    if existing is not None:
+        return Response(status_code=status.HTTP_200_OK)  # уже поставлена — не дублим
+
+    session.add(MessageReaction(message_id=message_id, user_id=current_user.id))
+    await session.flush()
+    count = await _reaction_count(session, message_id)
+    event = ws_schemas.reaction_added_event(room_id, message_id, current_user.id, count)
+    after_commit(session, lambda: publish_room_event(room_id, event))
+    return Response(status_code=status.HTTP_201_CREATED)
+
+
+@router.delete(
+    "/{room_id}/messages/{message_id}/reaction",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_reaction(
+    room_id: int,
+    message_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Снять свою реакцию. Право — то же, что и для постановки."""
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+    await assert_can_write(session, room, current_user)
+
+    existing = await session.get(MessageReaction, (message_id, current_user.id))
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Reaction not found")
+
+    await session.delete(existing)
+    await session.flush()
+    count = await _reaction_count(session, message_id)
+    event = ws_schemas.reaction_removed_event(room_id, message_id, current_user.id, count)
+    after_commit(session, lambda: publish_room_event(room_id, event))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{room_id}/pins", response_model=list[PinnedOut])
 async def list_pins(
     room_id: int,
@@ -708,8 +815,10 @@ async def list_pins(
     pairs = list(rows.all())
     attachments = await resolve_attachments(session, [m.id for _, m in pairs])
     refs = await _refs_map(session, [m for _, m in pairs], current_user)
+    reactions = await _reactions_map(session, [m.id for _, m in pairs], current_user.id)
     return [
-        _pinned_out(p, m, attachments.get(m.id, []), refs) for p, m in pairs
+        _pinned_out(p, m, attachments.get(m.id, []), refs, reactions.get(m.id))
+        for p, m in pairs
     ]
 
 

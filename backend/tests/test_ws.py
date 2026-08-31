@@ -168,6 +168,49 @@ async def test_deleted_message_delivered(
             assert event["message_id"] == message_id
 
 
+async def test_reaction_delivered(
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id, "member")
+
+    async with _client() as client:
+        b_headers = auth_headers(await _token(client, b))
+        async with aconnect_ws(_ws_url(await _token(client, a)), client) as ws_a:
+            await ws_a.send_json({"type": "subscribe", "room_id": room.id})
+            await _wait(ws_a, _is("subscribed"))
+
+            posted = await client.post(
+                f"/api/rooms/{room.id}/messages",
+                headers=b_headers,
+                json={"content": "react to me"},
+            )
+            message_id = posted.json()["id"]
+            await _wait(ws_a, _is("message.new"))
+
+            added = await client.post(
+                f"/api/rooms/{room.id}/messages/{message_id}/reaction", headers=b_headers
+            )
+            assert added.status_code == 201
+            event = await _wait(ws_a, _is("reaction.added"))
+            assert event["message_id"] == message_id
+            assert event["user_id"] == b.id
+            assert event["count"] == 1
+
+            removed = await client.delete(
+                f"/api/rooms/{room.id}/messages/{message_id}/reaction", headers=b_headers
+            )
+            assert removed.status_code == 204
+            event = await _wait(ws_a, _is("reaction.removed"))
+            assert event["message_id"] == message_id
+            assert event["count"] == 0
+
+
 async def test_read_receipt_delivered(
     make_user: MakeUser,
     make_room: MakeRoom,

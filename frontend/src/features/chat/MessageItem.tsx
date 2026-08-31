@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useEditMessage } from '../../api/messages'
+import { useToggleReaction } from '../../api/reactions'
 import { useStickerMap } from '../../api/stickers'
 import { Avatar } from '../../components/Avatar'
 import { IconBook, IconChevronDown, IconTasks } from '../../components/icons'
@@ -9,7 +10,9 @@ import { renderMarkdown } from '../../lib/markdown'
 import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut } from '../../lib/types'
+import { useAuth } from '../auth/AuthContext'
 import { Attachment } from './Attachment'
+import { ReactionChip } from './ReactionChip'
 import styles from './chat.module.css'
 
 interface Props {
@@ -54,6 +57,12 @@ function MessageItemInner({
 }: Props) {
   const stickerMap = useStickerMap()
   const editMutation = useEditMessage(msg.room_id)
+  const toggleReaction = useToggleReaction(msg.room_id)
+  const { user } = useAuth()
+  // Выпускник реакцию поставить не может — тот же барьер, что и на остальную
+  // запись (см. isGraduated в useMessageMenu.tsx). Наблюдатель сюда не попадает:
+  // чат для него закрыт целиком на уровне assert_room_access.
+  const canReact = !user?.graduated_at
   const navigate = useNavigate()
 
   const [editText, setEditText] = useState(msg.content ?? '')
@@ -230,6 +239,13 @@ function MessageItemInner({
                 <div className={styles.msgText}>{contentParts}</div>
               )
             )}
+
+            <ReactionChip
+              count={msg.reaction_count}
+              reactedByMe={msg.reacted_by_me}
+              disabled={!canReact}
+              onToggle={() => toggleReaction.mutate(msg)}
+            />
           </>
         )}
 

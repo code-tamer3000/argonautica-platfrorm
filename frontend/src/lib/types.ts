@@ -118,6 +118,9 @@ export interface MessageOut {
   // Ссылка на материал КБ / задачу (одна на сообщение). null = ссылки нет.
   // title/available резолвит сервер для текущего зрителя.
   ref?: MessageRefOut | null
+  // Реакция (MVP: один фиксированный образ). reacted_by_me — для текущего зрителя.
+  reaction_count: number
+  reacted_by_me: boolean
   // --- клиентские поля (только для оптимистичных сообщений из outbox) ---
   // Присутствует лишь у ещё не подтверждённых сервером сообщений: id при этом
   // отрицательный (временный), а _outbox описывает статус доставки. У реальных
@@ -637,6 +640,8 @@ export type WsEvent =
   | { type: 'message.deleted'; room_id: number; message_id: number }
   | { type: 'pin.added'; room_id: number; message_id: number; pinned_by: number }
   | { type: 'pin.removed'; room_id: number; message_id: number }
+  | { type: 'reaction.added'; room_id: number; message_id: number; user_id: number; count: number }
+  | { type: 'reaction.removed'; room_id: number; message_id: number; user_id: number; count: number }
   | { type: 'read'; room_id: number; user_id: number; last_read_message_id: number | null }
   | { type: 'typing'; room_id: number; user_id: number }
   | { type: 'presence'; user_id: number; status: 'online' | 'offline' }
