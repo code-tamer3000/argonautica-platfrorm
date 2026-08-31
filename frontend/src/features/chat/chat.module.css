@@ -465,7 +465,13 @@
   cursor: pointer;
   object-fit: contain;
 }
-/* Легаси без width/height: у коробки нет aspect-ratio → пусть высоту задаёт сама картинка. */
+/* Легаси без width/height: у коробки нет aspect-ratio → пусть высоту задаёт сама картинка.
+   До загрузки/декодирования у img нет собственных размеров — без min-height коробка
+   схлопывается в тонкую полоску (незаметно на быстрой сети, но на медленной／iOS видно
+   явно: вместо места под фото — одна строка). min-height держит разумный плейсхолдер,
+   пока не пришли реальные размеры; финальная картинка может быть выше — это осознанный
+   компромисс для случая, где мы заранее не знаем пропорций. */
+.attImageWrap:not([style*='aspect-ratio']) { min-height: 160px; }
 .attImageWrap:not([style*='aspect-ratio']) .attImage { height: auto; }
 .attVideo { max-width: 320px; max-height: 280px; border-radius: var(--radius-media); }
 .attFile {
