@@ -30,7 +30,8 @@ async def _plan_names(session: AsyncSession, users: list[User]) -> dict[int, str
     if not plan_ids:
         return {}
     rows = await session.execute(select(Plan.id, Plan.name).where(Plan.id.in_(plan_ids)))
-    return dict(rows.all())
+    # .tuples() — обычные кортежи вместо Row: dict() их принимает, и mypy это видит.
+    return dict(rows.tuples().all())
 
 
 def _public_out(
