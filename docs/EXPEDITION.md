@@ -94,7 +94,7 @@ Layers, centre outward (`CX = CY = 350`, viewBox `0 0 700 700`; radii in
 |---|---|
 | `R_TAIJI` = 36 | Taiji mark (no surrounding ring) |
 | `R_CENTER` = 96 | Точка Баланса / Финал day ring |
-| `R_SPOKE_IN..R_SPOKE_OUT` = 112..226 | four diagonal rays at 45°/135°/225°/315° |
+| `R_SPOKE_IN..R_SPOKE_OUT` = 112..234 | four diagonal rays at 45°/135°/225°/315° |
 | `R_LOCK` = 150 | element locks (hexagrams) |
 | `R_FRAME_IN..R_FRAME_OUT` = 180..236 | golden outline around the current stage's quadrant — day discs (`R_DAY` = 210) sit inside this range |
 | `R_LABEL` = 288 | element name + "эфир dd.MM", **outermost** ring, past every other layer |
@@ -114,12 +114,16 @@ the mark's own path isn't centered in its bounding box, so `fill-box` would spin
 around an off-center point instead of the circle's centre (this was the pre-rewrite
 bug: the Taiji visibly orbited instead of rotating in place).
 
-The four diagonal rays breathe gold on a shared 6.5s cycle (`wavePulse` in
-`dashboard.module.css`) — an earlier version pulsed five concentric rings instead,
-which read as a distracting bullseye; these rays are closer to the plain quadrant
-dividers the very first version had, just animated. The "today" halo and an
-unlockable lock's pulse keep their own `pulseDelay(r)` offset (radius-proportional,
-still in `ExpeditionWheel.tsx`) so the two don't flash in lockstep with the rays.
+The four diagonal rays are visibly gold at rest (opacity 0.4) and breathe brighter
+(0.9) on a shared 6.5s cycle (`wavePulse` in `dashboard.module.css`) — an earlier
+version pulsed five concentric rings instead, which read as a distracting bullseye;
+these rays are closer to the plain quadrant dividers the very first version had, just
+animated and brighter. `R_SPOKE_OUT` deliberately reaches past a day disc's own max
+extent (`R_DAY` + today radius 12.5 + halo 6 ≈ 228.5), not up to it — a ray that
+stopped exactly at the disc read as clipped short rather than passing behind it. The
+"today" halo and an unlockable lock's pulse keep their own `pulseDelay(r)` offset
+(radius-proportional, still in `ExpeditionWheel.tsx`) so the two don't flash in
+lockstep with the rays.
 
 Every day disc shows its real moon phase (`moon.ts`, filled via `moonLitPath`)
 regardless of state, and additionally gets one of four visual weights — `dayDone`

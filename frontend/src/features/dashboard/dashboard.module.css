@@ -62,7 +62,11 @@
   aspect-ratio: 1;
   margin: 0 auto;
   border-radius: var(--radius-card);
-  background: radial-gradient(closest-side at 50% 50%, color-mix(in oklab, var(--bg-sea) 20%, transparent), transparent 72%);
+  /* --bg-sea-soft, не --bg-sea: последний не переопределён на светлой теме,
+     то есть тянет за собой ЯРКИЙ --color-more (#1C6156) — на светлом фоне это
+     читалось как перебивающая зелёная подсветка. --bg-sea-soft для этого и
+     заведён (см. комментарий над ним в tokens.css). */
+  background: radial-gradient(closest-side at 50% 50%, color-mix(in oklab, var(--bg-sea-soft) 20%, transparent), transparent 72%);
   padding: var(--space-1);
 }
 
@@ -87,12 +91,13 @@
   pointer-events: none;
 }
 
-/* --- Диагональные лучи от хаба: тихо пульсируют золотом, единый ритм 6.5s
-   (см. dashboard.module.css .todayHalo/.lockMark ниже — тот же период). --- */
+/* --- Диагональные лучи от хаба: заметно золотые сразу, дышат ярче на общем
+   ритме 6.5s (см. dashboard.module.css .todayHalo/.lockMark ниже — тот же
+   период). --- */
 
 @keyframes wavePulse {
-  0%, 100% { opacity: 0.12; }
-  50% { opacity: 0.55; }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
 }
 
 .sectorPulse {
@@ -102,8 +107,8 @@
 .pulseSpoke {
   fill: none;
   stroke: var(--accent-bright);
-  stroke-width: 1;
-  filter: drop-shadow(0 0 3px var(--accent));
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 4px var(--accent));
   animation: wavePulse 6.5s ease-in-out infinite;
 }
 
@@ -331,9 +336,11 @@
 }
 
 .sectionDone {
-  border-color: color-mix(in oklab, var(--bg-sea) 60%, var(--divider));
+  /* --bg-sea-soft — тот же повод, что и у .stage выше: --bg-sea не переопределён
+     на светлой теме и тянет насыщенный --color-more. */
+  border-color: color-mix(in oklab, var(--bg-sea-soft) 60%, var(--divider));
   color: var(--text-primary);
-  background: color-mix(in oklab, var(--bg-sea) 16%, transparent);
+  background: color-mix(in oklab, var(--bg-sea-soft) 16%, transparent);
 }
 
 .list {
@@ -431,10 +438,10 @@
   .pulseSpoke {
     animation: none;
   }
-  /* Лучи остаются статичным слабым золотым контуром вместо пульсирующего —
-     круг читается как есть, без движения (см. genkeys.module.css, тот же приём). */
+  /* Лучи остаются статичным золотым контуром вместо пульсирующего — круг
+     читается как есть, без движения (см. genkeys.module.css, тот же приём). */
   .pulseSpoke {
-    opacity: 0.18;
+    opacity: 0.5;
   }
 }
 
