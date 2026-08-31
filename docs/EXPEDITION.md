@@ -6,8 +6,8 @@
 
 The platform's landing screen (`/`, replaces the old redirect-to-Рубка). Shows where a
 participant is in the expedition — a 28-day circle of real moon phases split into six
-stages — plus a compact digest of what needs attention today (journal, tasks, calendar,
-notifications, news). Four of the six stages carry an **element lock**: a private slot
+stages — plus a compact digest of what needs attention today (tasks, calendar, notifications,
+news). Four of the six stages carry an **element lock**: a private slot
 the participant fills once a stage's broadcast has aired, with a Gene Key hexagram (see
 [GENE_KEYS.md](GENE_KEYS.md)).
 
