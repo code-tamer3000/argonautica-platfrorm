@@ -5,10 +5,12 @@ import {
   useUpdateCalendarEvent,
   useDeleteCalendarEvent,
 } from '../../api/calendar'
+import { useAdminIntakes } from '../../api/admin'
+import { useAdminPlans } from '../../api/plans'
 import type { CalendarEventOut } from '../../lib/types'
 import { dateTimeMsk } from '../../lib/format'
-import { useRooms } from '../../api/rooms'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { PageHeader } from '../../components/PageHeader'
@@ -20,7 +22,8 @@ interface EventFormValues {
   starts_at: string
   ends_at: string
   all_day: boolean
-  room_id: string
+  intake_id: number | null
+  plan_ids: number[]
 }
 
 // Москва фиксированно UTC+3 (без переходов на летнее время с 2014), поэтому
@@ -49,11 +52,11 @@ function formatDatetime(iso: string): string {
 
 interface EventFormProps {
   initial?: CalendarEventOut
-  rooms: { id: number; name: string | null; type: string }[]
   onSubmit: (values: EventFormValues) => void
 }
 
-function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
+function EventForm({ initial, onSubmit }: EventFormProps) {
+  const editing = !!initial
   const [title, setTitle] = useState(initial?.title ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [startsAt, setStartsAt] = useState(
@@ -63,13 +66,33 @@ function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
     initial?.ends_at ? toDatetimeLocalMsk(initial.ends_at) : '',
   )
   const [allDay, setAllDay] = useState(initial?.all_day ?? false)
-  const [roomId, setRoomId] = useState(
-    initial?.room_id != null ? String(initial.room_id) : '',
+  // Новое событие по умолчанию берёт «текущий поток» админа (ARG-104); при
+  // редактировании — сохранённое значение как есть, даже если это null.
+  const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const [intakeId, setIntakeId] = useState<number | null>(
+    editing ? (initial?.intake_id ?? null) : adminCurrentIntakeId,
   )
+  const [planIds, setPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
+  const { data: intakes = [] } = useAdminIntakes()
+  const { data: plans = [] } = useAdminPlans()
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ title, description, starts_at: startsAt, ends_at: endsAt, all_day: allDay, room_id: roomId })
+    onSubmit({
+      title,
+      description,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      all_day: allDay,
+      intake_id: intakeId,
+      plan_ids: planIds,
+    })
+  }
+
+  function togglePlan(planId: number) {
+    setPlanIds((prev) =>
+      prev.includes(planId) ? prev.filter((id) => id !== planId) : [...prev, planId],
+    )
   }
 
   return (
@@ -120,20 +143,40 @@ function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
         Весь день
       </label>
       <label className={styles.label}>
-        Комната
+        Набор
         <select
           className={styles.input}
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value)}
+          value={intakeId ?? ''}
+          onChange={(e) => setIntakeId(e.target.value ? Number(e.target.value) : null)}
         >
-          <option value="">— нет комнаты —</option>
-          {rooms.map((r) => (
-            <option key={r.id} value={String(r.id)}>
-              {r.name ?? `#${r.id} (${r.type})`}
+          <option value="">Общий для всех потоков</option>
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {intake.starts_on} – {intake.ends_on}
             </option>
           ))}
         </select>
       </label>
+      <div className={styles.label}>
+        Тарифы
+        {plans.length === 0 ? (
+          <p className={styles.mediaEmpty}>Тарифов пока нет</p>
+        ) : (
+          <div className={styles.list}>
+            {plans.map((plan) => (
+              <label key={plan.id} className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={planIds.includes(plan.id)}
+                  onChange={() => togglePlan(plan.id)}
+                />
+                {plan.name}
+              </label>
+            ))}
+          </div>
+        )}
+        <p className={styles.mediaEmpty}>Ничего не выбрано — доступен всем тарифам потока</p>
+      </div>
       <div className={styles.formActions}>
         <Button type="submit">Сохранить</Button>
       </div>
@@ -143,7 +186,6 @@ function EventForm({ initial, rooms, onSubmit }: EventFormProps) {
 
 export function AdminCalendar() {
   const { data: events = [] } = useCalendarEvents()
-  const { data: rooms = [] } = useRooms()
   const createEvent = useCreateCalendarEvent()
   const updateEvent = useUpdateCalendarEvent()
   const deleteEvent = useDeleteCalendarEvent()
@@ -159,7 +201,8 @@ export function AdminCalendar() {
         starts_at: mskLocalToIso(values.starts_at),
         ends_at: values.ends_at ? mskLocalToIso(values.ends_at) : null,
         all_day: values.all_day,
-        room_id: values.room_id ? Number(values.room_id) : null,
+        intake_id: values.intake_id,
+        plan_ids: values.plan_ids,
       },
       {
         onSuccess: () => {
@@ -182,6 +225,8 @@ export function AdminCalendar() {
         starts_at: mskLocalToIso(values.starts_at),
         ends_at: values.ends_at ? mskLocalToIso(values.ends_at) : null,
         all_day: values.all_day,
+        intake_id: values.intake_id,
+        plan_ids: values.plan_ids,
       },
       {
         onSuccess: () => {
@@ -237,13 +282,13 @@ export function AdminCalendar() {
 
       {createOpen && (
         <Modal title="Создать событие" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
-          <EventForm rooms={rooms} onSubmit={handleCreate} />
+          <EventForm onSubmit={handleCreate} />
         </Modal>
       )}
 
       {editEvent && (
         <Modal title="Редактировать событие" onClose={() => setEditEvent(null)} closeOnBackdrop={false}>
-          <EventForm rooms={rooms} initial={editEvent} onSubmit={handleEdit} />
+          <EventForm initial={editEvent} onSubmit={handleEdit} />
         </Modal>
       )}
     </div>

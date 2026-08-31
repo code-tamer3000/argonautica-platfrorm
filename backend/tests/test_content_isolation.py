@@ -244,6 +244,75 @@ async def test_task_media_access_gated_by_isolation(
     assert denied.status_code == 403
 
 
+# --- события календаря (ARG-111) ------------------------------------------------
+
+
+async def test_calendar_event_isolated_by_intake(client: AsyncClient, make_user: MakeUser) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    mine = await make_user(intake_starts_on=date.today() - timedelta(days=100))
+    other = await make_user(intake_starts_on=date.today() - timedelta(days=1))
+
+    created = await client.post(
+        "/api/calendar/events",
+        headers=admin_h,
+        json={
+            "title": "Своему потоку",
+            "starts_at": "2026-07-01T10:00:00Z",
+            "intake_id": mine.intake_id,
+        },
+    )
+    assert created.status_code == 201, created.text
+    event_id = created.json()["id"]
+
+    mine_h = await _headers(client, mine)
+    other_h = await _headers(client, other)
+
+    mine_listed = await client.get("/api/calendar/events", headers=mine_h)
+    assert event_id in {e["id"] for e in mine_listed.json()}
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=mine_h)
+    ).status_code == 200
+
+    other_listed = await client.get("/api/calendar/events", headers=other_h)
+    assert event_id not in {e["id"] for e in other_listed.json()}
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=other_h)
+    ).status_code == 403
+
+
+async def test_calendar_event_isolated_by_plan(client: AsyncClient, make_user: MakeUser) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    plan_a = await _create_plan(client, admin_h, "Тариф Е")
+    with_plan = await make_user(plan_id=plan_a)
+    without_plan = await make_user(plan_id=None)
+
+    created = await client.post(
+        "/api/calendar/events",
+        headers=admin_h,
+        json={
+            "title": "Только тариф Е",
+            "starts_at": "2026-07-01T10:00:00Z",
+            "plan_ids": [plan_a],
+        },
+    )
+    assert created.status_code == 201, created.text
+    event_id = created.json()["id"]
+
+    with_h = await _headers(client, with_plan)
+    without_h = await _headers(client, without_plan)
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=with_h)
+    ).status_code == 200
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=without_h)
+    ).status_code == 403
+
+    without_listed = await client.get("/api/calendar/events", headers=without_h)
+    assert event_id not in {e["id"] for e in without_listed.json()}
+
+
 # --- материалы базы знаний -------------------------------------------------------
 
 
@@ -410,12 +479,12 @@ async def test_create_intake_requires_ends_on_after_starts_on(
 # --- личные дневники в разделе «Все дневники» ------------------------------------
 #
 # Дневник виден не только владельцу («Все дневники» — реальная фича, не утечка):
-# чужой дневник открыт, только если тот же поток и ранг тарифа владельца <= рангу
-# смотрящего — каскад (см. diary_visible в app/services/visibility.py, ARG-110).
-# Сама комната своего intake_id не несёт — сравниваются владелец и смотрящий
-# напрямую. Тесты ниже используют одинаковый тариф (rank(owner) == rank(peer)) —
-# каскад тривиально сводится к прежнему точному равенству; test_rank_visibility.py
-# проверяет собственно асимметрию (разные ранги внутри потока).
+# чужой дневник открыт, только если тот же поток — тариф владельца на видимость
+# не влияет (см. diary_visible в app/services/visibility.py, ARG-112; было
+# каскадное ранговое правило ARG-110, для дневников отменено по решению
+# пользователя). Сама комната своего intake_id не несёт — сравниваются владелец
+# и смотрящий напрямую. test_rank_visibility.py::test_diary_visible_across_plans
+# проверяет видимость между разными тарифами явно.
 
 
 async def test_personal_diary_visible_within_same_cohort(
@@ -454,9 +523,10 @@ async def test_personal_diary_hidden_across_intake(
     assert room.id not in {r["id"] for r in listed.json()}
 
 
-async def test_personal_diary_hidden_across_plan(
+async def test_personal_diary_visible_across_plan_same_intake(
     client: AsyncClient, session: AsyncSession, make_user: MakeUser
 ) -> None:
+    """Тариф владельца на видимость дневника не влияет (ARG-112) — только поток."""
     admin = await make_user(role="admin")
     admin_h = await _headers(client, admin)
     plan_a = await _create_plan(client, admin_h, "Тариф Д")
@@ -467,10 +537,10 @@ async def test_personal_diary_hidden_across_plan(
 
     other_h = await _headers(client, other_plan)
     one = await client.get(f"/api/rooms/{room.id}", headers=other_h)
-    assert one.status_code == 403
+    assert one.status_code == 200
 
     listed = await client.get("/api/rooms", headers=other_h)
-    assert room.id not in {r["id"] for r in listed.json()}
+    assert room.id in {r["id"] for r in listed.json()}
 
 
 async def test_personal_diary_always_visible_to_owner_and_admin(

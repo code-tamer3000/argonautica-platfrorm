@@ -1,6 +1,7 @@
 """Каскадная видимость по рангу тарифа (ARG-110): контакт-лист «начать чат»/
 группа, IDOR-check на POST /api/rooms, асимметрия записи в dm админ↔игрок,
-навигатор.
+навигатор. Личные дневники («Все дневники») из-под этого каскада выведены
+(ARG-112) — видимость дневника только по потоку, тесты ниже это фиксируют.
 
 Ранг = позиция тарифа по цене (возрастание) среди тарифов, которые реально
 держат участники потока (см. app/services/visibility.py `cohort_plan_ranks`).
@@ -301,14 +302,15 @@ async def test_dm_navigator_write_allowed_for_any_tier(
     assert view.json()["dm_write_locked"] is False
 
 
-# --- «Все дневники»: тот же каскад (часть C) -----------------------------------
+# --- «Все дневники»: вне рангового каскада, только поток (ARG-112) -------------
 
 
-async def test_diary_cascade_visibility(
+async def test_diary_visible_across_plans_same_intake(
     client: AsyncClient, session: AsyncSession, make_user: MakeUser
 ) -> None:
-    """Спецотряд видит дневник игрока (ниже рангом); игрок дневник спецотряда — нет.
-    Каждый видит свой собственный вне зависимости от ранга."""
+    """Дневники НЕ участвуют в ранговом каскаде (ARG-112, было ARG-110/часть C):
+    игрок видит дневник спецотряда и наоборот — единственное ограничение
+    видимости дневника внутри «Все дневники» это общий поток."""
     _, users = await _three_tier_cohort(client, make_user)
     player_room = await _make_personal_room(session, users["player"].id)
     squad_room = await _make_personal_room(session, users["squad"].id)
@@ -320,11 +322,11 @@ async def test_diary_cascade_visibility(
     assert player_room.id in {r["id"] for r in listed.json()}
 
     player_h = await _headers(client, users["player"])
-    hidden = await client.get(f"/api/rooms/{squad_room.id}", headers=player_h)
-    assert hidden.status_code == 403
+    seen_back = await client.get(f"/api/rooms/{squad_room.id}", headers=player_h)
+    assert seen_back.status_code == 200
     own_listed = await client.get("/api/rooms", headers=player_h)
     ids = {r["id"] for r in own_listed.json()}
-    assert squad_room.id not in ids
+    assert squad_room.id in ids
     assert player_room.id in ids  # свой собственный виден всегда
 
 
@@ -333,11 +335,12 @@ async def test_admin_diary_hidden_from_others(
 ) -> None:
     """`create_user` заводит личный дневник любому аккаунту, включая admin — но
     Динамика не для админов, так что чужой admin-дневник не должен светиться в
-    «Все дневники». Без плана (rank 0) он иначе был бы виден вообще всем."""
+    «Все дневники». Видимость дневника теперь не завязана на тариф (ARG-112) —
+    без явного исключения по роли он был бы виден любому того же потока."""
     _, users = await _three_tier_cohort(client, make_user)
     admin_room = await _make_personal_room(session, users["admin"].id)
 
-    oko_h = await _headers(client, users["oko"])  # верхний ранг — самый разрешающий случай
+    oko_h = await _headers(client, users["oko"])
     hidden = await client.get(f"/api/rooms/{admin_room.id}", headers=oko_h)
     assert hidden.status_code == 403
     listed = await client.get("/api/rooms", headers=oko_h)

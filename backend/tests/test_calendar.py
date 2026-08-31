@@ -1,16 +1,11 @@
-"""Тесты календаря (§4.10): авторство admin-only, видимость project-wide/комната,
-валидация дат, фильтр диапазона. Доступ проверяется на сервере на каждом запросе."""
+"""Тесты календаря (§4.10): авторство admin-only, project-wide видимость всем,
+валидация дат, фильтр диапазона. Изоляция по потоку/тарифу — test_content_isolation.py
+(ARG-96/ARG-111). Доступ проверяется на сервере на каждом запросе."""
 from httpx import AsyncClient
 
 from app.models.user import User
 
-from .conftest import (
-    AddMembership,
-    MakeRoom,
-    MakeUser,
-    auth_headers,
-    login,
-)
+from .conftest import MakeUser, auth_headers, login
 
 
 async def _headers(client: AsyncClient, user: User) -> dict[str, str]:
@@ -46,66 +41,12 @@ async def test_project_wide_visible_to_all(
         title="Всем",
         starts_at="2026-07-01T10:00:00Z",
     )
-    assert event["room_id"] is None
+    assert event["intake_id"] is None
+    assert event["plan_ids"] == []
 
     assert event["id"] in await _event_ids(client, member_headers)
     one = await client.get(f"/api/calendar/events/{event['id']}", headers=member_headers)
     assert one.status_code == 200
-
-
-async def test_group_event_visibility(
-    client: AsyncClient,
-    make_user: MakeUser,
-    make_room: MakeRoom,
-    add_membership: AddMembership,
-) -> None:
-    admin = await make_user(role="admin")
-    owner = await make_user()
-    outsider = await make_user()
-    room = await make_room(created_by=owner.id)
-    await add_membership(room.id, owner.id, "owner")
-
-    event = await _create(
-        client,
-        await _headers(client, admin),
-        title="Встреча группы",
-        starts_at="2026-07-02T10:00:00Z",
-        room_id=room.id,
-    )
-
-    member_headers = await _headers(client, owner)
-    assert event["id"] in await _event_ids(client, member_headers)
-    assert (
-        await client.get(f"/api/calendar/events/{event['id']}", headers=member_headers)
-    ).status_code == 200
-
-    # Посторонний не видит событие комнаты — ни в списке, ни поштучно.
-    outsider_headers = await _headers(client, outsider)
-    assert event["id"] not in await _event_ids(client, outsider_headers)
-    forbidden = await client.get(
-        f"/api/calendar/events/{event['id']}", headers=outsider_headers
-    )
-    assert forbidden.status_code == 403
-
-
-async def test_channel_event_visible_to_all(
-    client: AsyncClient,
-    make_user: MakeUser,
-    make_room: MakeRoom,
-) -> None:
-    admin = await make_user(role="admin")
-    reader = await make_user()
-    channel = await make_room(created_by=admin.id, type="channel", name="Chan")
-
-    event = await _create(
-        client,
-        await _headers(client, admin),
-        title="Канальное",
-        starts_at="2026-07-03T10:00:00Z",
-        room_id=channel.id,
-    )
-    # Вариант А: канал виден любому участнику платформы.
-    assert event["id"] in await _event_ids(client, await _headers(client, reader))
 
 
 async def test_non_admin_cannot_author(

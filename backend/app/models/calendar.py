@@ -1,4 +1,4 @@
-"""События календаря (общие или привязанные к комнате)."""
+"""События календаря (общие или привязанные к дедлайну задачи)."""
 from datetime import datetime
 
 from sqlalchemy import (
@@ -25,8 +25,6 @@ class CalendarEvent(Base):
     all_day: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
-    # NULL = общее событие проекта; заполнено = событие комнаты/канала.
-    room_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("rooms.id"))
     # Автоуправляемая привязка к дедлайну задачи (сервис синхронизирует событие с
     # tasks.deadline_at). NULL = обычное событие, не связанное с задачей.
     task_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tasks.id"))
@@ -35,4 +33,21 @@ class CalendarEvent(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    # Изоляция по потоку (ARG-96/ARG-111): NULL = событие общее для всех потоков.
+    intake_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("intakes.id")
+    )
+
+
+class CalendarEventPlan(Base):
+    """Событие доступно только перечисленным тарифам; пусто = всем тарифам потока."""
+
+    __tablename__ = "calendar_event_plans"
+
+    calendar_event_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("calendar_events.id"), primary_key=True
+    )
+    plan_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("plans.id"), primary_key=True
     )

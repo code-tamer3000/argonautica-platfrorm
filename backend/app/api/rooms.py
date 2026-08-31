@@ -241,21 +241,16 @@ async def list_rooms(
     # Каналы: admin видит все; участник — с двойным фильтром поток+тариф (ARG-96),
     # новостной канал больше не исключение (ARG-104) — гейтится тем же правилом,
     # что обычный канал. Личный дневник — особый случай («Все дневники» показывает
-    # и чужие): свой виден всегда, чужой — каскадно по рангу тарифа владельца
+    # и чужие): свой виден всегда, чужой — по потоку владельца, без учёта тарифа
     # (сравниваем пользователей напрямую, не intake_id самой комнаты — та колонка у
-    # личных комнат намеренно всегда NULL, см. diary_visible/ARG-110).
+    # личных комнат намеренно всегда NULL, см. diary_visible/ARG-112).
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
         channel_clause = Room.type == "channel"
     else:
+        # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
+        # дневников (сразу под этим комментарием) больше не влияет.
         ranks = await cohort_plan_ranks(session, current_user.intake_id)
-        # Каскад по рангу тарифа (ARG-110): видны тарифы с рангом <= своему. NULL
-        # (нет тарифа) — ранг 0, отдельная ветка ниже (visible_plan_ids его не несёт).
-        visible_plan_ids = [
-            plan_id
-            for plan_id, rank in ranks.items()
-            if rank <= user_rank(current_user, ranks)
-        ]
         Owner = aliased(User)
         own_personal = and_(
             Room.is_personal.is_(True), Room.created_by == current_user.id
@@ -267,7 +262,6 @@ async def list_rooms(
                 Owner.id == Room.created_by,
                 Owner.role != "admin",
                 Owner.intake_id.is_not_distinct_from(current_user.intake_id),
-                or_(Owner.plan_id.is_(None), Owner.plan_id.in_(visible_plan_ids)),
             ),
         )
         regular_channel_visible = and_(

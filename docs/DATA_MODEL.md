@@ -89,12 +89,14 @@ simply the one with the largest `starts_on`. Admin API (all under `require_admin
 ## Content isolation by intake and plan (ARG-96)
 
 Admin-authored content — channels (`rooms.type='channel'`), common tasks
-(`tasks.type='common'`), KB items — can be scoped to one intake and/or a set of plans.
-Group/dm rooms and individual/pair/stream tasks are **not** gated by this: they already
-have explicit membership/assignment, which is stronger than intake/plan. See
-[ROOMS.md](ROOMS.md), [TASKS.md](TASKS.md), [KB.md](KB.md) for the exact visibility rules.
+(`tasks.type='common'`), KB items, calendar events (ARG-111) — can be scoped to one
+intake and/or a set of plans. Group/dm rooms and individual/pair/stream tasks are
+**not** gated by this: they already have explicit membership/assignment, which is
+stronger than intake/plan. See [ROOMS.md](ROOMS.md), [TASKS.md](TASKS.md),
+[KB.md](KB.md), [CALENDAR.md](CALENDAR.md) for the exact visibility rules.
 
-**Intake (`intake_id`)** — nullable FK to `intakes` on `rooms`, `tasks`, `kb_items`. `NULL` =
+**Intake (`intake_id`)** — nullable FK to `intakes` on `rooms`, `tasks`, `kb_items`,
+`calendar_events`. `NULL` =
 visible to every intake (the safe backfill default — all pre-ARG-96 content stays NULL,
 except regular non-personal channels/tasks/kb_items, which were backfilled onto the
 historical intake). The news channel (`rooms.is_news`) is gated the same way as a regular
@@ -103,9 +105,9 @@ channel (ARG-104 — was a platform-wide singleton with `intake_id` always NULL 
 singleton backfilled onto the historical intake). Personal diary rooms (`rooms.is_personal`)
 also keep `intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
 [ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
-gated by comparing the owner and the viewer directly — same intake, plus the owner's
-tariff rank ≤ the viewer's (`diary_visible`, cascade rule, ARG-110), not via a column on
-the room itself.
+gated by comparing the owner and the viewer directly — same intake only, tariff plays no
+role (`diary_visible`, ARG-112 — dropped the ARG-110 rank cascade for diaries on purpose),
+not via a column on the room itself.
 
 **Plan (`<entity>_plans`)** — many-to-many, not a column: an empty set of rows = visible to
 every plan of the user's intake; a non-empty set = only the listed plans. This is the only
@@ -117,12 +119,14 @@ ARG-26 (what each plan actually includes) lands.
 | room_plans | room_id (FK rooms), plan_id (FK plans) | PK (room_id, plan_id) |
 | task_plans | task_id (FK tasks), plan_id (FK plans) | PK (task_id, plan_id) |
 | kb_item_plans | kb_item_id (FK kb_items), plan_id (FK plans) | PK (kb_item_id, plan_id) |
+| calendar_event_plans | calendar_event_id (FK calendar_events), plan_id (FK plans) | PK (calendar_event_id, plan_id) |
 
 Visibility check (`app/services/visibility.py`, `intake_visible` / `plan_visibility_clause` /
 `plan_visible`) is a double filter — content must pass **both**: `intake_id IS NULL OR
 intake_id = user.intake_id`, AND `<entity>_plans` empty OR contains `user.plan_id`. Applied
 in `assert_room_access` (channel branch), `assert_task_visible`/`list_tasks` (common branch),
-`assert_kb_item_visible`/`list_items`, and `assert_media_access` (media inherits the
+`assert_kb_item_visible`/`list_items`, `assert_calendar_event_visible`/`list_events` (see
+[CALENDAR.md](CALENDAR.md)), and `assert_media_access` (media inherits the
 visibility of its carrier — channel message, task, or KB item).
 
 Editing `starts_on` and deleting an intake have no API on purpose — see ARG-89.
@@ -397,7 +401,8 @@ See [KB.md](KB.md). **kb_categories** is out-of-MVP (structure only).
 | deleted_at | TIMESTAMPTZ | NULL | soft delete (author/admin) |
 
 ## calendar_events
-See [CALENDAR.md](CALENDAR.md).
+See [CALENDAR.md](CALENDAR.md). Isolated by intake and plan (ARG-111) — see
+"Content isolation by intake and plan" below.
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
@@ -407,9 +412,13 @@ See [CALENDAR.md](CALENDAR.md).
 | starts_at | TIMESTAMPTZ | NOT NULL | |
 | ends_at | TIMESTAMPTZ | NULL | |
 | all_day | BOOLEAN | NOT NULL, default false | |
-| room_id | BIGINT | FK rooms, NULL | NULL = project-wide; set = room/channel event |
+| task_id | BIGINT | FK tasks, NULL | set = auto-managed deadline event synced from `tasks.deadline_at` (services/tasks.py) |
 | created_by | BIGINT | FK users | usually admin |
 | created_at | TIMESTAMPTZ | NOT NULL | |
+| intake_id | BIGINT | FK intakes, NULL | isolation by intake (ARG-111); NULL = every intake |
+| room_id | BIGINT | FK rooms, NULL | **legacy, unused** — old room-scoped visibility mechanism (ARG-111 replaced it with intake/plan). Column kept physically (expand/contract); no code reads/writes it; drop is a separate follow-up task |
+
+**calendar_event_plans** — isolation by plan (ARG-111), many-to-many, same shape as `kb_item_plans`/`task_plans`. PK (`calendar_event_id`, `plan_id`); FKs to calendar_events, plans.
 
 ## Dynamics (journal_programs / journal_sections / journal_pardons / journal_credits)
 Homework entries are `messages` in the personal room — no entry table. The diary
@@ -721,6 +730,7 @@ intake_stages --> tasks                (task_id nullable; task that reveals the 
 rooms --> intakes ; rooms --< room_plans >-- plans       (channel-only isolation, ARG-96)
 tasks --> intakes ; tasks --< task_plans >-- plans       (common-only isolation, ARG-96)
 kb_items --> intakes ; kb_items --< kb_item_plans >-- plans  (isolation, ARG-96)
+calendar_events --> intakes ; calendar_events --< calendar_event_plans >-- plans  (isolation, ARG-111)
 users --< room_members >-- rooms
 users --< messages (sender) >-- rooms
 messages --+ (thread_root_id -> messages.id, self-FK to root)
