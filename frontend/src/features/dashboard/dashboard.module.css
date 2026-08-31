@@ -99,52 +99,24 @@
   pointer-events: none;
 }
 
-/* --- Живая волна: одна анимация на весь круг, задержка растёт с радиусом
-   (см. PULSE_TRAVEL_MS/pulseDelay в ExpeditionWheel.tsx) — единый ритм вместо
-   пяти независимых таймингов, портировано с gkSparkRun/gkRimGlow колеса ГК. --- */
+/* --- Диагональные лучи от хаба: тихо пульсируют золотом, единый ритм 6.5s
+   (см. dashboard.module.css .todayHalo/.lockMark ниже — тот же период). --- */
 
 @keyframes wavePulse {
-  0% { opacity: 0; }
-  12% { opacity: 0.7; }
-  42% { opacity: 0.7; }
-  54% { opacity: 0; }
-  100% { opacity: 0; }
+  0%, 100% { opacity: 0.12; }
+  50% { opacity: 0.55; }
 }
 
 .sectorPulse {
   pointer-events: none;
 }
 
-.pulseArc,
 .pulseSpoke {
   fill: none;
   stroke: var(--accent-bright);
+  stroke-width: 1;
   filter: drop-shadow(0 0 3px var(--accent));
   animation: wavePulse 6.5s ease-in-out infinite;
-  opacity: 0;
-}
-
-.pulseArc {
-  stroke-width: 1;
-}
-
-.pulseSpoke {
-  stroke-width: 1;
-}
-
-.rimGlow {
-  pointer-events: none;
-  fill: none;
-  stroke: var(--accent);
-  animation: rimPulse 6.5s ease-in-out infinite;
-}
-
-@keyframes rimPulse {
-  0% { opacity: 0; stroke-width: 1.5; }
-  12% { opacity: 0.5; stroke-width: 2.5; }
-  42% { opacity: 0.5; stroke-width: 2.5; }
-  54% { opacity: 0; stroke-width: 1.5; }
-  100% { opacity: 0; stroke-width: 1.5; }
 }
 
 /* --- Подписи стихий --- */
@@ -305,30 +277,6 @@
   letter-spacing: 0.1em;
   fill: var(--text-muted);
   text-anchor: middle;
-}
-
-/* --- Легенда под кругом --- */
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4);
-  margin-top: var(--space-4);
-  font-size: var(--text-label-md);
-  color: var(--text-muted);
-}
-
-.legendItem {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.legendSwatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
 }
 
 /* --- Правая колонка --- */
@@ -512,14 +460,11 @@
   .lockMark[data-state='unlockable'] .lockIcon,
   .hubGlow,
   .hubSpin,
-  .pulseArc,
-  .pulseSpoke,
-  .rimGlow {
+  .pulseSpoke {
     animation: none;
   }
-  /* Волна остаётся статичным слабым золотым контуром вместо бегущей — круг
-     читается как есть, без движения (см. genkeys.module.css, тот же приём). */
-  .pulseArc,
+  /* Лучи остаются статичным слабым золотым контуром вместо пульсирующего —
+     круг читается как есть, без движения (см. genkeys.module.css, тот же приём). */
   .pulseSpoke {
     opacity: 0.18;
   }

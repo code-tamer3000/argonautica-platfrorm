@@ -12,7 +12,7 @@ import type { Element } from '../../lib/types'
 import { plural } from '../../lib/format'
 import { ExpeditionWheel } from './ExpeditionWheel'
 import { LockDialog } from './LockDialog'
-import { ELEMENT_ORDER, elementName, stageName } from './wheelGeometry'
+import { stageName } from './wheelGeometry'
 import styles from './dashboard.module.css'
 
 const fmtShort = (iso: string) => format(new Date(iso), 'dd.MM')
@@ -73,16 +73,6 @@ export function DashboardScreen() {
               <EmptyState size="block">Расписание Круга ещё не заведено.</EmptyState>
             )}
           </div>
-          {expedition && (
-            <div className={styles.legend}>
-              {ELEMENT_ORDER.map((element) => (
-                <span key={element} className={styles.legendItem}>
-                  <i className={styles.legendSwatch} style={{ background: `var(--el-${element})` }} />
-                  {elementName(element)}
-                </span>
-              ))}
-            </div>
-          )}
         </section>
 
         <section className={styles.rail} aria-label="Что сейчас">

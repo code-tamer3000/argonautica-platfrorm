@@ -15,7 +15,7 @@ export const CX = 330
 export const CY = 330
 
 // Слои от центра наружу (см. docs/EXPEDITION.md «Визуальный слой»).
-export const R_TAIJI = 52 // инь-ян в хабе
+export const R_TAIJI = 36 // инь-ян в хабе — компактный знак, не заполняет весь хаб
 export const R_HUB_RIM = 62 // ободок хаба
 export const R_CENTER = 96 // кольцо дней Точки Баланса / Финала
 export const R_LOCK = 158 // замки стихий (гексаграммы)
@@ -24,6 +24,13 @@ export const R_LABEL = 238 // подпись стихии
 export const R_LABEL_DATE = 250 // подпись даты эфира
 export const R_DAY = 280 // диски-луны дней
 export const R_BAND_OUT = 300 // внешняя граница полосы стихий
+
+// Диагональные лучи от хаба (45°/135°/225°/315° — между кардинальными точками
+// стихий/замков/подписей, так что ни с чем не пересекаются). Диапазон
+// сохраняет пропорцию исходных дивайдеров: от края ободка хаба почти до
+// внешнего края полосы стихий.
+export const R_SPOKE_IN = R_HUB_RIM
+export const R_SPOKE_OUT = R_BAND_OUT - 10
 
 export const ELEMENT_ORDER: Element[] = ['air', 'fire', 'water', 'earth']
 export const ELEMENT_CARDINAL: Record<Element, number> = {
