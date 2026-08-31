@@ -16,3 +16,4 @@ Participant submissions: "suggest an improvement" / "report a bug".
 Common questions/instructions — admin-authored, read by all.
 
 - `GET /api/faq` — read (everyone). `POST/PATCH/DELETE /api/faq` — admin only; `sort_order` controls order (smaller = higher; ties by id).
+- `answer` is rendered as markdown on the frontend (`lib/markdown.ts`, same `marked` + `DOMPurify` pipeline as chat/Gene Keys/oferta) — admins can format with lists/headings/bold and embed images via `![alt](/media/<file>.jpg)`, where the image is a static asset committed under `frontend/public/media/` (not MinIO — FAQ images are admin/dev-authored content, not user uploads).
