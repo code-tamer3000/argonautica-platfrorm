@@ -1,8 +1,9 @@
 import { differenceInCalendarDays, format } from 'date-fns'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useDashboard } from '../../api/dashboard'
 import { useExpeditionLocks } from '../../api/expedition'
+import { useRooms } from '../../api/rooms'
 import { Card } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { Spinner } from '../../components/Spinner'
@@ -21,7 +22,13 @@ export function DashboardScreen() {
   const { user } = useAuth()
   const { data, isLoading } = useDashboard()
   const { data: locks } = useExpeditionLocks()
+  const { data: rooms } = useRooms()
   const [activeLock, setActiveLock] = useState<Element | null>(null)
+
+  const myDiaryRoomId = useMemo(
+    () => rooms?.find((r) => r.is_personal && r.created_by === user?.id)?.id,
+    [rooms, user?.id],
+  )
 
   const beforeStart =
     user?.intake_starts_on != null
@@ -69,6 +76,40 @@ export function DashboardScreen() {
         </section>
 
         <section className={styles.rail} aria-label="Что сейчас">
+          {!isPending && data.journal && (
+            <Card className={styles.today} accent>
+              <div className={styles.cardHead}>
+                <h3>Сегодня</h3>
+              </div>
+              {today != null && expedition && (
+                <div className={styles.todayRow}>
+                  <span className={styles.dayNo}>{today}</span>
+                  <span className={styles.dayOf}>день из {expedition.total_days}</span>
+                </div>
+              )}
+              {data.journal.sections.length > 0 && (
+                <div className={styles.sections}>
+                  {data.journal.sections.map((s) => (
+                    <span
+                      key={s.key}
+                      className={data.journal_today_done ? `${styles.section} ${styles.sectionDone}` : styles.section}
+                    >
+                      {s.emoji} {s.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {data.journal_locked && (
+                <p className={styles.headSub}>Дневник закрыт вместе с окном набора.</p>
+              )}
+              {!data.journal_locked && myDiaryRoomId != null && (
+                <Link to={`/diaries/${myDiaryRoomId}`} className="btn btn-gold">
+                  {data.journal_today_done ? 'День закрыт · открыть дневник' : 'Заполнить дневник за сегодня'}
+                </Link>
+              )}
+            </Card>
+          )}
+
           {data.news_preview && (
             <Card>
               <div className={styles.cardHead}>
