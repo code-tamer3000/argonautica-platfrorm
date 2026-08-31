@@ -348,7 +348,9 @@ async def test_admin_diary_labeled_admin_for_admin_viewer(
     client: AsyncClient, session: AsyncSession, make_user: MakeUser
 ) -> None:
     """Другой admin по-прежнему видит чужой admin-дневник (полный оверсайт), и он
-    подписан «Админ» вместо пустого/тарифного ярлыка (см. _owner_plan_label)."""
+    подписан «Админ» с sentinel `owner_plan_id` (см. _owner_plan_label) — НЕ
+    `None`, иначе клиентская группировка (`groupByPlan`, ключуется по id) молча
+    свалила бы его в «Без тарифа» вместо отдельной секции."""
     _, users = await _three_tier_cohort(client, make_user)
     admin_room = await _make_personal_room(session, users["admin"].id)
     other_admin = await make_user(role="admin", intake_id=users["admin"].intake_id)
@@ -358,10 +360,12 @@ async def test_admin_diary_labeled_admin_for_admin_viewer(
     )
     assert seen.status_code == 200
     assert seen.json()["owner_plan_name"] == "Админ"
+    assert seen.json()["owner_plan_id"] is not None
 
     listed = await client.get("/api/rooms", headers=await _headers(client, other_admin))
     row = next(r for r in listed.json() if r["id"] == admin_room.id)
     assert row["owner_plan_name"] == "Админ"
+    assert row["owner_plan_id"] is not None
 
 
 # --- Контакт-лист: админ хвостовым блоком, не «Без тарифа» ---------------------
