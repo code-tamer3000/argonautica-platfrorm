@@ -71,8 +71,20 @@
   padding: 0 var(--space-4) var(--space-4) calc(var(--space-4) + 18px + var(--space-3));
   color: var(--text-secondary);
   font-size: 0.9rem;
-  white-space: pre-wrap;
   line-height: 1.5;
+}
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown p { margin: 0 0 var(--space-2); }
+.markdown ul, .markdown ol { margin: 0 0 var(--space-2); padding-left: 1.4em; }
+.markdown li { margin: 2px 0; }
+.markdown img {
+  display: block;
+  max-width: 260px;
+  width: 100%;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--divider);
+  margin: var(--space-2) 0 var(--space-3);
 }
 
 @media (max-width: 768px) {
