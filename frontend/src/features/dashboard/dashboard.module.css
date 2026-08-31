@@ -292,57 +292,6 @@
   color: var(--accent);
 }
 
-.today {
-  border-color: var(--divider-gold-strong);
-  box-shadow: var(--glow-gold);
-}
-
-.todayRow {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-
-.dayNo {
-  font-family: var(--font-t1);
-  font-size: 34px;
-  line-height: 1;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.dayOf {
-  font-size: var(--text-label-md);
-  color: var(--text-muted);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.sections {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.section {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--text-label-md);
-  padding: 3px var(--space-3);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--divider);
-  color: var(--text-secondary);
-}
-
-.sectionDone {
-  /* --bg-sea-soft — тот же повод, что и у .stage выше: --bg-sea не переопределён
-     на светлой теме и тянет насыщенный --color-more. */
-  border-color: color-mix(in oklab, var(--bg-sea-soft) 60%, var(--divider));
-  color: var(--text-primary);
-  background: color-mix(in oklab, var(--bg-sea-soft) 16%, transparent);
-}
-
 .list {
   display: flex;
   flex-direction: column;
@@ -361,12 +310,20 @@
 }
 
 .itemWhen {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   font-size: var(--text-label);
   color: var(--text-ghost);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   min-width: 52px;
   padding-top: 2px;
+}
+
+.itemWhenTime {
+  font-size: 0.85em;
+  opacity: 0.75;
 }
 
 .itemBody {
