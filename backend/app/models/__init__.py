@@ -4,7 +4,7 @@
 Alembic для autogenerate (env.py делает `import app.models`).
 """
 from app.models.cabin import CabinEntry
-from app.models.calendar import CalendarEvent
+from app.models.calendar import CalendarEvent, CalendarEventPlan
 from app.models.expedition import ExpeditionLock, IntakeStage
 from app.models.faq import FaqItem
 from app.models.feedback import Feedback
@@ -54,6 +54,7 @@ __all__ = [
     "KbComment",
     "CabinEntry",
     "CalendarEvent",
+    "CalendarEventPlan",
     "FaqItem",
     "Feedback",
     "Intake",

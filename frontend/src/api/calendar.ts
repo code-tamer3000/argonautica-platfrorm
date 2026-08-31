@@ -34,7 +34,8 @@ export interface CalendarEventCreateBody {
   starts_at: string        // ISO datetime
   ends_at?: string | null
   all_day?: boolean
-  room_id?: number | null
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export interface CalendarEventUpdateBody {
@@ -43,6 +44,8 @@ export interface CalendarEventUpdateBody {
   starts_at?: string
   ends_at?: string | null
   all_day?: boolean
+  intake_id?: number | null
+  plan_ids?: number[]
 }
 
 export function useCreateCalendarEvent() {

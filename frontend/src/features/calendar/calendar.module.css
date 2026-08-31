@@ -107,7 +107,6 @@
   width: 5px; height: 5px; border-radius: 50%;
   background: var(--accent);
 }
-.dotRoom { background: var(--blood-bright); }
 .dotTask { background: var(--accent-bright); box-shadow: 0 0 0 1px var(--divider-gold-strong); }
 
 /* ───────────────────── Детали выбранного дня ───────────────────── */
@@ -197,16 +196,6 @@
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.roomTag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: var(--space-2);
-  font-family: var(--font-t4);
-  font-size: var(--text-label);
-  color: var(--text-muted);
 }
 
 /* ───────────────────── Мобила ───────────────────── */

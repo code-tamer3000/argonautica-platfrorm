@@ -244,6 +244,75 @@ async def test_task_media_access_gated_by_isolation(
     assert denied.status_code == 403
 
 
+# --- события календаря (ARG-111) ------------------------------------------------
+
+
+async def test_calendar_event_isolated_by_intake(client: AsyncClient, make_user: MakeUser) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    mine = await make_user(intake_starts_on=date.today() - timedelta(days=100))
+    other = await make_user(intake_starts_on=date.today() - timedelta(days=1))
+
+    created = await client.post(
+        "/api/calendar/events",
+        headers=admin_h,
+        json={
+            "title": "Своему потоку",
+            "starts_at": "2026-07-01T10:00:00Z",
+            "intake_id": mine.intake_id,
+        },
+    )
+    assert created.status_code == 201, created.text
+    event_id = created.json()["id"]
+
+    mine_h = await _headers(client, mine)
+    other_h = await _headers(client, other)
+
+    mine_listed = await client.get("/api/calendar/events", headers=mine_h)
+    assert event_id in {e["id"] for e in mine_listed.json()}
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=mine_h)
+    ).status_code == 200
+
+    other_listed = await client.get("/api/calendar/events", headers=other_h)
+    assert event_id not in {e["id"] for e in other_listed.json()}
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=other_h)
+    ).status_code == 403
+
+
+async def test_calendar_event_isolated_by_plan(client: AsyncClient, make_user: MakeUser) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    plan_a = await _create_plan(client, admin_h, "Тариф Е")
+    with_plan = await make_user(plan_id=plan_a)
+    without_plan = await make_user(plan_id=None)
+
+    created = await client.post(
+        "/api/calendar/events",
+        headers=admin_h,
+        json={
+            "title": "Только тариф Е",
+            "starts_at": "2026-07-01T10:00:00Z",
+            "plan_ids": [plan_a],
+        },
+    )
+    assert created.status_code == 201, created.text
+    event_id = created.json()["id"]
+
+    with_h = await _headers(client, with_plan)
+    without_h = await _headers(client, without_plan)
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=with_h)
+    ).status_code == 200
+    assert (
+        await client.get(f"/api/calendar/events/{event_id}", headers=without_h)
+    ).status_code == 403
+
+    without_listed = await client.get("/api/calendar/events", headers=without_h)
+    assert event_id not in {e["id"] for e in without_listed.json()}
+
+
 # --- материалы базы знаний -------------------------------------------------------
 
 

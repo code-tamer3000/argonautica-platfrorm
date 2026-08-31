@@ -262,11 +262,13 @@ export interface CalendarEventOut {
   starts_at: string
   ends_at: string | null
   all_day: boolean
-  room_id: number | null
   // Заполнено = автоуправляемое дедлайн-событие задачи.
   task_id: number | null
   created_by: number
   created_at: string
+  // Изоляция по потоку/тарифу (ARG-96/ARG-111): null/пусто = видно всем потокам/тарифам.
+  intake_id: number | null
+  plan_ids: number[]
   // Обогащение дедлайн-событий задачи (только при task_id):
   // выполнил ли задачу текущий юзер (для участника).
   task_done: boolean
