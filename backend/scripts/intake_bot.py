@@ -140,7 +140,7 @@ HEART = '<tg-emoji emoji-id="5440725576841201330">🖤</tg-emoji>'
 
 # Платёжные реквизиты — единственное место, откуда их берут TEXT_ACCEPTED и /info,
 # чтобы не разъезжались при смене карты.
-PAYMENT_DETAILS = "2200 2488 5210 8934 (ВТБ-банк)"
+PAYMENT_DETAILS = "2200 7021 5091 8782 (Т-Банк)"
 # Оплата зарубежной картой — Tribute mini-app, для тех, у кого нет счёта в РФ-банке.
 # Один и тот же startapp-код на все тарифы (сумму и оффер Tribute настраивает у себя).
 TRIBUTE_PAYMENT_URL = "https://t.me/tribute/app?startapp=dP8y"
