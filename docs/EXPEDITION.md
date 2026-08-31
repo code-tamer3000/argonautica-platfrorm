@@ -87,16 +87,26 @@ in `wheelGeometry.ts`, the same device as `GrowthFrames` in the Gene Keys wheel)
 draws a closed golden outline around the *current* stage's quadrant — that's the only
 per-quadrant graphic left besides the day discs and labels.
 
-Layers, centre outward (`CX = CY = 330`, viewBox `0 0 660 660`; radii in
+Layers, centre outward (`CX = CY = 350`, viewBox `0 0 700 700`; radii in
 `wheelGeometry.ts`):
 
 | Radius | Layer |
 |---|---|
 | `R_TAIJI` = 36 | Taiji mark (no surrounding ring) |
-| `R_SPOKE_IN..R_SPOKE_OUT` = 62..290 | four diagonal rays at 45°/135°/225°/315° — the cardinal gaps between element labels/locks (which sit at 0/90/180/270), so they never cross either |
 | `R_CENTER` = 96 | Точка Баланса / Финал day ring |
-| `R_LOCK` = 158 | element locks (hexagrams) |
-| `R_BAND_IN..R_BAND_OUT` = 214..300 | element band (no fill — day discs at `R_DAY`, element label + air-date at `R_LABEL`) |
+| `R_SPOKE_IN..R_SPOKE_OUT` = 112..226 | four diagonal rays at 45°/135°/225°/315° |
+| `R_LOCK` = 150 | element locks (hexagrams) |
+| `R_FRAME_IN..R_FRAME_OUT` = 180..236 | golden outline around the current stage's quadrant — day discs (`R_DAY` = 210) sit inside this range |
+| `R_LABEL` = 288 | element name + "эфир dd.MM", **outermost** ring, past every other layer |
+
+`R_SPOKE_IN` starts *after* `R_CENTER`, not at the hub itself — a ray crossing the
+Точка Баланса/Финал ring visibly clipped through those day discs when it started right
+at the hub; leaving that ring alone reads cleaner than any per-day angle nudge would.
+The regular element-day ring doesn't need the same treatment: `elementDayAngle` places
+day *i* at `quadrantStart - (i + 0.5) * step`, always at least half a day-slot inside
+the quadrant, so it structurally never lands on a 45°/135°/225°/315° ray regardless of
+how many days a stage has — unlike `centerDayAngle`, which has no such offset and *can*
+place a day exactly on a ray for some day counts (5 or 6, concretely).
 
 The Taiji's `<g>` rotates continuously (96s, linear) with `transform-origin` set
 **inline in pixel coordinates** (`${CX}px ${CY}px`), not via `transform-box: fill-box` —
@@ -117,9 +127,19 @@ regardless of state, and additionally gets one of four visual weights — `dayDo
 `dayFuture` (opacity 0.28), `dayToday` (full opacity, larger, golden halo) — so a
 completed day, a missed one, and one still ahead read as three distinct states, not
 two conflated ones. The handful of days on the centre ring (`R_CENTER`) render a touch
-larger (r 6.5, today 8) than band days (r 9, today 12.5 — larger still since there are
-many more of them, so a slightly smaller base radius keeps the ring from crowding) so
-they don't get lost that close to the hub.
+larger (r 6.5, today 8) than element-band days (r 9, today 12.5 — larger still since
+there are many more of them, so a slightly smaller base radius keeps the ring from
+crowding) so they don't get lost that close to the hub.
+
+`R_LABEL` sits **outside** every other ring — labels used to live inside the day band,
+which worked for Огонь/Земля (top/bottom, where horizontal text is tangent to the
+circle and only needs room sideways along the rim) but crowded Воздух/Вода (left/right,
+where the same horizontal text runs *along* the radius instead and needs room radially,
+toward the day discs it was sitting right next to). Moving the whole label ring past
+`R_FRAME_OUT` gives every side the same clearance regardless of orientation, instead of
+only the two sides whose text happened to lie tangent to the circle. This also matches
+where labels sat in the very first (pre-rewrite) version of the circle, before that
+property got lost in an intermediate revision.
 
 The element name and its "эфир dd.MM" sub-label share **one** polar position
 (`R_LABEL`, at the element's cardinal angle) — the date is offset `+16` in **screen** y,
