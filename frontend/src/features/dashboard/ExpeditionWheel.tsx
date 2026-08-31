@@ -4,7 +4,6 @@ import { useMemo } from 'react'
 import { IconLock } from '../../components/icons'
 import { YinYang } from '../../components/YinYang'
 import type { Element, ExpeditionOut, LockState } from '../../lib/types'
-import { annularSectorPath } from '../genkeys/wheel'
 import { moonLitPath, moonLitPathMirrored, moonPhase, moonPhaseName } from './moon'
 import {
   CX,
@@ -15,7 +14,6 @@ import {
   R_CENTER,
   R_HUB_RIM,
   R_LABEL,
-  R_LABEL_DATE,
   R_LOCK,
   R_SPOKE_IN,
   R_SPOKE_OUT,
@@ -51,15 +49,6 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
   // рисуется только для стихийных этапов, см. использование ниже.
   const currentElementIndex = currentStage ? ELEMENT_ORDER.indexOf(currentStage.kind as Element) : -1
 
-  const bands = useMemo(
-    () =>
-      ELEMENT_ORDER.map((element, i) => {
-        const [a0, a1] = elementSectorSpan(i)
-        return { element, path: annularSectorPath(CX, CY, R_BAND_IN, R_BAND_OUT, a0, a1) }
-      }),
-    [],
-  )
-
   return (
     <svg
       viewBox="0 0 660 660"
@@ -67,16 +56,6 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
       role="img"
       aria-label={`Круг Экспедиции: ${expedition.total_days} дней, четыре стихии и Точка баланса в центре`}
     >
-      {/* полоса стихий — кольцевые секторы, текущий читается ярче остальных */}
-      {bands.map(({ element, path }) => (
-        <path
-          key={element}
-          d={path}
-          className={currentStage?.kind === element ? styles.bandActive : styles.band}
-          style={{ fill: `var(--el-${element})` }}
-        />
-      ))}
-
       {/* диагональные лучи от хаба — между кардинальными точками стихий/замков,
           не пересекаются ни с подписями, ни с замками; тихо пульсируют золотом */}
       <g aria-hidden="true" className={styles.sectorPulse}>
@@ -104,19 +83,22 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         />
       )}
 
-      {/* подписи стихий + дата эфира */}
+      {/* подписи стихий + дата эфира — дата смещена на фиксированные 16px ВНИЗ
+          от названия в экранных координатах (не второй полярный радиус): на
+          верхней стихии «наружу по радиусу» означает «вверх», и дата вставала
+          НАД названием вместо под ним — на разных сторонах круга съезжала
+          в разные стороны вместо единообразного «дата под названием». */}
       {ELEMENT_ORDER.map((element) => {
         const stage = stageByKind(expedition.stages, element)
-        const labelPos = polar(layout.labelAngle[element], R_LABEL)
-        const datePos = polar(layout.labelAngle[element], R_LABEL_DATE)
+        const pos = polar(layout.labelAngle[element], R_LABEL)
         const active = currentStage?.kind === element
         return (
           <g key={element} className={active ? styles.labelActive : styles.label}>
-            <text x={labelPos.x} y={labelPos.y} textAnchor="middle" className={styles.labelText}>
+            <text x={pos.x} y={pos.y} textAnchor="middle" className={styles.labelText}>
               {elementName(element).toUpperCase()}
             </text>
             {stage && (
-              <text x={datePos.x} y={datePos.y} textAnchor="middle" className={styles.labelDate}>
+              <text x={pos.x} y={pos.y + 16} textAnchor="middle" className={styles.labelDate}>
                 эфир {fmtShort(stage.air_date)}
               </text>
             )}
@@ -132,7 +114,9 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         const phase = dateIso ? moonPhase(new Date(`${dateIso}T00:00:00`)) : null
         const pos = polar(d.angle, d.radius)
         const onCenterRing = d.radius === R_CENTER
-        const r = isToday ? (onCenterRing ? 7 : 12.5) : onCenterRing ? 4.6 : 9
+        // Кольцо центра — всего несколько дней (Точка Баланса/Финал), радиус
+        // чуть крупнее полосных лун, чтобы не терялись рядом с хабом.
+        const r = isToday ? (onCenterRing ? 8 : 12.5) : onCenterRing ? 6.5 : 9
         const color = d.element ? `var(--el-${d.element})` : 'var(--accent)'
         // Прошедший день зачтён (закрыт/зачтён/помилован) или пропущен; будущий
         // день ещё не наступил — три разных начертания, не два (см. docs/EXPEDITION.md).
@@ -180,10 +164,9 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         />
       ))}
 
-      {/* хаб: ободок + непрерывно вращающийся инь-ян (transform-origin строго в
-          координатах круга — иначе несимметричный путь тайцзи мотает мимо центра) */}
-      <circle cx={CX} cy={CY} r={R_HUB_RIM} className={styles.hubGlow} />
-      <circle cx={CX} cy={CY} r={R_HUB_RIM} className={styles.hubRing} />
+      {/* хаб: непрерывно вращающийся инь-ян, без обводки/подсветки вокруг —
+          только сам знак (transform-origin строго в координатах круга —
+          иначе несимметричный путь тайцзи мотает мимо центра) */}
       <g className={styles.hubSpin} style={{ transformOrigin: `${CX}px ${CY}px` }}>
         <YinYang cx={CX} cy={CY} r={R_TAIJI} />
       </g>
