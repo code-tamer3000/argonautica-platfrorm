@@ -69,6 +69,14 @@
   /* Базовые аватарки (без фото): фон-подложка + цвет инициалов. Тёмная тема — как было. */
   --avatar-bg:       var(--color-more-glub);
   --avatar-fg:       var(--color-kost-dim);
+
+  /* Круг Экспедиции: четыре стихии — алиасы существующей палитры (как --gk-*
+     в genkeys.module.css), чтобы круг читался частью продукта, а не чужой
+     инфографикой со своими насыщенными цветами. */
+  --el-fire:         var(--color-krov-yar);
+  --el-water:        var(--color-more-yar);
+  --el-earth:        var(--color-latun);
+  --el-air:          var(--color-kamen-tepl);
 }
 
 /*
@@ -128,6 +136,13 @@
      без тёмно-зелёного пятна, которое раньше выбивалось на светлом фоне. */
   --avatar-bg:       #EFE8D6;
   --avatar-fg:       var(--color-latun);
+
+  /* Круг Экспедиции: те же алиасы палитры — на светлой теме сами --color-*
+     уже переопределены выше под контраст на светлом грунте. */
+  --el-fire:         var(--color-krov-yar);
+  --el-water:        var(--color-more-yar);
+  --el-earth:        var(--color-latun);
+  --el-air:          var(--color-kamen-tepl);
 
   color-scheme: light;
 }

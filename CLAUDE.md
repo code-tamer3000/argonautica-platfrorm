@@ -73,6 +73,7 @@ Hard rules:
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
 | docs/INTAKE_BOT.md         | intake/payment bot: anketa → tariff → receipt → approval, plans CRUD |
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
+| docs/EXPEDITION.md         | Круг Экспедиции: landing dashboard, 28-day moon circle, six stages, element locks |
 | docs/ARCHITECTURE.md       | Mermaid diagrams: stack, per-domain ER, key flows, environments (human layer, NOT a contract) |
 | docs/DECISIONS.md          | ADR log: why each non-obvious decision was made, what breaks if changed (🔒 = frozen) |
 | docs/TASK_PROTOCOL.md      | task contract: template, size calibrator, interrogation rule, Linear directions |

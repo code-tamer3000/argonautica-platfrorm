@@ -372,6 +372,48 @@ export interface AdminDynamicsOut {
   users: UserDynamicsOut[]
 }
 
+// --- Круг Экспедиции: расписание этапов потока + замки-гексаграммы ---
+export type StageKind = 'balance' | 'air' | 'fire' | 'water' | 'earth' | 'final'
+export type Element = 'air' | 'fire' | 'water' | 'earth'
+export type LockState = 'locked' | 'unlockable' | 'entered' | 'revealed'
+
+export interface StageIn {
+  kind: StageKind
+  air_date: string
+  air_time: string | null
+  task_id: number | null
+}
+
+// Этап + вычисленное место в круге (не хранится — см. app/services/expedition.py).
+export interface StageSpanOut extends StageIn {
+  day_from: number
+  day_to: number
+}
+
+export interface LockOut {
+  element: Element
+  key_number: number
+  hexagram: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ExpeditionOut {
+  total_days: number
+  today: number | null // 1..total_days; null — до старта или после конца окна
+  stages: StageSpanOut[]
+  days: RecentDay[] // весь круг, не ±окно
+  locks: Partial<Record<Element, LockOut>>
+  lock_states: Record<Element, LockState>
+}
+
+export interface NewsPreviewOut {
+  room_id: number
+  author_name: string
+  preview: string
+  created_at: string
+}
+
 // --- Структура дневника (задания) ---
 
 export type JournalInputType = 'text' | 'title'

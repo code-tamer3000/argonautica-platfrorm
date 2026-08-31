@@ -202,3 +202,104 @@ async def test_patch_user_moves_between_intakes(
         json={"intake_id": 10**9},
     )
     assert bad.status_code == 400
+
+
+# --- Круг Экспедиции: расписание этапов (intake_stages) --------------------
+
+
+def _six_stages(start: date) -> list[dict[str, object]]:
+    kinds_offsets = (
+        ("balance", 0), ("air", 4), ("fire", 10), ("water", 16), ("earth", 21), ("final", 27),
+    )
+    return [
+        {"kind": kind, "air_date": (start + timedelta(days=off)).isoformat()}
+        for kind, off in kinds_offsets
+    ]
+
+
+async def test_intake_stages_empty_before_configured(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    headers = await admin_headers(client, make_user)
+    intake_id = (await create_intake(client, headers))["id"]
+
+    resp = await client.get(f"/api/admin/intakes/{intake_id}/stages", headers=headers)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_intake_stages_put_and_replace(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    headers = await admin_headers(client, make_user)
+    intake_id = (await create_intake(client, headers))["id"]
+    start = date.today()
+
+    put = await client.put(
+        f"/api/admin/intakes/{intake_id}/stages",
+        headers=headers,
+        json={"stages": _six_stages(start)},
+    )
+    assert put.status_code == 200, put.text
+    kinds = [s["kind"] for s in put.json()]
+    assert kinds == ["balance", "air", "fire", "water", "earth", "final"]
+
+    # Повторный PUT заменяет расписание целиком, а не плодит строки.
+    shifted = await client.put(
+        f"/api/admin/intakes/{intake_id}/stages",
+        headers=headers,
+        json={"stages": _six_stages(start + timedelta(days=1))},
+    )
+    assert shifted.status_code == 200
+    listed = await client.get(f"/api/admin/intakes/{intake_id}/stages", headers=headers)
+    rows = listed.json()
+    assert len(rows) == 6
+    assert rows[0]["air_date"] == (start + timedelta(days=1)).isoformat()
+
+
+async def test_intake_stages_requires_all_six_kinds_once(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    headers = await admin_headers(client, make_user)
+    intake_id = (await create_intake(client, headers))["id"]
+    stages = _six_stages(date.today())[:5]  # только пять — не все стихии
+
+    resp = await client.put(
+        f"/api/admin/intakes/{intake_id}/stages",
+        headers=headers,
+        json={"stages": stages},
+    )
+    assert resp.status_code == 422  # min_length=6 на схеме
+
+
+async def test_intake_stages_rejects_out_of_order_dates(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    headers = await admin_headers(client, make_user)
+    intake_id = (await create_intake(client, headers))["id"]
+    stages = _six_stages(date.today())
+    # Огонь раньше Воздуха — нарушает порядок STAGE_KINDS.
+    stages[2]["air_date"] = stages[1]["air_date"]
+
+    resp = await client.put(
+        f"/api/admin/intakes/{intake_id}/stages",
+        headers=headers,
+        json={"stages": stages},
+    )
+    assert resp.status_code == 400
+
+
+async def test_intake_stages_rejects_unknown_task(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    headers = await admin_headers(client, make_user)
+    intake_id = (await create_intake(client, headers))["id"]
+    stages = _six_stages(date.today())
+    stages[1]["task_id"] = 10**9  # заведомо не существует
+
+    resp = await client.put(
+        f"/api/admin/intakes/{intake_id}/stages",
+        headers=headers,
+        json={"stages": stages},
+    )
+    assert resp.status_code == 400

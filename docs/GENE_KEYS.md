@@ -6,6 +6,13 @@
 > UI label is **«Генные замки»** (nav item, wheel caption). The route, code
 > identifiers, and content filenames stay `genkeys`/`GeneKeys` — the rename is
 > user-facing text only.
+>
+> Круг Экспедиции ([EXPEDITION.md](EXPEDITION.md)) is a second entry point: its four
+> element locks deep-link into a key's reading (`/genkeys?key=N`, resolved by the
+> `?key=` handling `GeneKeysScreen` already has) and reuse `GeneKeyPicker.tsx` as-is
+> for entering a lock's hexagram. `expedition_locks.key_number`/`hexagram` are the only
+> Gene Keys data that now also lives in Postgres — this module itself is still
+> frontend-only, static content, no DB.
 
 ## What it is
 
@@ -153,7 +160,9 @@ HOLDS (hover — key stays under the cursor); with it, the outer ring rotates to
 - `wheel.ts` — geometry, palette, lookups, `PLACED`/`LEAVES`, `partnerOf`.
 - `useRings.ts` — rotation state (idle drift + focus easing, hover vs locked).
 - `GeneKeysWheel.tsx` — the SVG (rings, keys, ticks, golden edges, hub).
-- `YinYang.tsx` — Taiji hub mark. `Hexagram.tsx` — hexagram for the reading panel.
+- `Hexagram.tsx` — hexagram for the reading panel. The Taiji hub mark itself now
+  lives at `frontend/src/components/YinYang.tsx` — shared with the Expedition Circle
+  hub ([EXPEDITION.md](EXPEDITION.md) "Visual layer").
 - `GeneKeyReading.tsx` — spectrum triad + characteristics + lazy markdown body + KB book link.
 - `GeneKeyPicker.tsx` — mobile-only by-number / by-hexagram key selection.
 - `GeneKeysScreen.tsx` — composition + hover/select/partner state.

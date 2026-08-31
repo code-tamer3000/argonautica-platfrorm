@@ -11,7 +11,9 @@ from app.api.applications import router as applications_router
 from app.api.auth import router as auth_router
 from app.api.cabin import router as cabin_router
 from app.api.calendar import router as calendar_router
+from app.api.dashboard import router as dashboard_router
 from app.api.dynamics import router as dynamics_router
+from app.api.expedition import router as expedition_router
 from app.api.faq import router as faq_router
 from app.api.feedback import router as feedback_router
 from app.api.kb import router as kb_router
@@ -77,6 +79,8 @@ app.include_router(stickers_router)
 app.include_router(calendar_router)
 app.include_router(cabin_router)
 app.include_router(dynamics_router)
+app.include_router(expedition_router)
+app.include_router(dashboard_router)
 app.include_router(faq_router)
 app.include_router(feedback_router)
 app.include_router(notifications_router)

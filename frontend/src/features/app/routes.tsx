@@ -9,6 +9,7 @@ import {
   IconChat,
   IconDiary,
   IconGenkeys,
+  IconMoon,
   IconNews,
   IconSettings,
   IconSupport,
@@ -19,6 +20,7 @@ import { Spinner } from '../../components/Spinner'
 import { useUiStore } from '../../stores/ui'
 import { ChatLayout } from '../chat/ChatLayout'
 import { CalendarView } from '../calendar/CalendarView'
+import { DashboardScreen } from '../dashboard/DashboardScreen'
 import { CohortPending } from './CohortPending'
 import { CabinScreen } from '../cabin/CabinScreen'
 import { KbList } from '../kb/KbList'
@@ -86,11 +88,13 @@ function withCohortGate(makeComponent: (opts: { newsOnly: boolean }) => ReactNod
   }
 }
 
-// «/» никогда не рендерит контент сам — только решает, куда увести: обычного
-// пользователя в Рубку, наблюдателя — на его домашние материалы.
-function RootRedirect() {
+// «/» — Круг Экспедиции для обычного участника; наблюдателя уводит на его
+// домашние материалы (Динамика/Задачи/Круг ему не положены — require_participant
+// на /api/dashboard всё равно ответит 403, но заглядывать в наблюдателя незачем).
+function RootScreen() {
   const { isObserver } = useAccessContext()
-  return <Navigate to={isObserver ? '/kb' : '/chats'} replace />
+  if (isObserver) return <Navigate to="/kb" replace />
+  return <DashboardScreen />
 }
 
 // «/news» резолвит новостную комнату и уводит на её реальный адрес — сегмент
@@ -162,11 +166,11 @@ export interface RouteEntry {
 export const routes: RouteEntry[] = [
   {
     path: '/',
-    label: 'Рубка',
-    icon: IconChat,
+    label: 'Главная',
+    icon: IconMoon,
+    end: true,
     access: { kind: 'public' },
-    hidden: true,
-    Component: RootRedirect,
+    Component: RootScreen,
   },
   {
     path: '/chats',

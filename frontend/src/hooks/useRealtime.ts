@@ -7,6 +7,7 @@ import {
   replaceMessage,
   updateAttachment,
 } from '../api/cache'
+import { dashboardKey } from '../api/dashboard'
 import { notificationsKey } from '../api/notifications'
 import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
@@ -153,6 +154,11 @@ export function useRealtime(): void {
           } else if (msg.sender_id !== me) {
             incUnread(qc, msg.room_id)
           }
+          // Дашборд показывает превью последнего поста новостного канала —
+          // обновляем только на нём, не на каждом сообщении в приложении.
+          if (rooms?.find((r) => r.id === msg.room_id)?.is_news) {
+            qc.invalidateQueries({ queryKey: dashboardKey })
+          }
           break
         }
         case 'message.edited':
@@ -197,6 +203,7 @@ export function useRealtime(): void {
               onClick: () => openRef.current(n),
             })
           }
+          qc.invalidateQueries({ queryKey: dashboardKey })
           break
         }
         case 'notification.removed': {
@@ -232,23 +239,28 @@ export function useRealtime(): void {
         }
         case 'task.created':
           qc.invalidateQueries({ queryKey: tasksKey })
+          qc.invalidateQueries({ queryKey: dashboardKey })
           if (!isAdminRef.current) notify({ title: 'Задачи', text: 'Новая задача' })
           break
         case 'task.updated':
           qc.invalidateQueries({ queryKey: tasksKey })
           qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
+          qc.invalidateQueries({ queryKey: dashboardKey })
           break
         case 'submission.new':
           // Новая сдача (для админа/автора общей задачи) — обновить треки и списки.
           qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
           qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
           qc.invalidateQueries({ queryKey: tasksKey })
+          qc.invalidateQueries({ queryKey: dashboardKey })
           break
         case 'submission.status': {
-          // Ревью прошло: статус назначения изменился (принято/возвращено).
+          // Ревью прошло: статус назначения изменился (принято/возвращено) — на
+          // Круге Экспедиции это может раскрыть замок стихии (см. app/api/expedition.py).
           qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
           qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
           qc.invalidateQueries({ queryKey: tasksKey })
+          qc.invalidateQueries({ queryKey: dashboardKey })
           if (!isAdminRef.current) {
             if (e.status === 'accepted') notify({ title: 'Задачи', text: 'Задача принята' })
             else if (e.status === 'returned') notify({ title: 'Задачи', text: 'Задача возвращена на доработку' })
