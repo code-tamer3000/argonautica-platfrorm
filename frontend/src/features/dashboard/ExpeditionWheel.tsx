@@ -9,9 +9,9 @@ import {
   CX,
   CY,
   ELEMENT_ORDER,
-  R_BAND_IN,
-  R_BAND_OUT,
   R_CENTER,
+  R_FRAME_IN,
+  R_FRAME_OUT,
   R_HUB_RIM,
   R_LABEL,
   R_LOCK,
@@ -38,7 +38,7 @@ const fmtShort = (iso: string) => format(new Date(`${iso}T00:00:00`), 'dd.MM')
 // друга, чтобы не мигать синхронной вспышкой — тот же приём, что раньше
 // разводил волну по концентрическим слоям.
 const PULSE_TRAVEL_MS = 2200
-const pulseDelay = (r: number) => ((r - R_HUB_RIM) / (R_BAND_OUT - R_HUB_RIM)) * PULSE_TRAVEL_MS
+const pulseDelay = (r: number) => ((r - R_HUB_RIM) / (R_FRAME_OUT - R_HUB_RIM)) * PULSE_TRAVEL_MS
 
 export function ExpeditionWheel({ expedition, onLockClick }: Props) {
   const layout = useMemo(() => layoutWheel(expedition), [expedition])
@@ -51,7 +51,7 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
 
   return (
     <svg
-      viewBox="0 0 660 660"
+      viewBox="0 0 700 700"
       className={styles.wheel}
       role="img"
       aria-label={`Круг Экспедиции: ${expedition.total_days} дней, четыре стихии и Точка баланса в центре`}
@@ -78,7 +78,7 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
       {/* золотая рамка вокруг сектора текущего этапа */}
       {currentElementIndex >= 0 && (
         <path
-          d={sectorFramePath(...elementSectorSpan(currentElementIndex), R_BAND_IN, R_BAND_OUT)}
+          d={sectorFramePath(...elementSectorSpan(currentElementIndex), R_FRAME_IN, R_FRAME_OUT)}
           className={styles.currentFrame}
         />
       )}
