@@ -26,7 +26,13 @@ class Room(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     type: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str | None] = mapped_column(Text)  # NULL для dm
-    avatar_url: Mapped[str | None] = mapped_column(Text)  # для dm не хранится
+    avatar_url: Mapped[str | None] = mapped_column(Text)  # legacy/внешний URL, для dm не хранится
+    # Аватар как media-ассет (пока только для личного дневника — see docs/ROOMS.md):
+    # presigned-GET подписываем на чтение, avatar_url оставлен под внешний URL —
+    # приоритет у media_id. Та же пара полей, что и у User.avatar_url/avatar_media_id.
+    avatar_media_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("media_assets.id")
+    )
     # Только для dm: канонический ключ пары "minUserId:maxUserId" — защита от дублей.
     dm_key: Mapped[str | None] = mapped_column(Text, unique=True)
     created_by: Mapped[int] = mapped_column(
