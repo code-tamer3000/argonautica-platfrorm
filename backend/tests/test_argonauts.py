@@ -329,6 +329,54 @@ async def test_expedition_feat_shows_latest_submission_any_status(
 
     detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
     assert detail["expedition_feat"] == "финальный ответ"
+    # После возврата на доработку и новой сдачи статус СНОВА 'submitted' — фронту
+    # нужен именно текущий статус назначения, чтобы решить, открыт ли TaskComposer.
+    assert detail["expedition_feat_task_id"] == task_id
+    assert detail["expedition_feat_status"] == "submitted"
+
+
+async def test_expedition_feat_status_assigned_before_first_submission(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Назначение есть, сдачи ещё не было — task_id отдан (чтобы фронт мог сразу
+    показать композер владельцу), текст null, статус 'assigned'."""
+    starts_on = date.today() - timedelta(days=213)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    viewer = await make_user(intake_id=admin.intake_id)
+    target = await make_user(intake_id=admin.intake_id)
+    viewer_h = await _headers(client, viewer)
+
+    task_id = await _create_individual_task(
+        client, admin_h, EXPEDITION_FEAT_TASK_TITLE, target.id
+    )
+
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
+    assert detail["expedition_feat"] is None
+    assert detail["expedition_feat_task_id"] == task_id
+    assert detail["expedition_feat_status"] == "assigned"
+
+
+async def test_expedition_feat_task_id_null_without_assignment(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Задача существует и видна потоку (по intake-метке), но у ЭТОГО конкретного
+    участника нет строки назначения (не был выбран assignee) — всё null."""
+    starts_on = date.today() - timedelta(days=214)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    viewer = await make_user(intake_id=admin.intake_id)
+    other = await make_user(intake_id=admin.intake_id)
+    target = await make_user(intake_id=admin.intake_id)
+    viewer_h = await _headers(client, viewer)
+
+    # Назначена ДРУГОМУ участнику потока, не target.
+    await _create_individual_task(client, admin_h, EXPEDITION_FEAT_TASK_TITLE, other.id)
+
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
+    assert detail["expedition_feat"] is None
+    assert detail["expedition_feat_task_id"] is None
+    assert detail["expedition_feat_status"] is None
 
 
 async def test_expedition_feat_null_when_no_submission_or_no_such_task(
@@ -342,6 +390,8 @@ async def test_expedition_feat_null_when_no_submission_or_no_such_task(
     # Задачи EXPEDITION_FEAT_TASK_TITLE в этом потоке вообще нет.
     detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
     assert detail["expedition_feat"] is None
+    assert detail["expedition_feat_task_id"] is None
+    assert detail["expedition_feat_status"] is None
 
 
 async def test_expedition_feat_ignores_other_intakes_task(

@@ -1,6 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useArgonaut } from '../../api/argonauts'
+import { argonautKey, useArgonaut } from '../../api/argonauts'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { Chip } from '../../components/Chip'
@@ -8,6 +9,8 @@ import { EmptyState } from '../../components/EmptyState'
 import { Lightbox } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { useAuth } from '../auth/AuthContext'
+import { TaskComposer } from '../tasks/TaskComposer'
 import { ApiError } from '../../lib/apiClient'
 import { dateTimeMsk } from '../../lib/format'
 import type { ArgonautTaskOut } from '../../lib/types'
@@ -32,8 +35,12 @@ function TaskRow({ task }: { task: ArgonautTaskOut }) {
 export function ArgonautDetail() {
   const { userId } = useParams<{ userId: string }>()
   const navigate = useNavigate()
-  const { data, isLoading, error } = useArgonaut(Number(userId))
+  const { user: me } = useAuth()
+  const qc = useQueryClient()
+  const numericId = Number(userId)
+  const { data, isLoading, error } = useArgonaut(numericId)
   const [avatarOpen, setAvatarOpen] = useState(false)
+  const isOwn = me?.id === numericId
 
   if (error instanceof ApiError && error.status === 404) {
     return (
@@ -79,10 +86,17 @@ export function ArgonautDetail() {
           </div>
         )}
         {data.bio && <div className={styles.profileBio}>{data.bio}</div>}
-        {data.expedition_feat && (
+        {(data.expedition_feat || (isOwn && data.expedition_feat_task_id != null)) && (
           <div className={styles.featBlock}>
             <div className={styles.featLabel}>Подвиг на Экспедицию</div>
-            <div className={styles.featText}>{data.expedition_feat}</div>
+            {data.expedition_feat && <div className={styles.featText}>{data.expedition_feat}</div>}
+            {isOwn && data.expedition_feat_task_id != null && (
+              <TaskComposer
+                taskId={data.expedition_feat_task_id}
+                status={data.expedition_feat_status ?? undefined}
+                onSubmitted={() => qc.invalidateQueries({ queryKey: argonautKey(numericId) })}
+              />
+            )}
           </div>
         )}
         {data.diary_room_id != null && (
