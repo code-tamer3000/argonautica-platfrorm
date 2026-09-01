@@ -1,0 +1,127 @@
+/* Аргонавты: сетка плиток потока + карточка участника с задачами. */
+
+.wrap {
+  max-width: 1000px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 var(--space-5) var(--space-24);
+  /* AppShell.content — overflow:hidden; экран владеет своим скроллом. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-4);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-3);
+}
+
+.tileName {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+
+.tileMeta {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+/* --- страница участника --- */
+
+.profileCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.profileName {
+  font-family: var(--font-t1);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin-top: var(--space-2);
+}
+
+.profileUsername {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.profileRole {
+  font-size: var(--text-label-md);
+  color: var(--accent);
+}
+
+.profileBio {
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  max-width: 480px;
+  margin: var(--space-2) 0 var(--space-3);
+  white-space: pre-wrap;
+}
+
+.tasksSection {
+  padding-top: var(--space-6);
+}
+
+.tasksHeading {
+  font-family: var(--font-t1);
+  font-weight: 400;
+  font-size: var(--text-h3);
+  margin: 0 0 var(--space-4);
+}
+
+.taskList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.taskRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: var(--transition-base);
+}
+
+.taskRow:hover {
+  border-color: var(--divider-gold);
+}
+
+.taskTitle {
+  font-size: var(--text-ui);
+}
+
+.taskMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
+.taskDeadline {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  white-space: nowrap;
+}

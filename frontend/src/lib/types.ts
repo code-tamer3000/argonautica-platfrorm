@@ -64,6 +64,42 @@ export interface PublicUserOut {
   plan_name: string | null
 }
 
+// «Аргонавты» (ростер потока + профиль участника) — состав фильтруется на
+// сервере (свой intake, без наблюдателей/админов), задачи — только видимые
+// смотрящему common-задачи (двойной фильтр поток+тариф, как в разделе «Задачи»).
+export interface ArgonautOut {
+  id: number
+  username: string
+  display_name: string
+  avatar_url: string | null
+  plan_id: number | null
+  plan_name: string | null
+  tasks_done: number
+}
+
+export type ArgonautTaskStatus = 'accepted' | 'submitted'
+
+export interface ArgonautTaskOut {
+  task_id: number
+  title: string
+  status: ArgonautTaskStatus
+  deadline_at: string | null
+  reviewed_at: string | null
+}
+
+export interface ArgonautDetailOut {
+  id: number
+  username: string
+  display_name: string
+  avatar_url: string | null
+  bio: string | null
+  plan_id: number | null
+  plan_name: string | null
+  tasks_done: number
+  diary_room_id: number | null
+  tasks: ArgonautTaskOut[]
+}
+
 export interface RoomOut {
   id: number
   type: RoomType
