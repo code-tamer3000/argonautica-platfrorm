@@ -15,10 +15,17 @@ with bio, task list, and a link to that person's diary. Composition-only endpoin
 ## Roster composition
 
 `GET /api/argonauts` returns every user with `intake_id == current_user.intake_id`,
-**excluding** only the caller themself and observers (`is_observer`). Admins ARE
-included (their own section, see below) but never carry a task count — they have
-no assignments by construction, and the tile/detail hide the "N задач" line
-entirely for `role == 'admin'` rather than show a permanent 0.
+**excluding** the caller themself and two independent groups:
+- observers, `users.is_observer` — set after 5 missed days (see AUTH.md/oferta);
+- holders of the `OBSERVER_TARIFF_NAME` tariff (`api/argonauts.py`, currently
+  "Наблюдатель") — a **purchased tariff row in `plans`**, unrelated to the flag.
+  A user can hold this tariff from day one with `is_observer == False` the whole
+  time; either condition alone is enough to exclude them. A user with no tariff
+  at all (`plan_id IS NULL`) is a different, unrelated case and stays in.
+
+Admins ARE included (their own section, see below) but never carry a task count
+— they have no assignments by construction, and the tile/detail hide the
+"N задач" line entirely for `role == 'admin'` rather than show a permanent 0.
 
 This follows the diary-visibility rule (ARG-112: `diary_visible` in
 [services/visibility.py](../backend/app/services/visibility.py)) — **intake only**,
@@ -79,14 +86,21 @@ exactly `EXPEDITION_FEAT_TASK_TITLE` (`api/argonauts.py`, currently "Освоб�
 concept). Matched by **exact task title**, not a DB flag — nothing marks that
 task as special, so renaming it on prod silently breaks this field.
 
-Gated by the same `_visible_common_where(current_user)` filter as `tasks`/
-`tasks_done` — if the task is scoped to a tariff the *viewer* doesn't hold,
-`expedition_feat` is `null`, never the target's answer. Same anti-IDOR reasoning
-as the rest of the page (see "Tasks" above): visibility is always evaluated
-against the viewer, never the profile being viewed.
+On production this task is **`type='individual'`** (assigned per-user to every
+participant at intake start), not `common` — this matters: `_visible_common_where`
+(used by `tasks`/`tasks_done` above) hard-filters `Task.type == 'common'` and
+would silently match nothing here, which is exactly the bug the first version of
+this field shipped with (verified against prod DB — task id 35, 21 individual
+assignments, zero rows matched the common-only query). `_expedition_feat_text`
+does **not** reuse `_visible_common_where`; it matches by title plus an
+intake-label check (`Task.intake_id IS NULL OR Task.intake_id == current_user.intake_id`,
+same "label not a gate" semantics documented on `Task.intake_id` for individual
+tasks) — real access control comes from `user` already having passed through
+`_roster` (same intake as the viewer), not from task-visibility rules that don't
+apply to a per-user individual task in the first place.
 
-`null` when no such task exists (most non-prod/test environments) or the target
-never submitted to it.
+`null` when no such task exists (most non-prod/test environments), it belongs to
+a different intake, or the target never submitted to it.
 
 ## Diary link
 
