@@ -3,7 +3,12 @@
 Сборочный эндпоинт в стиле dashboard.py — новой бизнес-логики нет, только
 композиция уже существующих правил видимости:
   - состав ростера = участники того же intake (ARG-112 «дневники» правило: только
-    поток, без рангового каскада тарифа ARG-110) минус наблюдатели и админы;
+    поток, без рангового каскада тарифа ARG-110), минус наблюдатели; админы в
+    ростере ЕСТЬ (отдельная секция на фронте), но без карточки задач — у них их
+    нет по построению;
+  - фронт группирует плитки по тарифу (Игрок/Спецотряд/Око — см. lib/planGroups
+    `contactPlanKey`/`groupPreOrdered`), поэтому сортируем так же, как
+    `list_contacts` (ARG-110): участники по рангу тарифа, админы хвостовым блоком;
   - `tasks_done`/`tasks` считаются по common-задачам, видимым СМОТРЯЩЕМУ
     (`_visible_common_where`, тот же двойной фильтр поток+тариф, что и в
     разделе «Задачи») — individual/pair/stream задачи чужому участнику не
@@ -28,6 +33,7 @@ from app.schemas.argonaut import ArgonautDetailOut, ArgonautOut, ArgonautTaskOut
 from app.services.media import presign_asset_urls
 from app.services.tasks import _visible_common_where
 from app.services.users import avatar_url, plan_names
+from app.services.visibility import cohort_plan_ranks, user_rank
 
 router = APIRouter(
     prefix="/api/argonauts",
@@ -41,17 +47,21 @@ VISIBLE_TASK_STATUSES = ("accepted", "submitted")
 
 
 async def _roster(session: AsyncSession, current_user: User) -> list[User]:
+    """Состав + порядок (участники по рангу тарифа, админы хвостом) — фронт режет
+    на секции по соседним элементам, ранги сам не пересчитывает (см. модуль)."""
     if current_user.intake_id is None:
         return []
     rows = await session.execute(
         select(User).where(
             User.intake_id == current_user.intake_id,
             User.is_observer.is_(False),
-            User.role != "admin",
             User.id != current_user.id,
         )
     )
-    return list(rows.scalars().all())
+    users = list(rows.scalars().all())
+    ranks = await cohort_plan_ranks(session, current_user.intake_id)
+    users.sort(key=lambda u: (u.role == "admin", user_rank(u, ranks), u.display_name))
+    return users
 
 
 async def _tasks_done_by_user(
@@ -97,13 +107,13 @@ async def list_argonauts(
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, users)
     done = await _tasks_done_by_user(session, current_user, [u.id for u in users])
-    users.sort(key=lambda u: u.display_name)
     return [
         ArgonautOut(
             id=u.id,
             username=u.username,
             display_name=u.display_name,
             avatar_url=avatar_url(u, signed),
+            role=u.role,
             plan_id=u.plan_id,
             plan_name=plans.get(u.plan_id) if u.plan_id is not None else None,
             tasks_done=done.get(u.id, 0),
@@ -127,7 +137,9 @@ async def get_argonaut(
     media_ids = {user.avatar_media_id} if user.avatar_media_id is not None else set()
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, [user])
-    diary_rooms = await _diary_room_ids(session, [user.id])
+    # Личный канал админа не проходит diary_visible (owner.role != 'admin') —
+    # ссылка вела бы на 403, поэтому для админов её не отдаём вовсе.
+    diary_rooms = await _diary_room_ids(session, [user.id]) if user.role != "admin" else {}
 
     rows = await session.execute(
         select(
@@ -165,6 +177,7 @@ async def get_argonaut(
         display_name=user.display_name,
         avatar_url=avatar_url(user, signed),
         bio=user.bio,
+        role=user.role,
         plan_id=user.plan_id,
         plan_name=plans.get(user.plan_id) if user.plan_id is not None else None,
         tasks_done=tasks_done,

@@ -72,6 +72,7 @@ export interface ArgonautOut {
   username: string
   display_name: string
   avatar_url: string | null
+  role: Role
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
@@ -93,6 +94,7 @@ export interface ArgonautDetailOut {
   display_name: string
   avatar_url: string | null
   bio: string | null
+  role: Role
   plan_id: number | null
   plan_name: string | null
   tasks_done: number

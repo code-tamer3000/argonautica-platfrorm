@@ -89,9 +89,11 @@ async def test_roster_same_intake_only(client: AsyncClient, make_user: MakeUser)
     assert viewer.id not in ids  # сам смотрящий не в списке
 
 
-async def test_roster_excludes_observer_and_admin(
+async def test_roster_excludes_observer_includes_admin(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
+    """Наблюдатель — вне ростера целиком; админ — в ростере (отдельная секция на
+    фронте по role), но без задач (tasks_done=0 у него по построению)."""
     starts_on = date.today() - timedelta(days=201)
     viewer = await make_user(intake_starts_on=starts_on)
     observer = await make_user(intake_id=viewer.intake_id, is_observer=True)
@@ -99,9 +101,16 @@ async def test_roster_excludes_observer_and_admin(
 
     viewer_h = await _headers(client, viewer)
     resp = await client.get("/api/argonauts", headers=viewer_h)
-    ids = {row["id"] for row in resp.json()}
+    rows = resp.json()
+    ids = {row["id"] for row in rows}
     assert observer.id not in ids
-    assert admin.id not in ids
+    assert admin.id in ids
+    admin_row = next(r for r in rows if r["id"] == admin.id)
+    assert admin_row["role"] == "admin"
+    assert admin_row["tasks_done"] == 0
+    # Админы хвостовым блоком (см. _roster) — после всех участников с рангом.
+    admin_index = next(i for i, r in enumerate(rows) if r["id"] == admin.id)
+    assert all(r["role"] != "admin" for r in rows[:admin_index])
 
 
 async def test_observer_cannot_access_section(client: AsyncClient, make_user: MakeUser) -> None:
@@ -122,6 +131,20 @@ async def test_detail_of_other_intake_is_404(client: AsyncClient, make_user: Mak
     viewer_h = await _headers(client, viewer)
     resp = await client.get(f"/api/argonauts/{stranger.id}", headers=viewer_h)
     assert resp.status_code == 404
+
+
+async def test_admin_detail_has_no_diary_link(client: AsyncClient, make_user: MakeUser) -> None:
+    """Личный канал админа не проходит diary_visible (owner.role != 'admin') —
+    ссылка вела бы на 403, поэтому эндпоинт её не отдаёт."""
+    starts_on = date.today() - timedelta(days=207)
+    viewer = await make_user(intake_starts_on=starts_on)
+    admin = await make_user(intake_id=viewer.intake_id, role="admin")
+
+    viewer_h = await _headers(client, viewer)
+    detail = (await client.get(f"/api/argonauts/{admin.id}", headers=viewer_h)).json()
+    assert detail["role"] == "admin"
+    assert detail["diary_room_id"] is None
+    assert detail["tasks"] == []
 
 
 # --- tasks_done / детальный список задач --------------------------------------

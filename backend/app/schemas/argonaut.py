@@ -16,6 +16,7 @@ class ArgonautOut(BaseModel):
     username: str
     display_name: str
     avatar_url: str | None = None
+    role: str
     plan_id: int | None = None
     plan_name: str | None = None
     tasks_done: int
@@ -39,6 +40,7 @@ class ArgonautDetailOut(BaseModel):
     display_name: str
     avatar_url: str | None = None
     bio: str | None = None
+    role: str
     plan_id: int | None = None
     plan_name: str | None = None
     tasks_done: int
