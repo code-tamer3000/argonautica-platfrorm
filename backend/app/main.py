@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.api.admin import router as admin_router
 from app.api.applications import router as applications_router
+from app.api.argonauts import router as argonauts_router
 from app.api.auth import router as auth_router
 from app.api.cabin import router as cabin_router
 from app.api.calendar import router as calendar_router
@@ -75,6 +76,7 @@ app.include_router(media_router)
 app.include_router(metrics_router)
 app.include_router(kb_router)
 app.include_router(users_router)
+app.include_router(argonauts_router)
 app.include_router(stickers_router)
 app.include_router(calendar_router)
 app.include_router(cabin_router)

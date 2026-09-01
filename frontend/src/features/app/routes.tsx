@@ -15,6 +15,7 @@ import {
   IconSupport,
   IconTasks,
   IconUser,
+  IconUsers,
 } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { useUiStore } from '../../stores/ui'
@@ -28,6 +29,8 @@ import { KbViewer } from '../kb/KbViewer'
 import { TasksList } from '../tasks/TasksList'
 import { TaskDetail } from '../tasks/TaskDetail'
 import { ProfileScreen } from '../profile/ProfileScreen'
+import { ArgonautsScreen } from '../argonauts/ArgonautsScreen'
+import { ArgonautDetail } from '../argonauts/ArgonautDetail'
 import { SupportScreen } from '../support/SupportScreen'
 import type { NavBadges } from './useNavBadges'
 import { useAccessContext, type Access } from './RequireAccess'
@@ -171,6 +174,14 @@ export const routes: RouteEntry[] = [
     end: true,
     access: { kind: 'public' },
     Component: RootScreen,
+  },
+  {
+    path: '/argonauts',
+    label: 'Аргонавты',
+    icon: IconUsers,
+    access: { kind: 'observerBlocked' },
+    Component: withCohortGate(() => <ArgonautsScreen />),
+    children: [{ path: '/argonauts/:userId', Component: withCohortGate(() => <ArgonautDetail />) }],
   },
   {
     path: '/chats',

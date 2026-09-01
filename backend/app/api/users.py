@@ -16,22 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_user
 from app.core.redis import redis_client
 from app.db.session import get_session
-from app.models.plan import Plan
 from app.models.user import User
 from app.schemas.user import PublicUserOut
 from app.services.media import presign_asset_urls
+from app.services.users import avatar_url as _avatar
+from app.services.users import plan_names as _plan_names
 from app.services.visibility import cohort_plan_ranks, contact_visible, user_rank
 
 router = APIRouter(prefix="/api/users", tags=["users"])
-
-
-async def _plan_names(session: AsyncSession, users: list[User]) -> dict[int, str]:
-    plan_ids = {u.plan_id for u in users if u.plan_id is not None}
-    if not plan_ids:
-        return {}
-    rows = await session.execute(select(Plan.id, Plan.name).where(Plan.id.in_(plan_ids)))
-    # .tuples() — обычные кортежи вместо Row: dict() их принимает, и mypy это видит.
-    return dict(rows.tuples().all())
 
 
 def _public_out(
@@ -47,12 +39,6 @@ def _public_out(
         plan_id=user.plan_id,
         plan_name=plan_names.get(user.plan_id) if user.plan_id is not None else None,
     )
-
-
-def _avatar(user: User, signed: dict[int, str]) -> str | None:
-    if user.avatar_media_id is not None:
-        return signed.get(user.avatar_media_id)
-    return user.avatar_url
 
 
 @router.get("", response_model=list[PublicUserOut])
