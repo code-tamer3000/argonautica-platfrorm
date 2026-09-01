@@ -8,10 +8,14 @@ import styles from './tasks.module.css'
 export function TaskComposer({
   taskId,
   status,
+  onSubmitted,
 }: {
   taskId: number
   /** Статус трека участника, если он уже сдавал; иначе undefined. */
   status?: string
+  /** Доп. колбэк после успешной сдачи — например, обновить данные вне очереди
+   * задач (страница «Аргонавты» читает текст сдачи из совсем другого запроса). */
+  onSubmitted?: () => void
 }) {
   const [text, setText] = useState('')
   const [attachments, setAttachments] = useState<MediaChip[]>([])
@@ -35,6 +39,7 @@ export function TaskComposer({
           setAttachments([])
           setEditing(false)
           toast('Сдано')
+          onSubmitted?.()
         },
         onError: (err: unknown) =>
           toast(err instanceof Error ? err.message : 'Не удалось отправить', 'error'),

@@ -91,7 +91,7 @@ participant at intake start), not `common` — this matters: `_visible_common_wh
 (used by `tasks`/`tasks_done` above) hard-filters `Task.type == 'common'` and
 would silently match nothing here, which is exactly the bug the first version of
 this field shipped with (verified against prod DB — task id 35, 21 individual
-assignments, zero rows matched the common-only query). `_expedition_feat_text`
+assignments, zero rows matched the common-only query). `_expedition_feat`
 does **not** reuse `_visible_common_where`; it matches by title plus an
 intake-label check (`Task.intake_id IS NULL OR Task.intake_id == current_user.intake_id`,
 same "label not a gate" semantics documented on `Task.intake_id` for individual
@@ -101,6 +101,27 @@ apply to a per-user individual task in the first place.
 
 `null` when no such task exists (most non-prod/test environments), it belongs to
 a different intake, or the target never submitted to it.
+
+### Editing your own feat
+
+`ArgonautDetailOut` also carries `expedition_feat_task_id` and
+`expedition_feat_status` (the caller's own assignment status: `assigned`/
+`submitted`/`returned`/`accepted`, or `null`) — used only when viewing **your
+own** profile (`ArgonautDetail.tsx` compares `useAuth().user.id` to the profile
+id). On your own page these feed the existing `TaskComposer`
+(`features/tasks/TaskComposer.tsx`, the same widget the Tasks section uses) so
+you can submit/edit your answer right there, POSTing through the already-existing
+`POST /api/tasks/{task_id}/submissions` — **no new write endpoint** was added for
+this. `TaskComposer` gained an optional `onSubmitted` callback so the Argonaut
+page can invalidate its own query (`argonautKey(userId)`, a different cache entry
+than the Tasks section's) after a successful save; nothing else about the
+component changed, `TaskDetail.tsx`'s usage is unaffected.
+
+`expedition_feat_task_id` is `null` — hiding the composer entirely — whenever the
+target user has no `task_assignments` row for this task at all (not just no
+submission yet): `assert_task_visible` would 403 an individual-task submission
+from someone with neither an assignment nor authorship, so exposing the composer
+in that case would just be a guaranteed error, not a genuine edit affordance.
 
 ## Diary link
 

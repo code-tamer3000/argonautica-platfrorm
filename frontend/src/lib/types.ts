@@ -102,6 +102,10 @@ export interface ArgonautDetailOut {
   tasks: ArgonautTaskOut[]
   // Текст последней сдачи задачи «Освобождаем оперативку» (см. docs/ARGONAUTS.md).
   expedition_feat: string | null
+  // id задачи + статус назначения ЦЕЛЕВОГО юзера — на своей странице подаём в
+  // TaskComposer, чтобы отредактировать «Подвиг» тем же POST-эндпоинтом задач.
+  expedition_feat_task_id: number | null
+  expedition_feat_status: 'assigned' | 'submitted' | 'returned' | 'accepted' | null
 }
 
 export interface RoomOut {

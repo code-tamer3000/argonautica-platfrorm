@@ -3,6 +3,7 @@ import { http } from '../lib/apiClient'
 import type { ArgonautDetailOut, ArgonautOut } from '../lib/types'
 
 export const argonautsKey = ['argonauts'] as const
+export const argonautKey = (userId: number) => [...argonautsKey, userId] as const
 
 export function useArgonauts() {
   return useQuery({
@@ -14,7 +15,7 @@ export function useArgonauts() {
 
 export function useArgonaut(userId: number) {
   return useQuery({
-    queryKey: [...argonautsKey, userId] as const,
+    queryKey: argonautKey(userId),
     queryFn: () => http.get<ArgonautDetailOut>(`/api/argonauts/${userId}`),
     staleTime: 60_000,
   })
