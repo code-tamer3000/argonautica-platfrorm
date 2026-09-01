@@ -72,6 +72,7 @@ export interface ArgonautOut {
   username: string
   display_name: string
   avatar_url: string | null
+  role: Role
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
@@ -93,11 +94,14 @@ export interface ArgonautDetailOut {
   display_name: string
   avatar_url: string | null
   bio: string | null
+  role: Role
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
   diary_room_id: number | null
   tasks: ArgonautTaskOut[]
+  // Текст последней сдачи задачи «Освобождаем оперативку» (см. docs/ARGONAUTS.md).
+  expedition_feat: string | null
 }
 
 export interface RoomOut {
