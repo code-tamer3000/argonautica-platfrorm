@@ -30,7 +30,9 @@ from app.schemas.room import (
     MemberOut,
     RoomOut,
     UpdateChannelRequest,
+    UpdateRoomAvatarRequest,
 )
+from app.services.media import presign_asset_urls
 from app.services.rooms import (
     assert_peer_visible,
     assert_room_access,
@@ -86,6 +88,24 @@ def _room_out(room: Room, plan_ids: list[int]) -> RoomOut:
     out = RoomOut.model_validate(room)
     out.plan_ids = plan_ids
     return out
+
+
+async def _presign_room_avatars(
+    session: AsyncSession, rooms: list[Room]
+) -> dict[int, str]:
+    """`{room.id: presigned-GET}` для комнат с `avatar_media_id` (обложка личного
+    дневника). Аналог `_avatar()` в `api/users.py`: подпись батчем через
+    `presign_asset_urls` (без `assert_media_access` — комната уже прошла свою
+    собственную проверку доступа)."""
+    media_ids = {room.avatar_media_id for room in rooms if room.avatar_media_id is not None}
+    if not media_ids:
+        return {}
+    signed = await presign_asset_urls(session, media_ids)
+    return {
+        room.id: signed[room.avatar_media_id]
+        for room in rooms
+        if room.avatar_media_id is not None and room.avatar_media_id in signed
+    }
 
 
 _ADMIN_OWNER_PLAN_ID = -1  # заведомо не существующий id тарифа — см. _owner_plan_label
@@ -200,7 +220,7 @@ async def create_room(
 async def get_personal_channel(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> Room:
+) -> RoomOut:
     """Вернуть личный канал текущего пользователя."""
     # Наблюдателю чат недоступен целиком (в т.ч. свой личный канал/Динамика).
     if current_user.is_observer:
@@ -217,7 +237,10 @@ async def get_personal_channel(
     ).scalar_one_or_none()
     if room is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Personal channel not found")
-    return room
+    item = _room_out(room, [])
+    signed = await _presign_room_avatars(session, [room])
+    item.avatar_url = signed.get(room.id)
+    return item
 
 
 @router.get("", response_model=list[RoomOut])
@@ -374,6 +397,9 @@ async def list_rooms(
             for uid, plan_id, plan_name, role in owner_rows.all()
         }
 
+    # Обложки личных дневников — батчем, одним вызовом на весь список.
+    avatar_map = await _presign_room_avatars(session, [r for r in rooms if r.is_personal])
+
     out: list[RoomOut] = []
     for room in rooms:
         item = RoomOut.model_validate(room)
@@ -388,6 +414,7 @@ async def list_rooms(
             item.owner_plan_id, item.owner_plan_name = owner_plan_map.get(
                 room.created_by, (None, None)
             )
+            item.avatar_url = avatar_map.get(room.id)
         out.append(item)
     return out
 
@@ -419,6 +446,8 @@ async def get_room(
         owner = owner_row.first()
         if owner is not None:
             item.owner_plan_id, item.owner_plan_name = _owner_plan_label(*owner)
+        signed = await _presign_room_avatars(session, [room])
+        item.avatar_url = signed.get(room.id)
     last_read = (membership.last_read_message_id or 0) if membership else 0
     unread_result = await session.execute(
         select(func.count())
@@ -480,6 +509,35 @@ async def update_channel(
     await session.flush()
 
     return _room_out(room, await _room_plan_ids(session, room.id))
+
+
+@router.patch("/{room_id}/avatar", response_model=RoomOut)
+async def update_room_avatar(
+    room_id: int,
+    body: UpdateRoomAvatarRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RoomOut:
+    """Обложка личного дневника: ставит/снимает только владелец. Пока — только
+    is_personal (см. docs/ROOMS.md «Personal diary rooms»)."""
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+    if not room.is_personal or room.created_by != current_user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your diary")
+
+    if body.avatar_media_id is not None:
+        asset = await session.get(MediaAsset, body.avatar_media_id)
+        if asset is None or asset.kind != "image":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Image asset not found")
+        if asset.created_by != current_user.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your asset")
+    room.avatar_media_id = body.avatar_media_id
+    await session.flush()
+
+    item = _room_out(room, [])
+    signed = await _presign_room_avatars(session, [room])
+    item.avatar_url = signed.get(room.id)
+    return item
 
 
 async def _load_group(session: AsyncSession, room_id: int) -> Room:
