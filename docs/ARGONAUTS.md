@@ -69,6 +69,25 @@ Status shown:
   (sent back for rework) and `assigned` (not yet touched) are excluded — neither
   reads as "here's what this person did".
 
+## Expedition feat
+
+`expedition_feat` (detail page only) — the text of the target's **latest**
+submission (any status: `assigned` obviously has none, but `submitted`/
+`returned`/`accepted` all qualify — whatever they wrote last) to the task titled
+exactly `EXPEDITION_FEAT_TASK_TITLE` (`api/argonauts.py`, currently "Освобождаем
+оперативку" — a specific existing production task, not a newly-introduced
+concept). Matched by **exact task title**, not a DB flag — nothing marks that
+task as special, so renaming it on prod silently breaks this field.
+
+Gated by the same `_visible_common_where(current_user)` filter as `tasks`/
+`tasks_done` — if the task is scoped to a tariff the *viewer* doesn't hold,
+`expedition_feat` is `null`, never the target's answer. Same anti-IDOR reasoning
+as the rest of the page (see "Tasks" above): visibility is always evaluated
+against the viewer, never the profile being viewed.
+
+`null` when no such task exists (most non-prod/test environments) or the target
+never submitted to it.
+
 ## Diary link
 
 `diary_room_id` = the target's personal channel (`rooms.is_personal AND

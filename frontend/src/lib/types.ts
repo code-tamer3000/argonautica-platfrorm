@@ -100,6 +100,8 @@ export interface ArgonautDetailOut {
   tasks_done: number
   diary_room_id: number | null
   tasks: ArgonautTaskOut[]
+  // Текст последней сдачи задачи «Освобождаем оперативку» (см. docs/ARGONAUTS.md).
+  expedition_feat: string | null
 }
 
 export interface RoomOut {

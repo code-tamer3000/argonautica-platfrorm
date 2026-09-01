@@ -1,8 +1,10 @@
 """Pydantic-схемы раздела «Аргонавты» (ростер потока + профиль участника).
 
-См. docs/ARGONAUTS.md: состав списка — весь intake смотрящего, кроме наблюдателей
-и админов; `tasks_done`/`tasks` считаются только по common-задачам, видимым
-смотрящему (тот же двойной фильтр поток+тариф, что и в разделе «Задачи»).
+См. docs/ARGONAUTS.md: состав списка — весь intake смотрящего, кроме наблюдателей;
+`tasks_done`/`tasks` считаются только по common-задачам, видимым смотрящему (тот же
+двойной фильтр поток+тариф, что и в разделе «Задачи»). `expedition_feat` — текст
+последней сдачи именованной задачи «Освобождаем оперативку» (см. EXPEDITION_FEAT_TASK_TITLE
+в api/argonauts.py).
 """
 from datetime import datetime
 
@@ -46,3 +48,4 @@ class ArgonautDetailOut(BaseModel):
     tasks_done: int
     diary_room_id: int | None = None
     tasks: list[ArgonautTaskOut]
+    expedition_feat: str | None = None

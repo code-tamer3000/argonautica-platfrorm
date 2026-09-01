@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.argonauts import EXPEDITION_FEAT_TASK_TITLE
 from app.models.room import Room
 from app.models.user import User
 
@@ -251,3 +252,79 @@ async def test_diary_room_id_matches_personal_room(
     assert detail["diary_room_id"] == room.id
     # плитка не несёт diary_room_id (только детальная страница) — но проверим id совпадает.
     assert row["id"] == target.id
+
+
+# --- expedition_feat -----------------------------------------------------------
+
+
+async def test_expedition_feat_shows_latest_submission_any_status(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    starts_on = date.today() - timedelta(days=208)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    viewer = await make_user(intake_id=admin.intake_id)
+    target = await make_user(intake_id=admin.intake_id)
+    viewer_h = await _headers(client, viewer)
+    target_h = await _headers(client, target)
+
+    task_id = await _create_common_task(client, admin_h, EXPEDITION_FEAT_TASK_TITLE)
+    # Первая сдача — возвращена, вторая (более поздняя) — на проверке. Поле должно
+    # показать текст ВТОРОЙ (последней), а не первой, независимо от статуса.
+    await client.post(
+        f"/api/tasks/{task_id}/submissions", headers=target_h, json={"body": "первый черновик"}
+    )
+    tracks = (
+        await client.get(f"/api/tasks/{task_id}/submissions", headers=admin_h)
+    ).json()
+    await client.post(
+        f"/api/tasks/assignments/{tracks[0]['assignment_id']}/review",
+        headers=admin_h,
+        json={"action": "return", "comment": "доработай"},
+    )
+    await client.post(
+        f"/api/tasks/{task_id}/submissions", headers=target_h, json={"body": "финальный ответ"}
+    )
+
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
+    assert detail["expedition_feat"] == "финальный ответ"
+
+
+async def test_expedition_feat_null_when_no_submission_or_no_such_task(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    starts_on = date.today() - timedelta(days=209)
+    viewer = await make_user(intake_starts_on=starts_on)
+    target = await make_user(intake_id=viewer.intake_id)
+    viewer_h = await _headers(client, viewer)
+
+    # Задачи EXPEDITION_FEAT_TASK_TITLE в этом потоке вообще нет.
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
+    assert detail["expedition_feat"] is None
+
+
+async def test_expedition_feat_hidden_when_task_not_visible_to_viewer(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Задача существует и сдана, но ограничена чужим тарифом — не видна viewer'у,
+    значит и текст сдачи ему не показываем (анти-IDOR, тот же принцип, что и у
+    tasks_done по чужому тарифу)."""
+    starts_on = date.today() - timedelta(days=210)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    plan_b = await _create_plan(client, admin_h, "Тариф В")
+
+    viewer = await make_user(intake_id=admin.intake_id, plan_id=None)
+    target = await make_user(intake_id=admin.intake_id, plan_id=plan_b)
+    target_h = await _headers(client, target)
+    viewer_h = await _headers(client, viewer)
+
+    task_id = await _create_common_task(
+        client, admin_h, EXPEDITION_FEAT_TASK_TITLE, plan_ids=[plan_b]
+    )
+    await client.post(
+        f"/api/tasks/{task_id}/submissions", headers=target_h, json={"body": "секретный ответ"}
+    )
+
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
+    assert detail["expedition_feat"] is None

@@ -65,6 +65,12 @@ export function ArgonautDetail() {
           </div>
         )}
         {data.bio && <div className={styles.profileBio}>{data.bio}</div>}
+        {data.expedition_feat && (
+          <div className={styles.featBlock}>
+            <div className={styles.featLabel}>Подвиг на Экспедицию</div>
+            <div className={styles.featText}>{data.expedition_feat}</div>
+          </div>
+        )}
         {data.diary_room_id != null && (
           <Button variant="outline" onClick={() => navigate(`/diaries/${data.diary_room_id}`)}>
             Перейти в дневник
