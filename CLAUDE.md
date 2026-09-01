@@ -70,6 +70,7 @@ Hard rules:
 | docs/SUPPORT.md            | feedback (bug/improvement) + FAQ                          |
 | docs/SURVEY.md             | выпускная анкета: гейт платформы, вопросы, подарок-PDF     |
 | docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
+| docs/ARGONAUTS.md          | participant roster tiles, profile+tasks page, diary link  |
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |
 | docs/INTAKE_BOT.md         | intake/payment bot: anketa → tariff → receipt → approval, plans CRUD |
 | docs/GENE_KEYS.md          | Генные Ключи: interactive I-Ching wheel, bundled content, geometry |
