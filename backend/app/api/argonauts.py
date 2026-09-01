@@ -130,7 +130,13 @@ async def get_argonaut(
     diary_rooms = await _diary_room_ids(session, [user.id])
 
     rows = await session.execute(
-        select(Task.id, Task.title, TaskAssignment.status, Task.deadline_at, TaskAssignment.reviewed_at)
+        select(
+            Task.id,
+            Task.title,
+            TaskAssignment.status,
+            Task.deadline_at,
+            TaskAssignment.reviewed_at,
+        )
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
         .where(
