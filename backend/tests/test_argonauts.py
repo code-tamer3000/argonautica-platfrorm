@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.argonauts import EXPEDITION_FEAT_TASK_TITLE
+from app.api.argonauts import EXPEDITION_FEAT_TASK_TITLE, OBSERVER_TARIFF_NAME
 from app.models.room import Room
 from app.models.user import User
 
@@ -112,6 +112,31 @@ async def test_roster_excludes_observer_includes_admin(
     # Админы хвостовым блоком (см. _roster) — после всех участников с рангом.
     admin_index = next(i for i, r in enumerate(rows) if r["id"] == admin.id)
     assert all(r["role"] != "admin" for r in rows[:admin_index])
+
+
+async def test_roster_excludes_observer_tariff_holders(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Тариф «Наблюдатель» (OBSERVER_TARIFF_NAME) и флаг is_observer — ДВЕ разные
+    вещи (флаг ставится за пропуски, тариф покупается с начала); держатель
+    тарифа без флага всё равно исключён из ростера целиком."""
+    starts_on = date.today() - timedelta(days=212)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    observer_plan = await _create_plan(client, admin_h, OBSERVER_TARIFF_NAME)
+
+    viewer = await make_user(intake_id=admin.intake_id)
+    tariff_observer = await make_user(
+        intake_id=admin.intake_id, plan_id=observer_plan, is_observer=False
+    )
+    no_plan = await make_user(intake_id=admin.intake_id, plan_id=None)
+
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get("/api/argonauts", headers=viewer_h)
+    ids = {row["id"] for row in resp.json()}
+    assert tariff_observer.id not in ids
+    # Без тарифа вообще (plan_id NULL) — это НЕ «Наблюдатель», остаётся в ростере.
+    assert no_plan.id in ids
 
 
 async def test_observer_cannot_access_section(client: AsyncClient, make_user: MakeUser) -> None:
@@ -257,9 +282,23 @@ async def test_diary_room_id_matches_personal_room(
 # --- expedition_feat -----------------------------------------------------------
 
 
+async def _create_individual_task(
+    client: AsyncClient, headers: dict[str, str], title: str, assignee_id: int, **extra: object
+) -> int:
+    resp = await client.post(
+        "/api/tasks",
+        headers=headers,
+        json={"type": "individual", "title": title, "assignee_ids": [assignee_id], **extra},
+    )
+    assert resp.status_code == 201, resp.text
+    return int(resp.json()["id"])
+
+
 async def test_expedition_feat_shows_latest_submission_any_status(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
+    """На проде EXPEDITION_FEAT_TASK_TITLE — individual-задание каждому участнику
+    потока (не common) — воспроизводим это в тесте, не common-вариант."""
     starts_on = date.today() - timedelta(days=208)
     admin = await make_user(role="admin", intake_starts_on=starts_on)
     admin_h = await _headers(client, admin)
@@ -268,7 +307,9 @@ async def test_expedition_feat_shows_latest_submission_any_status(
     viewer_h = await _headers(client, viewer)
     target_h = await _headers(client, target)
 
-    task_id = await _create_common_task(client, admin_h, EXPEDITION_FEAT_TASK_TITLE)
+    task_id = await _create_individual_task(
+        client, admin_h, EXPEDITION_FEAT_TASK_TITLE, target.id
+    )
     # Первая сдача — возвращена, вторая (более поздняя) — на проверке. Поле должно
     # показать текст ВТОРОЙ (последней), а не первой, независимо от статуса.
     await client.post(
@@ -303,27 +344,33 @@ async def test_expedition_feat_null_when_no_submission_or_no_such_task(
     assert detail["expedition_feat"] is None
 
 
-async def test_expedition_feat_hidden_when_task_not_visible_to_viewer(
+async def test_expedition_feat_ignores_other_intakes_task(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    """Задача существует и сдана, но ограничена чужим тарифом — не видна viewer'у,
-    значит и текст сдачи ему не показываем (анти-IDOR, тот же принцип, что и у
-    tasks_done по чужому тарифу)."""
-    starts_on = date.today() - timedelta(days=210)
+    """Одноимённая individual-задача в ДРУГОМ потоке (свой intake_id-ярлык на
+    задаче) не должна протечь в профиль участника этого потока."""
+    starts_on = date.today() - timedelta(days=211)
     admin = await make_user(role="admin", intake_starts_on=starts_on)
     admin_h = await _headers(client, admin)
-    plan_b = await _create_plan(client, admin_h, "Тариф В")
+    other_admin = await make_user(
+        role="admin", intake_starts_on=date.today() - timedelta(days=3)
+    )
+    other_admin_h = await _headers(client, other_admin)
 
-    viewer = await make_user(intake_id=admin.intake_id, plan_id=None)
-    target = await make_user(intake_id=admin.intake_id, plan_id=plan_b)
-    target_h = await _headers(client, target)
+    viewer = await make_user(intake_id=admin.intake_id)
+    target = await make_user(intake_id=admin.intake_id)
     viewer_h = await _headers(client, viewer)
 
-    task_id = await _create_common_task(
-        client, admin_h, EXPEDITION_FEAT_TASK_TITLE, plan_ids=[plan_b]
+    # Задача с тем же заголовком, но выдана как individual в ЧУЖОМ потоке
+    # (intake_id того потока) — для другого пользователя, а не для target.
+    outsider = await make_user(intake_id=other_admin.intake_id)
+    outsider_h = await _headers(client, outsider)
+    other_task_id = await _create_individual_task(
+        client, other_admin_h, EXPEDITION_FEAT_TASK_TITLE, outsider.id,
+        intake_id=other_admin.intake_id,
     )
     await client.post(
-        f"/api/tasks/{task_id}/submissions", headers=target_h, json={"body": "секретный ответ"}
+        f"/api/tasks/{other_task_id}/submissions", headers=outsider_h, json={"body": "чужой ответ"}
     )
 
     detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
