@@ -3,9 +3,11 @@
 Сборочный эндпоинт в стиле dashboard.py — новой бизнес-логики нет, только
 композиция уже существующих правил видимости:
   - состав ростера = участники того же intake (ARG-112 «дневники» правило: только
-    поток, без рангового каскада тарифа ARG-110), минус наблюдатели; админы в
-    ростере ЕСТЬ (отдельная секция на фронте), но без карточки задач — у них их
-    нет по построению;
+    поток, без рангового каскада тарифа ARG-110), минус наблюдатели (`is_observer`
+    флаг) И минус держатели тарифа `OBSERVER_TARIFF_NAME` — это ДВЕ независимые
+    группы (флаг ставится за 5 пропусков, тариф покупается с самого начала), обе
+    исключены из ростера целиком; админы в ростере ЕСТЬ (отдельная секция на
+    фронте), но без карточки задач — у них их нет по построению;
   - фронт группирует плитки по тарифу (Игрок/Спецотряд/Око — см. lib/planGroups
     `contactPlanKey`/`groupPreOrdered`), поэтому сортируем так же, как
     `list_contacts` (ARG-110): участники по рангу тарифа, админы хвостовым блоком;
@@ -17,20 +19,25 @@
     видны `submitted` (сдано, на проверке) — `returned` не показываем, это не
     «сдано»;
   - `expedition_feat` — отдельное поле «Подвиг на Экспедицию»: текст ПОСЛЕДНЕЙ
-    сдачи (любой статус) именованной задачи `EXPEDITION_FEAT_TASK_TITLE`, если
-    она видна смотрящему. Матчинг по точному заголовку задачи, а не по флагу в
-    БД (задача уже существует на проде без разметки) — переименование задачи
-    молча отключит поле, см. docs/ARGONAUTS.md.
+    сдачи (любой статус) именованной задачи `EXPEDITION_FEAT_TASK_TITLE`. На
+    проде эта задача — `type='individual'` (персональное задание каждому
+    участнику потока), НЕ `common` — значит `_visible_common_where` тут не
+    применяется (она фильтрует по `Task.type == 'common'` и всегда давала бы
+    404-подобный «нет такой задачи»); видимость этого поля обеспечена тем, что
+    `user` уже прошёл через `_roster` (тот же поток). Матчинг по точному
+    заголовку задачи, а не по флагу в БД — переименование задачи на проде молча
+    отключит поле, см. docs/ARGONAUTS.md.
 Наблюдателю раздел закрыт целиком (`require_participant`), как Задачи/Рубка.
 """
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_participant
 from app.db.session import get_session
+from app.models.plan import Plan
 from app.models.room import Room
 from app.models.task import Task, TaskAssignment, TaskSubmission
 from app.models.user import User
@@ -55,17 +62,26 @@ VISIBLE_TASK_STATUSES = ("accepted", "submitted")
 # бизнес-контента по заголовку — задача не размечена флагом в БД.
 EXPEDITION_FEAT_TASK_TITLE = "Освобождаем оперативку"
 
+# Точное название самого дешёвого тарифа («Позиция», см. оферту) — держатели
+# этого тарифа исключены из ростера, как и is_observer (см. docstring модуля).
+OBSERVER_TARIFF_NAME = "Наблюдатель"
+
 
 async def _roster(session: AsyncSession, current_user: User) -> list[User]:
     """Состав + порядок (участники по рангу тарифа, админы хвостом) — фронт режет
     на секции по соседним элементам, ранги сам не пересчитывает (см. модуль)."""
     if current_user.intake_id is None:
         return []
+    observer_plan_ids = select(Plan.id).where(Plan.name == OBSERVER_TARIFF_NAME)
     rows = await session.execute(
         select(User).where(
             User.intake_id == current_user.intake_id,
             User.is_observer.is_(False),
             User.id != current_user.id,
+            # Без тарифа (plan_id IS NULL) НЕ считается держателем тарифа
+            # «Наблюдатель» — NOT IN с NULL слева не отфильтровал бы иначе
+            # (SQL three-valued logic), поэтому explicit OR.
+            or_(User.plan_id.is_(None), User.plan_id.not_in(observer_plan_ids)),
         )
     )
     users = list(rows.scalars().all())
@@ -100,16 +116,20 @@ async def _expedition_feat_text(
 ) -> str | None:
     """Текст последней сдачи (любой статус) задачи EXPEDITION_FEAT_TASK_TITLE.
 
-    Задача должна быть видна СМОТРЯЩЕМУ (`_visible_common_where`) — если она
-    относится к чужому потоку/тарифу, поле молча пустое, как и остальные поля
-    раздела (см. docstring модуля).
+    На проде это `type='individual'` задание (персональное каждому участнику,
+    НЕ common) — `_visible_common_where` тут не применяется, она бы требовала
+    `Task.type == 'common'` и всегда возвращала бы «нет такой задачи» (см.
+    docstring модуля). Видимость обеспечена тем, что `user` уже прошёл через
+    `_roster` (тот же поток, что и у current_user); `intake_id` задачи —
+    необязательная метка provisioning, сверяем её только чтобы не подцепить
+    одноимённую задачу ДРУГОГО потока, если такая когда-нибудь появится.
     """
     task_id = await session.scalar(
         select(Task.id)
         .where(
             Task.title == EXPEDITION_FEAT_TASK_TITLE,
-            *_visible_common_where(current_user),
             Task.deleted_at.is_(None),
+            or_(Task.intake_id.is_(None), Task.intake_id == current_user.intake_id),
         )
         .limit(1)
     )

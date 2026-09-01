@@ -62,6 +62,24 @@
   border-bottom: 1px solid var(--divider);
 }
 
+.avatarBtn {
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  cursor: pointer;
+  line-height: 0;
+  transition: var(--transition-base);
+}
+
+.avatarBtn:disabled {
+  cursor: default;
+}
+
+.avatarBtn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
 .profileName {
   font-family: var(--font-t1);
   font-size: var(--text-h3);

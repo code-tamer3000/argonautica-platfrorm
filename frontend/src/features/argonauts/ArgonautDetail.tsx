@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useArgonaut } from '../../api/argonauts'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { Chip } from '../../components/Chip'
 import { EmptyState } from '../../components/EmptyState'
+import { Lightbox } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { ApiError } from '../../lib/apiClient'
@@ -31,6 +33,7 @@ export function ArgonautDetail() {
   const { userId } = useParams<{ userId: string }>()
   const navigate = useNavigate()
   const { data, isLoading, error } = useArgonaut(Number(userId))
+  const [avatarOpen, setAvatarOpen] = useState(false)
 
   if (error instanceof ApiError && error.status === 404) {
     return (
@@ -56,7 +59,18 @@ export function ArgonautDetail() {
     <div className={styles.wrap}>
       <PageHeader title={data.display_name} />
       <div className={styles.profileCard}>
-        <Avatar name={data.display_name} url={data.avatar_url} size={88} />
+        <button
+          type="button"
+          className={styles.avatarBtn}
+          onClick={() => data.avatar_url && setAvatarOpen(true)}
+          disabled={!data.avatar_url}
+          aria-label="Открыть фото"
+        >
+          <Avatar name={data.display_name} url={data.avatar_url} size={88} />
+        </button>
+        {avatarOpen && data.avatar_url && (
+          <Lightbox url={data.avatar_url} kind="image" onClose={() => setAvatarOpen(false)} />
+        )}
         <div className={styles.profileName}>{data.display_name}</div>
         <div className={styles.profileUsername}>@{data.username}</div>
         {(data.role === 'admin' || data.plan_name) && (
