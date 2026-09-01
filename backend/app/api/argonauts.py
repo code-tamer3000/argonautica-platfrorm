@@ -26,7 +26,10 @@
     404-подобный «нет такой задачи»); видимость этого поля обеспечена тем, что
     `user` уже прошёл через `_roster` (тот же поток). Матчинг по точному
     заголовку задачи, а не по флагу в БД — переименование задачи на проде молча
-    отключит поле, см. docs/ARGONAUTS.md.
+    отключит поле, см. docs/ARGONAUTS.md. Заодно отдаём `expedition_feat_task_id`/
+    `_status` — фронт даёт владельцу профиля отредактировать через тот же
+    `POST /api/tasks/{id}/submissions`, что и обычный раздел «Задачи» (никакого
+    нового write-эндпоинта здесь нет — эта задача только читает).
 Наблюдателю раздел закрыт целиком (`require_participant`), как Задачи/Рубка.
 """
 from typing import Annotated
@@ -111,10 +114,13 @@ async def _tasks_done_by_user(
     return dict(rows.tuples().all())
 
 
-async def _expedition_feat_text(
+async def _expedition_feat(
     session: AsyncSession, current_user: User, user_id: int
-) -> str | None:
-    """Текст последней сдачи (любой статус) задачи EXPEDITION_FEAT_TASK_TITLE.
+) -> tuple[int | None, str | None, str | None]:
+    """(task_id, текст последней сдачи, статус назначения) для задачи
+    EXPEDITION_FEAT_TASK_TITLE. task_id/status отдаются фронту, чтобы владелец
+    профиля мог сдать/отредактировать через уже существующий TaskComposer
+    (`POST /api/tasks/{task_id}/submissions`) — эта функция только читает.
 
     На проде это `type='individual'` задание (персональное каждому участнику,
     НЕ common) — `_visible_common_where` тут не применяется, она бы требовала
@@ -123,6 +129,11 @@ async def _expedition_feat_text(
     `_roster` (тот же поток, что и у current_user); `intake_id` задачи —
     необязательная метка provisioning, сверяем её только чтобы не подцепить
     одноимённую задачу ДРУГОГО потока, если такая когда-нибудь появится.
+
+    `task_id` возвращаем `None`, если у `user_id` нет строки `task_assignments` —
+    иначе фронт на СВОЕЙ странице показал бы TaskComposer, чей submit гарантированно
+    словит 403 (`assert_task_visible` для individual требует своё назначение либо
+    авторство задачи, см. services/tasks.py) — молча отправлять в тупик не стоит.
     """
     task_id = await session.scalar(
         select(Task.id)
@@ -134,15 +145,24 @@ async def _expedition_feat_text(
         .limit(1)
     )
     if task_id is None:
-        return None
-    return await session.scalar(
-        select(TaskSubmission.body)
-        .select_from(TaskSubmission)
-        .join(TaskAssignment, TaskAssignment.id == TaskSubmission.assignment_id)
-        .where(TaskAssignment.task_id == task_id, TaskAssignment.user_id == user_id)
-        .order_by(TaskSubmission.created_at.desc())
-        .limit(1)
-    )
+        return None, None, None
+    # LEFT JOIN: назначение может существовать без единой сдачи (status='assigned')
+    # — статус фронту нужен и в этом случае (чтобы сразу открыть композер), body
+    # тогда NULL. Нет строки вовсе — юзер на это задание не назначен.
+    row = (
+        await session.execute(
+            select(TaskAssignment.status, TaskSubmission.body)
+            .select_from(TaskAssignment)
+            .outerjoin(TaskSubmission, TaskSubmission.assignment_id == TaskAssignment.id)
+            .where(TaskAssignment.task_id == task_id, TaskAssignment.user_id == user_id)
+            .order_by(TaskSubmission.created_at.desc().nullslast())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None, None, None
+    status, body = row
+    return task_id, body, status
 
 
 async def _diary_room_ids(session: AsyncSession, user_ids: list[int]) -> dict[int, int]:
@@ -230,7 +250,9 @@ async def get_argonaut(
         for task_id, title, task_status, deadline_at, reviewed_at in rows.all()
     ]
     tasks_done = sum(1 for t in tasks if t.status == "accepted")
-    expedition_feat = await _expedition_feat_text(session, current_user, user.id)
+    feat_task_id, expedition_feat, feat_status = await _expedition_feat(
+        session, current_user, user.id
+    )
 
     return ArgonautDetailOut(
         id=user.id,
@@ -245,4 +267,6 @@ async def get_argonaut(
         diary_room_id=diary_rooms.get(user.id),
         tasks=tasks,
         expedition_feat=expedition_feat,
+        expedition_feat_task_id=feat_task_id,
+        expedition_feat_status=feat_status,
     )
