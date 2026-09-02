@@ -1,7 +1,9 @@
 """Уведомления: личка → пиру, ответ в тред → автору корня, пост в новостях → всем;
 себе не шлём; отметка прочитанными гасит счётчик."""
+from datetime import UTC, datetime, timedelta
+
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
@@ -279,3 +281,47 @@ async def test_mark_read_clears_unread(
     assert resp.status_code == 200, resp.text
     assert resp.json()["unread_count"] == 0
     assert (await _notifications(client, hb))["unread_count"] == 0
+
+
+async def test_feed_drops_notifications_read_over_48h_ago(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id, type="dm", name=None)
+    await add_membership(room.id, a.id)
+    await add_membership(room.id, b.id)
+
+    ha = await _headers(client, a)
+    hb = await _headers(client, b)
+
+    # Старое: b получает уведомление, читает его прямо сейчас, но помечаем read_at
+    # так, будто это случилось больше 48 часов назад.
+    await _send(client, ha, room.id, content="old ping")
+    old_id = (await _notifications(client, hb))["items"][0]["id"]
+    await client.post("/api/notifications/read", headers=hb, json={"up_to_id": old_id})
+    stale_read_at = datetime.now(UTC) - timedelta(hours=49)
+    await session.execute(
+        update(Notification).where(Notification.id == old_id).values(read_at=stale_read_at)
+    )
+    await session.commit()
+
+    # Свежее: новое уведомление, прочитанное только что.
+    await _send(client, ha, room.id, content="fresh ping")
+    fresh_id = (await _notifications(client, hb))["items"][0]["id"]
+    await client.post("/api/notifications/read", headers=hb, json={"up_to_id": fresh_id})
+
+    data = await _notifications(client, hb)
+    ids = [item["id"] for item in data["items"]]
+    assert fresh_id in ids
+    assert old_id not in ids
+    assert data["unread_count"] == 0
+
+    # Строка никуда не делась из БД — фильтр только в выдаче.
+    assert await session.scalar(
+        select(func.count()).select_from(Notification).where(Notification.id == old_id)
+    ) == 1
