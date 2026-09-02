@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.expedition import IntakeStage
 from app.models.user import User
+from app.services.rooms import ensure_news_channel
 
 from .conftest import MakeUser, auth_headers, get_or_create_intake, login
 
@@ -187,3 +188,36 @@ async def test_lock_state_reveals_after_stage_task_accepted(
 
     revealed = await client.get("/api/dashboard", headers=user_headers)
     assert revealed.json()["expedition"]["lock_states"]["air"] == "revealed"
+
+
+async def test_news_preview_strips_inline_formatting_marks(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Превью новости на дашборде — обычный текст: маркеры **/*/++ панели
+    форматирования (frontend/src/features/chat/useTextFormatting.tsx) не рендерятся
+    на дашборде, значит не должны утекать в превью как сырые символы.
+
+    Свой набор (intake_starts_on) — иначе с дефолтным набором (DEFAULT_INTAKE_OFFSET_DAYS)
+    новостной канал общий с другими тестами (test_notifications.py, test_observer.py
+    переиспользуют его по стартовой дате), и "последнее сообщение" оказалось бы
+    недетерминированным."""
+    start = date.today() - timedelta(days=17)
+    intake = await get_or_create_intake(session, start)
+    admin = await make_user(role="admin", intake_id=intake.id)
+    participant = await make_user(intake_id=intake.id)
+
+    news = await ensure_news_channel(session, intake.id)
+    await session.commit()
+
+    send_resp = await client.post(
+        f"/api/rooms/{news.id}/messages",
+        headers=await _headers(client, admin),
+        json={"content": "**жирный** и *курсив* и ++подчёркнутый++ пост"},
+    )
+    assert send_resp.status_code == 201, send_resp.text
+
+    resp = await client.get("/api/dashboard", headers=await _headers(client, participant))
+    assert resp.status_code == 200, resp.text
+    news_preview = resp.json()["news_preview"]
+    assert news_preview is not None
+    assert news_preview["preview"] == "жирный и курсив и подчёркнутый пост"

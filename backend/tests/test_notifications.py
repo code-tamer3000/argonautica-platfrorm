@@ -325,3 +325,56 @@ async def test_feed_drops_notifications_read_over_48h_ago(
     assert await session.scalar(
         select(func.count()).select_from(Notification).where(Notification.id == old_id)
     ) == 1
+
+
+async def test_preview_strips_inline_formatting_marks(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Превью в колокольчике/push — обычный текст: маркеры **/*/++ панели
+    форматирования (frontend/src/features/chat/useTextFormatting.tsx) не рендерятся
+    нигде на бэкенде, значит не должны утекать в превью как сырые символы."""
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id, type="dm", name=None)
+    await add_membership(room.id, a.id)
+    await add_membership(room.id, b.id)
+
+    await _send(
+        client,
+        await _headers(client, a),
+        room.id,
+        content="**жирный** и *курсив* и ++подчёркнутый++ текст",
+    )
+
+    data = await _notifications(client, await _headers(client, b))
+    item = data["items"][0]
+    assert item["preview"] == "жирный и курсив и подчёркнутый текст"
+
+
+async def test_bold_mention_still_notifies(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """@упоминание внутри жирного (**@user**) — маркер стоит впритык к @, серверный
+    парсер упоминаний (_MENTION_RE) требует лишь «не словесный символ перед @», а `*`
+    им не является — регрессия не должна возникнуть при добавлении разметки."""
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+
+    await _send(
+        client, await _headers(client, a), room.id, content=f"**@{b.username}** глянь"
+    )
+
+    data = await _notifications(client, await _headers(client, b))
+    assert data["unread_count"] == 1
+    item = data["items"][0]
+    assert item["kind"] == "mention"
+    assert item["actor_id"] == a.id

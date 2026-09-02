@@ -29,6 +29,7 @@ from app.schemas.expedition import DashboardOut, ExpeditionOut, NewsPreviewOut, 
 from app.schemas.task import TaskWithStatusOut
 from app.services.expedition import circle_day_number
 from app.services.graduation import is_graduated
+from app.services.text_marks import strip_inline_marks
 
 router = APIRouter(
     prefix="/api/dashboard",
@@ -102,7 +103,7 @@ async def _news_preview(session: AsyncSession, current_user: User) -> NewsPrevie
     if row is None:
         return None
     content, created_at, author_name = row
-    preview = (content or "").strip()
+    preview = strip_inline_marks((content or "").strip())
     if len(preview) > 200:
         preview = preview[:200].rstrip() + "…"
     return NewsPreviewOut(
