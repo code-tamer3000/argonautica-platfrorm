@@ -5,6 +5,11 @@ import { Fragment, type ReactNode } from 'react'
 // а звёздочки/решётки в обычном тексте не должны «съедаться» рендером. Здесь только то,
 // что в чате реально нужно: сохранённые переносы строк, кликабельные ссылки и подсветка
 // @упоминаний. Возвращаем React-узлы (не HTML) — dangerouslySetInnerHTML не нужен, XSS нет.
+//
+// @упоминание кликабельно, только если ник резолвится в id по карте mentionUsers
+// (текущий ростер платформы) — переход ведёт на профиль в «Аргонавтах»
+// (/argonauts/:userId). Нерезолвящийся ник (опечатка, ушедший пользователь) остаётся
+// просто подсветкой без ссылки — как деградируют ссылки/пути выше при невалидном URL.
 
 // «Голый» URL: http(s):// до первого пробела. Внутренний путь: /раздел без хоста
 // (например /kb, /support) — контент (см. provision_second_intake.py) не знает
@@ -34,6 +39,7 @@ function tokenize(
   keyPrefix: string,
   mentionClass?: string,
   navigate?: (path: string) => void,
+  mentionUsers?: Map<string, number>,
 ): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
@@ -116,11 +122,28 @@ function tokenize(
       )
       if (trailing) out.push(trailing)
     } else {
-      // @упоминание — только подсветка (клик-переход на профиль пока не делаем).
+      // @упоминание: если ник резолвится в id — кликабельный переход на профиль
+      // в «Аргонавтах», иначе просто подсветка.
+      const handle = match[5]
+      const userId = mentionUsers?.get(handle.slice(1).toLowerCase())
       out.push(
-        <span key={`${keyPrefix}-m${i++}`} className={mentionClass}>
-          {match[5]}
-        </span>,
+        userId !== undefined && navigate ? (
+          <a
+            key={`${keyPrefix}-m${i++}`}
+            href={`/argonauts/${userId}`}
+            className={mentionClass}
+            onClick={(e) => {
+              e.preventDefault()
+              navigate(`/argonauts/${userId}`)
+            }}
+          >
+            {handle}
+          </a>
+        ) : (
+          <span key={`${keyPrefix}-m${i++}`} className={mentionClass}>
+            {handle}
+          </span>
+        ),
       )
     }
     last = start + match[0].length
@@ -137,12 +160,13 @@ export function renderMessageText(
   text: string,
   mentionClass?: string,
   navigate?: (path: string) => void,
+  mentionUsers?: Map<string, number>,
 ): ReactNode {
   const lines = text.split('\n')
   return lines.map((line, i) => (
     <Fragment key={i}>
       {i > 0 && <br />}
-      {tokenize(line, `${i}`, mentionClass, navigate)}
+      {tokenize(line, `${i}`, mentionClass, navigate, mentionUsers)}
     </Fragment>
   ))
 }
