@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePins } from '../../api/pins'
 import { useUsersMap } from '../../api/users'
 import { IconPin } from '../../components/icons'
+import { stripInlineMarks } from '../../lib/messageText'
 import styles from './chat.module.css'
 
 interface Props {
@@ -11,7 +12,7 @@ interface Props {
 }
 
 function preview(content: string | null, stickerId: number | null, hasAtt: boolean): string {
-  if (content) return content
+  if (content) return stripInlineMarks(content)
   if (stickerId != null) return '[стикер]'
   if (hasAtt) return '[вложение]'
   return '[сообщение]'

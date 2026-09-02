@@ -2,6 +2,7 @@ import {
   ArrowUp,
   ArrowLeft,
   Bell,
+  Bold,
   BookOpen,
   Calendar,
   ChevronDown,
@@ -14,6 +15,7 @@ import {
   Dna,
   File,
   Flame,
+  Italic,
   LifeBuoy,
   MessageSquare,
   Megaphone,
@@ -35,6 +37,7 @@ import {
   Sun,
   TriangleAlert,
   Trash2,
+  Underline,
   User,
   Users,
   Waves,
@@ -90,3 +93,7 @@ export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />
 export const IconSun = (p: IconProps) => <Sun {...DEFAULTS} {...p} />
 export const IconMoon = (p: IconProps) => <Moon {...DEFAULTS} {...p} />
 export const IconLock = (p: IconProps) => <Lock {...DEFAULTS} {...p} />
+// Панель форматирования композера (жирный/курсив/подчёркнутый).
+export const IconBold = (p: IconProps) => <Bold {...DEFAULTS} {...p} />
+export const IconItalic = (p: IconProps) => <Italic {...DEFAULTS} {...p} />
+export const IconUnderline = (p: IconProps) => <Underline {...DEFAULTS} {...p} />

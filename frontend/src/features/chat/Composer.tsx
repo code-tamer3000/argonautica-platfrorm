@@ -13,6 +13,7 @@ import { Spinner } from '../../components/Spinner'
 import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
 import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
+import { stripInlineMarks } from '../../lib/messageText'
 import type { MessageOut, MessageRefOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
@@ -23,6 +24,7 @@ import { useAuth } from '../auth/AuthContext'
 import { RefPicker, type PickedRef } from './RefPicker'
 import { StickerPicker } from './StickerPicker'
 import { useMentionAutocomplete } from './useMentionAutocomplete'
+import { useTextFormatting } from './useTextFormatting'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
@@ -103,6 +105,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const justSentRef = useRef(false)
   const inputRef = useAutosize(text)
   const mentions = useMentionAutocomplete(inputRef, text, setText)
+  const fmt = useTextFormatting(inputRef, text, onChange)
 
   // Смена контекста ответа (вошли/вышли из треда / другой корень) — начинаем с чистого
   // поля: текст верхнего уровня не должен утекать в тред и наоборот.
@@ -352,6 +355,8 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     // @-автодополнение перехватывает стрелки/Enter/Tab/Esc, пока открыт попап.
     if (mentions.onKeyDown(e)) return
+    // Ctrl/Cmd+B/I/U — форматирование выделения (панель useTextFormatting).
+    if (fmt.onKeyDown(e)) return
     if (e.key !== 'Enter' || e.shiftKey) return
     // Spurious Enter after button tap on mobile — just swallow it
     if (justSentRef.current) {
@@ -387,12 +392,12 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const repostAuthor =
     repostAuthorId != null ? users.get(repostAuthorId)?.display_name ?? `Участник #${repostAuthorId}` : ''
   const repostSnippet = repost
-    ? repost.message.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+    ? stripInlineMarks(repost.message.content?.replace(/<!--journal:\w+-->/, '').trim() ?? '') ||
       (repost.message.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
   const threadSnippet = threadRoot
-    ? threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+    ? stripInlineMarks(threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ?? '') ||
       (threadRoot.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
@@ -493,6 +498,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         />
       )}
       {mentions.popup}
+      {fmt.bar}
 
       <input
         ref={fileInputRef}
@@ -583,7 +589,9 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
               value={text}
               onChange={(e) => onChange(e.target.value)}
               onKeyDown={onKey}
-              onFocus={() => { if (!inThread) onFocusInput?.() }}
+              onFocus={() => { fmt.onFocus(); if (!inThread) onFocusInput?.() }}
+              onBlur={fmt.onBlur}
+              onSelect={fmt.onSelect}
               enterKeyHint="enter"
             />
           </>
