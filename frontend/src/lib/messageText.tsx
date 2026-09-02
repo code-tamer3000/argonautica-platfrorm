@@ -7,6 +7,11 @@ import { Fragment, type ReactNode } from 'react'
 // начертания (жирный/курсив/подчёркнутый), которые участник ставит кнопками панели форматирования
 // (см. useTextFormatting.tsx), а не набирает вручную. Возвращаем React-узлы (не HTML) —
 // dangerouslySetInnerHTML не нужен, XSS нет.
+//
+// @упоминание кликабельно, только если ник резолвится в id по карте mentionUsers
+// (текущий ростер платформы) — переход ведёт на профиль в «Аргонавтах»
+// (/argonauts/:userId). Нерезолвящийся ник (опечатка, ушедший пользователь) остаётся
+// просто подсветкой без ссылки — как деградируют ссылки/пути выше при невалидном URL.
 
 // Начертания: маркер не переносится через перевод строки, сразу внутри маркера — не пробел
 // (иначе пустое выделение вида "* *" не считается курсивом). У курсива дополнительно запрещены
@@ -78,6 +83,7 @@ function tokenize(
   keyPrefix: string,
   mentionClass?: string,
   navigate?: (path: string) => void,
+  mentionUsers?: Map<string, number>,
   depth = 0,
 ): ReactNode[] {
   if (depth > MAX_MARK_DEPTH) return [text]
@@ -91,19 +97,19 @@ function tokenize(
     if (g.bold !== undefined) {
       out.push(
         <strong key={`${keyPrefix}-b${i++}`}>
-          {tokenize(g.bold, `${keyPrefix}b${i}`, mentionClass, navigate, depth + 1)}
+          {tokenize(g.bold, `${keyPrefix}b${i}`, mentionClass, navigate, mentionUsers, depth + 1)}
         </strong>,
       )
     } else if (g.underline !== undefined) {
       out.push(
         <u key={`${keyPrefix}-u${i++}`}>
-          {tokenize(g.underline, `${keyPrefix}u${i}`, mentionClass, navigate, depth + 1)}
+          {tokenize(g.underline, `${keyPrefix}u${i}`, mentionClass, navigate, mentionUsers, depth + 1)}
         </u>,
       )
     } else if (g.italic !== undefined) {
       out.push(
         <em key={`${keyPrefix}-i${i++}`}>
-          {tokenize(g.italic, `${keyPrefix}i${i}`, mentionClass, navigate, depth + 1)}
+          {tokenize(g.italic, `${keyPrefix}i${i}`, mentionClass, navigate, mentionUsers, depth + 1)}
         </em>,
       )
     } else if (g.linkLabel !== undefined) {
@@ -181,11 +187,28 @@ function tokenize(
       )
       if (trailing) out.push(trailing)
     } else {
-      // @упоминание — только подсветка (клик-переход на профиль пока не делаем).
+      // @упоминание: если ник резолвится в id по карте mentionUsers (текущий ростер
+      // платформы) — кликабельный переход на профиль в «Аргонавтах», иначе просто подсветка.
+      const handle = g.mention
+      const userId = mentionUsers?.get(handle.slice(1).toLowerCase())
       out.push(
-        <span key={`${keyPrefix}-m${i++}`} className={mentionClass}>
-          {g.mention}
-        </span>,
+        userId !== undefined && navigate ? (
+          <a
+            key={`${keyPrefix}-m${i++}`}
+            href={`/argonauts/${userId}`}
+            className={mentionClass}
+            onClick={(e) => {
+              e.preventDefault()
+              navigate(`/argonauts/${userId}`)
+            }}
+          >
+            {handle}
+          </a>
+        ) : (
+          <span key={`${keyPrefix}-m${i++}`} className={mentionClass}>
+            {handle}
+          </span>
+        ),
       )
     }
     last = start + match[0].length
@@ -196,19 +219,21 @@ function tokenize(
 
 /**
  * Текст сообщения → React-узлы: переносы строк сохранены, «голые» ссылки кликабельны,
- * @упоминания подсвечены (класс передаёт вызывающий, т.к. стили — в CSS-модуле чата),
- * жирный/курсив/подчёркнутый (**/*/++) отрисованы как обычное inline-начертание.
+ * @упоминания подсвечены и (если ник резолвится) кликабельны на профиль (класс передаёт
+ * вызывающий, т.к. стили — в CSS-модуле чата), жирный/курсив/подчёркнутый (**/*/++)
+ * отрисованы как обычное inline-начертание.
  */
 export function renderMessageText(
   text: string,
   mentionClass?: string,
   navigate?: (path: string) => void,
+  mentionUsers?: Map<string, number>,
 ): ReactNode {
   const lines = text.split('\n')
   return lines.map((line, i) => (
     <Fragment key={i}>
       {i > 0 && <br />}
-      {tokenize(line, `${i}`, mentionClass, navigate)}
+      {tokenize(line, `${i}`, mentionClass, navigate, mentionUsers)}
     </Fragment>
   ))
 }

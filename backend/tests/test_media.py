@@ -814,3 +814,85 @@ def test_frozen_signing_clock_does_not_leak() -> None:
     original = botocore.auth.get_current_datetime
     presigned_get_url("chat-media", "2026/08/obj.jpg")
     assert botocore.auth.get_current_datetime is original
+
+
+# --- альбом: несколько вложений в одном сообщении --------------------------
+
+
+async def _make_assets(
+    session: AsyncSession, owner_id: int, count: int
+) -> list[MediaAsset]:
+    """`count` независимых ассетов одного владельца (разные storage_key)."""
+    assets = [
+        MediaAsset(
+            bucket="chat-media",
+            storage_key=f"test/album-{owner_id}-{i}.png",
+            kind="image",
+            mime_type="image/png",
+            size=10,
+            created_by=owner_id,
+        )
+        for i in range(count)
+    ]
+    session.add_all(assets)
+    await session.commit()
+    for asset in assets:
+        await session.refresh(asset)
+    return assets
+
+
+async def test_album_limit_six_attachments_per_message(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Потолок альбома (MAX_ATTACHMENTS): шесть вложений проходят и возвращаются
+    в порядке ассетов, седьмое — 422 (столько же показывает сеткой клиент)."""
+    user = await make_user()
+    room = await make_room(created_by=user.id)
+    await add_membership(room.id, user.id, "owner")
+    headers = await _headers(client, user)
+    assets = await _make_assets(session, user.id, 7)
+
+    ok = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "альбом", "attachment_ids": [a.id for a in assets[:6]]},
+    )
+    assert ok.status_code == 201
+    assert ok.json()["attachment_ids"] == [a.id for a in assets[:6]]
+    assert [att["asset_id"] for att in ok.json()["attachments"]] == [
+        a.id for a in assets[:6]
+    ]
+
+    too_many = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "перебор", "attachment_ids": [a.id for a in assets]},
+    )
+    assert too_many.status_code == 422
+
+
+async def test_duplicate_attachment_ids_collapse(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Один и тот же ассет, присланный дважды, схлопывается в одну строку связи:
+    (message_id, media_asset_id) — первичный ключ, дубль ронял бы запрос 500-й."""
+    user = await make_user()
+    room = await make_room(created_by=user.id)
+    await add_membership(room.id, user.id, "owner")
+    asset = (await _make_assets(session, user.id, 1))[0]
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=await _headers(client, user),
+        json={"content": "дубль", "attachment_ids": [asset.id, asset.id]},
+    )
+    assert resp.status_code == 201
+    assert resp.json()["attachment_ids"] == [asset.id]

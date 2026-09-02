@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useEditMessage } from '../../api/messages'
 import { useToggleReaction } from '../../api/reactions'
 import { useStickerMap } from '../../api/stickers'
+import { useUsersByUsername } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBook, IconChevronDown, IconTasks } from '../../components/icons'
 import { timeHM } from '../../lib/format'
@@ -12,6 +13,7 @@ import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
 import { Attachment } from './Attachment'
+import { MediaGroup } from './MediaGroup'
 import { ReactionChip } from './ReactionChip'
 import styles from './chat.module.css'
 
@@ -64,6 +66,7 @@ function MessageItemInner({
   // чат для него закрыт целиком на уровне assert_room_access.
   const canReact = !user?.graduated_at
   const navigate = useNavigate()
+  const mentionUsers = useUsersByUsername()
 
   const [editText, setEditText] = useState(msg.content ?? '')
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -99,9 +102,30 @@ function MessageItemInner({
     [markdown, msg.content],
   )
   const contentParts = useMemo(
-    () => (!markdown && msg.content ? renderMessageText(msg.content, styles.mention, navigate) : null),
-    [markdown, msg.content, navigate],
+    () =>
+      !markdown && msg.content
+        ? renderMessageText(msg.content, styles.mention, navigate, mentionUsers)
+        : null,
+    [markdown, msg.content, navigate, mentionUsers],
   )
+
+  // Несколько фото/видео в одном сообщении показываем альбомом — одной сеткой, а не
+  // столбиком отдельных боксов (MediaGroup). В сетку идут только «плиточные» вложения:
+  // картинки и видео, у которых есть что показать. Видео с провалившимся транскодом,
+  // голосовые и файлы остаются отдельными блоками под альбомом — там кнопка/плеер,
+  // а не кадр. Одиночное вложение альбомом не становится: у него свои пропорции и
+  // нативный плеер (см. Attachment.tsx).
+  const { tiles, loose } = useMemo(() => {
+    const list = msg.attachments ?? []
+    const tiles = list.filter(
+      (att) =>
+        att.kind === 'image' ||
+        (att.kind === 'video' && att.transcode_status !== 'failed'),
+    )
+    if (tiles.length < 2) return { tiles: [], loose: list }
+    const tileIds = new Set(tiles.map((att) => att.asset_id))
+    return { tiles, loose: list.filter((att) => !tileIds.has(att.asset_id)) }
+  }, [msg.attachments])
 
   const isEditing = editingId === msg.id
   // Оптимистичное (ещё не отправленное) сообщение из outbox: приглушаем и не даём
@@ -176,8 +200,9 @@ function MessageItemInner({
               <div className={styles.attachments} onClick={(e) => e.stopPropagation()}>
                 {/* Новый путь: presigned-URL уже в ленте. Фолбэк на id — для старых
                     сообщений в кэше, где attachments ещё нет. */}
+                {tiles.length > 0 && <MediaGroup items={tiles} />}
                 {msg.attachments?.length
-                  ? msg.attachments.map(att => (
+                  ? loose.map(att => (
                       <Attachment key={att.asset_id} attachment={att} />
                     ))
                   : msg.attachment_ids.map(id => (

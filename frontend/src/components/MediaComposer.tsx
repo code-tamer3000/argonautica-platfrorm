@@ -50,23 +50,37 @@ export function MediaComposer({
 }: Props) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
+  // Очередь при выборе нескольких файлов сразу: «сколько уже залито из скольких».
+  const [queue, setQueue] = useState<{ done: number; total: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // За раз можно выбрать несколько файлов (input multiple). Льём по очереди, прогресс
+  // показываем по текущему файлу и подписываем «2 из 5», чтобы очередь была видна.
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
     e.target.value = ''
+    if (!files.length) return
     setUploading(true)
     setProgress(0)
+    setQueue(files.length > 1 ? { done: 0, total: files.length } : null)
+    // Копим локально: onAttachmentsChange из замыкания видит старый список, поэтому
+    // между файлами нельзя опираться на проп `attachments`.
+    const added: MediaChip[] = []
     try {
-      const { asset } = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
-      onAttachmentsChange([...attachments, { id: asset.id, kind: asset.kind }])
+      for (const file of files) {
+        setProgress(0)
+        const { asset } = await mediaUpload(file, (f) => setProgress(Math.round(f * 100)))
+        added.push({ id: asset.id, kind: asset.kind })
+        onAttachmentsChange([...attachments, ...added])
+        setQueue((q) => (q ? { ...q, done: q.done + 1 } : q))
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
       setUploading(false)
       setProgress(null)
+      setQueue(null)
     }
   }
 
@@ -121,11 +135,16 @@ export function MediaComposer({
             <div className={styles.uploadBarFill} style={{ transform: `scaleX(${progress / 100})` }} />
           </div>
           <span className={styles.uploadPct}>{progress}%</span>
+          {queue && (
+            <span className={styles.uploadQueue}>
+              {Math.min(queue.done + 1, queue.total)} из {queue.total}
+            </span>
+          )}
         </div>
       )}
 
       {/* tabIndex={-1}: убирает скрытый file input из навигации iOS-тулбара клавиатуры */}
-      <input ref={fileRef} type="file" hidden tabIndex={-1} onChange={handleFileChange} />
+      <input ref={fileRef} type="file" multiple hidden tabIndex={-1} onChange={handleFileChange} />
 
       <div className={styles.actions}>
         <Button
@@ -135,7 +154,7 @@ export function MediaComposer({
           disabled={disabled || uploading}
           onClick={() => fileRef.current?.click()}
         >
-          {uploading ? 'Загрузка…' : 'Прикрепить файл'}
+          {uploading ? 'Загрузка…' : 'Прикрепить файлы'}
         </Button>
       </div>
     </div>

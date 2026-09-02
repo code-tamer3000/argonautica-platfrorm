@@ -297,7 +297,9 @@
 .msgText em { font-style: italic; }
 .msgText u { text-decoration: underline; }
 /* @упоминание в тексте — акцентная подсветка (не ссылка, клика пока нет). */
-.mention { color: var(--accent); font-weight: 600; }
+.mention { color: var(--accent); font-weight: 600; text-decoration: none; }
+a.mention { cursor: pointer; }
+a.mention:hover { text-decoration: underline; }
 
 /* Markdown-содержимое сообщения (каналы-дневники): сбрасываем pre-wrap (переносы уже
    как <br>), поджимаем отступы блоков, оформляем ссылки/заголовки/списки/код. */
@@ -478,6 +480,63 @@
 /* Ссылка на материал/задачу идёт сразу после медиа — свой отступ у неё только снизу,
    так что сверху добавляем здесь, иначе кнопка слипается с видео/картинкой. */
 .attachments + .refLink, .sticker + .refLink { margin-top: var(--space-2); }
+
+/* --- Альбом: 2..6 медиа одного сообщения одной сеткой (MediaGroup.tsx) --- */
+/* Плитки режутся по object-fit: cover, поэтому альбом — всегда аккуратный
+   прямоугольник и не «рвётся» на смеси портретов с ландшафтами. Высоту даёт
+   aspect-ratio самой сетки, то есть место под медиа зарезервировано ещё до
+   загрузки превью (та же логика, что у одиночной картинки: никаких скачков
+   ленты и никакой зависимости высоты от загруженных байтов). */
+.album {
+  width: 100%;
+  max-width: 320px;
+  display: grid;
+  gap: 3px;
+  overflow: hidden;
+  border-radius: var(--radius-media);
+  background: var(--bg-deep);
+}
+.album2 { grid-template-columns: 1fr 1fr; aspect-ratio: 2 / 1; }
+/* 3 — крупное первое слева на всю высоту + два справа. */
+.album3 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; aspect-ratio: 1 / 1; }
+.album3 > *:first-child { grid-row: span 2; }
+.album4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; aspect-ratio: 1 / 1; }
+/* 5 — два крупных сверху, три поменьше снизу (сетка из 6 колонок: 3+3 и 2+2+2). */
+.album5 { grid-template-columns: repeat(6, 1fr); grid-template-rows: 1fr 1fr; aspect-ratio: 3 / 2; }
+.album5 > *:nth-child(-n + 2) { grid-column: span 3; }
+.album5 > *:nth-child(n + 3) { grid-column: span 2; }
+.album6 { grid-template-columns: repeat(3, 1fr); grid-template-rows: 1fr 1fr; aspect-ratio: 3 / 2; }
+/* Легаси-сообщения с числом вложений больше нынешнего потолка: 3 в ряд, квадратами. */
+.albumMany { grid-template-columns: repeat(3, 1fr); }
+.albumMany > * { aspect-ratio: 1 / 1; }
+.albumTile {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  overflow: hidden;
+  background: var(--bg-deep);
+  cursor: pointer;
+}
+.albumImg { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Нет превью (легаси / генерация не удалась) — плитка не пустая дыра, а фон-заглушка. */
+.albumBlank { display: block; width: 100%; height: 100%; background: var(--bg-deep); }
+/* Бейдж «это видео» поверх постера — иначе кадр не отличить от фото. */
+.albumPlay {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  background: rgba(0, 0, 0, 0.48); color: #fff;
+  pointer-events: none;
+}
+/* Видео в серверном транскоде: постер под затемнением со спиннером, играть нельзя. */
+.albumOverlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.42);
+}
 /* Фон коробки — единственный плейсхолдер до декодирования картинки (без крутилки).
    ШИРИНУ коробки задаёт инлайновый style из width/height вложения (Attachment.tsx),
    высоту — сама картинка (height: auto + нативные width/height у <img>).

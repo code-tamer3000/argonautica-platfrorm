@@ -23,6 +23,20 @@ export function useUsersMap(): Map<number, PublicUserOut> {
 }
 
 /**
+ * Ник (в нижнем регистре) → id пользователя — для клик-перехода по @упоминанию
+ * в тексте сообщения на профиль в «Аргонавтах». Регистронезависимость зеркалит
+ * серверное сравнение в _mentioned_usernames (backend/app/services/notifications.py).
+ */
+export function useUsersByUsername(): Map<string, number> {
+  const { data } = useUsers()
+  return useMemo(() => {
+    const m = new Map<string, number>()
+    for (const u of data ?? []) m.set(u.username.toLowerCase(), u.id)
+    return m
+  }, [data])
+}
+
+/**
  * Ростер кандидатов для «начать чат»/группу (ARG-110) — каскадно отфильтрован по
  * рангу тарифа на сервере, отсортирован по рангу (для группировки секциями на
  * клиенте). Не путать с `useUsers()` — та lookup-таблица не сужается (см. её doc).
