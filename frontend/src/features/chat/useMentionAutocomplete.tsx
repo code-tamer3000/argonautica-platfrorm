@@ -22,34 +22,39 @@ const AT_TOKEN_RE = /(?:^|\s)@([A-Za-z0-9_]*)$/
 const MAX_SUGGESTIONS = 50
 
 interface MentionState {
-  /** Индекс @ в тексте (для замены). */
+  /** Текстовый узел DOM, в котором сейчас набирается «@ник» (для замены на месте). */
+  node: Text
+  /** Индекс @ внутри node.textContent. */
   at: number
   /** Уже введённый после @ фрагмент (в нижнем регистре). */
   query: string
 }
 
-function findActiveMention(value: string, caret: number): MentionState | null {
-  const before = value.slice(0, caret)
+// caret — offset каретки ВНУТРИ node (не во всём тексте композера — при contentEditable
+// с несколькими текстовыми узлами/тегами <b>/<i>/<u> глобального offset просто нет,
+// зато offset внутри одного текстового узла Selection API отдаёт напрямую).
+function findActiveMention(node: Text, caret: number): MentionState | null {
+  const full = node.textContent ?? ''
+  const before = full.slice(0, caret)
   const m = before.match(AT_TOKEN_RE)
   if (!m) return null
-  // Позиция @: конец совпадения минус длина «@query».
   const at = caret - (m[1].length + 1)
-  return { at, query: m[1].toLowerCase() }
+  return { node, at, query: m[1].toLowerCase() }
 }
 
 /**
- * @-автодополнение для textarea сообщения/ответа. Управляет попапом со списком
- * пользователей, вставляет `@username ` по выбору. Работает поверх обычного
- * value/onChange (контролируемый textarea). Отдаёт:
+ * @-автодополнение для contentEditable-композера. Управляет попапом со списком
+ * пользователей, вставляет `@username ` прямо в DOM на месте курсора (Selection/Range
+ * API — в contentEditable нет единой строки value/selectionStart, как у textarea).
+ * Отдаёт:
  *  - `popup` — готовый JSX списка (рисуем над полем ввода),
- *  - `onKeyDown` — перехватчик стрелок/Enter/Esc, который надо позвать ПЕРЕД
+ *  - `onKeyDown` — перехватчик стрелок/Enter/Esc/Tab, который надо позвать ПЕРЕД
  *    обычным обработчиком (возвращает true, если событие «съедено»),
- *  - `onValueChange` — вызвать при каждом изменении текста, чтобы пересчитать токен.
+ *  - `onSelectionChange` — вызвать на selectionchange/input поля, чтобы пересчитать токен.
  */
 export function useMentionAutocomplete(
-  textareaRef: RefObject<HTMLTextAreaElement>,
-  value: string,
-  setValue: (next: string) => void,
+  editorRef: RefObject<HTMLDivElement>,
+  onInserted: () => void,
 ) {
   const { data: users } = useUsers()
   const [mention, setMention] = useState<MentionState | null>(null)
@@ -73,46 +78,70 @@ export function useMentionAutocomplete(
 
   const open = mention != null && candidates.length > 0
 
-  // Пересчёт активного токена после любого изменения текста/каретки.
+  // Пересчёт активного токена после любого изменения текста/каретки. Работает только
+  // когда каретка стоит ВНУТРИ текстового узла (обычный случай набора текста) — если
+  // выделение охватывает диапазон или указывает прямо на элемент (границы <b>/<i>),
+  // автодополнение просто не открывается, это не баг, а деградация как у @/URL-парсера
+  // в lib/messageText.tsx.
   const refresh = useCallback(() => {
-    const el = textareaRef.current
-    if (!el) return
-    const next = findActiveMention(el.value, el.selectionStart ?? el.value.length)
+    const el = editorRef.current
+    if (!el || document.activeElement !== el) {
+      setMention(null)
+      return
+    }
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) {
+      setMention(null)
+      return
+    }
+    const range = sel.getRangeAt(0)
+    const node = range.startContainer
+    if (node.nodeType !== Node.TEXT_NODE || !el.contains(node)) {
+      setMention(null)
+      return
+    }
+    const next = findActiveMention(node as Text, range.startOffset)
     setMention(next)
     setActive(0)
-  }, [textareaRef])
+  }, [editorRef])
 
-  const onValueChange = useCallback(() => {
-    // Отложим на микротаск: к этому моменту selectionStart уже обновлён браузером.
+  const onSelectionChange = useCallback(() => {
+    // Отложим на микротаск: к этому моменту DOM/каретка уже обновлены браузером.
     queueMicrotask(refresh)
   }, [refresh])
 
   const insert = useCallback(
     (user: PublicUserOut) => {
       if (!mention) return
-      const el = textareaRef.current
-      const caret = el?.selectionStart ?? value.length
-      const before = value.slice(0, mention.at)
-      const after = value.slice(caret)
+      const { node, at, query } = mention
+      // Живой caret на момент вставки: если ничего не изменилось с последнего refresh —
+      // это at + «@» + query; берём live-значение, если каретка всё ещё в этом же узле.
+      const sel = window.getSelection()
+      const liveRange = sel && sel.rangeCount > 0 ? sel.getRangeAt(0) : null
+      const caret =
+        liveRange && liveRange.startContainer === node
+          ? liveRange.startOffset
+          : at + 1 + query.length
+      const full = node.textContent ?? ''
+      const before = full.slice(0, at)
+      const after = full.slice(caret)
       const inserted = `@${user.username} `
-      const next = before + inserted + after
-      setValue(next)
-      setMention(null)
-      // Каретку — сразу после вставленного ника с пробелом.
+      node.textContent = before + inserted + after
       const pos = before.length + inserted.length
-      queueMicrotask(() => {
-        const node = textareaRef.current
-        if (node) {
-          node.focus()
-          node.setSelectionRange(pos, pos)
-        }
-      })
+      const range = document.createRange()
+      range.setStart(node, pos)
+      range.collapse(true)
+      const s = window.getSelection()
+      s?.removeAllRanges()
+      s?.addRange(range)
+      setMention(null)
+      onInserted()
     },
-    [mention, value, setValue, textareaRef],
+    [mention, onInserted],
   )
 
   const onKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    (e: KeyboardEvent<HTMLDivElement>): boolean => {
       if (!open) return false
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -149,7 +178,7 @@ export function useMentionAutocomplete(
           role="option"
           aria-selected={i === active}
           className={`${styles.mentionOption} ${i === active ? styles.mentionOptionActive : ''}`}
-          // onMouseDown (не click): не даём textarea потерять фокус до вставки.
+          // onMouseDown (не click): не даём полю потерять фокус до вставки.
           onMouseDown={(e) => {
             e.preventDefault()
             insert(u)
@@ -164,5 +193,5 @@ export function useMentionAutocomplete(
     </div>
   ) : null
 
-  return { popup, onKeyDown, onValueChange }
+  return { popup, onKeyDown, onSelectionChange }
 }

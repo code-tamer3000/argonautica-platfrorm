@@ -1404,11 +1404,27 @@ docs/ARGONAUTS.md.
 - Маркеры прямо в `content` (`**bold**`, `*italic*`, `++underline++`), выборочно
   включённые в plain-парсер (только эти три конструкции, не полный markdown).
 
-**Решение.** Маркеры в `content`. Схема/модель/WS/outbox/черновики не меняются — панель
-форматирования композера (`useTextFormatting.tsx`) просто оборачивает выделение
-маркерами перед отправкой, как обычный текст. Подчёркивание — `++x++`: в markdown
-подчёркивания нет, а `__x__` у `marked` — тот же жирный, что и `**x**`; `++` не занято
-GFM-синтаксисом.
+**Решение.** Маркеры в `content`. Схема/модель/WS/outbox/черновики не меняются — маркеры
+появляются только в момент отправки. Подчёркивание — `++x++`: в markdown подчёркивания
+нет, а `__x__` у `marked` — тот же жирный, что и `**x**`; `++` не занято GFM-синтаксисом.
+
+**Ревизия (тот же таск): панель, оборачивающая выделение маркерами прямо в textarea,
+не прижилась.** Первая версия делала именно так (`useTextFormatting.tsx`, выделение →
+кнопка → в поле ввода появляется `**текст**` как есть) — по факту оказалась плоха с
+двух сторон: (1) на телефоне нативное меню выделения ОС — это слой ПОВЕРХ страницы,
+он перекрывает любой кастомный элемент рядом с выделением, панель становилась
+невидимой; (2) сырые `**`/`*`/`++` в процессе набора читаются как мусор, ожидание было
+«как в Word» — выделил, стало курсивным на месте. Решение: поле композера —
+`contentEditable`, а не `<textarea>` (`Composer.tsx`), форматирование —
+`document.execCommand('bold'|'italic'|'underline')` через `useRichFormatting.tsx`
+(тоггл — встроенное поведение браузера). Маркеры в `content` — те же, но появляются
+только на **выходе**: сериализация DOM ⇄ маркерный текст — `lib/inlineMarks.ts`
+(`htmlToMarkerText`/`markerTextToHtml`), вызывается на каждый ввод и при восстановлении
+черновика/заряженного текста. Мобильная панель (нужна только там, где нет нативной
+интеграции — см. цену ниже) не всплывает над полем, а уезжает в фиксированную зону
+вверху экрана, чтобы не спорить за место с нативным пузырём ОС. @-автодополнение
+(`useMentionAutocomplete.tsx`) переписано на Selection/Range API — у contentEditable нет
+единой строки `value`/`selectionStart`, как у textarea.
 
 **Почему не entities-колонка.** Требует миграции, изменения схем send/edit/WS-payload,
 пересчёта offsets при любой правке текста (сдвинул символ — все offsets после него
@@ -1429,14 +1445,28 @@ frontend/src/lib/messageText.tsx) и добавлено в `_preview()` (notific
 `_news_preview()` (dashboard.py) — четвёртое место в кодовой базе, которое парсит
 `content` как полу-структурированный текст (после `<!--journal:key-->`-маркера,
 серверного парсера упоминаний и парсера заголовков категорий Динамики).
+`document.execCommand` формально deprecated в спеке, но остаётся единственным
+кросс-браузерным способом переключать инлайновое форматирование в contentEditable без
+своего rich-text движка — вводить библиотеку (TipTap/Slate/Lexical, которых в проекте
+нет) ради трёх начертаний избыточно. Мобильное поведение расходится по платформам: на
+iOS Safari WebKit сам добавляет Ж/К/Ч в системное меню выделения для contentEditable
+(бесплатно, без единой строчки кода), на Android такой интеграции нет — там работает
+только своя панель. Это нельзя проверить ни автотестом, ни Playwright (нативное меню
+выделения — не DOM, а слой ОС/браузера поверх страницы) — только на реальном
+устройстве.
 
 **Что сломается, если поменять.** Переход на entities-колонку требует миграции и
 переписывания обоих рендер-путей и панели форматирования. Включение полного markdown в
 личке молча превратит случайные `#`/`-`/списки в обычной переписке в отформатированный
-HTML — тот самый баг, который `messageText.tsx` был написан избегать.
+HTML — тот самый баг, который `messageText.tsx` был написан избегать. Возврат к панели,
+оборачивающей textarea-выделение маркерами (первая версия, см. «Ревизия» выше),
+воскресит оба изначальных бага — невидимую на телефоне панель и сырые `**` в поле.
 
-**Где в коде / доках.** `frontend/src/lib/messageText.tsx` (`stripInlineMarks`,
-токенизатор), `frontend/src/lib/markdown.ts` (inline-расширение `marked` для `++`),
-`frontend/src/features/chat/useTextFormatting.tsx` (панель), `backend/app/services/
-text_marks.py`; docs/MESSAGES.md «Inline formatting», docs/FRONTEND.md, docs/
-NOTIFICATIONS.md.
+**Где в коде / доках.** `frontend/src/lib/inlineMarks.ts` (`htmlToMarkerText`,
+`markerTextToHtml`, `stripInlineMarks`), `frontend/src/lib/messageText.tsx` (токенизатор
+готового сообщения), `frontend/src/lib/markdown.ts` (inline-расширение `marked` для
+`++`), `frontend/src/features/chat/Composer.tsx` (`contentEditable`-поле, `syncText`/
+`resetEditor`), `frontend/src/features/chat/useRichFormatting.tsx` (панель,
+`execCommand`), `frontend/src/features/chat/useMentionAutocomplete.tsx`
+(Selection/Range API), `backend/app/services/text_marks.py`; docs/MESSAGES.md «Inline
+formatting», docs/FRONTEND.md, docs/NOTIFICATIONS.md.
