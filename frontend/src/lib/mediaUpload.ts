@@ -259,6 +259,13 @@ export async function voiceUpload(
 //      outbox'а с ретраями/ожиданием online ПЕРЕД отправкой самого сообщения.
 
 /**
+ * Потолок вложений в одном сообщении. Столько же принимает бэкенд
+ * (`MAX_ATTACHMENTS` в schemas/message.py) и столько же умеет разложить сеткой
+ * альбом в ленте (MediaGroup.tsx) — держим числа синхронными.
+ */
+export const MAX_ATTACHMENTS = 6
+
+/**
  * Сырое вложение, готовое к отложенной заливке: байты (`blob`) + всё для confirm'а
  * ассета (kind/mime/размеры/длительность) + опциональный постер видео. Blob и
  * posterBlob переживают structured clone в IndexedDB.

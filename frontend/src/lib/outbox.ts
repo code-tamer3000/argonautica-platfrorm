@@ -105,11 +105,17 @@ function snapshotFromAsset(asset: MediaAssetOut, url: string): AttachmentOut {
 
 // Снимок AttachmentOut для ещё не залитого вложения: kind/размеры/длительность из
 // локально снятых метаданных, url — blob:-превью. asset_id временный (отрицательный).
-function snapshotFromPending(pending: PendingUploadRef, url: string): AttachmentOut {
+function snapshotFromPending(
+  pending: PendingUploadRef,
+  url: string,
+  posterUrl?: string | null,
+): AttachmentOut {
   return {
     asset_id: pending.tempAssetId,
     url,
-    thumb_url: pending.kind === 'image' ? url : null,
+    // У картинки превью — она сама, у видео — снятый на клиенте постер (если снялся).
+    // Без него плитка альбома и плеер стоят пустой коробкой до ответа сервера.
+    thumb_url: pending.kind === 'image' ? url : posterUrl ?? null,
     kind: pending.kind,
     mime_type: pending.contentType,
     size: 0,
@@ -287,7 +293,9 @@ export function enqueueMedia(
       hasPoster: !!pu.posterBlob,
     }
     pendingUploads.push(ref)
-    attachments.push(snapshotFromPending(ref, url))
+    const posterUrl = pu.posterBlob ? URL.createObjectURL(pu.posterBlob) : null
+    if (posterUrl) trackBlobUrl(cid, posterUrl)
+    attachments.push(snapshotFromPending(ref, url, posterUrl))
     // Байты файла + постера (если есть) — в отдельный стор; переживут перезагрузку.
     void idbSet(STORE_OUTBOX_BLOBS, blobKey(cid, tempAssetId), pu.blob)
     if (pu.posterBlob) void idbSet(STORE_OUTBOX_BLOBS, posterKey(cid, tempAssetId), pu.posterBlob)
@@ -349,6 +357,19 @@ async function rehydrateBlobUrls(item: OutboxItem): Promise<void> {
     if (att) {
       att.url = url
       if (att.kind === 'image') att.thumb_url = url
+      else {
+        // Видео: постер лежит отдельным блобом — перевыпускаем и его, иначе после
+        // перезагрузки в очереди осталась бы пустая коробка вместо кадра.
+        const poster = await idbGet<Blob>(
+          STORE_OUTBOX_BLOBS,
+          posterKey(item.clientId, assetId),
+        )
+        if (poster) {
+          const posterUrl = URL.createObjectURL(poster)
+          trackBlobUrl(item.clientId, posterUrl)
+          att.thumb_url = posterUrl
+        }
+      }
     }
   }
 }
