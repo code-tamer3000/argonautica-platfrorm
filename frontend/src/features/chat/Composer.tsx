@@ -12,7 +12,7 @@ import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker,
 import { Spinner } from '../../components/Spinner'
 import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
-import { preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
+import { MAX_ATTACHMENTS, preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
 import type { MessageOut, MessageRefOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
@@ -150,17 +150,36 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     })
   }, [pendingDraft, roomId, setPendingDraft, inputRef])
 
+  // Прикрепление файлов: за раз можно выбрать несколько (input multiple), в сумме на
+  // сообщение — не больше MAX_ATTACHMENTS (столько же принимает бэкенд и столько же
+  // раскладывает сеткой лента). Лишние молча не выкидываем — говорим вслух.
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const files = Array.from(e.target.files ?? [])
     e.target.value = ''
+    if (!files.length) return
+    const room = MAX_ATTACHMENTS - pendingFiles.length
+    if (room <= 0) {
+      toast(`К одному сообщению можно прикрепить не больше ${MAX_ATTACHMENTS} файлов`, 'error')
+      return
+    }
+    const accepted = files.slice(0, room)
+    if (files.length > room) {
+      toast(
+        `Взяли ${accepted.length} из ${files.length}: в одном сообщении не больше ${MAX_ATTACHMENTS} файлов`,
+        'error',
+      )
+    }
     setUploading(true)
     try {
       // Только локальная подготовка (размеры/постер) — БЕЗ сети. Сама заливка уйдёт
       // в outbox при отправке, поэтому прикрепить файл можно и офлайн. Видео льётся
       // оригиналом (без клиентского сжатия), сервер транскодит его в фоне.
-      const pending = await preparePendingUpload(file)
-      setPendingFiles(prev => [...prev, pending])
+      // Готовим по очереди: подготовка видео (постер) тяжёлая, параллель на мобиле
+      // только отнимает память.
+      for (const file of accepted) {
+        const pending = await preparePendingUpload(file)
+        setPendingFiles(prev => [...prev, pending])
+      }
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Ошибка загрузки файла', 'error')
     } finally {
@@ -497,6 +516,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         hidden
         onChange={handleFileChange}
       />
