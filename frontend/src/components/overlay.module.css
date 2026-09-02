@@ -108,3 +108,25 @@
   font-size: var(--text-label-md); color: #fff; white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* Навигация по группе вложений (альбом сообщения): стрелки по краям и счётчик.
+   Кнопки крупные и полупрозрачные — на телефоне их не приходится «ловить», а
+   основной жест там всё равно свайп (см. Lightbox). */
+.lightboxNav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0;
+  font-size: 30px; line-height: 1; color: #fff;
+  background: rgba(0, 0, 0, 0.42); border: none; border-radius: 50%;
+  cursor: pointer; backdrop-filter: blur(4px);
+}
+.lightboxNav:hover { background: rgba(0, 0, 0, 0.62); }
+.lightboxPrev { left: var(--space-3); }
+.lightboxNext { right: var(--space-3); }
+.lightboxCount {
+  position: absolute; top: var(--space-4); left: 50%; transform: translateX(-50%);
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-t4); font-size: var(--text-label-md); color: #fff;
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.42); border-radius: var(--radius-media);
+}

@@ -12,6 +12,7 @@ import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox
 import type { MessageOut, PublicUserOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
 import { Attachment } from './Attachment'
+import { MediaGroup } from './MediaGroup'
 import { ReactionChip } from './ReactionChip'
 import styles from './chat.module.css'
 
@@ -103,6 +104,24 @@ function MessageItemInner({
     [markdown, msg.content, navigate],
   )
 
+  // Несколько фото/видео в одном сообщении показываем альбомом — одной сеткой, а не
+  // столбиком отдельных боксов (MediaGroup). В сетку идут только «плиточные» вложения:
+  // картинки и видео, у которых есть что показать. Видео с провалившимся транскодом,
+  // голосовые и файлы остаются отдельными блоками под альбомом — там кнопка/плеер,
+  // а не кадр. Одиночное вложение альбомом не становится: у него свои пропорции и
+  // нативный плеер (см. Attachment.tsx).
+  const { tiles, loose } = useMemo(() => {
+    const list = msg.attachments ?? []
+    const tiles = list.filter(
+      (att) =>
+        att.kind === 'image' ||
+        (att.kind === 'video' && att.transcode_status !== 'failed'),
+    )
+    if (tiles.length < 2) return { tiles: [], loose: list }
+    const tileIds = new Set(tiles.map((att) => att.asset_id))
+    return { tiles, loose: list.filter((att) => !tileIds.has(att.asset_id)) }
+  }, [msg.attachments])
+
   const isEditing = editingId === msg.id
   // Оптимистичное (ещё не отправленное) сообщение из outbox: приглушаем и не даём
   // открыть меню действий — редактировать/удалять нечего, id временный.
@@ -176,8 +195,9 @@ function MessageItemInner({
               <div className={styles.attachments} onClick={(e) => e.stopPropagation()}>
                 {/* Новый путь: presigned-URL уже в ленте. Фолбэк на id — для старых
                     сообщений в кэше, где attachments ещё нет. */}
+                {tiles.length > 0 && <MediaGroup items={tiles} />}
                 {msg.attachments?.length
-                  ? msg.attachments.map(att => (
+                  ? loose.map(att => (
                       <Attachment key={att.asset_id} attachment={att} />
                     ))
                   : msg.attachment_ids.map(id => (
