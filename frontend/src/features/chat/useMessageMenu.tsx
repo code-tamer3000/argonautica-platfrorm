@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useDeleteMessage } from '../../api/messages'
 import { usePin } from '../../api/pins'
 import { useToggleReaction } from '../../api/reactions'
 import reactionIcon from '../../assets/reactions/star.webp'
 import {
-  IconCopy, IconEdit, IconNews, IconPin, IconReply, IconTrash,
+  IconCopy, IconEdit, IconNews, IconPin, IconReply, IconTrash, IconUsers,
 } from '../../components/icons'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -28,6 +29,7 @@ interface Options {
 // репост в новости — admin и не из самого новостного канала.
 export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepost }: Options) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const pin = usePin(roomId)
   const del = useDeleteMessage(roomId)
   const reaction = useToggleReaction(roomId)
@@ -70,6 +72,17 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
     }
     if (onRepost && user?.role === 'admin' && !isNews && !isGraduated) {
       items.push({ key: 'repost', label: 'Репост в новости', icon: <IconNews size={18} />, onClick: () => onRepost(msg) })
+    }
+    // Автор сообщения → его карточка в «Аргонавтах». Своего профиля в ростере нет
+    // (api/argonauts.py `_roster` исключает вызывающего) — на своих сообщениях
+    // пункт не показываем. Чтение, а не запись: выпускнику (isGraduated) доступно.
+    if (user?.id !== msg.sender_id) {
+      items.push({
+        key: 'profile',
+        label: 'Посмотреть профиль',
+        icon: <IconUsers size={18} />,
+        onClick: () => navigate(`/argonauts/${msg.sender_id}`),
+      })
     }
     if (!isGraduated && (user?.id === msg.sender_id || user?.role === 'admin')) {
       items.push({ key: 'delete', label: 'Удалить', icon: <IconTrash size={18} />, danger: true, onClick: () => del.mutate(msg.id) })
