@@ -28,6 +28,18 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 - `admin` — `broadcast_admin` (one row per user, `title`/`body` set). Endpoint: `POST /api/admin/notifications/broadcast` (admin-only, body `{title, body}`, returns `{recipients}`).
 - Realtime delivery over the personal Redis pub/sub channel `user:{id}` → WS events `notification.new` / `notification.removed` (see [MESSAGES.md](MESSAGES.md)).
 
+## Feed visibility (read retention)
+
+`GET /api/notifications` never returns the full history: it's unread notifications
+plus read ones whose `read_at` is within the last 48h (`READ_FEED_RETENTION` in
+`app/api/notifications.py`). Older read notifications drop out of the feed — this is a
+display-time filter, not deletion; the rows stay in Postgres untouched (no cleanup job,
+no soft-archive column). `unread_count` and `POST /api/notifications/read` are unaffected
+— they operate on `read_at`, not on what the feed returns. The dashboard "Уведомления"
+card (`GET /api/dashboard`) calls the same `list_notifications`, so it inherits this
+window automatically. There is no "load older" UI — the `before` cursor param exists for
+future pagination but isn't wired into the frontend today.
+
 ## Endpoints
 
 - `GET /api/notifications` — feed. `POST /api/notifications/read` — mark read.
