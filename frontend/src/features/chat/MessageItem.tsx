@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useEditMessage } from '../../api/messages'
 import { useToggleReaction } from '../../api/reactions'
 import { useStickerMap } from '../../api/stickers'
+import { useUsersByUsername } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { IconBook, IconChevronDown, IconTasks } from '../../components/icons'
 import { timeHM } from '../../lib/format'
@@ -65,6 +66,7 @@ function MessageItemInner({
   // чат для него закрыт целиком на уровне assert_room_access.
   const canReact = !user?.graduated_at
   const navigate = useNavigate()
+  const mentionUsers = useUsersByUsername()
 
   const [editText, setEditText] = useState(msg.content ?? '')
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -100,8 +102,11 @@ function MessageItemInner({
     [markdown, msg.content],
   )
   const contentParts = useMemo(
-    () => (!markdown && msg.content ? renderMessageText(msg.content, styles.mention, navigate) : null),
-    [markdown, msg.content, navigate],
+    () =>
+      !markdown && msg.content
+        ? renderMessageText(msg.content, styles.mention, navigate, mentionUsers)
+        : null,
+    [markdown, msg.content, navigate, mentionUsers],
   )
 
   // Несколько фото/видео в одном сообщении показываем альбомом — одной сеткой, а не
