@@ -292,7 +292,9 @@
 .msgText { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .msgText a { color: var(--accent); text-decoration: underline; word-break: break-all; }
 /* @упоминание в тексте — акцентная подсветка (не ссылка, клика пока нет). */
-.mention { color: var(--accent); font-weight: 600; }
+.mention { color: var(--accent); font-weight: 600; text-decoration: none; }
+a.mention { cursor: pointer; }
+a.mention:hover { text-decoration: underline; }
 
 /* Markdown-содержимое сообщения (каналы-дневники): сбрасываем pre-wrap (переносы уже
    как <br>), поджимаем отступы блоков, оформляем ссылки/заголовки/списки/код. */
