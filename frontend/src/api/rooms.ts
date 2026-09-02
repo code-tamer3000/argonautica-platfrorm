@@ -79,3 +79,18 @@ export function usePersonalChannel() {
     queryFn: () => http.get<RoomOut>('/api/rooms/personal'),
   })
 }
+
+// Обложка личного дневника: владелец ставит/снимает (avatar_media_id — свой image-ассет,
+// null снимает). Инвалидируем все выдачи, где встречается avatar_url этой комнаты.
+export function useSetDiaryAvatar(roomId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (avatarMediaId: number | null) =>
+      http.patch<RoomOut>(`/api/rooms/${roomId}/avatar`, { avatar_media_id: avatarMediaId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: roomsKey })
+      qc.invalidateQueries({ queryKey: ['room', roomId] })
+      qc.invalidateQueries({ queryKey: ['personal-channel'] })
+    },
+  })
+}

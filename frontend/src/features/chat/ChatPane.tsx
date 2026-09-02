@@ -3,12 +3,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAdminIntakes } from '../../api/admin'
 import { useMyDynamics } from '../../api/dynamics'
 import { useMarkRead, useMessages, repostMessage } from '../../api/messages'
-import { roomsKey, useRoom, useRooms } from '../../api/rooms'
+import { roomsKey, useRoom, useRooms, useSetDiaryAvatar } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
-import { IconBack, IconPin, IconUsers } from '../../components/icons'
+import { IconBack, IconEdit, IconPin, IconTrash, IconUsers } from '../../components/icons'
 import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import { mediaUpload } from '../../lib/mediaUpload'
 import { noteRoomRendered, sampleRoomResources } from '../../lib/metrics'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -98,6 +99,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [showMembers, setShowMembers] = useState(false)
   const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const avatarFileRef = useRef<HTMLInputElement>(null)
+  const setDiaryAvatar = useSetDiaryAvatar(roomId)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   // Репост из кросс-поточной комнаты (intake_id=NULL) ждёт явного выбора потока
   // назначения — сообщение «зажато» здесь, пока не выбрали (см. RepostTargetPicker).
@@ -301,6 +306,35 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     }
   }
 
+  // Обложка своего дневника: файл жмётся тем же клиентским пайплайном, что и
+  // остальные картинки (mediaUpload → lib/imageCompress.ts), затем ставится
+  // через PATCH /api/rooms/{id}/avatar (владелец — только свой дневник).
+  async function handleDiaryAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setAvatarUploading(true)
+    try {
+      const { asset } = await mediaUpload(file)
+      setDiaryAvatar.mutate(asset.id, {
+        onSuccess: () => toast('Обложка обновлена'),
+        onError: (err) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+      })
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Ошибка загрузки', 'error')
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
+  function handleRemoveDiaryAvatar() {
+    setAvatarMenuOpen(false)
+    setDiaryAvatar.mutate(null, {
+      onSuccess: () => toast('Обложка удалена'),
+      onError: (err) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+    })
+  }
+
   return (
     <>
       <header className={styles.header}>
@@ -309,25 +343,88 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
             <IconBack size={22} />
           </button>
         )}
-        <button
-          className={styles.headerInfo}
-          onClick={openHeaderInfo}
-          title={
-            room.type === 'dm' ? 'Открыть профиль' :
-            room.type === 'group' ? 'Участники' :
-            room.is_personal ? (showCalendar ? 'Свернуть календарь' : 'Развернуть календарь') :
-            undefined
-          }
-        >
-          <Avatar name={title} url={roomAvatarUrl(room, dmPeers, users)} square={room.type !== 'dm'} size={40} />
-          <div className={styles.headerInfoText}>
-            <div className={styles.headerTitle}>
-              {room.type === 'channel' ? '# ' : ''}
-              {title}
+        {isOwnPersonal ? (
+          <div className={styles.headerInfoRow}>
+            <div className={styles.headerAvatarWrap}>
+              {avatarUploading ? (
+                <div className={styles.headerAvatarUploading}><Spinner size={16} /></div>
+              ) : (
+                <Avatar name={title} url={roomAvatarUrl(room, dmPeers, users)} square size={40} />
+              )}
+              <button
+                type="button"
+                className={styles.headerAvatarEditBadge}
+                onClick={() => setAvatarMenuOpen((v) => !v)}
+                disabled={avatarUploading}
+                title="Обложка дневника"
+                aria-label="Обложка дневника"
+                aria-haspopup="menu"
+                aria-expanded={avatarMenuOpen}
+              >
+                <IconEdit size={11} />
+              </button>
+              {avatarMenuOpen && (
+                <>
+                  <div className={styles.attachBackdrop} onClick={() => setAvatarMenuOpen(false)} />
+                  <div className={styles.headerAvatarMenu} role="menu">
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => { setAvatarMenuOpen(false); avatarFileRef.current?.click() }}
+                    >
+                      <IconEdit size={16} /> Сменить фото
+                    </button>
+                    {room.avatar_url && (
+                      <button className={styles.attachMenuItem} onClick={handleRemoveDiaryAvatar}>
+                        <IconTrash size={16} /> Удалить фото
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+              <input
+                ref={avatarFileRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={handleDiaryAvatarChange}
+              />
             </div>
-            <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
+            <button
+              type="button"
+              className={styles.headerInfoTextBtn}
+              onClick={openHeaderInfo}
+              title={showCalendar ? 'Свернуть календарь' : 'Развернуть календарь'}
+            >
+              <div className={styles.headerInfoText}>
+                <div className={styles.headerTitle}>
+                  {room.type === 'channel' ? '# ' : ''}
+                  {title}
+                </div>
+                <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
+              </div>
+            </button>
           </div>
-        </button>
+        ) : (
+          <button
+            className={styles.headerInfo}
+            onClick={openHeaderInfo}
+            title={
+              room.type === 'dm' ? 'Открыть профиль' :
+              room.type === 'group' ? 'Участники' :
+              room.is_personal ? (showCalendar ? 'Свернуть календарь' : 'Развернуть календарь') :
+              undefined
+            }
+          >
+            <Avatar name={title} url={roomAvatarUrl(room, dmPeers, users)} square={room.type !== 'dm'} size={40} />
+            <div className={styles.headerInfoText}>
+              <div className={styles.headerTitle}>
+                {room.type === 'channel' ? '# ' : ''}
+                {title}
+              </div>
+              <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
+            </div>
+          </button>
+        )}
         {room.type !== 'channel' && (
           <div className={styles.headerActions}>
             <button className={styles.headerIconBtn} onClick={() => setShowPins(v => !v)} title="Закреплённые" aria-label="Закреплённые">

@@ -181,6 +181,38 @@
 }
 .headerSub { font-size: var(--text-label-md); color: var(--text-muted); }
 
+/* --- Своя обложка дневника (шапка личного канала) --- */
+.headerInfoRow { display: flex; align-items: center; gap: var(--space-3); min-width: 0; flex: 1; }
+.headerAvatarWrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+.headerAvatarUploading {
+  width: 40px; height: 40px; border-radius: var(--radius-btn);
+  background: var(--bg-deep); display: flex; align-items: center; justify-content: center;
+}
+.headerAvatarEditBadge {
+  position: absolute; right: -4px; bottom: -4px; z-index: 2;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  color: var(--text-muted); cursor: pointer; padding: 0;
+  transition: var(--transition-base);
+}
+.headerAvatarEditBadge:hover:not(:disabled) { color: var(--accent); border-color: var(--divider-gold); }
+.headerAvatarEditBadge:disabled { opacity: 0.4; cursor: not-allowed; }
+.headerAvatarMenu {
+  position: absolute; top: calc(100% + var(--space-2)); left: 0; z-index: 30;
+  min-width: 200px;
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); padding: var(--space-2); box-shadow: var(--glow-gold);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.headerInfoTextBtn {
+  display: flex; align-items: center; min-width: 0; flex: 1;
+  background: transparent; border: none; padding: var(--space-1);
+  margin: calc(-1 * var(--space-1)); border-radius: var(--radius-btn);
+  cursor: pointer; text-align: left; color: inherit; transition: var(--transition-base);
+}
+.headerInfoTextBtn:hover { background: rgba(19, 78, 69, 0.10); }
+
 /* --- Полоса закреплённого (Telegram-style, под шапкой) --- */
 .pinsBar {
   display: flex; align-items: center; gap: var(--space-3);

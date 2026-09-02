@@ -36,6 +36,15 @@ class UpdateChannelRequest(BaseModel):
     plan_ids: list[int] | None = None
 
 
+class UpdateRoomAvatarRequest(BaseModel):
+    """Обложка личного дневника (`PATCH /api/rooms/{id}/avatar`) — владелец меняет
+    свой аватар-media-ассет; `null` снимает обложку. См. docs/ROOMS.md."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    avatar_media_id: int | None = None
+
+
 class RoomOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
