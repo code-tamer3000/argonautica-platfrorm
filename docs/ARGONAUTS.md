@@ -9,6 +9,14 @@ per person (photo, name, "N tasks done" when N>0), expanding to a profile page
 with bio, task list, and a link to that person's diary. Composition-only endpoint
 (no new business logic) in the style of `api/dashboard.py`.
 
+A profile also opens from outside the roster: the message action menu in Rubka
+(`useMessageMenu.tsx`) carries a "Посмотреть профиль" item that navigates to
+`/argonauts/{sender_id}` for any message not authored by the viewer — hidden on
+your own messages, since `_roster` excludes the caller and `/argonauts/{myId}`
+would 404. A sender outside the viewer's roster (different intake, observer,
+`OBSERVER_TARIFF_NAME`) hits the same "Участник не найден" empty state the page
+already has for a direct link — the menu item does not pre-check membership.
+
 > **Observers** (`users.is_observer`) have no access: the whole `/api/argonauts`
 > router is behind `require_participant` → 403, same as Tasks/Rubka/Calendar.
 
