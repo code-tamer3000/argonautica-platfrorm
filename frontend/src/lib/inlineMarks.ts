@@ -87,6 +87,28 @@ const TAG_MARKS: Record<string, { open: string; close: string }> = {
   U: { open: '++', close: '++' },
 }
 
+// execCommand('styleWithCSS', false, false) (см. useRichFormatting.tsx) должен заставлять
+// браузер оборачивать выделение тегом (<b>/<i>/<u>), но это исторически непортируемое
+// поведение между движками — если браузер всё же выдал <span style="font-weight:...">,
+// распознаём и инлайновый стиль, а не только имя тега. Без этого текст визуально жирный
+// прямо в composer'е, но после сериализации в content уходит обычным — маркер никто не
+// поставил, потому что тег был не B/STRONG.
+function elementMarks(el: HTMLElement): Array<{ open: string; close: string }> {
+  const marks: Array<{ open: string; close: string }> = []
+  const tagMark = TAG_MARKS[el.tagName]
+  if (tagMark) marks.push(tagMark)
+  const style = el.style
+  if (style) {
+    const bold = style.fontWeight === 'bold' || style.fontWeight === 'bolder' || Number(style.fontWeight) >= 600
+    if (bold && el.tagName !== 'B' && el.tagName !== 'STRONG') marks.push(TAG_MARKS.B)
+    if (style.fontStyle === 'italic' && el.tagName !== 'I' && el.tagName !== 'EM') marks.push(TAG_MARKS.I)
+    const underline =
+      style.textDecorationLine === 'underline' || style.textDecoration.split(' ').includes('underline')
+    if (underline && el.tagName !== 'U') marks.push(TAG_MARKS.U)
+  }
+  return marks
+}
+
 function walkToMarkerText(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
   if (node.nodeType !== Node.ELEMENT_NODE) return ''
@@ -94,8 +116,7 @@ function walkToMarkerText(node: Node): string {
   if (el.tagName === 'BR') return '\n'
   let inner = ''
   for (const child of Array.from(el.childNodes)) inner += walkToMarkerText(child)
-  const mark = TAG_MARKS[el.tagName]
-  if (mark) inner = `${mark.open}${inner}${mark.close}`
+  for (const mark of elementMarks(el)) inner = `${mark.open}${inner}${mark.close}`
   // execCommand/paste иногда заворачивают строки в <div>/<p> вместо <br> — считаем это
   // переводом строки, чтобы многострочный вставленный текст не склеился в одну строку.
   const isBlock = el.tagName === 'DIV' || el.tagName === 'P'

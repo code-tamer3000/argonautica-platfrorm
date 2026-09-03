@@ -863,6 +863,9 @@ a.mention:hover { text-decoration: underline; }
   position: fixed; bottom: auto; left: 50%; transform: translateX(-50%);
   top: calc(env(safe-area-inset-top) + var(--space-3));
   z-index: 50;
+  /* Ширина панели известна заранее (3 кнопки), но на всякий случай не даём ей
+     упереться в край даже на самом узком экране. */
+  max-width: calc(100vw - 2 * var(--space-3));
 }
 .fmtBtn {
   display: inline-flex; align-items: center; justify-content: center;
