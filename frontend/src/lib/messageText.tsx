@@ -1,26 +1,23 @@
 import { Fragment, type ReactNode } from 'react'
+import { BOLD_RE, ITALIC_RE, UNDERLINE_RE } from './inlineMarks'
 
 // Текст сообщения чата рендерим как ПРОСТОЙ текст — без полного markdown. Markdown-оформление
 // (заголовки/списки/код) нужно только в базе знаний и каналах-дневниках; в личке/группах/новостях
 // решётки и списки в обычном тексте не должны «съедаться» рендером. Здесь то, что в чате реально
 // нужно: сохранённые переносы строк, кликабельные ссылки, подсветка @упоминаний — и три инлайновых
-// начертания (жирный/курсив/подчёркнутый), которые участник ставит кнопками панели форматирования
-// (см. useTextFormatting.tsx), а не набирает вручную. Возвращаем React-узлы (не HTML) —
-// dangerouslySetInnerHTML не нужен, XSS нет.
+// начертания (жирный/курсив/подчёркнутый), которые участник ставит панелью форматирования
+// composer'а (см. useRichFormatting.ts) — сам composer WYSIWYG (contentEditable), маркеры
+// (**, *, ++) появляются только на выходе, в отправленном content. Возвращаем React-узлы (не
+// HTML) — dangerouslySetInnerHTML не нужен, XSS нет.
 //
 // @упоминание кликабельно, только если ник резолвится в id по карте mentionUsers
 // (текущий ростер платформы) — переход ведёт на профиль в «Аргонавтах»
 // (/argonauts/:userId). Нерезолвящийся ник (опечатка, ушедший пользователь) остаётся
 // просто подсветкой без ссылки — как деградируют ссылки/пути выше при невалидном URL.
-
-// Начертания: маркер не переносится через перевод строки, сразу внутри маркера — не пробел
-// (иначе пустое выделение вида "* *" не считается курсивом). У курсива дополнительно запрещены
-// соседние словесные символы и `*` — без этого "2*2*2", "a*b*c" читались бы как курсив, а
-// "**жирный**" — как два курсива подряд. Подчёркивания в markdown нет — берём `++text++`
-// (не конфликтует ни с обычным текстом, ни с markdown, где `__x__` — это жирный).
-const BOLD_RE = /\*\*(?!\s)(?<bold>[^\n]+?)(?<!\s)\*\*/
-const UNDERLINE_RE = /\+\+(?!\s)(?<underline>[^\n]+?)(?<!\s)\+\+/
-const ITALIC_RE = /(?<![\w*])\*(?!\s)(?<italic>[^*\n]+?)(?<!\s)\*(?![\w*])/
+//
+// BOLD_RE/UNDERLINE_RE/ITALIC_RE и stripInlineMarks — общие с lib/inlineMarks.ts
+// (сериализация contentEditable в композере использует те же паттерны).
+export { stripInlineMarks } from './inlineMarks'
 
 // «Голый» URL: http(s):// до первого пробела. Внутренний путь: /раздел без хоста
 // (например /kb, /support) — контент (см. provision_second_intake.py) не знает
@@ -45,27 +42,6 @@ const TOKEN_RE = new RegExp(
   ].join('|'),
   'g',
 )
-
-// Те же три начертания, но как обычные (не именованные, с флагом g) регэкспы — для
-// stripInlineMarks(), которая снимает маркеры для превью (колокольчик/пуш/закреп), не трогая
-// остальной текст. Источники совпадают с BOLD_RE/UNDERLINE_RE/ITALIC_RE намеренно.
-const BOLD_STRIP_RE = /\*\*(?!\s)([^\n]+?)(?<!\s)\*\*/g
-const UNDERLINE_STRIP_RE = /\+\+(?!\s)([^\n]+?)(?<!\s)\+\+/g
-const ITALIC_STRIP_RE = /(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])/g
-
-/** Снимает маркеры начертаний (**, ++, *), оставляя обычный текст — для превью. */
-export function stripInlineMarks(text: string): string {
-  let result = text
-  for (let i = 0; i < 3; i++) {
-    const next = result
-      .replace(BOLD_STRIP_RE, '$1')
-      .replace(UNDERLINE_STRIP_RE, '$1')
-      .replace(ITALIC_STRIP_RE, '$1')
-    if (next === result) break
-    result = next
-  }
-  return result
-}
 
 function trimTrailingPunct(url: string): { url: string; trailing: string } {
   const m = url.match(/[.,!?;:)\]]+$/)
