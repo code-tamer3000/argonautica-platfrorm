@@ -228,7 +228,8 @@ One entity for three space types; differences are behavior in code, not structur
 | id | BIGSERIAL | PK | |
 | type | TEXT | NOT NULL | `'dm'` \| `'group'` \| `'channel'` |
 | name | TEXT | NULL | NULL for dm |
-| avatar_url | TEXT | NULL | group/channel avatar; dm uses peer's avatar |
+| avatar_url | TEXT | NULL | legacy/external URL; dm uses peer's avatar. Diary rooms: superseded by `avatar_media_id` below (priority to media_id, same pattern as `users.avatar_url`/`avatar_media_id`) |
+| avatar_media_id | BIGINT | FK media_assets, NULL | diary cover (`is_personal` only, for now) — owner's own image asset, presigned-GET on read. See [ROOMS.md](ROOMS.md) "Personal diary rooms" |
 | dm_key | TEXT | UNIQUE, NULL | dm only: canonical `"minUserId:maxUserId"`, dedup guard |
 | created_by | BIGINT | FK users, NOT NULL | |
 | created_at | TIMESTAMPTZ | NOT NULL | |

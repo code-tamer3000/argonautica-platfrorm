@@ -67,3 +67,5 @@
   gap: var(--space-3);
 }
 .attachBtn { margin-right: auto; }
+/* «2 из 5» рядом с процентом, когда файлов выбрано несколько. */
+.uploadQueue { font-family: var(--font-t4); font-size: 0.75rem; color: var(--text-ghost); white-space: nowrap; }

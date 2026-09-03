@@ -3,11 +3,11 @@
 Уведомления всегда принадлежат текущему юзеру (`user_id`) — читаем/меняем только
 свои строки (п.1: не доверяем id от клиента).
 """
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_participant
@@ -29,6 +29,10 @@ router = APIRouter(
     dependencies=[Depends(require_participant)],
 )
 
+# Сколько держим прочитанное в ленте после прочтения, прежде чем убрать из выдачи
+# (не из БД — строка остаётся, просто перестаёт попадать в этот запрос).
+READ_FEED_RETENTION = timedelta(hours=48)
+
 
 async def _unread_count(session: AsyncSession, user_id: int) -> int:
     return (
@@ -47,13 +51,19 @@ async def list_notifications(
     before: Annotated[int | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
 ) -> NotificationListOut:
-    """Последние уведомления юзера (курсор по id) + счётчик непрочитанных."""
+    """Непрочитанные + прочитанные не старше READ_FEED_RETENTION (курсор по id)
+    + счётчик непрочитанных. Старое прочитанное не удаляется — просто не попадает
+    в эту выдачу (см. docs/NOTIFICATIONS.md)."""
+    read_cutoff = datetime.now(UTC) - READ_FEED_RETENTION
     # outer join: у системных уведомлений (cabin_granted/admin) actor_id/message_id пусты.
     stmt = (
         select(Notification, User.display_name, Message.content)
         .outerjoin(User, User.id == Notification.actor_id)
         .outerjoin(Message, Message.id == Notification.message_id)
-        .where(Notification.user_id == current_user.id)
+        .where(
+            Notification.user_id == current_user.id,
+            or_(Notification.read_at.is_(None), Notification.read_at >= read_cutoff),
+        )
         .order_by(Notification.id.desc())
         .limit(limit)
     )
