@@ -23,6 +23,7 @@ from app.models.user import User
 from app.schemas.notification import NotificationOut
 from app.services import push as push_service
 from app.services.notify_prefs import push_allowed
+from app.services.text_marks import strip_inline_marks
 from app.ws import schemas as ws_schemas
 from app.ws.pubsub import publish_user_event
 
@@ -37,6 +38,7 @@ def _preview(content: str | None) -> str | None:
     if not content:
         return None
     text = _JOURNAL_MARKER.sub("", content).strip()
+    text = strip_inline_marks(text)
     if not text:
         return None
     return text[:_PREVIEW_LEN]

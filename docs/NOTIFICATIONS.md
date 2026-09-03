@@ -27,6 +27,7 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 - `cabin_granted` — `notify_cabin_granted` on the `can_access_cabin` false→true transition (see [CABIN.md](CABIN.md)).
 - `admin` — `broadcast_admin` (one row per user, `title`/`body` set). Endpoint: `POST /api/admin/notifications/broadcast` (admin-only, body `{title, body}`, returns `{recipients}`).
 - Realtime delivery over the personal Redis pub/sub channel `user:{id}` → WS events `notification.new` / `notification.removed` (see [MESSAGES.md](MESSAGES.md)).
+- `preview` (bell item + web-push body, both built by `_preview()`) is always plain text: the `<!--journal:key-->` marker is stripped first, then inline formatting markers (`**`/`*`/`++`, see [MESSAGES.md](MESSAGES.md) "Inline formatting") via `strip_inline_marks()`, then truncated to 120 chars. Mention parsing (`_mentioned_usernames`) runs on the raw `content` beforehand, not the preview — `**@user**` still notifies (`*` isn't a word character, so the mention lookbehind still passes).
 
 ## Feed visibility (read retention)
 

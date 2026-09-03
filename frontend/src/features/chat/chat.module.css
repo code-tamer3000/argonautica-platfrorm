@@ -291,6 +291,11 @@
    только в каналах-дневниках, где ведут ежедневные записи. */
 .msgText { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .msgText a { color: var(--accent); text-decoration: underline; word-break: break-all; }
+/* Три инлайновых начертания (панель форматирования композера) — Lora грузит 600/italic
+   реальными начертаниями (см. styles/tokens.css), поэтому bold не «синтезируется». */
+.msgText strong { font-weight: 600; }
+.msgText em { font-style: italic; }
+.msgText u { text-decoration: underline; }
 /* @упоминание в тексте — акцентная подсветка (не ссылка, клика пока нет). */
 .mention { color: var(--accent); font-weight: 600; text-decoration: none; }
 a.mention { cursor: pointer; }
@@ -409,10 +414,16 @@ a.mention:hover { text-decoration: underline; }
   background: var(--blood-bright); animation: arg-rec-pulse 1.2s ease-in-out infinite;
 }
 @keyframes arg-rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* contentEditable (не textarea) — WYSIWYG-поле композера: жирный/курсив/подчёркнутый
+   реально применяются к тексту через execCommand (useRichFormatting.tsx), без видимых
+   маркеров **, *, ++ по ходу набора. Авторост высоты — сам по себе (блочный div растёт
+   под содержимое), JS-хук больше не нужен; min/max-height и скролл — тем же CSS, что и
+   раньше у textarea. */
 .composerInput {
-  flex: 1; resize: none; max-height: 160px; min-height: 44px;
+  flex: 1; max-height: 160px; min-height: 44px;
   padding: var(--space-3) var(--space-4);
   font-family: var(--font-t3); font-size: var(--text-body-sm); line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
   background: var(--bg-deep); border: 1px solid var(--color-frame-deep); border-radius: var(--radius-card);
   color: var(--text-primary); transition: var(--transition-base);
   /* overflow-y: auto — полоса появляется ТОЛЬКО когда поле уперлось в max-height и
@@ -422,6 +433,9 @@ a.mention:hover { text-decoration: underline; }
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+.composerInput strong, .composerInput b { font-weight: 600; }
+.composerInput em, .composerInput i { font-style: italic; }
+.composerInput u { text-decoration: underline; }
 /* Тонкий thumb, вписанный в скругление: прозрачная рамка + background-clip отодвигают
    видимую полосу (≈3px) от правого края, margin трека — от скругленных верх/низ углов.
    ВАЖНО: scrollbar-width НЕ задаём в базовом правиле — иначе Chrome берёт стандартный
@@ -439,7 +453,14 @@ a.mention:hover { text-decoration: underline; }
 @supports not selector(::-webkit-scrollbar) {
   .composerInput { scrollbar-width: thin; scrollbar-color: var(--color-frame-deep) transparent; }
 }
-.composerInput::placeholder { color: var(--text-ghost); }
+/* contentEditable не умеет атрибут placeholder — имитация через :empty + data-атрибут
+   (значение подставляет Composer.tsx). pointer-events:none — плейсхолдер не должен
+   ловить клик/тап вместо фокуса на само поле. */
+.composerInput:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-ghost);
+  pointer-events: none;
+}
 .composerInput:focus {
   outline: none; border-color: var(--divider-gold);
   box-shadow: 0 0 0 1px var(--divider-gold);
@@ -822,6 +843,38 @@ a.mention:hover { text-decoration: underline; }
   margin-left: auto; font-family: var(--font-t4); font-size: var(--text-label-md);
   color: var(--text-ghost); white-space: nowrap;
 }
+
+/* Панель форматирования: появляется при непустом выделении текста (useRichFormatting.tsx).
+   На десктопе — та же позиция, что у .mentionPop, над полем ввода (мышиное выделение
+   не порождает никакого системного оверлея, конфликтовать там не с чем). */
+.fmtBar {
+  position: absolute; bottom: calc(100% + var(--space-2)); left: var(--space-5); z-index: 30;
+  display: flex; gap: var(--space-1); padding: var(--space-1);
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); box-shadow: var(--glow-gold);
+}
+/* На тач-устройствах нативное меню выделения (iOS/Android «Копировать…») — это ОС-слой
+   ПОВЕРХ страницы, z-index на него не действует; он перекрывает любой элемент рядом с
+   выделением. Поэтому на мобиле панель уезжает в фиксированную зону вверху экрана —
+   физически далеко от композера/выделения, где нативный пузырь её не накрывает.
+   На iOS Safari панель по большей части и не нужна: WebKit сам добавляет Ж/К/Ч прямо в
+   системное меню для contentEditable — это просто подстраховка/Android-фолбэк. */
+.fmtBarMobile {
+  position: fixed; bottom: auto; left: 50%; transform: translateX(-50%);
+  top: calc(env(safe-area-inset-top) + var(--space-3));
+  z-index: 50;
+  /* Ширина панели известна заранее (3 кнопки), но на всякий случай не даём ей
+     упереться в край даже на самом узком экране. */
+  max-width: calc(100vw - 2 * var(--space-3));
+}
+.fmtBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; padding: 0; border: none; border-radius: var(--radius-btn);
+  background: transparent; color: var(--text-secondary); cursor: pointer;
+  transition: var(--transition-base);
+}
+.fmtBtn:hover { color: var(--text-primary); background: var(--color-frame); }
+.fmtBtnActive { color: var(--accent); background: rgba(19, 78, 69, 0.18); }
 .pickerPack { margin-bottom: var(--space-3); }
 .pickerGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
 .pickerSticker { width: 100%; aspect-ratio: 1; object-fit: contain; cursor: pointer; border-radius: var(--radius-btn); }
@@ -1014,9 +1067,10 @@ a.mention:hover { text-decoration: underline; }
   :global(html[data-kb='open']) .journalBar { display: none; }
   :global(html[data-kb='open']) .typing { display: none; }
 
-  /* Стикер-пикер и @-попап не должны уезжать за край */
+  /* Стикер-пикер, @-попап и панель форматирования не должны уезжать за край */
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
   .mentionPop { left: var(--space-3); right: var(--space-3); max-width: none; }
+  .fmtBar { left: var(--space-3); }
   .attVideo { max-width: 100%; }
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
@@ -10,9 +10,10 @@ import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
 import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import { useAutosize } from '../../hooks/useAutosize'
 import { plural } from '../../lib/format'
+import { htmlToMarkerText, markerTextToHtml } from '../../lib/inlineMarks'
 import { MAX_ATTACHMENTS, preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
+import { stripInlineMarks } from '../../lib/messageText'
 import type { MessageOut, MessageRefOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
@@ -23,6 +24,7 @@ import { useAuth } from '../auth/AuthContext'
 import { RefPicker, type PickedRef } from './RefPicker'
 import { StickerPicker } from './StickerPicker'
 import { useMentionAutocomplete } from './useMentionAutocomplete'
+import { useRichFormatting } from './useRichFormatting'
 import { VoiceComposer } from './VoiceComposer'
 import styles from './chat.module.css'
 
@@ -101,8 +103,31 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
-  const inputRef = useAutosize(text)
-  const mentions = useMentionAutocomplete(inputRef, text, setText)
+  // contentEditable — не textarea: значение НЕ контролируется через value/onChange (React
+  // не должен трогать DOM на каждый ре-рендер, иначе курсор скачет). DOM — источник
+  // истины; `text` в React-состоянии — производный снимок для бизнес-логики (canSend,
+  // submit, черновик), обновляется через syncText() после любого пользовательского или
+  // программного изменения содержимого поля.
+  const editorRef = useRef<HTMLDivElement>(null)
+
+  const syncText = useCallback(() => {
+    const el = editorRef.current
+    const value = el ? htmlToMarkerText(el) : ''
+    setText(value)
+    return value
+  }, [])
+
+  // Программный сброс/подстановка содержимого поля (черновик, очистка после отправки,
+  // смена контекста) — единственное место, где мы САМИ пишем в DOM редактора; в остальное
+  // время DOM меняет только браузер (набор текста, execCommand, вставка @упоминания).
+  const resetEditor = useCallback((next: string) => {
+    const el = editorRef.current
+    if (el) el.innerHTML = markerTextToHtml(next)
+    setText(next)
+  }, [])
+
+  const mentions = useMentionAutocomplete(editorRef, syncText)
+  const fmt = useRichFormatting(editorRef, syncText)
 
   // Смена контекста ответа (вошли/вышли из треда / другой корень) — начинаем с чистого
   // поля: текст верхнего уровня не должен утекать в тред и наоборот.
@@ -110,23 +135,23 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   useEffect(() => {
     if (prevThreadRootId.current !== threadRootId) {
       prevThreadRootId.current = threadRootId
-      setText('')
+      resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
     }
-  }, [threadRootId])
+  }, [threadRootId, resetEditor])
 
   // Восстановление сохранённого черновика при открытии комнаты: если пользователь
   // печатал и ушёл (сменил вкладку/комнату, перезагрузил), текст возвращается.
-  // Не перетираем «заряженный» извне pendingDraft (у него приоритет). Гонки нет:
-  // roomId в замыкании фиксирован, ложим только если поле ещё пустое.
+  // Не перетираем «заряженный» извне pendingDraft (у него приоритет), и не перетираем
+  // то, что уже успели набрать в поле, пока черновик грузился из IndexedDB.
   useEffect(() => {
     if (pendingDraft?.roomId === roomId) return
     let cancelled = false
     void loadDraft(roomId).then((saved) => {
-      if (!cancelled && saved) {
-        setText((cur) => (cur ? cur : saved))
-      }
+      const el = editorRef.current
+      if (cancelled || !saved || !el) return
+      if (htmlToMarkerText(el).length === 0) resetEditor(saved)
     })
     return () => {
       cancelled = true
@@ -139,16 +164,20 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   // курсор в конец, затем сбрасываем — дальше админ дописывает сам.
   useEffect(() => {
     if (pendingDraft?.roomId !== roomId) return
-    setText(pendingDraft.text)
+    resetEditor(pendingDraft.text)
     setPendingDraft(null)
     requestAnimationFrame(() => {
-      const el = inputRef.current
-      if (el) {
-        el.focus()
-        el.setSelectionRange(el.value.length, el.value.length)
-      }
+      const el = editorRef.current
+      if (!el) return
+      el.focus()
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      range.collapse(false)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
     })
-  }, [pendingDraft, roomId, setPendingDraft, inputRef])
+  }, [pendingDraft, roomId, setPendingDraft, resetEditor])
 
   // Прикрепление файлов: за раз можно выбрать несколько (input multiple), в сумме на
   // сообщение — не больше MAX_ATTACHMENTS (столько же принимает бэкенд и столько же
@@ -196,7 +225,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         { content: buildJournalContent(journalMeta, text.trim()), sticker_id: stickerId },
         { onSuccess: afterJournalSent },
       )
-      setText('')
+      resetEditor('')
       return
     }
     // Стикер уходит отдельным сообщением (как раньше) — набранный текст не трогаем.
@@ -287,7 +316,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       if (!content && pendingFiles.length === 0 && !pendingRef) return
       const uploads = pendingFiles
       const ref = pendingRef
-      setText('')
+      resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
       const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(ref) }
@@ -312,7 +341,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       if (!content && pendingFiles.length === 0 && !pendingRef) return
       const uploads = pendingFiles
       const ref = pendingRef
-      setText('')
+      resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
       const body: SendBody = { content: buildJournalContent(journalMeta, content), ...refBody(ref) }
@@ -341,7 +370,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       setReposting(false)
       const uploads = pendingFiles
       const ref = pendingRef
-      setText('')
+      resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
       const body: SendBody = { ...refBody(ref) }
@@ -360,7 +389,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     if (!content && pendingFiles.length === 0 && !pendingRef) return
     const uploads = pendingFiles
     const ref = pendingRef
-    setText('')
+    resetEditor('')
     setPendingFiles([])
     setPendingRef(null)
     const body: SendBody = { ...refBody(ref) }
@@ -368,10 +397,21 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     enqueueTopLevel(body, uploads, ref)
   }
 
-  function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+  function onKey(e: KeyboardEvent<HTMLDivElement>) {
     // @-автодополнение перехватывает стрелки/Enter/Tab/Esc, пока открыт попап.
     if (mentions.onKeyDown(e)) return
-    if (e.key !== 'Enter' || e.shiftKey) return
+    // Ctrl/Cmd+B/I/U — форматирование выделения (панель useRichFormatting).
+    if (fmt.onKeyDown(e)) return
+    if (e.key !== 'Enter') return
+    // Перевод строки — управляем сами (не отдаём дефолтному поведению contentEditable:
+    // без этого браузер часто заводит новый <div>-блок вместо <br>, а нам нужен именно
+    // <br> — так htmlToMarkerText отдаёт чистый "\n" без лишних пустых строк).
+    if (e.shiftKey) {
+      e.preventDefault()
+      document.execCommand('insertLineBreak')
+      onEditorInput()
+      return
+    }
     // Spurious Enter after button tap on mobile — just swallow it
     if (justSentRef.current) {
       e.preventDefault()
@@ -379,15 +419,22 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     }
     // On touch devices Enter inserts a newline; send button is the only trigger
     const isTouch = window.matchMedia('(pointer: coarse)').matches
-    if (!isTouch) {
-      e.preventDefault()
-      submit()
+    e.preventDefault()
+    if (isTouch) {
+      document.execCommand('insertLineBreak')
+      onEditorInput()
+      return
     }
+    submit()
   }
 
-  function onChange(value: string) {
-    setText(value)
-    mentions.onValueChange()
+  // Пользовательский ввод в contentEditable (набор текста, execCommand-вставка перевода
+  // строки) — единственная точка, где кроме синка text ещё и обновляем черновик/typing-
+  // пинг. Программные изменения ОТ хуков (форматирование, вставка @упоминания) зовут
+  // просто syncText() напрямую — они не «набор текста», черновик им дублировать незачем.
+  function onEditorInput() {
+    const value = syncText()
+    mentions.onSelectionChange()
     // Черновик комнаты (дебаунс внутри). Записи дневника/репост/тред не кэшируем как
     // черновик — у них свой контекст; сохраняем только обычный текст верхнего уровня.
     if (!journalMeta && !repost && !inThread) saveDraft(roomId, value)
@@ -398,6 +445,16 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     }
   }
 
+  // Вставка из буфера — всегда как обычный текст (contentEditable иначе протащит чужую
+  // разметку/стили из источника). Раньше это было бесплатно (textarea физически не
+  // умеет ничего кроме текста), теперь — явный шаг.
+  function onPaste(e: ClipboardEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const pastedText = e.clipboardData.getData('text/plain')
+    document.execCommand('insertText', false, pastedText)
+    onEditorInput()
+  }
+
   const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef
 
   const repostAuthorId = repost
@@ -406,12 +463,12 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const repostAuthor =
     repostAuthorId != null ? users.get(repostAuthorId)?.display_name ?? `Участник #${repostAuthorId}` : ''
   const repostSnippet = repost
-    ? repost.message.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+    ? stripInlineMarks(repost.message.content?.replace(/<!--journal:\w+-->/, '').trim() ?? '') ||
       (repost.message.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
   const threadSnippet = threadRoot
-    ? threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ||
+    ? stripInlineMarks(threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ?? '') ||
       (threadRoot.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
@@ -512,6 +569,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         />
       )}
       {mentions.popup}
+      {fmt.bar}
 
       <input
         ref={fileInputRef}
@@ -589,21 +647,31 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
             >
               <IconSticker size={18} />
             </button>
-            <textarea
-              ref={inputRef}
-              className={styles.composerInput}
-              rows={1}
-              placeholder={
+            {/* contentEditable, не textarea — жирный/курсив/подчёркнутый видны сразу по
+                месту (execCommand, см. useRichFormatting.tsx), без сырых маркеров **, *, ++
+                в процессе набора. DOM не контролируется через value — React его не
+                перерисовывает (см. editorRef/resetEditor выше), иначе курсор скакал бы
+                на каждый ре-рендер. */}
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Сообщение"
+              data-placeholder={
                 inThread
                   ? 'Ответить в тред…'
                   : repost
                     ? 'Добавить сообщение к репосту…'
                     : 'Сообщение…'
               }
-              value={text}
-              onChange={(e) => onChange(e.target.value)}
+              className={styles.composerInput}
+              onInput={onEditorInput}
               onKeyDown={onKey}
-              onFocus={() => { if (!inThread) onFocusInput?.() }}
+              onPaste={onPaste}
+              onFocus={() => { fmt.onFocus(); if (!inThread) onFocusInput?.() }}
+              onBlur={fmt.onBlur}
               enterKeyHint="enter"
             />
           </>
