@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState, type KeyboardEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { IconBold, IconItalic, IconUnderline } from '../../components/icons'
 import styles from './chat.module.css'
 
@@ -74,6 +75,12 @@ export function useRichFormatting(editorRef: RefObject<HTMLDivElement>, onApplie
       const el = editorRef.current
       if (!el) return
       el.focus()
+      // Без styleWithCSS=false некоторые браузеры оборачивают выделение
+      // <span style="font-weight: 700"> вместо <b> — htmlToMarkerText (lib/inlineMarks.ts)
+      // ищет по имени тега, спан с инлайновым стилем он не узнаёт, и сообщение уходит
+      // без маркеров вовсе (текст визуально жирный в composer'е, но обычный после
+      // отправки). Явно фиксируем тег-режим перед каждой командой — дёшево, идемпотентно.
+      document.execCommand('styleWithCSS', false, false)
       document.execCommand(MARK_META[mark].command)
       onApplied()
       refresh()
@@ -97,34 +104,48 @@ export function useRichFormatting(editorRef: RefObject<HTMLDivElement>, onApplie
   const isCoarsePointer =
     typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
 
-  const bar = hasSelection ? (
-    <div
-      className={`${styles.fmtBar} ${isCoarsePointer ? styles.fmtBarMobile : ''}`}
-      role="toolbar"
-      aria-label="Форматирование текста"
-    >
-      {MARK_ORDER.map((mark) => {
-        const { title, Icon } = MARK_META[mark]
-        return (
-          <button
-            key={mark}
-            type="button"
-            className={`${styles.fmtBtn} ${active[mark] ? styles.fmtBtnActive : ''}`}
-            title={title}
-            aria-label={title}
-            // onMouseDown (не click) + preventDefault: не даём полю потерять фокус и
-            // выделение до применения начертания.
-            onMouseDown={(e) => {
-              e.preventDefault()
-              applyMark(mark)
-            }}
-          >
-            <Icon size={16} />
-          </button>
-        )
-      })}
-    </div>
-  ) : null
+  const buttons = MARK_ORDER.map((mark) => {
+    const { title, Icon } = MARK_META[mark]
+    return (
+      <button
+        key={mark}
+        type="button"
+        className={`${styles.fmtBtn} ${active[mark] ? styles.fmtBtnActive : ''}`}
+        title={title}
+        aria-label={title}
+        // onMouseDown (не click) + preventDefault: не даём полю потерять фокус и
+        // выделение до применения начертания.
+        onMouseDown={(e) => {
+          e.preventDefault()
+          applyMark(mark)
+        }}
+      >
+        <Icon size={16} />
+      </button>
+    )
+  })
+
+  let bar: ReactNode = null
+  if (hasSelection && isCoarsePointer) {
+    // Портал в document.body: .fmtBarMobile — position:fixed к реальному вьюпорту
+    // экрана. Без портала браузер якорит fixed к ближайшему предку с активным
+    // transform (а не обязательно к вьюпорту) — а у композера/пейна ЕСТЬ transform-
+    // анимации входа (.paneEnter/.composerReveal, translateY при монтировании). Тогда
+    // top/left считаются от бокса этого предка, а не от экрана — панель уезжала
+    // «наполовину за край» именно поэтому, не из-за самой идеи «наверху».
+    bar = createPortal(
+      <div className={`${styles.fmtBar} ${styles.fmtBarMobile}`} role="toolbar" aria-label="Форматирование текста">
+        {buttons}
+      </div>,
+      document.body,
+    )
+  } else if (hasSelection) {
+    bar = (
+      <div className={styles.fmtBar} role="toolbar" aria-label="Форматирование текста">
+        {buttons}
+      </div>
+    )
+  }
 
   return { bar, onKeyDown, onFocus, onBlur, onSelect }
 }
