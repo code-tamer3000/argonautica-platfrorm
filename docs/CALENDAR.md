@@ -24,6 +24,8 @@ visible to every plan of the intake.
 - Read (participants): `GET /api/calendar/events` — double filter (intake + plan) on the event's own `intake_id`/`plan_ids`; admin sees everything. Individual-task deadline events stay addressed to their assignee (own filter, unrelated to intake/plan). Filters: `from` / `to`.
 - `GET /api/calendar/events/{id}` — `assert_calendar_event_visible` (403 for a foreign-intake/plan event, not 404 — calendar events aren't drafts, nothing to hide).
 
+Frontend: the admin console (`/admin/calendar`) has the full flat list + form. Admins additionally get the same CRUD inline on the regular `/calendar` screen (`CalendarView.tsx`) — no separate endpoint: a "+ Событие" button in the selected day's panel opens the create form pre-filled with that day (`EventForm`, shared with `/admin/calendar` from `features/admin/EventForm.tsx`), and each plain announcement card gets "Редактировать"/"Удалить". Task-deadline cards (see below) are never editable from the calendar — they're generated from the task and are edited on the task itself.
+
 ## Task deadline events
 
 Task deadlines are synced into `calendar_events` (`task_id` set) — see [TASKS.md](TASKS.md). On `GET /events` these rows are **enriched per viewer** (`_enrich_task_events` in `api/calendar.py`), so the UI can render them as a soft, task-flavoured entry (task icon + title, link to `/tasks/{id}`) distinct from plain announcements:

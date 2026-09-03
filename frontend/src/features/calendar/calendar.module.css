@@ -113,14 +113,31 @@
 .detail { margin-top: var(--space-6); }
 
 .detailHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--divider-gold);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+/* Дата дня — типографика вынесена из .detailHead, чтобы не наследовалась
+   кнопкой «+ Событие» рядом (см. .detailHead). */
+.detailHeadDate {
   font-family: var(--font-t4);
   font-size: var(--text-label-md);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--accent);
-  border-bottom: 1px solid var(--divider-gold);
-  padding-bottom: var(--space-2);
-  margin-bottom: var(--space-3);
+}
+
+/* Ряд действий («Редактировать»/«Удалить») в карточке события-анонса. */
+.eventActions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  flex-wrap: wrap;
 }
 
 .eventList {
