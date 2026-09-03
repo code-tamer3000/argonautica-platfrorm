@@ -4,6 +4,7 @@ import { Avatar } from '../../components/Avatar'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
 import { timeHM } from '../../lib/format'
+import { stripInlineMarks } from '../../lib/messageText'
 
 interface Props {
   roomId: number
@@ -67,8 +68,9 @@ export function PinsDrawer({ roomId, onClose, onNavigate }: Props) {
                   maxWidth: 220,
                 }}
               >
-                {pin.message.content ??
-                  (pin.message.sticker_id != null ? '[стикер]' : '[вложение]')}
+                {pin.message.content
+                  ? stripInlineMarks(pin.message.content)
+                  : (pin.message.sticker_id != null ? '[стикер]' : '[вложение]')}
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
