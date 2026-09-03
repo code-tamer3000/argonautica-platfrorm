@@ -29,10 +29,12 @@ const MARK_ORDER: Mark[] = ['bold', 'italic', 'underline']
  *
  * На тач-устройствах нативное меню выделения телефона — это ОС-слой ПОВЕРХ страницы
  * (z-index на него не действует), и оно перекрывает любой кастомный элемент рядом с
- * выделением. На iOS Safari это не проблема: WebKit сам добавляет Ж/К/Ч прямо в
- * системное меню для contentEditable, бесплатно. На Android такой интеграции нет —
- * там наша панель нужна, но чтобы не спорить за место с нативным пузырём, она уезжает
- * в фиксированную зону вверху экрана (.fmtBarMobile), а не висит над полем ввода.
+ * выделением. На iOS (все браузеры там — обёртки над WebKit) это не проблема: система
+ * сама добавляет Ж/К/Ч прямо в своё меню для contentEditable, бесплатно — там `bar`
+ * вообще не рендерится, вторая панель поверх системной выглядела бы багом. На Android
+ * такой интеграции нет — там наша панель нужна, но чтобы не спорить за место с нативным
+ * пузырём, она уезжает в фиксированную зону вверху экрана (.fmtBarMobile), а не висит
+ * над полем ввода.
  */
 export function useRichFormatting(editorRef: RefObject<HTMLDivElement>, onApplied: () => void) {
   const [hasSelection, setHasSelection] = useState(false)
@@ -103,6 +105,15 @@ export function useRichFormatting(editorRef: RefObject<HTMLDivElement>, onApplie
 
   const isCoarsePointer =
     typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+  // iOS/iPadOS (все браузеры там — обёртки над WebKit) сам добавляет Ж/К/Ч в системное
+  // меню выделения для contentEditable — бесплатно, без единой строчки нашего кода (см.
+  // комментарий выше). Показывать там ЕЩЁ и свою панель — чистый дубль, который выглядит
+  // как баг. iPadOS 13+ маскируется под десктопный Safari (navigator.platform ==
+  // 'MacIntel'), отличаем от настоящего Mac по многоточечному тачу.
+  const isIOS =
+    typeof navigator !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
 
   const buttons = MARK_ORDER.map((mark) => {
     const { title, Icon } = MARK_META[mark]
@@ -126,25 +137,27 @@ export function useRichFormatting(editorRef: RefObject<HTMLDivElement>, onApplie
   })
 
   let bar: ReactNode = null
-  if (hasSelection && isCoarsePointer) {
-    // Портал в document.body: .fmtBarMobile — position:fixed к реальному вьюпорту
-    // экрана. Без портала браузер якорит fixed к ближайшему предку с активным
-    // transform (а не обязательно к вьюпорту) — а у композера/пейна ЕСТЬ transform-
-    // анимации входа (.paneEnter/.composerReveal, translateY при монтировании). Тогда
-    // top/left считаются от бокса этого предка, а не от экрана — панель уезжала
-    // «наполовину за край» именно поэтому, не из-за самой идеи «наверху».
-    bar = createPortal(
-      <div className={`${styles.fmtBar} ${styles.fmtBarMobile}`} role="toolbar" aria-label="Форматирование текста">
-        {buttons}
-      </div>,
-      document.body,
-    )
-  } else if (hasSelection) {
-    bar = (
-      <div className={styles.fmtBar} role="toolbar" aria-label="Форматирование текста">
-        {buttons}
-      </div>
-    )
+  if (hasSelection && !isIOS) {
+    if (isCoarsePointer) {
+      // Портал в document.body: .fmtBarMobile — position:fixed к реальному вьюпорту
+      // экрана. Без портала браузер якорит fixed к ближайшему предку с активным
+      // transform (а не обязательно к вьюпорту) — а у композера/пейна ЕСТЬ transform-
+      // анимации входа (.paneEnter/.composerReveal, translateY при монтировании). Тогда
+      // top/left считаются от бокса этого предка, а не от экрана — панель уезжала
+      // «наполовину за край» именно поэтому, не из-за самой идеи «наверху».
+      bar = createPortal(
+        <div className={`${styles.fmtBar} ${styles.fmtBarMobile}`} role="toolbar" aria-label="Форматирование текста">
+          {buttons}
+        </div>,
+        document.body,
+      )
+    } else {
+      bar = (
+        <div className={styles.fmtBar} role="toolbar" aria-label="Форматирование текста">
+          {buttons}
+        </div>
+      )
+    }
   }
 
   return { bar, onKeyDown, onFocus, onBlur, onSelect }
