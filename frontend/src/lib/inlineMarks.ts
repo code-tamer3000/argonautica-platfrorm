@@ -87,7 +87,7 @@ const TAG_MARKS: Record<string, { open: string; close: string }> = {
   U: { open: '++', close: '++' },
 }
 
-// execCommand('styleWithCSS', false, false) (см. useRichFormatting.tsx) должен заставлять
+// execCommand('styleWithCSS', false, 'false') (см. useRichFormatting.tsx) должен заставлять
 // браузер оборачивать выделение тегом (<b>/<i>/<u>), но это исторически непортируемое
 // поведение между движками — если браузер всё же выдал <span style="font-weight:...">,
 // распознаём и инлайновый стиль, а не только имя тега. Без этого текст визуально жирный

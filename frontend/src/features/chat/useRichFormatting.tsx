@@ -80,7 +80,7 @@ export function useRichFormatting(editorRef: RefObject<HTMLDivElement>, onApplie
       // ищет по имени тега, спан с инлайновым стилем он не узнаёт, и сообщение уходит
       // без маркеров вовсе (текст визуально жирный в composer'е, но обычный после
       // отправки). Явно фиксируем тег-режим перед каждой командой — дёшево, идемпотентно.
-      document.execCommand('styleWithCSS', false, false)
+      document.execCommand('styleWithCSS', false, 'false')
       document.execCommand(MARK_META[mark].command)
       onApplied()
       refresh()
