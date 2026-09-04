@@ -48,7 +48,7 @@ from app.schemas.argonaut import ArgonautDetailOut, ArgonautOut, ArgonautTaskOut
 from app.services.media import presign_asset_urls
 from app.services.tasks import _visible_common_where
 from app.services.users import avatar_url, plan_names
-from app.services.visibility import cohort_plan_ranks, user_rank
+from app.services.visibility import CHEAP_TARIFF_NAME, cohort_plan_ranks, user_rank
 
 router = APIRouter(
     prefix="/api/argonauts",
@@ -65,9 +65,9 @@ VISIBLE_TASK_STATUSES = ("accepted", "submitted")
 # бизнес-контента по заголовку — задача не размечена флагом в БД.
 EXPEDITION_FEAT_TASK_TITLE = "Освобождаем оперативку"
 
-# Точное название самого дешёвого тарифа («Позиция», см. оферту) — держатели
-# этого тарифа исключены из ростера, как и is_observer (см. docstring модуля).
-OBSERVER_TARIFF_NAME = "Наблюдатель"
+# Держатели этого тарифа исключены из ростера, как и is_observer (см. docstring
+# модуля). Тот же тариф — см. `app/services/visibility.py`.
+OBSERVER_TARIFF_NAME = CHEAP_TARIFF_NAME
 
 
 async def _roster(session: AsyncSession, current_user: User) -> list[User]:

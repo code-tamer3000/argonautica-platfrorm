@@ -73,10 +73,13 @@ export function useDeleteRoom() {
   })
 }
 
-export function usePersonalChannel() {
+// `enabled=false` — не стрелять запросом там, где вызывающему он не всегда нужен
+// (ARG-114: только для дешёвого тарифа на экране «Дневники»).
+export function usePersonalChannel(enabled = true) {
   return useQuery({
     queryKey: ['personal-channel'],
     queryFn: () => http.get<RoomOut>('/api/rooms/personal'),
+    enabled,
   })
 }
 

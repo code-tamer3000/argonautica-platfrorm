@@ -31,6 +31,7 @@ from app.schemas.user import ProfileUpdateRequest, UserOut
 from app.services.auth import issue_token_pair, refresh_is_valid, revoke_refresh
 from app.services.media import presign_asset_urls
 from app.services.ratelimit import client_ip, enforce_rate_limit
+from app.services.visibility import is_cheap_tariff
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -116,6 +117,7 @@ async def change_password(
 async def _me_out(session: AsyncSession, user: User) -> UserOut:
     """Свой профиль: avatar_url — подписанный media-URL (если задан), иначе legacy."""
     out = UserOut.model_validate(user)
+    out.is_cheap_tariff = await is_cheap_tariff(session, user)
     if user.avatar_media_id is not None:
         urls = await presign_asset_urls(session, {user.avatar_media_id})
         out.avatar_url = urls.get(user.avatar_media_id)
