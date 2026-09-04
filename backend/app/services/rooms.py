@@ -20,6 +20,7 @@ from app.services.visibility import (
     contact_visible,
     diary_visible,
     intake_visible,
+    is_cheap_tariff,
     plan_visible,
     user_rank,
 )
@@ -75,7 +76,9 @@ async def assert_room_access(
     поэтому чужой дневник дополнительно гейтится потоком владельца (`diary_visible`,
     ARG-112) — не через intake_id самой комнаты (та колонка у личных комнат
     намеренно всегда NULL), а прямым сравнением `intake_id` владельца и смотрящего.
-    Тариф владельца не учитывается.
+    Тариф владельца не учитывается — а вот тариф СМОТРЯЩЕГО учитывается отдельно:
+    держатель самого дешёвого тарифа (`is_cheap_tariff`, ARG-114) не видит вообще
+    ничьих дневников, кроме своего.
     """
     if user.is_observer:
         raise HTTPException(
@@ -86,7 +89,11 @@ async def assert_room_access(
     if room.type == "channel":
         if user.role != "admin" and room.is_personal and room.created_by != user.id:
             owner = await session.get(User, room.created_by)
-            if owner is None or not diary_visible(owner, user):
+            if (
+                owner is None
+                or not diary_visible(owner, user)
+                or await is_cheap_tariff(session, user)
+            ):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         elif user.role != "admin" and not room.is_personal:
             if not intake_visible(room.intake_id, user):

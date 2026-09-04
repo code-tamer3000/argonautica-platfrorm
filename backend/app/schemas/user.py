@@ -84,6 +84,10 @@ class UserOut(BaseModel):
     can_access_cabin: bool
     is_observer: bool = False
     is_navigator: bool = False
+    # Держатель самого дешёвого тарифа (`CHEAP_TARIFF_NAME`, ARG-114): независимо
+    # от is_observer, видит только свой личный дневник, не «Все дневники» —
+    # фронт использует флаг, чтобы сразу открыть его, не показывая список.
+    is_cheap_tariff: bool = False
     # Ждём выпускную анкету — фронт перекрывает платформу её экраном (AuthGuard).
     survey_required: bool = False
     # Экспедиция пройдена (анкета сдана): Динамика скрыта, Задачи только сданные,

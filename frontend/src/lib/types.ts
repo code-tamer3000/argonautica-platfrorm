@@ -40,6 +40,8 @@ export interface UserOut {
   is_observer: boolean
   // Навигатор (ARG-110): только у role='admin'.
   is_navigator: boolean
+  // Самый дешёвый тариф (ARG-114): видит только свой дневник, не «Все дневники».
+  is_cheap_tariff: boolean
   // Ждём выпускную анкету — AuthGuard перекрывает платформу её экраном.
   survey_required: boolean
   // Экспедиция пройдена (анкета сдана): Динамика скрыта, в Задачах только сданное,

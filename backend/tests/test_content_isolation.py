@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.media import MediaAsset
 from app.models.room import Room
 from app.models.user import User
+from app.services.visibility import CHEAP_TARIFF_NAME
 
 from .conftest import MakeUser, auth_headers, login
 from .test_admin_intakes import free_starts_on
@@ -555,3 +556,60 @@ async def test_personal_diary_always_visible_to_owner_and_admin(
 
     admin_h = await _headers(client, admin)
     assert (await client.get(f"/api/rooms/{room.id}", headers=admin_h)).status_code == 200
+
+
+async def test_cheap_tariff_viewer_does_not_see_others_diary(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """ARG-114: держатель тарифа CHEAP_TARIFF_NAME теряет чужие дневники — ни в
+    списке, ни прямым GET (несмотря на тот же поток, который иначе достаточен,
+    см. test_personal_diary_visible_within_same_cohort) — независимо от is_observer."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+
+    owner = await make_user(intake_starts_on=date.today() - timedelta(days=50))
+    viewer = await make_user(intake_id=owner.intake_id, plan_id=cheap_plan)
+    room = await _make_personal_room(session, owner.id)
+
+    viewer_h = await _headers(client, viewer)
+    one = await client.get(f"/api/rooms/{room.id}", headers=viewer_h)
+    assert one.status_code == 403
+
+    listed = await client.get("/api/rooms", headers=viewer_h)
+    assert room.id not in {r["id"] for r in listed.json()}
+
+
+async def test_cheap_tariff_viewer_still_sees_own_diary(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Ограничение — только на ЧУЖИЕ дневники; свой остаётся виден и доступен."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+
+    owner = await make_user(plan_id=cheap_plan)
+    room = await _make_personal_room(session, owner.id)
+
+    owner_h = await _headers(client, owner)
+    assert (await client.get(f"/api/rooms/{room.id}", headers=owner_h)).status_code == 200
+
+    listed = await client.get("/api/rooms", headers=owner_h)
+    assert room.id in {r["id"] for r in listed.json()}
+
+
+async def test_me_reports_cheap_tariff_flag(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+
+    cheap_user = await make_user(plan_id=cheap_plan)
+    regular_user = await make_user()
+
+    cheap_h = await _headers(client, cheap_user)
+    assert (await client.get("/api/auth/me", headers=cheap_h)).json()["is_cheap_tariff"] is True
+
+    regular_h = await _headers(client, regular_user)
+    assert (await client.get("/api/auth/me", headers=regular_h)).json()["is_cheap_tariff"] is False
