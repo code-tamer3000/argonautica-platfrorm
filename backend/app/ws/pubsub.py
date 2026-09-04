@@ -14,10 +14,10 @@ import asyncio
 import contextlib
 import json
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from app.core.redis import redis_client
-from app.ws.manager import manager
+from app.ws.manager import Conn, manager
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,32 @@ _ready: asyncio.Event | None = None
 
 def _room_channel(room_id: int) -> str:
     return f"room:{room_id}"
+
+
+def _strip_cheap_tariff_hint(payload: dict[str, Any]) -> dict[str, Any]:
+    """Копия payload'а без служебного поля-подсказки — уходит любому клиенту."""
+    return {k: v for k, v in payload.items() if k != "content_for_cheap_tariff"}
+
+
+def _cheap_tariff_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Та же копия, но с текстом сообщения подменённым на редактированный вариант."""
+    out = _strip_cheap_tariff_hint(payload)
+    redacted = payload.get("content_for_cheap_tariff")
+    if redacted is not None and isinstance(out.get("message"), dict):
+        out["message"] = {**out["message"], "content": redacted}
+    return out
+
+
+def _room_event_per_conn(
+    payload: dict[str, Any],
+) -> Callable[[Conn], dict[str, Any]] | None:
+    """ARG-115: `content_for_cheap_tariff` в payload'е — раздать по-разному дешёвому
+    тарифу и всем остальным; без поля — один и тот же payload всем, как раньше."""
+    if "content_for_cheap_tariff" not in payload:
+        return None
+    full = _strip_cheap_tariff_hint(payload)
+    cheap = _cheap_tariff_payload(payload)
+    return lambda conn: cheap if conn.is_cheap_tariff else full
 
 
 def _user_channel(user_id: int) -> str:
@@ -78,7 +104,9 @@ async def _run_listener(ready: asyncio.Event) -> None:
                 await manager.fanout_user(user_id, payload)
             else:
                 room_id = int(channel.split(":", 1)[1])
-                await manager.fanout_room(room_id, payload)
+                await manager.fanout_room(
+                    room_id, payload, per_conn=_room_event_per_conn(payload)
+                )
     except asyncio.CancelledError:
         raise
     finally:

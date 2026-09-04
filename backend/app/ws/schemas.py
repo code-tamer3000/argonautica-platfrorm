@@ -46,12 +46,29 @@ EVENT_ROOM_CREATED = "room.created"
 EVENT_ROOM_CLOSED = "room.closed"
 
 
-def message_new_event(message: MessageOut) -> dict[str, Any]:
-    return {"type": EVENT_MESSAGE_NEW, "message": message.model_dump(mode="json")}
+def _with_cheap_tariff_content(
+    event: dict[str, Any], redacted_content: str | None
+) -> dict[str, Any]:
+    """Прицепить редактированный вариант текста поверх обычного payload'а — снимается
+    в pubsub-слушателе (см. `pubsub._apply_cheap_tariff_redaction`) перед раздачей
+    конкретному сокету, никогда не уходит клиенту как есть (ARG-115)."""
+    if redacted_content is not None:
+        event["content_for_cheap_tariff"] = redacted_content
+    return event
 
 
-def message_edited_event(message: MessageOut) -> dict[str, Any]:
-    return {"type": EVENT_MESSAGE_EDITED, "message": message.model_dump(mode="json")}
+def message_new_event(
+    message: MessageOut, redacted_content: str | None = None
+) -> dict[str, Any]:
+    event = {"type": EVENT_MESSAGE_NEW, "message": message.model_dump(mode="json")}
+    return _with_cheap_tariff_content(event, redacted_content)
+
+
+def message_edited_event(
+    message: MessageOut, redacted_content: str | None = None
+) -> dict[str, Any]:
+    event = {"type": EVENT_MESSAGE_EDITED, "message": message.model_dump(mode="json")}
+    return _with_cheap_tariff_content(event, redacted_content)
 
 
 def notification_new_event(notification: NotificationOut) -> dict[str, Any]:
