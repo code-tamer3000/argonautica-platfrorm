@@ -11,6 +11,9 @@ from app.models.message import Message, MessageAttachment
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.user import User
+from app.services.redaction import ZOOM_LINK_PLACEHOLDER
+from app.services.rooms import ensure_news_channel
+from app.services.visibility import CHEAP_TARIFF_NAME
 
 from .conftest import (
     AddMembership,
@@ -34,6 +37,14 @@ async def _send(
     )
     assert resp.status_code == 201, resp.text
     return resp.json()
+
+
+async def _create_plan(client: AsyncClient, headers: dict[str, str], name: str) -> int:
+    resp = await client.post(
+        "/api/admin/plans", headers=headers, json={"name": name, "price": 1000}
+    )
+    assert resp.status_code == 201, resp.text
+    return int(resp.json()["id"])
 
 
 async def _membership_count(
@@ -694,3 +705,129 @@ async def test_successful_send_publishes_after_commit(
     # Успешный путь: событие ушло ровно один раз, в нужную комнату.
     assert len(published) == 1
     assert published[0][0] == room.id
+
+
+# --- ARG-115: Zoom-ссылки в новостях скрыты для дешёвого тарифа --------------
+
+_ZOOM_TEXT = "Эфир в 20:00\nhttps://us06web.zoom.us/j/86812929090?pwd=Zy533wnP"
+
+
+async def test_news_feed_redacts_zoom_link_for_cheap_tariff(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+    await _send(client, admin_h, news.id, content=_ZOOM_TEXT)
+
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+    viewer = await make_user(intake_id=admin.intake_id, plan_id=cheap_plan)
+    viewer_h = await _headers(client, viewer)
+
+    resp = await client.get(f"/api/rooms/{news.id}/messages", headers=viewer_h)
+    assert resp.status_code == 200
+    post = resp.json()[0]
+    assert ZOOM_LINK_PLACEHOLDER in post["content"]
+    assert "zoom.us" not in post["content"]
+    assert "Эфир в 20:00" in post["content"]
+
+
+async def test_news_feed_keeps_zoom_link_for_regular_participant_and_admin(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+    await _send(client, admin_h, news.id, content=_ZOOM_TEXT)
+
+    regular = await make_user(intake_id=admin.intake_id)
+    regular_h = await _headers(client, regular)
+
+    for headers in (regular_h, admin_h):
+        resp = await client.get(f"/api/rooms/{news.id}/messages", headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()[0]["content"] == _ZOOM_TEXT
+
+
+async def test_zoom_link_kept_outside_news_channel_for_cheap_tariff(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Ограничение специфично новостному каналу — в обычной комнате не действует."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+    viewer = await make_user(plan_id=cheap_plan)
+    room = await make_room(created_by=viewer.id)
+    await add_membership(room.id, viewer.id, "owner")
+    viewer_h = await _headers(client, viewer)
+    await _send(client, viewer_h, room.id, content=_ZOOM_TEXT)
+
+    resp = await client.get(f"/api/rooms/{room.id}/messages", headers=viewer_h)
+    assert resp.status_code == 200
+    assert resp.json()[0]["content"] == _ZOOM_TEXT
+
+
+async def test_message_new_ws_event_carries_redacted_variant_for_news_zoom_link(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Живая доставка (message.new) несёт оба варианта текста в payload'е — раздача
+    по получателю разбирается в pubsub-слушателе, см. отдельный сквозной тест
+    test_ws.py::test_news_message_new_hides_zoom_link_only_for_cheap_tariff."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+
+    published: list[tuple[int, dict[str, object]]] = []
+
+    async def _spy(room_id: int, event: dict[str, object]) -> None:
+        published.append((room_id, event))
+
+    monkeypatch.setattr("app.api.messages.publish_room_event", _spy)
+
+    resp = await client.post(
+        f"/api/rooms/{news.id}/messages", headers=admin_h, json={"content": _ZOOM_TEXT}
+    )
+    assert resp.status_code == 201, resp.text
+
+    assert len(published) == 1
+    event = published[0][1]
+    assert event["message"]["content"] == _ZOOM_TEXT  # обычный вариант не тронут
+    assert ZOOM_LINK_PLACEHOLDER in event["content_for_cheap_tariff"]
+    assert "zoom.us" not in event["content_for_cheap_tariff"]
+
+
+async def test_message_new_ws_event_has_no_redacted_variant_without_zoom_link(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+
+    published: list[tuple[int, dict[str, object]]] = []
+
+    async def _spy(room_id: int, event: dict[str, object]) -> None:
+        published.append((room_id, event))
+
+    monkeypatch.setattr("app.api.messages.publish_room_event", _spy)
+
+    resp = await client.post(
+        f"/api/rooms/{news.id}/messages",
+        headers=admin_h,
+        json={"content": "Обычная новость без ссылок"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert "content_for_cheap_tariff" not in published[0][1]

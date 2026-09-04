@@ -20,6 +20,7 @@ from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, MessageReaction, PinnedMessage
+from app.models.room import Room
 from app.models.sticker import Sticker
 from app.models.user import User
 from app.schemas.media import AttachmentOut
@@ -41,6 +42,7 @@ from app.services.message_refs import (
 )
 from app.services.notifications import on_new_message
 from app.services.ratelimit import enforce_rate_limit
+from app.services.redaction import redact_zoom_links
 from app.services.rooms import (
     assert_can_pin,
     assert_can_write,
@@ -49,6 +51,7 @@ from app.services.rooms import (
     get_or_create_channel_membership,
     load_room,
 )
+from app.services.visibility import is_cheap_tariff
 from app.ws import schemas as ws_schemas
 from app.ws.pubsub import publish_room_event
 
@@ -151,6 +154,16 @@ def _to_out(
     if reaction is not None:
         out.reaction_count, out.reacted_by_me = reaction
     return out
+
+
+def _redacted_variant(room: Room, content: str | None) -> str | None:
+    """ARG-115: вариант текста с Zoom-ссылками, скрытыми для дешёвого тарифа —
+    только для новостного канала и только если есть что скрывать (иначе None, чтобы
+    не тащить лишнее поле в WS-payload на каждое сообщение любой другой комнаты)."""
+    if not room.is_news or not content:
+        return None
+    redacted = redact_zoom_links(content)
+    return redacted if redacted != content else None
 
 
 def _pinned_out(
@@ -284,7 +297,9 @@ async def send_message(
         )
     # Сайд-эффекты — только после успешного commit (иначе «отправлено, но
     # потерялось»: событие ушло в WS, а транзакция откатилась). См. after_commit.
-    event = ws_schemas.message_new_event(ws_out)
+    event = ws_schemas.message_new_event(
+        ws_out, _redacted_variant(room, ws_out.content)
+    )
     after_commit(session, lambda: publish_room_event(room_id, event))
     # Уведомления получателям (личка / ответ на сообщение / пост в новостях).
     await on_new_message(session, message, room, current_user)
@@ -431,10 +446,16 @@ async def list_messages(
     # Непрочитанные ответы в тредах — только для корней с ответами (иначе лишний скан).
     roots_with_replies = [m.id for m in messages if m.reply_count > 0]
     unread = await _unread_replies_map(session, roots_with_replies, last_read)
+    # Zoom-ссылки на эфиры (ARG-115): для дешёвого тарифа в новостном канале
+    # скрываем текстом-плейсхолдером — только чтение ленты, треды/пины/репост вне
+    # границ задачи (см. docs/ROOMS.md).
+    redact = room.is_news and await is_cheap_tariff(session, current_user)
     out = []
     for m in messages:
         item = _to_out(m, attachments.get(m.id, []), refs, reactions.get(m.id))
         item.unread_reply_count = unread.get(m.id, 0)
+        if redact and item.content:
+            item.content = redact_zoom_links(item.content)
         out.append(item)
     return out
 
@@ -537,7 +558,9 @@ async def edit_message(
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
         )
-    event = ws_schemas.message_edited_event(ws_out)
+    event = ws_schemas.message_edited_event(
+        ws_out, _redacted_variant(room, ws_out.content)
+    )
     after_commit(session, lambda: publish_room_event(room_id, event))
     return out
 

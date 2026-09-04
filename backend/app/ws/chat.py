@@ -16,6 +16,7 @@ from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.db.session import SessionLocal
 from app.models.user import User
 from app.services.rooms import assert_room_access, load_room
+from app.services.visibility import is_cheap_tariff
 from app.ws import schemas
 from app.ws.manager import Conn, manager
 from app.ws.pubsub import ensure_listener_started, publish_presence, publish_room_event
@@ -25,8 +26,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _authenticate(websocket: WebSocket, token: str | None) -> User | None:
-    """Проверить access-токен и загрузить юзера. Отказ → закрыть рукопожатие (1008)."""
+async def _authenticate(websocket: WebSocket, token: str | None) -> tuple[User, bool] | None:
+    """Проверить access-токен и загрузить юзера (+ снимок тарифа для ARG-115).
+    Отказ → закрыть рукопожатие (1008)."""
     if not token:
         await websocket.close(code=1008)
         return None
@@ -41,11 +43,12 @@ async def _authenticate(websocket: WebSocket, token: str | None) -> User | None:
 
     async with SessionLocal() as session:
         user = await session.get(User, int(payload["sub"]))
-    # survey_required — платформа перекрыта выпускной анкетой (см. deps).
-    if user is None or user.must_change_password or user.survey_required:
-        await websocket.close(code=1008)
-        return None
-    return user
+        # survey_required — платформа перекрыта выпускной анкетой (см. deps).
+        if user is None or user.must_change_password or user.survey_required:
+            await websocket.close(code=1008)
+            return None
+        cheap_tariff = await is_cheap_tariff(session, user)
+    return user, cheap_tariff
 
 
 async def _presence_connect(user: User) -> None:
@@ -117,13 +120,14 @@ async def chat_ws(
     websocket: WebSocket,
     token: Annotated[str | None, Query()] = None,
 ) -> None:
-    user = await _authenticate(websocket, token)
-    if user is None:
+    authenticated = await _authenticate(websocket, token)
+    if authenticated is None:
         return
+    user, cheap_tariff = authenticated
     await websocket.accept()
     await ensure_listener_started()
 
-    conn = Conn(websocket, user)
+    conn = Conn(websocket, user, is_cheap_tariff=cheap_tariff)
     manager.register(conn)
     await _presence_connect(user)
     try:
