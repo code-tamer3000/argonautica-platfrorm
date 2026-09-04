@@ -100,7 +100,9 @@ async def is_cheap_tariff(session: AsyncSession, user: User) -> bool:
     """Держатель самого дешёвого тарифа (`CHEAP_TARIFF_NAME`, см. модуль) — для
     дневников ведёт себя как «только своё пространство»: чужие дневники
     («Все дневники») ему не видны, ни в списке, ни прямым GET (иначе IDOR-щель
-    в обход списка, CLAUDE.md п.1)."""
+    в обход списка, CLAUDE.md п.1). Тот же признак решает, где скрывать Zoom-ссылки
+    на эфиры (ARG-115/ARG-116, `app/services/redaction.py`) — не только в самой
+    Рубке, но и в превью новости на дашборде и в ленте уведомлений."""
     if user.plan_id is None:
         return False
     return bool(
@@ -108,6 +110,20 @@ async def is_cheap_tariff(session: AsyncSession, user: User) -> bool:
             select(exists().where(Plan.id == user.plan_id, Plan.name == CHEAP_TARIFF_NAME))
         )
     )
+
+
+async def cheap_tariff_user_ids(session: AsyncSession, user_ids: list[int]) -> set[int]:
+    """Батч-вариант `is_cheap_tariff` — какие из user_ids держат дешёвый тариф.
+    Нужен там, где решение принимается на много получателей за раз (рассылка
+    уведомлений о новости), чтобы не гонять point-check в цикле."""
+    if not user_ids:
+        return set()
+    rows = await session.execute(
+        select(User.id)
+        .join(Plan, Plan.id == User.plan_id)
+        .where(User.id.in_(user_ids), Plan.name == CHEAP_TARIFF_NAME)
+    )
+    return set(rows.scalars().all())
 
 
 def diary_visible(owner: User, viewer: User) -> bool:

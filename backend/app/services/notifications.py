@@ -23,7 +23,9 @@ from app.models.user import User
 from app.schemas.notification import NotificationOut
 from app.services import push as push_service
 from app.services.notify_prefs import push_allowed
+from app.services.redaction import redact_zoom_links
 from app.services.text_marks import strip_inline_marks
+from app.services.visibility import cheap_tariff_user_ids
 from app.ws import schemas as ws_schemas
 from app.ws.pubsub import publish_user_event
 
@@ -186,6 +188,17 @@ async def on_new_message(
             return
 
         preview = _preview(message.content)
+        # ARG-116: та же Zoom-маскировка, что в самой Рубке (ARG-115) — только для
+        # уведомлений о новости и только держателям дешёвого тарифа. preview общий
+        # для всех получателей одного сообщения, а получатели с разным исходом
+        # нужны разные — считаем редактированный вариант и набор id заранее, вместо
+        # point-check на каждого в цикле ниже.
+        preview_redacted = redact_zoom_links(preview) if preview is not None else None
+        cheap_tariff_uids: set[int] = set()
+        if preview_redacted != preview and "news" in kind_by_uid.values():
+            cheap_tariff_uids = await cheap_tariff_user_ids(
+                session, [uid for uid, k in kind_by_uid.items() if k == "news"]
+            )
         # Настройки получателей — для фильтра нативного push (in-app лента идёт всем).
         rows_settings = (
             await session.execute(
@@ -209,6 +222,9 @@ async def on_new_message(
         await session.flush()  # присваивает id и created_at (нужны для payload)
         for row in rows:
             await session.refresh(row)
+            row_preview = (
+                preview_redacted if row.user_id in cheap_tariff_uids else preview
+            )
             out = NotificationOut(
                 id=row.id,
                 kind=row.kind,
@@ -216,7 +232,7 @@ async def on_new_message(
                 message_id=row.message_id,
                 actor_id=row.actor_id,
                 actor_name=sender.display_name,
-                preview=preview,
+                preview=row_preview,
                 ref_date=None,
                 created_at=row.created_at,
                 read_at=row.read_at,
@@ -232,7 +248,7 @@ async def on_new_message(
                 url = "/news" if row.kind == "news" else "/"
                 payload = push_service.build_payload(
                     title=sender.display_name,
-                    body=preview,
+                    body=row_preview,
                     url=url,
                     tag=f"room-{message.room_id}",
                 )
