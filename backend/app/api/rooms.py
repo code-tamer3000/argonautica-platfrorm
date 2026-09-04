@@ -41,6 +41,7 @@ from app.services.rooms import (
 )
 from app.services.visibility import (
     can_message_admin,
+    cheap_tariff_plan_id,
     cohort_plan_ranks,
     is_cheap_tariff,
     plan_visibility_clause,
@@ -266,8 +267,9 @@ async def list_rooms(
     # новостной канал больше не исключение (ARG-104) — гейтится тем же правилом,
     # что обычный канал. Личный дневник — особый случай («Все дневники» показывает
     # и чужие): свой виден всегда, чужой — по потоку владельца, без учёта тарифа
-    # (сравниваем пользователей напрямую, не intake_id самой комнаты — та колонка у
-    # личных комнат намеренно всегда NULL, см. diary_visible/ARG-112).
+    # владельца ЗА ИСКЛЮЧЕНИЕМ дешёвого тарифа (ARG-117, см. ниже) — сравниваем
+    # пользователей напрямую, не intake_id самой комнаты (та колонка у личных
+    # комнат намеренно всегда NULL, см. diary_visible/ARG-112).
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
         channel_clause = Room.type == "channel"
@@ -281,17 +283,25 @@ async def list_rooms(
         )
         # Держатель самого дешёвого тарифа (ARG-114) не видит «Все дневники» —
         # только свой (own_personal выше), поэтому чужая ветка тут всегда ложна.
+        # Симметрично (ARG-117): дневник ВЛАДЕЛЬЦА того же тарифа не видит никто из
+        # НЕ-админов (эта ветка и так только для current_user.role != "admin") —
+        # исключаем таких владельцев из EXISTS через сравнение plan_id, дешевле, чем
+        # JOIN на Plan в подзапросе построчно.
+        cheap_plan_id = await cheap_tariff_plan_id(session)
+        owner_clauses = [
+            Owner.id == Room.created_by,
+            Owner.role != "admin",
+            Owner.intake_id.is_not_distinct_from(current_user.intake_id),
+        ]
+        if cheap_plan_id is not None:
+            owner_clauses.append(Owner.plan_id.is_distinct_from(cheap_plan_id))
         others_personal_visible = (
             false()
             if await is_cheap_tariff(session, current_user)
             else and_(
                 Room.is_personal.is_(True),
                 Room.created_by != current_user.id,
-                exists().where(
-                    Owner.id == Room.created_by,
-                    Owner.role != "admin",
-                    Owner.intake_id.is_not_distinct_from(current_user.intake_id),
-                ),
+                exists().where(*owner_clauses),
             )
         )
         regular_channel_visible = and_(

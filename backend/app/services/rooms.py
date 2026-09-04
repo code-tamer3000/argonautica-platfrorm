@@ -76,9 +76,11 @@ async def assert_room_access(
     поэтому чужой дневник дополнительно гейтится потоком владельца (`diary_visible`,
     ARG-112) — не через intake_id самой комнаты (та колонка у личных комнат
     намеренно всегда NULL), а прямым сравнением `intake_id` владельца и смотрящего.
-    Тариф владельца не учитывается — а вот тариф СМОТРЯЩЕГО учитывается отдельно:
-    держатель самого дешёвого тарифа (`is_cheap_tariff`, ARG-114) не видит вообще
-    ничьих дневников, кроме своего.
+    Тариф владельца по-прежнему НЕ учитывается для видимости по потоку (ARG-112) —
+    кроме одного тарифа, у которого гейтится ОБЕ стороны отдельно: держатель самого
+    дешёвого тарифа (`is_cheap_tariff`) как СМОТРЯЩИЙ не видит вообще ничьих дневников,
+    кроме своего (ARG-114); как ВЛАДЕЛЕЦ его дневник не видит никто, кроме него самого
+    и админов (ARG-117) — оба чека независимы друг от друга.
     """
     if user.is_observer:
         raise HTTPException(
@@ -93,6 +95,7 @@ async def assert_room_access(
                 owner is None
                 or not diary_visible(owner, user)
                 or await is_cheap_tariff(session, user)
+                or await is_cheap_tariff(session, owner)
             ):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         elif user.role != "admin" and not room.is_personal:
