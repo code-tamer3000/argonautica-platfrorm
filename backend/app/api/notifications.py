@@ -21,6 +21,8 @@ from app.schemas.notification import (
     NotificationOut,
 )
 from app.services.notifications import _preview
+from app.services.redaction import redact_zoom_links
+from app.services.visibility import is_cheap_tariff
 
 # Наблюдателю уведомления не адресуются (нет чата/задач/ответов) — весь роутер закрыт.
 router = APIRouter(
@@ -32,6 +34,15 @@ router = APIRouter(
 # Сколько держим прочитанное в ленте после прочтения, прежде чем убрать из выдачи
 # (не из БД — строка остаётся, просто перестаёт попадать в этот запрос).
 READ_FEED_RETENTION = timedelta(hours=48)
+
+
+def _redacted_preview(kind: str, body: str | None, viewer_is_cheap_tariff: bool) -> str | None:
+    """ARG-116: та же Zoom-маскировка, что и в самой Рубке (ARG-115) — только для
+    уведомлений о новости (`kind == "news"`), только для дешёвого тарифа."""
+    preview = _preview(body)
+    if preview is not None and kind == "news" and viewer_is_cheap_tariff:
+        preview = redact_zoom_links(preview)
+    return preview
 
 
 async def _unread_count(session: AsyncSession, user_id: int) -> int:
@@ -71,6 +82,9 @@ async def list_notifications(
         stmt = stmt.where(Notification.id < before)
 
     rows = (await session.execute(stmt)).all()
+    # ARG-116: Zoom-ссылка в тексте новости скрыта в самой Рубке (ARG-115) — та же
+    # маскировка нужна и здесь, иначе колокольчик её всё равно покажет.
+    cheap_tariff = await is_cheap_tariff(session, current_user)
     items = [
         NotificationOut(
             id=n.id,
@@ -79,7 +93,9 @@ async def list_notifications(
             message_id=n.message_id,
             actor_id=n.actor_id,
             actor_name=actor_name,
-            preview=(_preview(n.body) if n.kind == "admin" else _preview(content)),
+            preview=_redacted_preview(
+                n.kind, n.body if n.kind == "admin" else content, cheap_tariff
+            ),
             ref_date=n.ref_date,
             title=n.title,
             created_at=n.created_at,

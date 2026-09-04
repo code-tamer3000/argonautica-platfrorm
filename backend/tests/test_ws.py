@@ -16,9 +16,12 @@ import pytest
 from httpx import AsyncClient
 from httpx_ws import WebSocketDisconnect, aconnect_ws
 from httpx_ws.transport import ASGIWebSocketTransport
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
 from app.models.user import User
+from app.services.rooms import ensure_news_channel
+from app.services.visibility import CHEAP_TARIFF_NAME
 
 from .conftest import (
     AddMembership,
@@ -58,6 +61,14 @@ async def _wait(
 
 def _is(type_: str) -> Callable[[dict[str, Any]], bool]:
     return lambda m: m.get("type") == type_
+
+
+async def _create_plan(client: AsyncClient, headers: dict[str, str], name: str) -> int:
+    resp = await client.post(
+        "/api/admin/plans", headers=headers, json={"name": name, "price": 1000}
+    )
+    assert resp.status_code == 201, resp.text
+    return int(resp.json()["id"])
 
 
 # --- рукопожатие -----------------------------------------------------------
@@ -300,3 +311,46 @@ async def test_presence_online_offline(make_user: MakeUser) -> None:
                 and m.get("status") == "offline",
             )
             assert offline["status"] == "offline"
+
+
+# --- ARG-115: Zoom-ссылки в новостях скрыты для дешёвого тарифа -------------
+
+
+async def test_news_message_new_hides_zoom_link_only_for_cheap_tariff(
+    make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Живой message.new: дешёвый тариф получает редактированный текст, обычный
+    участник — оригинал; служебное поле-подсказка не уходит ни тому, ни другому."""
+    admin = await make_user(role="admin")
+    regular = await make_user(intake_id=admin.intake_id)
+
+    async with _client() as client:
+        admin_headers = auth_headers(await _token(client, admin))
+        cheap_plan = await _create_plan(client, admin_headers, CHEAP_TARIFF_NAME)
+        cheap = await make_user(intake_id=admin.intake_id, plan_id=cheap_plan)
+
+        news = await ensure_news_channel(session, admin.intake_id)
+        await session.commit()
+
+        async with (
+            aconnect_ws(_ws_url(await _token(client, regular)), client) as ws_regular,
+            aconnect_ws(_ws_url(await _token(client, cheap)), client) as ws_cheap,
+        ):
+            for ws in (ws_regular, ws_cheap):
+                await ws.send_json({"type": "subscribe", "room_id": news.id})
+                await _wait(ws, _is("subscribed"))
+
+            resp = await client.post(
+                f"/api/rooms/{news.id}/messages",
+                headers=admin_headers,
+                json={"content": "https://us06web.zoom.us/j/86812929090?pwd=Zy533wnP"},
+            )
+            assert resp.status_code == 201
+
+            regular_event = await _wait(ws_regular, _is("message.new"))
+            assert "zoom.us" in regular_event["message"]["content"]
+            assert "content_for_cheap_tariff" not in regular_event
+
+            cheap_event = await _wait(ws_cheap, _is("message.new"))
+            assert "zoom.us" not in cheap_event["message"]["content"]
+            assert "content_for_cheap_tariff" not in cheap_event

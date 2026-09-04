@@ -32,6 +32,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.plan import Plan
 from app.models.user import User
 
+# Точное название самого дешёвого тарифа (в оферте — «Позиция»). Держатели этого
+# тарифа — вторая, независимая от `is_observer`, группа с урезанным доступом: не
+# отображаются в ростере «Аргонавты» (`app/api/argonauts.py`) и видят только свой
+# личный дневник, а не «Все дневники» (ARG-114) — см. `is_cheap_tariff` ниже.
+CHEAP_TARIFF_NAME = "Наблюдатель"
+
 
 def intake_visible(content_intake_id: int | None, user: User) -> bool:
     """Виден по потоку: NULL — всем; иначе только участнику того же набора."""
@@ -88,6 +94,36 @@ def contact_visible(viewer: User, candidate: User, ranks: dict[int, int]) -> boo
             return True
         return can_message_admin(user_rank(viewer, ranks), ranks)
     return user_rank(candidate, ranks) <= user_rank(viewer, ranks)
+
+
+async def is_cheap_tariff(session: AsyncSession, user: User) -> bool:
+    """Держатель самого дешёвого тарифа (`CHEAP_TARIFF_NAME`, см. модуль) — для
+    дневников ведёт себя как «только своё пространство»: чужие дневники
+    («Все дневники») ему не видны, ни в списке, ни прямым GET (иначе IDOR-щель
+    в обход списка, CLAUDE.md п.1). Тот же признак решает, где скрывать Zoom-ссылки
+    на эфиры (ARG-115/ARG-116, `app/services/redaction.py`) — не только в самой
+    Рубке, но и в превью новости на дашборде и в ленте уведомлений."""
+    if user.plan_id is None:
+        return False
+    return bool(
+        await session.scalar(
+            select(exists().where(Plan.id == user.plan_id, Plan.name == CHEAP_TARIFF_NAME))
+        )
+    )
+
+
+async def cheap_tariff_user_ids(session: AsyncSession, user_ids: list[int]) -> set[int]:
+    """Батч-вариант `is_cheap_tariff` — какие из user_ids держат дешёвый тариф.
+    Нужен там, где решение принимается на много получателей за раз (рассылка
+    уведомлений о новости), чтобы не гонять point-check в цикле."""
+    if not user_ids:
+        return set()
+    rows = await session.execute(
+        select(User.id)
+        .join(Plan, Plan.id == User.plan_id)
+        .where(User.id.in_(user_ids), Plan.name == CHEAP_TARIFF_NAME)
+    )
+    return set(rows.scalars().all())
 
 
 def diary_visible(owner: User, viewer: User) -> bool:

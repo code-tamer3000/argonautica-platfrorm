@@ -4,6 +4,7 @@
 последняя миля: раздать пришедшее из шины событие локальным сокетам, подписанным на
 комнату. Один инстанс `manager` на процесс.
 """
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import WebSocket
@@ -14,10 +15,15 @@ from app.models.user import User
 class Conn:
     """Одно WebSocket-соединение: сокет + кто за ним + на какие комнаты подписан."""
 
-    def __init__(self, websocket: WebSocket, user: User) -> None:
+    def __init__(
+        self, websocket: WebSocket, user: User, is_cheap_tariff: bool = False
+    ) -> None:
         self.websocket = websocket
         self.user = user
         self.subscribed: set[int] = set()
+        # Снимок на момент коннекта (ARG-115), как is_observer/graduated_at на user —
+        # смена тарифа посреди сессии подхватится на переподключении, не раньше.
+        self.is_cheap_tariff = is_cheap_tariff
 
     async def send_json(self, payload: dict[str, Any]) -> bool:
         """Отправить событие. False, если сокет умер (вызывающий снимет соединение)."""
@@ -66,10 +72,20 @@ class ConnectionManager:
             if not peers:
                 del self._rooms[room_id]
 
-    async def fanout_room(self, room_id: int, payload: dict[str, Any]) -> None:
-        """Раздать событие подписчикам комнаты; мёртвые соединения снять."""
+    async def fanout_room(
+        self,
+        room_id: int,
+        payload: dict[str, Any],
+        per_conn: Callable[[Conn], dict[str, Any]] | None = None,
+    ) -> None:
+        """Раздать событие подписчикам комнаты; мёртвые соединения снять.
+
+        `per_conn` (ARG-115, Zoom-ссылки в новостях) — вместо одного payload'а всем,
+        построить его индивидуально по получателю (напр. убрать/подменить поле для
+        дешёвого тарифа). Без него поведение как раньше — один и тот же payload."""
         for conn in list(self._rooms.get(room_id, ())):
-            if not await conn.send_json(payload):
+            out = per_conn(conn) if per_conn is not None else payload
+            if not await conn.send_json(out):
                 self.unregister(conn)
 
     async def fanout_user(self, user_id: int, payload: dict[str, Any]) -> None:

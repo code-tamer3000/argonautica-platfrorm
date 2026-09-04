@@ -1,9 +1,13 @@
-"""Публичный список тарифов — только активные, только id+name.
+"""Публичный список тарифов — все, включая неактивные, только id+name.
 
 Полный CRUD (цена/описание/is_active) — админский, см. `/api/admin/plans`
 (app/api/admin.py). Этот роутер существует отдельно для группировки «Все
 дневники» по тарифу владельца (RoomOut.owner_plan_id) на клиенте обычного
-участника, которому /api/admin/* недоступен (403).
+участника, которому /api/admin/* недоступен (403). `is_active` тут
+намеренно не фильтруется: он управляет только тем, предлагает ли тариф
+интейк-бот (см. `_active_plans` в backend/scripts/intake_bot.py) — участники,
+уже купившие деактивированный тариф, не должны терять подпись своей группы
+дневников.
 """
 from typing import Annotated
 
@@ -21,11 +25,11 @@ router = APIRouter(prefix="/api/plans", tags=["plans"])
 
 
 @router.get("", response_model=list[PlanPublicOut])
-async def list_active_plans(
+async def list_plans(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[Plan]:
-    """Активные тарифы, отсортированы как в админке (по цене) — стабильный
+    """Все тарифы, отсортированы как в админке (по цене) — стабильный
     порядок групп в «Все дневники»."""
-    stmt = select(Plan).where(Plan.is_active.is_(True)).order_by(Plan.price)
+    stmt = select(Plan).order_by(Plan.price)
     return list((await session.execute(stmt)).scalars().all())

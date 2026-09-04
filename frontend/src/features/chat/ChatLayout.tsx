@@ -1,8 +1,10 @@
 import { useCallback, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { usePersonalChannel } from '../../api/rooms'
 import { EmptyState } from '../../components/EmptyState'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useUiStore } from '../../stores/ui'
+import { useAuth } from '../auth/AuthContext'
 import { ChatPane } from './ChatPane'
 import { RoomList, type Tab } from './RoomList'
 import styles from './chat.module.css'
@@ -24,6 +26,7 @@ export function ChatLayout({ tab, hideRoomList }: Props) {
   const navigate = useNavigate()
   const setActiveRoom = useUiStore((s) => s.setActiveRoom)
   const isMobile = useIsMobile()
+  const { user: me } = useAuth()
 
   const basePath = basePathFor(tab)
 
@@ -41,6 +44,17 @@ export function ChatLayout({ tab, hideRoomList }: Props) {
     setActiveRoom(roomId)
     return () => setActiveRoom(null)
   }, [roomId, setActiveRoom])
+
+  // Дешёвый тариф (ARG-114): «Все дневники» ему и так не приходят с сервера
+  // (list_rooms), но список у него всё равно пуст без выбора — ведём сразу в
+  // свой личный дневник, не оставляя на пустом экране-заглушке.
+  const isCheapTariffDiaries = tab === 'channels' && me?.is_cheap_tariff === true
+  const { data: personalChannel } = usePersonalChannel(isCheapTariffDiaries && roomId == null)
+  useEffect(() => {
+    if (isCheapTariffDiaries && roomId == null && personalChannel) {
+      navigate(`${basePath}/${personalChannel.id}`, { replace: true })
+    }
+  }, [isCheapTariffDiaries, roomId, personalChannel, basePath, navigate])
 
   // На мобиле — master-detail: либо список, либо открытый чат.
   const showList = !hideRoomList && (!isMobile || roomId == null)
@@ -60,7 +74,15 @@ export function ChatLayout({ tab, hideRoomList }: Props) {
               <ChatPane
                 roomId={roomId}
                 onOpenRoom={handleSelect}
-                onBack={isMobile && !hideRoomList ? () => navigate(basePath) : undefined}
+                // Дешёвый тариф (ARG-114): «назад» тут вело бы на basePath, откуда
+                // эффект выше тут же редиректит обратно в тот же дневник — кнопка
+                // выглядела бы сломанной (зацикливалась на одном экране). Возвращаться
+                // и правда некуда: список для него всегда пуст, кроме своего дневника.
+                onBack={
+                  isMobile && !hideRoomList && !isCheapTariffDiaries
+                    ? () => navigate(basePath)
+                    : undefined
+                }
               />
             </div>
           ) : (

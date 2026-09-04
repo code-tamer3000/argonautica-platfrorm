@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.expedition import IntakeStage
 from app.models.user import User
 from app.services.rooms import ensure_news_channel
+from app.services.visibility import CHEAP_TARIFF_NAME
 
 from .conftest import MakeUser, auth_headers, get_or_create_intake, login
 
@@ -246,3 +247,44 @@ async def test_news_preview_strips_inline_formatting_marks(
     news_preview = resp.json()["news_preview"]
     assert news_preview is not None
     assert news_preview["preview"] == "жирный и курсив и подчёркнутый пост"
+
+
+async def test_news_preview_redacts_zoom_link_for_cheap_tariff(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-116: та же Zoom-маскировка, что в самой Рубке (ARG-115), — и в превью
+    новости на дашборде, для того же тарифа."""
+    start = date.today() - timedelta(days=18)
+    intake = await get_or_create_intake(session, start)
+    admin = await make_user(role="admin", intake_id=intake.id)
+    admin_h = await _headers(client, admin)
+
+    news = await ensure_news_channel(session, intake.id)
+    await session.commit()
+
+    send_resp = await client.post(
+        f"/api/rooms/{news.id}/messages",
+        headers=admin_h,
+        json={"content": "Эфир в 20:00\nhttps://us06web.zoom.us/j/86812929090?pwd=Zy533wnP"},
+    )
+    assert send_resp.status_code == 201, send_resp.text
+
+    plan_resp = await client.post(
+        "/api/admin/plans", headers=admin_h, json={"name": CHEAP_TARIFF_NAME, "price": 1000}
+    )
+    assert plan_resp.status_code == 201, plan_resp.text
+    cheap_plan_id = plan_resp.json()["id"]
+
+    cheap_viewer = await make_user(intake_id=intake.id, plan_id=cheap_plan_id)
+    regular_viewer = await make_user(intake_id=intake.id)
+
+    cheap_preview = (
+        await client.get("/api/dashboard", headers=await _headers(client, cheap_viewer))
+    ).json()["news_preview"]["preview"]
+    assert "zoom.us" not in cheap_preview
+    assert "Эфир в 20:00" in cheap_preview
+
+    regular_preview = (
+        await client.get("/api/dashboard", headers=await _headers(client, regular_viewer))
+    ).json()["news_preview"]["preview"]
+    assert "zoom.us" in regular_preview

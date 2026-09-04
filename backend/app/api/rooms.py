@@ -7,7 +7,7 @@ channel (доступ неявный — вариант А: строк член�
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import and_, delete, exists, func, or_, select, union, update
+from sqlalchemy import and_, delete, exists, false, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -42,6 +42,7 @@ from app.services.rooms import (
 from app.services.visibility import (
     can_message_admin,
     cohort_plan_ranks,
+    is_cheap_tariff,
     plan_visibility_clause,
     user_rank,
 )
@@ -278,14 +279,20 @@ async def list_rooms(
         own_personal = and_(
             Room.is_personal.is_(True), Room.created_by == current_user.id
         )
-        others_personal_visible = and_(
-            Room.is_personal.is_(True),
-            Room.created_by != current_user.id,
-            exists().where(
-                Owner.id == Room.created_by,
-                Owner.role != "admin",
-                Owner.intake_id.is_not_distinct_from(current_user.intake_id),
-            ),
+        # Держатель самого дешёвого тарифа (ARG-114) не видит «Все дневники» —
+        # только свой (own_personal выше), поэтому чужая ветка тут всегда ложна.
+        others_personal_visible = (
+            false()
+            if await is_cheap_tariff(session, current_user)
+            else and_(
+                Room.is_personal.is_(True),
+                Room.created_by != current_user.id,
+                exists().where(
+                    Owner.id == Room.created_by,
+                    Owner.role != "admin",
+                    Owner.intake_id.is_not_distinct_from(current_user.intake_id),
+                ),
+            )
         )
         regular_channel_visible = and_(
             Room.is_personal.is_(False),
