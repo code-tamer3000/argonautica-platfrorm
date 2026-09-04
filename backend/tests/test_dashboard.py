@@ -90,6 +90,31 @@ async def test_admin_dashboard_has_no_personal_layer(
     assert body["active_tasks"] == []
 
 
+async def test_admin_dashboard_days_auto_close(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Админ не ведёт Динамику — его прожитые дни на Круге закрашиваются сами
+    ('closed'/'today_closed'), а не 'missed' из-за отсутствия дневниковых записей."""
+    start = date.today() - timedelta(days=12)
+    intake = await get_or_create_intake(session, start)
+    admin = await make_user(role="admin", intake_id=intake.id)
+    await _seed_stages(session, intake.id, start)
+    headers = await _headers(client, admin)
+
+    resp = await client.get("/api/dashboard", headers=headers)
+    assert resp.status_code == 200, resp.text
+    days = resp.json()["expedition"]["days"]
+
+    by_date = {d["date"]: d["status"] for d in days}
+    today_str = date.today().isoformat()
+    assert by_date[today_str] == "today_closed"
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
+    assert by_date[yesterday_str] == "closed"
+    assert "missed" not in by_date.values()
+    tomorrow_str = (date.today() + timedelta(days=1)).isoformat()
+    assert by_date[tomorrow_str] == "upcoming"
+
+
 async def test_dashboard_without_stages_falls_back_to_equal_quarters(
     client: AsyncClient, make_user: MakeUser, session: AsyncSession
 ) -> None:
