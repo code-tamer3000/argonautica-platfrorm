@@ -157,12 +157,12 @@ export interface Trigram {
 }
 export const TRIGRAMS: Trigram[] = [
   { bits: '111', name: 'Небо', glyph: '☰' },
-  { bits: '011', name: 'Озеро', glyph: '☱' },
+  { bits: '110', name: 'Озеро', glyph: '☱' },
   { bits: '101', name: 'Огонь', glyph: '☲' },
-  { bits: '001', name: 'Гром', glyph: '☳' },
-  { bits: '110', name: 'Ветер', glyph: '☴' },
+  { bits: '100', name: 'Гром', glyph: '☳' },
+  { bits: '011', name: 'Ветер', glyph: '☴' },
   { bits: '010', name: 'Вода', glyph: '☵' },
-  { bits: '100', name: 'Гора', glyph: '☶' },
+  { bits: '001', name: 'Гора', glyph: '☶' },
   { bits: '000', name: 'Земля', glyph: '☷' },
 ]
 
