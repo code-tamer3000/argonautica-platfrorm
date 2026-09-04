@@ -143,7 +143,7 @@ reading `users` directly), so price/name edits apply without a bot redeploy. See
 | name | TEXT | NOT NULL | |
 | price | INTEGER | NOT NULL | rubles, whole number |
 | description | TEXT | NOT NULL, default `''` | shown behind the bot's «Подробнее» button |
-| is_active | BOOLEAN | NOT NULL, default true | false hides it from the bot without deleting history |
+| is_active | BOOLEAN | NOT NULL, default true | false hides it from the intake bot's tariff list only — the public `GET /api/plans` (platform's "Все дневники" grouping) does NOT filter on this, so plans with existing holders never lose their group label |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
 

@@ -107,6 +107,29 @@ async def test_delete_plan_in_use_conflicts(
     assert deleted.status_code == 409
 
 
+async def test_public_plans_list_includes_deactivated(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Деактивация тарифа (is_active=False) прячет его только из интейк-бота —
+    участники, уже купившие его, не должны терять подпись группы «Дневники» на
+    платформе (GET /api/plans используется именно для этой группировки)."""
+    headers = await admin_headers(client, make_user)
+    plan = await create_plan(client, headers)
+    await client.patch(
+        f"/api/admin/plans/{plan['id']}",
+        headers=headers,
+        json={"is_active": False},
+    )
+
+    participant = await make_user(role="participant", password="initpass123")
+    tokens = await login(client, participant.username, "initpass123")
+    participant_headers = auth_headers(tokens["access_token"])
+
+    listed = await client.get("/api/plans", headers=participant_headers)
+    assert listed.status_code == 200
+    assert plan["id"] in [p["id"] for p in listed.json()]
+
+
 async def test_create_user_with_unknown_plan_rejected(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

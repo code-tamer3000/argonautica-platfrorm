@@ -73,7 +73,7 @@ function PlanForm({ initial, onSubmit }: PlanFormProps) {
           checked={isActive}
           onChange={(e) => setIsActive(e.target.checked)}
         />{' '}
-        Активен (виден в боте)
+        Предлагается в интейк-боте (не влияет на видимость на платформе)
       </label>
       <div className={styles.formActions}>
         <Button type="submit">Сохранить</Button>
@@ -157,7 +157,7 @@ export function AdminPlans() {
               <div className={styles.listItemMain}>
                 <span className={styles.listTitle}>
                   {plan.name} — {plan.price.toLocaleString('ru-RU')} ₽
-                  {!plan.is_active && ' (скрыт)'}
+                  {!plan.is_active && ' (не предлагается в боте)'}
                 </span>
                 <span className={styles.listMeta}>#{plan.id}</span>
               </div>
