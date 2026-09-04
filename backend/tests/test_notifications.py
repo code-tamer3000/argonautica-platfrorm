@@ -2,6 +2,7 @@
 себе не шлём; отметка прочитанными гасит счётчик."""
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification import Notification
 from app.models.user import User
 from app.services.rooms import ensure_news_channel
+from app.services.visibility import CHEAP_TARIFF_NAME
 
 from .conftest import AddMembership, MakeRoom, MakeUser, auth_headers, login
 
@@ -32,6 +34,14 @@ async def _notifications(client: AsyncClient, headers: dict[str, str]) -> dict:
     resp = await client.get("/api/notifications", headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()
+
+
+async def _create_plan(client: AsyncClient, headers: dict[str, str], name: str) -> int:
+    resp = await client.post(
+        "/api/admin/plans", headers=headers, json={"name": name, "price": 1000}
+    )
+    assert resp.status_code == 201, resp.text
+    return int(resp.json()["id"])
 
 
 async def _db_count(session: AsyncSession, user_id: int) -> int:
@@ -145,6 +155,70 @@ async def test_news_post_notifies_participants(
     assert await _db_count(session, participant.id) == before + 1
     # Админ-автор себе не шлёт.
     assert await _db_count(session, admin.id) == 0
+
+
+_ZOOM_TEXT = "Эфир в 20:00\nhttps://us06web.zoom.us/j/86812929090?pwd=Zy533wnP"
+
+
+async def test_news_notification_feed_redacts_zoom_link_for_cheap_tariff(
+    client: AsyncClient,
+    make_user: MakeUser,
+    session: AsyncSession,
+) -> None:
+    """ARG-116: REST-лента уведомлений — тот же плейсхолдер, что в самой Рубке (ARG-115)."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+    cheap_viewer = await make_user(intake_id=admin.intake_id, plan_id=cheap_plan)
+    regular_viewer = await make_user(intake_id=admin.intake_id)
+
+    await _send(client, admin_h, news.id, content=_ZOOM_TEXT)
+
+    cheap_data = await _notifications(client, await _headers(client, cheap_viewer))
+    cheap_news = next(i for i in cheap_data["items"] if i["kind"] == "news")
+    assert "zoom.us" not in cheap_news["preview"]
+    assert "Эфир в 20:00" in cheap_news["preview"]
+
+    regular_data = await _notifications(client, await _headers(client, regular_viewer))
+    regular_news = next(i for i in regular_data["items"] if i["kind"] == "news")
+    assert "zoom.us" in regular_news["preview"]
+
+
+async def test_news_notification_live_event_redacts_only_for_cheap_tariff_recipient(
+    client: AsyncClient,
+    make_user: MakeUser,
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ARG-116: живая рассылка (on_new_message) считает preview один раз на все
+    получателей — регресс-тест на то, что per-получателю всё равно расходится
+    правильно (WS notification.new к дешёвому тарифу редактирован, к обычному — нет)."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+    cheap_viewer = await make_user(intake_id=admin.intake_id, plan_id=cheap_plan)
+    regular_viewer = await make_user(intake_id=admin.intake_id)
+
+    published: list[tuple[int, dict[str, object]]] = []
+
+    async def _spy(user_id: int, event: dict[str, object]) -> None:
+        published.append((user_id, event))
+
+    monkeypatch.setattr("app.services.notifications.publish_user_event", _spy)
+
+    await _send(client, admin_h, news.id, content=_ZOOM_TEXT)
+
+    by_user = {uid: event for uid, event in published}
+    cheap_preview = by_user[cheap_viewer.id]["notification"]["preview"]
+    regular_preview = by_user[regular_viewer.id]["notification"]["preview"]
+    assert "zoom.us" not in cheap_preview
+    assert "zoom.us" in regular_preview
 
 
 async def test_mention_notifies_group_member(

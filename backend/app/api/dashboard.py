@@ -29,7 +29,9 @@ from app.schemas.expedition import DashboardOut, ExpeditionOut, NewsPreviewOut, 
 from app.schemas.task import TaskWithStatusOut
 from app.services.expedition import circle_day_number
 from app.services.graduation import is_graduated
+from app.services.redaction import redact_zoom_links
 from app.services.text_marks import strip_inline_marks
+from app.services.visibility import is_cheap_tariff
 
 router = APIRouter(
     prefix="/api/dashboard",
@@ -104,6 +106,9 @@ async def _news_preview(session: AsyncSession, current_user: User) -> NewsPrevie
         return None
     content, created_at, author_name = row
     preview = strip_inline_marks((content or "").strip())
+    # ARG-116: превью новости всегда из новостного канала — is_news не перепроверяем.
+    if await is_cheap_tariff(session, current_user):
+        preview = redact_zoom_links(preview)
     if len(preview) > 200:
         preview = preview[:200].rstrip() + "…"
     return NewsPreviewOut(
