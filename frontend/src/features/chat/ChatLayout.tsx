@@ -74,7 +74,15 @@ export function ChatLayout({ tab, hideRoomList }: Props) {
               <ChatPane
                 roomId={roomId}
                 onOpenRoom={handleSelect}
-                onBack={isMobile && !hideRoomList ? () => navigate(basePath) : undefined}
+                // Дешёвый тариф (ARG-114): «назад» тут вело бы на basePath, откуда
+                // эффект выше тут же редиректит обратно в тот же дневник — кнопка
+                // выглядела бы сломанной (зацикливалась на одном экране). Возвращаться
+                // и правда некуда: список для него всегда пуст, кроме своего дневника.
+                onBack={
+                  isMobile && !hideRoomList && !isCheapTariffDiaries
+                    ? () => navigate(basePath)
+                    : undefined
+                }
               />
             </div>
           ) : (
