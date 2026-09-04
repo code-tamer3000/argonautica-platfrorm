@@ -8,6 +8,13 @@
 # `docker exec` в контейнер БД, а результат кладётся статическим файлом рядом с
 # остальной вёрсткой сайта (тот же volume, что уже смонтирован в nginx:alpine).
 #
+# Отдаёт ВСЕ тарифы (не только активные) — каждый с price и is_active, чтобы
+# сайт мог сам решить, как показать деактивированный тариф (например, «Мест
+# нет»), вместо того чтобы карточка просто пропадала без объяснения.
+# ВНИМАНИЕ: сайт (ExpeditionSection.jsx, отдельный репозиторий) на момент
+# этого изменения ещё ждёт старый формат {"Имя": цена} — его код нужно
+# обновить под новую форму отдельно, иначе цены на сайте перестанут читаться.
+#
 # Ставится в cron на сервере вручную (не часть deploy.sh — сайт и платформа
 # развёртываются независимо, см. комментарий в docker/argonautica-site.compose.yml),
 # см. docs/DEPLOY.md → Marketing site.
@@ -22,6 +29,6 @@ SITE_ROOT="${SITE_ROOT:-/root/argonautica-site}"
 
 tmp="${SITE_ROOT}/prices.json.tmp"
 docker exec "$PG_CONTAINER" psql -U app -d platform -t -A \
-  -c "select coalesce(json_object_agg(name, price), '{}') from plans where is_active" \
+  -c "select coalesce(json_object_agg(name, json_build_object('price', price, 'is_active', is_active)), '{}') from plans" \
   > "$tmp"
 mv "$tmp" "${SITE_ROOT}/prices.json"
