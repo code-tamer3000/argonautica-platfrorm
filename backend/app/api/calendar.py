@@ -17,7 +17,7 @@ from app.db.session import get_session
 from app.models.calendar import CalendarEvent, CalendarEventPlan
 from app.models.intake import Intake
 from app.models.plan import Plan
-from app.models.task import Task, TaskAssignment
+from app.models.task import Task, TaskAssignment, TaskPlan
 from app.models.user import User
 from app.schemas.calendar import (
     CalendarEventCreate,
@@ -289,19 +289,31 @@ async def _enrich_task_events(
             for tid, submitted, total in agg.all():
                 submitted_by_task[tid] = submitted
                 assigned_by_task[tid] = total
-            # Знаменатель: individual → число адресатов; common → участники (лениво).
-            type_rows = await session.execute(
-                select(Task.id, Task.type).where(Task.id.in_(task_ids))
+            # Знаменатель: individual/pair/stream → число адресатов; common →
+            # участники, кому она видна (поток+тариф ARG-96, без наблюдателей).
+            task_rows = list(
+                (
+                    await session.execute(select(Task).where(Task.id.in_(task_ids)))
+                )
+                .scalars()
+                .all()
             )
-            participants: int | None = None
-            for tid, ttype in type_rows.all():
-                if ttype == "common":
-                    if participants is None:
-                        participants = await participant_count(session)
-                    total = participants
+            task_plans: dict[int, list[int]] = {}
+            plan_rows = await session.execute(
+                select(TaskPlan.task_id, TaskPlan.plan_id).where(
+                    TaskPlan.task_id.in_(task_ids)
+                )
+            )
+            for tid, pid in plan_rows.all():
+                task_plans.setdefault(tid, []).append(pid)
+            for t in task_rows:
+                if t.type == "common":
+                    total = await participant_count(
+                        session, t, plan_ids=task_plans.get(t.id, [])
+                    )
                 else:
-                    total = assigned_by_task.get(tid, 0)
-                admin_progress[tid] = (submitted_by_task.get(tid, 0), total)
+                    total = assigned_by_task.get(t.id, 0)
+                admin_progress[t.id] = (submitted_by_task.get(t.id, 0), total)
 
     out: list[CalendarEventOut] = []
     for e in events:

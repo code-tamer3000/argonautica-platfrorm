@@ -956,9 +956,6 @@ async def list_tasks(
             accepted_counts[tid] = accepted
             unreviewed_counts[tid] = unreviewed
 
-    # Знаменатель «сдали X из Y»: для common — число участников (назначения ленивы).
-    participants = await participant_count(session)
-
     task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
 
     # Тарифы каждой задачи (ARG-96) — батчем, без N+1.
@@ -971,6 +968,15 @@ async def list_tasks(
         )
         for tid, pid in plan_rows.all():
             task_plans.setdefault(tid, []).append(pid)
+
+    # Знаменатель «сдали X из Y» для common — число участников, кому она видна
+    # (поток+тариф ARG-96, без наблюдателей); переиспользуем уже забаченные
+    # task_plans, чтобы не делать по запросу на задачу.
+    participant_counts: dict[int, int] = {
+        t.id: await participant_count(session, t, plan_ids=task_plans.get(t.id, []))
+        for t in tasks
+        if t.type == "common"
+    }
 
     # Пары для парных заданий (участник видит свою, админ — все).
     pairs_by_task: dict[int, list[PairOut]] = {}
@@ -1006,8 +1012,8 @@ async def list_tasks(
             unreviewed_count=unreviewed_counts.get(t.id, 0),
             total_recipients=(
                 assignee_counts.get(t.id, 0)
-                if t.type in ("individual", "pair")
-                else participants
+                if t.type in ("individual", "pair", "stream")
+                else participant_counts.get(t.id, 0)
             ),
             intake_id=t.intake_id,
             plan_ids=task_plans.get(t.id, []),
@@ -1078,7 +1084,7 @@ async def get_task(
         total_recipients=(
             total
             if task.type in ("individual", "pair", "stream")
-            else await participant_count(session)
+            else await participant_count(session, task)
         ),
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),

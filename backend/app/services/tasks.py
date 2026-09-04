@@ -7,6 +7,7 @@
 общих задач создаём лениво (как ленивое членство в каналах, п.3).
 """
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -336,18 +337,39 @@ async def _admin_ids(session: AsyncSession) -> list[int]:
     return list(rows.scalars().all())
 
 
-async def participant_count(session: AsyncSession) -> int:
-    """Сколько активных участников на платформе (знаменатель прогресса общей задачи).
+async def participant_count(
+    session: AsyncSession, task: Task, plan_ids: Sequence[int] | None = None
+) -> int:
+    """Сколько участников реально видят эту common-задачу (знаменатель «сдали X из Y»).
 
     Общая задача адресована каждому участнику (role='participant'), но строки
-    назначений создаются лениво — поэтому «из скольки» для неё считаем по числу
-    участников, а не по числу уже созданных назначений.
+    назначений создаются лениво — поэтому «из скольки» считаем по числу
+    участников, а не по числу уже созданных назначений. Считаем только тех, кому
+    задача видна: наблюдатели (`is_observer`) не имеют доступа к разделу «Задачи»
+    вовсе (см. `require_participant`), а поток/тариф гейтятся тем же правилом
+    ARG-96, что и `assert_task_visible`/`_visible_common_where` — иначе задача,
+    выданная одному тарифу, показывала бы знаменателем всех участников платформы.
+
+    `plan_ids` — опционально передать уже известные строки `task_plans` (список
+    задач батчит их сам, чтобы не делать по запросу на задачу).
     """
+    if plan_ids is None:
+        plan_ids = (
+            await session.scalars(
+                select(TaskPlan.plan_id).where(TaskPlan.task_id == task.id)
+            )
+        ).all()
+    filters: list[ColumnElement[bool]] = [
+        User.role == "participant",
+        User.is_observer.is_(False),
+    ]
+    if task.intake_id is not None:
+        filters.append(User.intake_id == task.intake_id)
+    if plan_ids:
+        filters.append(User.plan_id.in_(plan_ids))
     return (
         await session.scalar(
-            select(func.count())
-            .select_from(User)
-            .where(User.role == "participant")
+            select(func.count()).select_from(User).where(*filters)
         )
     ) or 0
 
