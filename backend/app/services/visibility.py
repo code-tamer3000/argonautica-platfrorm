@@ -112,17 +112,6 @@ async def is_cheap_tariff(session: AsyncSession, user: User) -> bool:
     )
 
 
-async def cheap_tariff_plan_id(session: AsyncSession) -> int | None:
-    """Id тарифа `CHEAP_TARIFF_NAME`, если он вообще существует на этом деплое —
-    для построения SQL-условий (`Column == cheap_plan_id`), где важна колонка, а не
-    point-check одного юзера (см. `is_cheap_tariff` для этого — как `list_rooms`
-    гейтит и владельца, и смотрящего дневника, ARG-117)."""
-    plan_id: int | None = await session.scalar(
-        select(Plan.id).where(Plan.name == CHEAP_TARIFF_NAME)
-    )
-    return plan_id
-
-
 async def cheap_tariff_user_ids(session: AsyncSession, user_ids: list[int]) -> set[int]:
     """Батч-вариант `is_cheap_tariff` — какие из user_ids держат дешёвый тариф.
     Нужен там, где решение принимается на много получателей за раз (рассылка

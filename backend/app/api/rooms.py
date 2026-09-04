@@ -40,8 +40,8 @@ from app.services.rooms import (
     load_room,
 )
 from app.services.visibility import (
+    CHEAP_TARIFF_NAME,
     can_message_admin,
-    cheap_tariff_plan_id,
     cohort_plan_ranks,
     is_cheap_tariff,
     plan_visibility_clause,
@@ -285,23 +285,24 @@ async def list_rooms(
         # только свой (own_personal выше), поэтому чужая ветка тут всегда ложна.
         # Симметрично (ARG-117): дневник ВЛАДЕЛЬЦА того же тарифа не видит никто из
         # НЕ-админов (эта ветка и так только для current_user.role != "admin") —
-        # исключаем таких владельцев из EXISTS через сравнение plan_id, дешевле, чем
-        # JOIN на Plan в подзапросе построчно.
-        cheap_plan_id = await cheap_tariff_plan_id(session)
-        owner_clauses = [
-            Owner.id == Room.created_by,
-            Owner.role != "admin",
-            Owner.intake_id.is_not_distinct_from(current_user.intake_id),
-        ]
-        if cheap_plan_id is not None:
-            owner_clauses.append(Owner.plan_id.is_distinct_from(cheap_plan_id))
+        # исключаем таких владельцев коррелированным EXISTS на Plan по id владельца
+        # (не сравнение с одним заранее резолвленным id тарифа: на `plans.name` нет
+        # уникальности, при дубле имени сравнение с «каким-то одним id» било бы мимо).
+        owner_is_cheap_tariff = exists().where(
+            Plan.id == Owner.plan_id, Plan.name == CHEAP_TARIFF_NAME
+        )
         others_personal_visible = (
             false()
             if await is_cheap_tariff(session, current_user)
             else and_(
                 Room.is_personal.is_(True),
                 Room.created_by != current_user.id,
-                exists().where(*owner_clauses),
+                exists().where(
+                    Owner.id == Room.created_by,
+                    Owner.role != "admin",
+                    Owner.intake_id.is_not_distinct_from(current_user.intake_id),
+                    ~owner_is_cheap_tariff,
+                ),
             )
         )
         regular_channel_visible = and_(
