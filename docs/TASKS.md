@@ -47,7 +47,7 @@ because assignment is already a stronger, deliberate grant. `POST /api/tasks` an
 `list_tasks` / `get_task` return per-task aggregates so the admin sees progress on the «Задачи» section itself (no need to open the management panel):
 
 - `submitted_count` — assignments in `submitted`/`returned`/`accepted` (i.e. "сдали"); `accepted_count` — `accepted`; `unreviewed_count` — `submitted` only (awaiting review).
-- `total_recipients` — the "из скольки" denominator: **individual** → assignee count; **common** → active participant count (`participant_count` in `services/tasks.py`), since common assignment rows are created lazily.
+- `total_recipients` — the "из скольки" denominator: **individual/pair/stream** → assignee count; **common** → count of participants who can actually see the task (`participant_count` in `services/tasks.py`: `role='participant'`, not `is_observer`, gated by the same intake/plan filter as `assert_task_visible`/ARG-96), since common assignment rows are created lazily.
 - `assignee_count` stays `individual`-only (null for common).
 
 ## Deadlines

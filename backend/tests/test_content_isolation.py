@@ -194,6 +194,45 @@ async def test_common_task_isolated_by_plan(client: AsyncClient, make_user: Make
     assert (await client.get(f"/api/tasks/{task_id}", headers=without_h)).status_code == 403
 
 
+async def test_common_task_total_recipients_matches_visibility(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """`total_recipients` для common-задачи — не «все участники платформы», а те,
+    кому она реально видна: свой поток+тариф (ARG-96) и не наблюдатель. Иначе
+    задача, выданная одному тарифу, показывает знаменателем всех подряд."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    plan_a = await _create_plan(client, admin_h, "Своим")
+    recipient = await make_user(plan_id=plan_a)
+    await make_user(intake_id=recipient.intake_id, plan_id=None)  # чужой тариф, тот же поток
+    await make_user(  # тот же тариф, но другой поток
+        plan_id=plan_a, intake_starts_on=date.today() - timedelta(days=1)
+    )
+    await make_user(  # наблюдатель — не имеет доступа к «Задачам» вовсе
+        intake_id=recipient.intake_id, plan_id=plan_a, is_observer=True
+    )
+
+    created = await client.post(
+        "/api/tasks",
+        headers=admin_h,
+        json={
+            "type": "common",
+            "title": "Только тариф А своего потока",
+            "intake_id": recipient.intake_id,
+            "plan_ids": [plan_a],
+        },
+    )
+    assert created.status_code == 201, created.text
+    task_id = created.json()["id"]
+
+    detail = await client.get(f"/api/tasks/{task_id}", headers=admin_h)
+    assert detail.json()["total_recipients"] == 1
+
+    listed = await client.get("/api/tasks", headers=admin_h)
+    row = next(t for t in listed.json()["items"] if t["id"] == task_id)
+    assert row["total_recipients"] == 1
+
+
 async def test_individual_task_ignores_intake_isolation(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
