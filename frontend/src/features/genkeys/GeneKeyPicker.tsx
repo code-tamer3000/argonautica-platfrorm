@@ -149,8 +149,8 @@ function HexagramPicker({ onSelect }: { onSelect: (n: number) => void }) {
 
   return (
     <div className={styles.hexPicker}>
-      <TrigramColumn label="Нижняя" value={lower} onPick={setLower} />
       <TrigramColumn label="Верхняя" value={upper} onPick={setUpper} />
+      <TrigramColumn label="Нижняя" value={lower} onPick={setLower} />
       <div className={styles.hexResult}>
         {resolved ? (
           <button
