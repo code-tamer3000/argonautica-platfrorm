@@ -374,6 +374,33 @@ async def test_admin_diary_labeled_admin_for_admin_viewer(
 # --- Контакт-лист: админ хвостовым блоком, не «Без тарифа» ---------------------
 
 
+async def test_contacts_cascade_survives_deactivated_plan(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """`is_active=False` (0dd0a1f: только прячет тариф из интейк-бота) не должен
+    сбрасывать ранг держателей тарифа в 0 — иначе они проваливаются в одну кучу
+    с «без тарифа» и сортировка по имени расслаивает ростер/контакт-лист вместо
+    того чтобы держать каждый тариф отдельной секцией (баг, обнаруженный на
+    проде: Игрок/Спецотряд/Игрок/Спецотряд чередуются на /argonauts после того
+    как эти тарифы деактивировали в боте, не тронув держателей)."""
+    plans, users = await _three_tier_cohort(client, make_user)
+    admin_h = await _headers(client, users["admin"])
+    deactivated = await client.patch(
+        f"/api/admin/plans/{plans['squad']}", headers=admin_h, json={"is_active": False}
+    )
+    assert deactivated.status_code == 200 and deactivated.json()["is_active"] is False
+
+    async def participant_ids(viewer: User) -> set[int]:
+        resp = await client.get("/api/users/contacts", headers=await _headers(client, viewer))
+        return {u["id"] for u in resp.json() if u["role"] != "admin"}
+
+    # Ранговый порядок тарифов (Игрок < Спецотряд < Око) должен остаться тем же,
+    # что и до деактивации — Спецотряд не должен «провалиться» ниже Игрока.
+    assert await participant_ids(users["player"]) == set()
+    assert await participant_ids(users["squad"]) == {users["player"].id}
+    assert await participant_ids(users["oko"]) == {users["player"].id, users["squad"].id}
+
+
 async def test_contacts_admin_sorted_after_participants(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

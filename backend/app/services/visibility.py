@@ -48,9 +48,14 @@ async def cohort_plan_ranks(session: AsyncSession, intake_id: int | None) -> dic
     """plan_id -> ранг (1..N) среди тарифов потока, отсортированных по цене.
 
     «Тарифы потока» — не FK-связь (`plans` платформенные, без `intake_id`), а
-    тарифы, которые реально держат активные участники этого потока (`is_active`).
-    Пустой intake_id или поток без ни одного тарифа — пустая карта (все в нём
-    получают ранг 0, см. `user_rank`).
+    тарифы, которые реально держит хотя бы один участник этого потока. Не
+    фильтруем по `Plan.is_active` — тот же баг, что чинили в `GET /api/plans`
+    (0dd0a1f): `is_active` управляет только предложением тарифа в интейк-боте,
+    участники, купившие тариф до деактивации, не должны терять свой ранг и
+    проваливаться в 0 вперемешку с «без тарифа» (иначе ростер/контакт-лист
+    расслаиваются — деактивированный и «безтарифный» блоки чередуются по имени
+    вместо того чтобы идти отдельными секциями). Пустой intake_id или поток без
+    ни одного тарифа — пустая карта (все в нём получают ранг 0, см. `user_rank`).
     """
     if intake_id is None:
         return {}
@@ -58,7 +63,7 @@ async def cohort_plan_ranks(session: AsyncSession, intake_id: int | None) -> dic
         await session.execute(
             select(Plan.id, Plan.price)
             .join(User, User.plan_id == Plan.id)
-            .where(User.intake_id == intake_id, Plan.is_active.is_(True))
+            .where(User.intake_id == intake_id)
             .distinct()
             .order_by(Plan.price, Plan.id)
         )

@@ -613,3 +613,61 @@ async def test_me_reports_cheap_tariff_flag(
 
     regular_h = await _headers(client, regular_user)
     assert (await client.get("/api/auth/me", headers=regular_h)).json()["is_cheap_tariff"] is False
+
+
+async def test_others_do_not_see_cheap_tariff_owners_diary(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """ARG-117: симметрично ARG-114, но по владельцу — дневник держателя дешёвого
+    тарифа не виден никому из НЕ-админов (даже с их обычным тарифом того же потока,
+    которого иначе достаточно — см. test_personal_diary_visible_within_same_cohort),
+    ни в списке, ни прямым GET."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+
+    owner = await make_user(
+        intake_starts_on=date.today() - timedelta(days=50), plan_id=cheap_plan
+    )
+    viewer = await make_user(intake_id=owner.intake_id)  # обычный тариф, тот же поток
+    room = await _make_personal_room(session, owner.id)
+
+    viewer_h = await _headers(client, viewer)
+    one = await client.get(f"/api/rooms/{room.id}", headers=viewer_h)
+    assert one.status_code == 403
+
+    listed = await client.get("/api/rooms", headers=viewer_h)
+    assert room.id not in {r["id"] for r in listed.json()}
+
+
+async def test_admin_still_sees_cheap_tariff_owners_diary(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Ограничение ARG-117 — только для не-админов; админ видит как раньше."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+
+    owner = await make_user(plan_id=cheap_plan)
+    room = await _make_personal_room(session, owner.id)
+
+    assert (await client.get(f"/api/rooms/{room.id}", headers=admin_h)).status_code == 200
+    listed = await client.get("/api/rooms", headers=admin_h)
+    assert room.id in {r["id"] for r in listed.json()}
+
+
+async def test_cheap_tariff_owner_still_sees_own_diary_from_others_view(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """ARG-117 не трогает доступ владельца к СВОЕМУ дневнику."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+
+    owner = await make_user(plan_id=cheap_plan)
+    room = await _make_personal_room(session, owner.id)
+
+    owner_h = await _headers(client, owner)
+    assert (await client.get(f"/api/rooms/{room.id}", headers=owner_h)).status_code == 200
+    listed = await client.get("/api/rooms", headers=owner_h)
+    assert room.id in {r["id"] for r in listed.json()}
