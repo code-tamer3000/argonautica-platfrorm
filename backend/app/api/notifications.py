@@ -93,7 +93,9 @@ async def list_notifications(
             message_id=n.message_id,
             actor_id=n.actor_id,
             actor_name=actor_name,
-            preview=_redacted_preview(n.kind, n.body if n.kind == "admin" else content, cheap_tariff),
+            preview=_redacted_preview(
+                n.kind, n.body if n.kind == "admin" else content, cheap_tariff
+            ),
             ref_date=n.ref_date,
             title=n.title,
             created_at=n.created_at,

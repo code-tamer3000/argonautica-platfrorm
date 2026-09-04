@@ -4,7 +4,8 @@
 последняя миля: раздать пришедшее из шины событие локальным сокетам, подписанным на
 комнату. Один инстанс `manager` на процесс.
 """
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from fastapi import WebSocket
 

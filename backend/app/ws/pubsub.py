@@ -14,7 +14,8 @@ import asyncio
 import contextlib
 import json
 import logging
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.core.redis import redis_client
 from app.ws.manager import Conn, manager
