@@ -15,6 +15,7 @@ import {
   type OutboxItem,
 } from '../lib/outbox'
 import { wsClient } from '../lib/wsClient'
+import { useUiStore } from '../stores/ui'
 
 // Инициализация outbox'а: связывает воркер (вне React) с кэшем Query и запускает
 // незавершённые сообщения из прошлой сессии. Монтируется один раз в корне
@@ -29,7 +30,18 @@ export function useOutbox(): void {
       },
       // Успех: заменяем temp-сообщение настоящим (resolveOptimistic дедупит, если
       // WS уже успел доставить своё message.new).
-      resolve: (item, real) => resolveOptimistic(qc, item.roomId, item.tempId, real),
+      resolve: (item, real) => {
+        resolveOptimistic(qc, item.roomId, item.tempId, real)
+        if (item.journal) {
+          // Снимаем заряд раздела, только если он всё ещё стоит на ЭТОМ разделе —
+          // за время в очереди (офлайн/ретраи) человек мог перезарядить другой.
+          const pending = useUiStore.getState().pendingJournal
+          if (pending?.roomId === item.roomId && pending.category === item.journal.category) {
+            useUiStore.getState().setPendingJournal(null)
+          }
+          void qc.invalidateQueries({ queryKey: ['journal-days', item.roomId] })
+        }
+      },
       drop: (roomId, tempId) => removeMessage(qc, roomId, tempId),
       status: (roomId, tempId, status) => markOptimistic(qc, roomId, tempId, status),
       progress: (roomId, tempId, fraction) =>

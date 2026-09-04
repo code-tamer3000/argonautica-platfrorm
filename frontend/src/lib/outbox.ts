@@ -62,6 +62,9 @@ export interface OutboxItem {
   optimisticRef?: MessageRefOut
   tempId: number
   attempts: number
+  // Запись дневника (раздел «заряжен» в composer): по успешной отправке снимаем
+  // заряд (если он всё ещё на этом разделе) и обновляем прогресс дня. См. useOutbox.
+  journal?: { category: string }
 }
 
 // Локальное вложение отправляемого сообщения: ассет (уже на сервере) + его байты,
@@ -234,6 +237,7 @@ export function enqueue(
   senderId: number,
   locals: LocalAttachment[] = [],
   optimisticRef?: MessageRefOut,
+  journal?: { category: string },
 ): string {
   const cid = clientId()
   const attachments: AttachmentOut[] = []
@@ -255,6 +259,7 @@ export function enqueue(
     attachments,
     blobAssetIds,
     optimisticRef,
+    journal,
     tempId: nextTempId(),
     attempts: 0,
   }
@@ -275,6 +280,7 @@ export function enqueueMedia(
   senderId: number,
   uploads: PendingUpload[],
   optimisticRef?: MessageRefOut,
+  journal?: { category: string },
 ): string {
   const cid = clientId()
   const attachments: AttachmentOut[] = []
@@ -310,6 +316,7 @@ export function enqueueMedia(
     blobAssetIds: [],
     pendingUploads,
     optimisticRef,
+    journal,
     tempId: nextTempId(),
     attempts: 0,
   }
