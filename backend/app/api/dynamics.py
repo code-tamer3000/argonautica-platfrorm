@@ -293,6 +293,12 @@ def _calc_stats(
     }
 
 
+def _days_between(start: date, end: date) -> set[date]:
+    if end < start:
+        return set()
+    return {start + timedelta(days=n) for n in range((end - start).days + 1)}
+
+
 def _recent_days(
     closed_days: set[date],
     pardoned: set[date],
@@ -400,8 +406,14 @@ async def get_my_day_statuses(
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
     stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+    closed_days = stats["closed_days"]
+    if current_user.role == "admin":
+        # Админ не ведёт Динамику (нет личного дневника) — на Круге Экспедиции
+        # его прожитые дни закрашиваются автоматически, а не «missed» по
+        # умолчанию из-за отсутствия записей (см. docs/EXPEDITION.md).
+        closed_days = closed_days | _days_between(program_start, as_of)
     return _recent_days(
-        stats["closed_days"],
+        closed_days,
         stats["pardoned"],
         program_start,
         set(credits),

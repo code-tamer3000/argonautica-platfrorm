@@ -188,6 +188,16 @@ the circle (so the schedule can be sanity-checked) but no personal layer: `journ
 always `null` and `active_tasks` always `[]` for `role == 'admin'` — admins don't do
 Dynamics or take tasks.
 
+Since an admin never journals, every elapsed day in `expedition.days` would otherwise
+read as `missed` by default (no closing message ⇒ `missed`, see `_recent_days` in
+`app/api/dynamics.py`) — a wheel that looks entirely unlived-in. `get_my_day_statuses`
+auto-closes this: for `role == 'admin'`, every day from the intake's `program_start`
+through the frozen "today" (`frozen_today`) is folded into `closed_days` before
+`_recent_days` runs, so the circle fills in on its own — past days render `closed`,
+today renders `today_closed`, future days stay `upcoming` untouched. Pardons/credits and
+the streak math are untouched; this only widens what counts as closed for the admin's
+own read of `days[]`.
+
 `expedition.days` is the **whole circle's** day-status list (`closed`/`missed`/
 `pardoned`/`today_*`/`before_start`/`upcoming` — same `DayStatus` enum as Dynamics'
 `RecentDay`), not the ±window `GET /api/dynamics/my-stats` uses. `dynamics._recent_days`
