@@ -65,6 +65,14 @@ export interface OutboxItem {
   // Запись дневника (раздел «заряжен» в composer): по успешной отправке снимаем
   // заряд (если он всё ещё на этом разделе) и обновляем прогресс дня. См. useOutbox.
   journal?: { category: string }
+  // Текущий статус для оптимистичного пузыря — источник истины теперь на item'е (а
+  // не только в кэше Query), чтобы его можно было ЗАНОВО вставить в ленту после
+  // рефетча, не потеряв «Не отправлено»/долю заливки (см. pendingForRoom, useOutbox).
+  status: 'pending' | 'failed'
+  uploadProgress?: number
+  // Когда началась текущая серия ВРЕМЕННЫХ неудач (сеть/таймаут/5xx) — по ней
+  // считаем окно авторетраев (RETRY_WINDOW_MS). Сбрасывается ручным retry().
+  firstFailAt?: number
 }
 
 // Локальное вложение отправляемого сообщения: ассет (уже на сервере) + его байты,
@@ -220,7 +228,7 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
     ref: item.optimisticRef ?? null,
     reaction_count: 0,
     reacted_by_me: false,
-    _outbox: { clientId: item.clientId, status: 'pending' },
+    _outbox: { clientId: item.clientId, status: item.status, uploadProgress: item.uploadProgress },
   }
 }
 
@@ -262,6 +270,7 @@ export function enqueue(
     journal,
     tempId: nextTempId(),
     attempts: 0,
+    status: 'pending',
   }
   queue.push(item)
   void idbSet(STORE_OUTBOX, item.clientId, item)
@@ -319,6 +328,7 @@ export function enqueueMedia(
     journal,
     tempId: nextTempId(),
     attempts: 0,
+    status: 'pending',
   }
   queue.push(item)
   void idbSet(STORE_OUTBOX, item.clientId, item)
@@ -381,12 +391,25 @@ async function rehydrateBlobUrls(item: OutboxItem): Promise<void> {
   }
 }
 
-// Ручной повтор для «зависшего» (failed) сообщения — например по кнопке.
+// Ручной повтор для «зависшего» (failed) сообщения — например по кнопке. Открываем
+// заново полное окно авторетраев (RETRY_WINDOW_MS) — это осознанное новое действие
+// человека, а не продолжение той же серии сетевых неудач.
 export function retry(clientId: string): void {
   const item = queue.find((q) => q.clientId === clientId)
   if (!item) return
+  item.attempts = 0
+  item.firstFailAt = undefined
+  item.status = 'pending'
   onStatus?.(item.roomId, item.tempId, 'pending')
   void drain()
+}
+
+// Сообщения комнаты, ещё сидящие в очереди (не дошли до сервера). Нужно, чтобы
+// заново вставить их оптимистичные пузыри в ленту после фонового рефетча —
+// setQueryData из insertOptimistic не переживает то, что ленту целиком перезаписал
+// ответ сервера, который ещё не знает об этих сообщениях (см. useOutbox).
+export function pendingForRoom(roomId: number): OutboxItem[] {
+  return queue.filter((q) => q.roomId === roomId)
 }
 
 // Удалить сообщение из очереди (пользователь передумал слать зависшее).
@@ -418,6 +441,10 @@ export function flush(): void {
 }
 
 const BACKOFF = [1000, 2000, 5000, 10_000, 15_000]
+// Сколько времени подряд молотим временные (сетевые) сбои, прежде чем сдаться и
+// стабильно показать «Не отправлено» вместо бесконечного «отправляется…». Дальше —
+// только ручной повтор (см. retry()).
+const RETRY_WINDOW_MS = 45_000
 
 // Залить все ещё не залитые вложения item'а и наполнить body.attachment_ids реальными
 // id ассетов. Каждый успешный ассет фиксируем в IndexedDB и убираем из pendingUploads,
@@ -452,7 +479,10 @@ async function resolvePendingUploads(item: OutboxItem): Promise<void> {
     }
     // Прогресс заливки текущего файла → общая доля по сообщению (уже залитые + текущий).
     const asset = await runPendingUpload(pending, (f) => {
-      if (total > 0) onProgress?.(item.roomId, item.tempId, (done + f) / total)
+      if (total === 0) return
+      const fraction = (done + f) / total
+      item.uploadProgress = fraction
+      onProgress?.(item.roomId, item.tempId, fraction)
     })
     item.body.attachment_ids = [...(item.body.attachment_ids ?? []), asset.id]
     item.pendingUploads.shift()
@@ -495,15 +525,25 @@ async function drain(): Promise<void> {
         // а отклонённое сообщение; помечаем failed и оставляем на ручное действие.
         const status = err instanceof ApiError ? err.status : 0
         const permanent = status >= 400 && status < 500 && status !== 429 && status !== 408
+        item.status = 'failed'
         onStatus?.(item.roomId, item.tempId, 'failed')
         if (permanent) {
           // Стоп по этому сообщению — снимаем блок очереди, оставляя его failed
           // в начале. Ждём ручного retry/discard, но не морозим следующие.
           break
         }
-        // Сетевая/временная ошибка: ждём backoff и пробуем снова этот же item.
+        // Сетевая/временная ошибка: серия неудач считается от первой из них. Пока
+        // не выбрали окно — ждём backoff и пробуем снова этот же item молча (статус
+        // мигает в 'pending', человек не должен видеть каждую промежуточную неудачу).
+        if (item.firstFailAt == null) item.firstFailAt = Date.now()
+        if (Date.now() - item.firstFailAt >= RETRY_WINDOW_MS) {
+          // 45 секунд молотили сеть без толку — дальше не мигаем незаметно, оставляем
+          // стабильное «Не отправлено» и ждём, пока человек сам нажмёт «Повторить».
+          break
+        }
         const delay = BACKOFF[Math.min(item.attempts - 1, BACKOFF.length - 1)]
         await sleep(delay)
+        item.status = 'pending'
         onStatus?.(item.roomId, item.tempId, 'pending')
       }
     }

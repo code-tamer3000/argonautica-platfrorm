@@ -12,6 +12,7 @@ import {
   flush,
   hydrateOutbox,
   optimisticMessage,
+  pendingForRoom,
   type OutboxItem,
 } from '../lib/outbox'
 import { wsClient } from '../lib/wsClient'
@@ -69,4 +70,25 @@ export function useOutbox(): void {
       off()
     }
   }, [])
+
+  // Оптимистичные пузыри живут только как ручная запись в кэше (setQueryData из
+  // insertOptimistic) — их не знает сам запрос. Любой НАСТОЯЩИЙ (не наш же ручной)
+  // успешный фетч ленты комнаты — фоновый рефетч по фокусу/реконнекту, повторное
+  // открытие комнаты и т.п. — целиком перезаписывает данные ответом сервера, который
+  // ещё не в курсе про сообщение в очереди, и пузырь пропадает из ленты, хотя само
+  // сообщение живо и продолжает пытаться уйти. Чиним точечно: после каждого такого
+  // фетча заново вставляем в кэш всё, что для этой комнаты ещё сидит в очереди.
+  useEffect(() => {
+    return qc.getQueryCache().subscribe((event) => {
+      if (event.type !== 'updated' || event.action.type !== 'success' || event.action.manual) {
+        return
+      }
+      const key = event.query.queryKey
+      if (key[0] !== 'messages' || typeof key[1] !== 'number') return
+      const roomId = key[1]
+      for (const item of pendingForRoom(roomId)) {
+        insertOptimistic(qc, roomId, optimisticMessage(item))
+      }
+    })
+  }, [qc])
 }
