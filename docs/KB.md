@@ -69,6 +69,29 @@ that opens a full-screen chapter reader. Nothing changes server-side.
 - Visibility/access for the `.md` follow the standard media-via-publication rules
   above; the reader just renders what the presigned URL returns.
 
+## Позиция просмотра видео (ARG-118)
+
+Видео-вложения материалов КБ запоминают, где остановился каждый пользователь —
+`kb_video_progress` (`kb_item_id`, `media_asset_id`, `user_id`, `position_seconds`,
+`updated_at`; составной PK). Ключ — тройка, а не только asset: один и тот же файл
+может быть прикреплён к нескольким материалам сразу (`kb_item_media`), и позиция не
+должна путаться между статьями.
+
+- `GET /api/kb/items/{item_id}/media/{asset_id}/progress` — своя сохранённая позиция
+  (`position_seconds: null`, если записи нет).
+- `PUT .../progress` — сохранить позицию (создаёт или обновляет запись).
+- `DELETE .../progress` — сбросить (вызывается фронтом на `ended` — досмотрел до конца,
+  следующий раз начинается сначала).
+- Все три эндпоинта проверяют видимость материала (`assert_kb_item_visible`) и что
+  файл привязан к нему и имеет `kind='video'`, иначе `404`.
+- Записи каскадно чистятся руками (без `ON DELETE CASCADE`, тем же приёмом, что и у
+  `kb_item_media`/`kb_item_plans`) при удалении материала и при отвязке медиа.
+- Фронтенд: `VideoPlayer` принимает необязательный проп `kbProgress={{itemId, assetId}}`,
+  который передаёт `Attachment`/`MdAttachment` только внутри материала КБ (`KbViewer`).
+  Видео в чате, задачах и Каюте эту позицию не запоминают — проп там не передаётся.
+  Восстановление — на `loadedmetadata`, сохранение — троттлингом (раз в 5с) на
+  `timeupdate` + сразу на `pause` и при размонтировании плеера.
+
 ## Comments
 
 - Flat comments under an item: `GET/POST /items/{id}/comments`, `DELETE /comments/{id}`.

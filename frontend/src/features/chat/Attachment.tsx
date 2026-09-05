@@ -33,9 +33,13 @@ type Resolved = {
 export function Attachment({
   attachment,
   assetId,
+  kbItemId,
 }: {
   attachment?: AttachmentOut
   assetId?: number
+  // Задано только когда вложение показывается внутри материала БЗ (ARG-118) —
+  // включает запоминание позиции просмотра для видео. См. VideoPlayer.
+  kbItemId?: number
 }) {
   // Хук вызывается всегда (правила hooks), но простаивает, если данные уже есть.
   const query = useMediaUrl(attachment ? null : assetId ?? null)
@@ -91,7 +95,20 @@ export function Attachment({
       return <VideoProcessing thumbUrl={thumbUrl} width={width} height={height} />
     if (transcodeStatus === 'failed')
       return <VideoFailed url={url} />
-    return <VideoPlayer src={url} width={width} height={height} poster={thumbUrl} />
+    const resolvedAssetId = attachment?.asset_id ?? assetId
+    return (
+      <VideoPlayer
+        src={url}
+        width={width}
+        height={height}
+        poster={thumbUrl}
+        kbProgress={
+          kbItemId != null && resolvedAssetId != null
+            ? { itemId: kbItemId, assetId: resolvedAssetId }
+            : undefined
+        }
+      />
+    )
   }
   // Скачиваем через blob (см. downloadFile) — надёжно на мобиле и в iOS-PWA, где
   // кросс-доменный `download`/`target=_blank` не срабатывают.

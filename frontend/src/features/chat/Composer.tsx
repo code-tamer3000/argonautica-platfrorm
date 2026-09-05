@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
   repostMessage,
@@ -55,10 +54,10 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const inThread = threadRootId != null
   const [text, setText] = useState('')
   // Прикреплённые, но ещё не отправленные вложения: сырые описатели (байты + мета),
-  // ЕЩЁ НЕ залитые в MinIO. Обычная отправка/ответ в тред уводит их в outbox
+  // ЕЩЁ НЕ залитые в MinIO. Обычная отправка/дневник/репост уводят их в outbox
   // (enqueueMedia) — заливка идёт в фоне из очереди, поэтому файл/голос переживают
-  // офлайн так же, как текст. Дневник/репост требуют залитых ассетов → там заливаем
-  // синхронно при отправке (см. submit).
+  // офлайн так же, как текст. Ответ в тред — свой кэш (не лента комнаты), там outbox
+  // не заведён → заливаем синхронно при отправке (см. submit).
   const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
   // Одна прикреплённая ссылка на материал/задачу (title — для чипа/оптимистичного показа).
   const [pendingRef, setPendingRef] = useState<PickedRef | null>(null)
@@ -74,7 +73,6 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   // Идёт отправка репоста (форвард создаётся до комментария).
   const [reposting, setReposting] = useState(false)
   const send = useSendMessage(roomId)
-  const qc = useQueryClient()
   const users = useUsersMap()
   const { user } = useAuth()
   const pendingRepost = useUiStore((s) => s.pendingRepost)
@@ -93,13 +91,6 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const journalMeta = journalKey
     ? structure?.sections.find((s) => s.key === journalKey) ?? null
     : null
-
-  // Успешно опубликовали запись дневника → снимаем «заряд» и обновляем прогресс дня
-  // (бар над композером перечитает journal-days и проставит ✓).
-  function afterJournalSent() {
-    setPendingJournal(null)
-    void qc.invalidateQueries({ queryKey: ['journal-days', roomId] })
-  }
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
@@ -218,13 +209,20 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
 
   function handleSticker(stickerId: number) {
     setPickerOpen(false)
-    if (journalMeta) {
+    if (journalMeta && journalKey) {
       // Стикер как «отписка» дня: несёт маркер+заголовок раздела в content, чтобы
-      // сервер засчитал день, плюс сам стикер.
-      send.mutate(
-        { content: buildJournalContent(journalMeta, text.trim()), sticker_id: stickerId },
-        { onSuccess: afterJournalSent },
-      )
+      // сервер засчитал день, плюс сам стикер. Через outbox — как обычное сообщение:
+      // переживает офлайн/сбой, не пропадает молча (см. ARG-диагностику пропажи записей).
+      if (user) {
+        outboxEnqueue(
+          roomId,
+          { content: buildJournalContent(journalMeta, text.trim()), sticker_id: stickerId },
+          user.id,
+          [],
+          undefined,
+          { category: journalKey },
+        )
+      }
       resetEditor('')
       return
     }
@@ -232,19 +230,19 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
     enqueueTopLevel({ sticker_id: stickerId }, [])
   }
 
-  // Отправка голосового. Верхний уровень — в outbox (enqueueMedia): переживает офлайн
-  // так же, как файл. Дневник/ответ в тред — синхронная заливка (свои пути мимо outbox).
+  // Отправка голосового. Верхний уровень и дневник — в outbox (enqueueMedia):
+  // переживает офлайн, заливка идёт в фоне из очереди. Ответ в тред — синхронная
+  // заливка (свой путь мимо outbox, отдельный кэш треда).
   async function handleVoice(pending: PendingUpload) {
-    if (journalMeta) {
-      try {
-        const [assetId] = await uploadAll([pending])
-        send.mutate(
-          { content: buildJournalContent(journalMeta, text.trim()), attachment_ids: [assetId] },
-          { onSuccess: afterJournalSent },
-        )
-      } catch (err) {
-        toast(err instanceof Error ? err.message : 'Не удалось отправить голосовое', 'error')
-      }
+    if (journalMeta && journalKey && user) {
+      enqueueMedia(
+        roomId,
+        { content: buildJournalContent(journalMeta, text.trim()) },
+        user.id,
+        [pending],
+        undefined,
+        { category: journalKey },
+      )
       return
     }
     if (inThread && threadRootId != null) {
@@ -278,8 +276,8 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   }
 
   // Синхронно залить прикреплённые описатели и вернуть их asset_id. Используется на
-  // путях, которые НЕ идут через outbox (дневник/репост/ответ в тред): им нужны
-  // готовые ассеты, поэтому там заливка требует сети (бросит при офлайне).
+  // путях, которые НЕ идут через outbox (ответ в тред — свой кэш, синхронная заливка):
+  // им нужны готовые ассеты, поэтому там заливка требует сети (бросит при офлайне).
   async function uploadAll(uploads: PendingUpload[]): Promise<number[]> {
     const ids: number[] = []
     for (const pu of uploads) {
@@ -333,7 +331,9 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
 
     // Запись дневника: маркер+заголовок раздела в content (+ опциональные вложения).
     // Для раздела-«заголовка» (input_type='title') текст обязателен — он и есть заголовок.
-    if (journalMeta) {
+    // Через outbox — как обычное сообщение: переживает офлайн/сбой сети, вложения
+    // заливаются в фоне из очереди, ничего не пропадает молча при неудаче.
+    if (journalMeta && journalKey) {
       if (journalMeta.input_type === 'title' && !content) {
         toast(`Введите: ${journalMeta.label}`, 'error')
         return
@@ -345,13 +345,14 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       setPendingFiles([])
       setPendingRef(null)
       const body: SendBody = { content: buildJournalContent(journalMeta, content), ...refBody(ref) }
-      try {
-        if (uploads.length) body.attachment_ids = await uploadAll(uploads)
-      } catch (err) {
-        toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
-        return
+      const optRef = optimisticRefOf(ref)
+      if (user) {
+        if (uploads.length) {
+          enqueueMedia(roomId, body, user.id, uploads, optRef, { category: journalKey })
+        } else {
+          outboxEnqueue(roomId, body, user.id, [], optRef, { category: journalKey })
+        }
       }
-      send.mutate(body, { onSuccess: afterJournalSent })
       return
     }
 
