@@ -498,9 +498,21 @@ async function drain(): Promise<void> {
   if (draining) return
   draining = true
   try {
-    while (queue.length > 0) {
+    // Комнаты, чьё головное сообщение уже сдалось (failed) в этом проходе — их
+    // ОСТАЛЬНЫЕ сообщения ждут своей очереди за ним (порядок внутри комнаты важен,
+    // см. заголовок файла), но это НЕ должно замораживать другие комнаты: раньше
+    // один залипший item через `break` останавливал вообще всю очередь навсегда —
+    // бэклог за много дней просто никогда не получал свой шанс отправиться/провалиться.
+    const blockedRooms = new Set<number>()
+    let i = 0
+    while (i < queue.length) {
       if (typeof navigator !== 'undefined' && !navigator.onLine) break
-      const item = queue[0]
+      const item = queue[i]
+      if (item.status === 'failed' || blockedRooms.has(item.roomId)) {
+        blockedRooms.add(item.roomId)
+        i += 1
+        continue
+      }
       try {
         // Офлайн-медиа: сперва заливаем ещё не залитые вложения и наполняем
         // body.attachment_ids — только потом отправляем само сообщение.
@@ -509,8 +521,9 @@ async function drain(): Promise<void> {
         }
         const real = await http.post<MessageOut>(`/api/rooms/${item.roomId}/messages`, item.body)
         // Успех: убрать из очереди/IndexedDB и заменить temp реальным сообщением
-        // (у него уже presigned-URL с сервера).
-        queue.shift()
+        // (у него уже presigned-URL с сервера). Индекс не увеличиваем — на месте i
+        // теперь следующий элемент.
+        queue.splice(i, 1)
         void idbDelete(STORE_OUTBOX, item.clientId)
         // ПОРЯДОК ВАЖЕН: сперва подменяем temp на real (presigned-URL), и только ПОТОМ
         // ревокаем blob:-URL оптимистичного превью. Иначе между revokeObjectURL и
@@ -528,9 +541,11 @@ async function drain(): Promise<void> {
         item.status = 'failed'
         onStatus?.(item.roomId, item.tempId, 'failed')
         if (permanent) {
-          // Стоп по этому сообщению — снимаем блок очереди, оставляя его failed
-          // в начале. Ждём ручного retry/discard, но не морозим следующие.
-          break
+          // Сдаёмся по этому сообщению — блокируем ТОЛЬКО его комнату, переходим
+          // к следующему item'у (другая комната или следующее по очереди).
+          blockedRooms.add(item.roomId)
+          i += 1
+          continue
         }
         // Сетевая/временная ошибка: серия неудач считается от первой из них. Пока
         // не выбрали окно — ждём backoff и пробуем снова этот же item молча (статус
@@ -538,13 +553,16 @@ async function drain(): Promise<void> {
         if (item.firstFailAt == null) item.firstFailAt = Date.now()
         if (Date.now() - item.firstFailAt >= RETRY_WINDOW_MS) {
           // 45 секунд молотили сеть без толку — дальше не мигаем незаметно, оставляем
-          // стабильное «Не отправлено» и ждём, пока человек сам нажмёт «Повторить».
-          break
+          // стабильное «Не отправлено» и переходим к следующему item'у.
+          blockedRooms.add(item.roomId)
+          i += 1
+          continue
         }
         const delay = BACKOFF[Math.min(item.attempts - 1, BACKOFF.length - 1)]
         await sleep(delay)
         item.status = 'pending'
         onStatus?.(item.roomId, item.tempId, 'pending')
+        // Индекс не увеличиваем — повторим этот же item на следующей итерации.
       }
     }
   } finally {
