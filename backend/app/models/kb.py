@@ -83,6 +83,31 @@ class KbItemMedia(Base):
     )
 
 
+class KbVideoProgress(Base):
+    """Позиция просмотра видео из КБ — на пару (пользователь, материал, файл).
+
+    Ключуется тройкой, а не только media_asset_id: один и тот же файл может быть
+    прикреплён к нескольким материалам одновременно (`KbItemMedia` — м:м), и позиция
+    просмотра в контексте одной статьи не должна путаться с другой.
+    """
+
+    __tablename__ = "kb_video_progress"
+
+    kb_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("kb_items.id"), primary_key=True
+    )
+    media_asset_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("media_assets.id"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), primary_key=True
+    )
+    position_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class KbComment(Base):
     """Плоские комментарии участников под материалом. Мягкое удаление (п.6)."""
 

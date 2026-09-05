@@ -85,6 +85,14 @@ class AttachMediaRequest(BaseModel):
     media_asset_ids: list[int]
 
 
+class KbVideoProgressOut(BaseModel):
+    position_seconds: int | None = None
+
+
+class KbVideoProgressUpdate(BaseModel):
+    position_seconds: int = Field(ge=0)
+
+
 class KbCommentCreate(BaseModel):
     """Новый комментарий под материалом."""
 

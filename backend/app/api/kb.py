@@ -16,7 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_user, require_admin
 from app.db.session import get_session
 from app.models.intake import Intake
-from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia, KbItemPlan
+from app.models.kb import (
+    KbCategory,
+    KbComment,
+    KbItem,
+    KbItemMedia,
+    KbItemPlan,
+    KbVideoProgress,
+)
 from app.models.media import MediaAsset
 from app.models.plan import Plan
 from app.models.user import User
@@ -30,6 +37,8 @@ from app.schemas.kb import (
     KbItemCreate,
     KbItemOut,
     KbItemUpdate,
+    KbVideoProgressOut,
+    KbVideoProgressUpdate,
 )
 from app.services.kb import (
     assert_category_exists,
@@ -62,6 +71,17 @@ async def _assert_assets_exist(session: AsyncSession, asset_ids: list[int]) -> N
     )
     if set(found.scalars().all()) != set(asset_ids):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+
+
+async def _assert_video_attached(
+    session: AsyncSession, item_id: int, asset_id: int
+) -> None:
+    """Файл должен быть привязан к материалу и быть видео, иначе 404."""
+    if await session.get(KbItemMedia, (item_id, asset_id)) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Media not attached to this item")
+    asset = await session.get(MediaAsset, asset_id)
+    if asset is None or asset.kind != "video":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not a video attachment")
 
 
 async def _assert_intake_exists(session: AsyncSession, intake_id: int | None) -> None:
@@ -244,6 +264,9 @@ async def delete_item(
     await session.execute(
         sa_delete(KbItemPlan).where(KbItemPlan.kb_item_id == item_id)
     )
+    await session.execute(
+        sa_delete(KbVideoProgress).where(KbVideoProgress.kb_item_id == item_id)
+    )
     await session.delete(item)
     await session.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -284,6 +307,12 @@ async def detach_media(
     if link is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Media not attached to this item")
     await session.delete(link)
+    await session.execute(
+        sa_delete(KbVideoProgress).where(
+            KbVideoProgress.kb_item_id == item_id,
+            KbVideoProgress.media_asset_id == media_asset_id,
+        )
+    )
     await session.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -326,6 +355,77 @@ async def get_item(
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
     plan_ids = await _item_plan_ids(session, item.id)
     return _to_out(item, media_ids, plan_ids)
+
+
+# --- позиция просмотра видео (личная, ARG-118) ------------------------------
+
+
+@router.get(
+    "/items/{item_id}/media/{asset_id}/progress", response_model=KbVideoProgressOut
+)
+async def get_video_progress(
+    item_id: int,
+    asset_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> KbVideoProgressOut:
+    """Сохранённая позиция просмотра текущего пользователя. Нет записи — null."""
+    item = await load_kb_item(session, item_id)
+    await assert_kb_item_visible(session, item, current_user)
+    await _assert_video_attached(session, item_id, asset_id)
+
+    row = await session.get(KbVideoProgress, (item_id, asset_id, current_user.id))
+    return KbVideoProgressOut(position_seconds=row.position_seconds if row else None)
+
+
+@router.put(
+    "/items/{item_id}/media/{asset_id}/progress", response_model=KbVideoProgressOut
+)
+async def set_video_progress(
+    item_id: int,
+    asset_id: int,
+    body: KbVideoProgressUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> KbVideoProgressOut:
+    """Сохранить позицию просмотра (создаёт запись или обновляет существующую)."""
+    item = await load_kb_item(session, item_id)
+    await assert_kb_item_visible(session, item, current_user)
+    await _assert_video_attached(session, item_id, asset_id)
+
+    row = await session.get(KbVideoProgress, (item_id, asset_id, current_user.id))
+    if row is None:
+        row = KbVideoProgress(
+            kb_item_id=item_id,
+            media_asset_id=asset_id,
+            user_id=current_user.id,
+            position_seconds=body.position_seconds,
+        )
+        session.add(row)
+    else:
+        row.position_seconds = body.position_seconds
+        row.updated_at = datetime.now(UTC)
+    await session.flush()
+    return KbVideoProgressOut(position_seconds=row.position_seconds)
+
+
+@router.delete("/items/{item_id}/media/{asset_id}/progress", status_code=204)
+async def reset_video_progress(
+    item_id: int,
+    asset_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    """Сбросить позицию (видео досмотрено до конца — следующий раз с начала)."""
+    item = await load_kb_item(session, item_id)
+    await assert_kb_item_visible(session, item, current_user)
+    await _assert_video_attached(session, item_id, asset_id)
+
+    row = await session.get(KbVideoProgress, (item_id, asset_id, current_user.id))
+    if row is not None:
+        await session.delete(row)
+        await session.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 # --- комментарии участников (плоские, п.2) ---------------------------------
