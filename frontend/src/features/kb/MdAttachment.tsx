@@ -22,7 +22,7 @@ export function MdAttachment({ itemId, assetId }: { itemId: number; assetId: num
   const { data: media } = useMediaUrl(assetId)
   const isMd = isMarkdownUrl(media?.url)
 
-  if (!isMd) return <Attachment assetId={assetId} />
+  if (!isMd) return <Attachment assetId={assetId} kbItemId={itemId} />
 
   return (
     <Link to={`/kb/read/${itemId}/${assetId}`} className={styles.readButton}>

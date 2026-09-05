@@ -19,12 +19,14 @@ async def _headers(client: AsyncClient, user: User) -> dict[str, str]:
     return auth_headers(tokens["access_token"])
 
 
-async def _make_asset(session: AsyncSession, owner_id: int) -> MediaAsset:
+async def _make_asset(
+    session: AsyncSession, owner_id: int, kind: str = "image"
+) -> MediaAsset:
     asset = MediaAsset(
         bucket="chat-media",
-        storage_key="2026/06/x.png",
-        kind="image",
-        mime_type="image/png",
+        storage_key="2026/06/x.png" if kind == "image" else "2026/06/x.mp4",
+        kind=kind,
+        mime_type="image/png" if kind == "image" else "video/mp4",
         size=10,
         created_by=owner_id,
     )
@@ -275,6 +277,184 @@ async def test_comments_on_draft_hidden_from_participant(
             json={"body": "hi"},
         )
     ).status_code == 404
+
+
+# ── Позиция просмотра видео (ARG-118) ──────────────────────────────────────
+
+
+def _progress_url(item_id: int, asset_id: int) -> str:
+    return f"/api/kb/items/{item_id}/media/{asset_id}/progress"
+
+
+async def test_video_progress_roundtrip(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    participant = await make_user(role="participant")
+    p_headers = await _headers(client, participant)
+
+    asset = await _make_asset(session, admin.id, kind="video")
+    item = await _create_item(
+        client, admin_headers, title="Video", published=True, media_asset_ids=[asset.id]
+    )
+
+    # Нет записи — позиция null.
+    empty = await client.get(_progress_url(item["id"], asset.id), headers=p_headers)
+    assert empty.status_code == 200
+    assert empty.json()["position_seconds"] is None
+
+    saved = await client.put(
+        _progress_url(item["id"], asset.id),
+        headers=p_headers,
+        json={"position_seconds": 42},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["position_seconds"] == 42
+
+    read_back = await client.get(_progress_url(item["id"], asset.id), headers=p_headers)
+    assert read_back.json()["position_seconds"] == 42
+
+    # Повторное сохранение обновляет, а не дублирует, запись.
+    updated = await client.put(
+        _progress_url(item["id"], asset.id),
+        headers=p_headers,
+        json={"position_seconds": 100},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["position_seconds"] == 100
+
+
+async def test_video_progress_reset_on_ended(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    participant = await make_user(role="participant")
+    p_headers = await _headers(client, participant)
+
+    asset = await _make_asset(session, admin.id, kind="video")
+    item = await _create_item(
+        client, admin_headers, title="Video", published=True, media_asset_ids=[asset.id]
+    )
+    await client.put(
+        _progress_url(item["id"], asset.id), headers=p_headers, json={"position_seconds": 90}
+    )
+
+    reset = await client.delete(_progress_url(item["id"], asset.id), headers=p_headers)
+    assert reset.status_code == 204
+
+    after = await client.get(_progress_url(item["id"], asset.id), headers=p_headers)
+    assert after.json()["position_seconds"] is None
+
+
+async def test_video_progress_isolated_per_user(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    alice = await make_user(role="participant")
+    bob = await make_user(role="participant")
+    alice_headers = await _headers(client, alice)
+    bob_headers = await _headers(client, bob)
+
+    asset = await _make_asset(session, admin.id, kind="video")
+    item = await _create_item(
+        client, admin_headers, title="Video", published=True, media_asset_ids=[asset.id]
+    )
+    await client.put(
+        _progress_url(item["id"], asset.id), headers=alice_headers, json={"position_seconds": 30}
+    )
+
+    bob_view = await client.get(_progress_url(item["id"], asset.id), headers=bob_headers)
+    assert bob_view.json()["position_seconds"] is None
+    alice_view = await client.get(_progress_url(item["id"], asset.id), headers=alice_headers)
+    assert alice_view.json()["position_seconds"] == 30
+
+
+async def test_video_progress_hidden_for_inaccessible_item(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    participant = await make_user(role="participant")
+    p_headers = await _headers(client, participant)
+
+    asset = await _make_asset(session, admin.id, kind="video")
+    draft = await _create_item(
+        client, admin_headers, title="Draft", published=False, media_asset_ids=[asset.id]
+    )
+
+    assert (
+        await client.get(_progress_url(draft["id"], asset.id), headers=p_headers)
+    ).status_code == 404
+    assert (
+        await client.put(
+            _progress_url(draft["id"], asset.id),
+            headers=p_headers,
+            json={"position_seconds": 5},
+        )
+    ).status_code == 404
+
+
+async def test_video_progress_404_for_non_video_asset(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    participant = await make_user(role="participant")
+    p_headers = await _headers(client, participant)
+
+    image = await _make_asset(session, admin.id, kind="image")
+    item = await _create_item(
+        client, admin_headers, title="Article", published=True, media_asset_ids=[image.id]
+    )
+
+    resp = await client.get(_progress_url(item["id"], image.id), headers=p_headers)
+    assert resp.status_code == 404
+
+
+async def test_video_progress_deleted_with_item(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    admin = await make_user(role="admin")
+    admin_headers = await _headers(client, admin)
+    participant = await make_user(role="participant")
+    p_headers = await _headers(client, participant)
+
+    asset = await _make_asset(session, admin.id, kind="video")
+    item = await _create_item(
+        client, admin_headers, title="Video", published=True, media_asset_ids=[asset.id]
+    )
+    await client.put(
+        _progress_url(item["id"], asset.id), headers=p_headers, json={"position_seconds": 15}
+    )
+
+    deleted = await client.delete(f"/api/kb/items/{item['id']}", headers=admin_headers)
+    assert deleted.status_code == 204
+
+    from app.models.kb import KbVideoProgress
+
+    remaining = (
+        await session.execute(
+            select(func.count())
+            .select_from(KbVideoProgress)
+            .where(KbVideoProgress.kb_item_id == item["id"])
+        )
+    ).scalar_one()
+    assert remaining == 0
 
 
 async def test_empty_comment_rejected(

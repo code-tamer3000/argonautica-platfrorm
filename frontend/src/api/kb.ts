@@ -129,6 +129,39 @@ export function useDetachKbMedia() {
   })
 }
 
+// --- Позиция просмотра видео (личная, ARG-118) ---
+
+export const kbVideoProgressKey = (itemId: number, assetId: number) =>
+  ['kb', 'items', itemId, 'media', assetId, 'progress'] as const
+
+export function useKbVideoProgress(itemId: number, assetId: number) {
+  return useQuery({
+    queryKey: kbVideoProgressKey(itemId, assetId),
+    queryFn: () =>
+      http.get<{ position_seconds: number | null }>(
+        `/api/kb/items/${itemId}/media/${assetId}/progress`,
+      ),
+    enabled: itemId > 0 && assetId > 0,
+    staleTime: Infinity, // читаем один раз при открытии плеера, дальше сами пишем
+  })
+}
+
+/** Сохранить позицию просмотра. Вызывается императивно (пауза/периодически), без кэша. */
+export async function saveKbVideoProgress(
+  itemId: number,
+  assetId: number,
+  positionSeconds: number,
+): Promise<void> {
+  await http.put(`/api/kb/items/${itemId}/media/${assetId}/progress`, {
+    position_seconds: Math.floor(positionSeconds),
+  })
+}
+
+/** Сбросить позицию (видео досмотрено до конца). */
+export async function resetKbVideoProgress(itemId: number, assetId: number): Promise<void> {
+  await http.del(`/api/kb/items/${itemId}/media/${assetId}/progress`)
+}
+
 // --- Комментарии под материалом (плоские) ---
 
 export function useKbComments(itemId: number) {
