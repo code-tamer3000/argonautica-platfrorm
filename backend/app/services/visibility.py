@@ -11,9 +11,17 @@ NULL `intake_id` и пустой набор строк в `<entity>_plans` — �
 Личные дневники (`rooms.is_personal`) — особый случай: они видны не только
 владельцу (раздел «Все дневники»), поэтому тоже нуждаются в фильтре, но у самой
 комнаты `intake_id` намеренно не проставляется (см. docs/DATA_MODEL.md) — вместо
-колонки сравниваются `intake_id` владельца и смотрящего напрямую (`diary_visible`).
-Тариф владельца на видимость дневника НЕ влияет (по решению пользователя дневники
-выведены из-под рангового каскада ARG-110, см. ARG-112) — только поток.
+колонки сравниваются области видимости владельца и смотрящего напрямую
+(`diary_visible`). Тариф владельца на видимость дневника НЕ влияет (по решению
+пользователя дневники выведены из-под рангового каскада ARG-110, см. ARG-112) —
+только поток.
+
+Мульти-поточный архив (участник переведён в новый поток, но должен продолжать
+читать дневники и КБ прошлого) — `user_intake_access` + `user_intake_scope`/
+`user_archive_intake_ids` ниже. Область видимости = активный `user.intake_id` +
+вручную выданные админом архивные потоки, но ТОЛЬКО для дневников (`diary_visible`)
+и КБ (`kb_intake_visible`) — каналы/задачи/календарь/ростер/запись по-прежнему
+гейтятся одним активным потоком через `intake_visible`, архив их не расширяет.
 
 Каскадная видимость по рангу тарифа (ARG-110) — контакты «начать чат»/группа и
 асимметрия записи в dm с админом используют ОДНО ранговое правило: `cohort_plan_ranks`
@@ -31,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.plan import Plan
 from app.models.user import User
+from app.models.user_intake_access import UserIntakeAccess
 
 # Точное название самого дешёвого тарифа (в оферте — «Позиция»). Держатели этого
 # тарифа — вторая, независимая от `is_observer`, группа с урезанным доступом: не
@@ -131,18 +140,52 @@ async def cheap_tariff_user_ids(session: AsyncSession, user_ids: list[int]) -> s
     return set(rows.scalars().all())
 
 
-def diary_visible(owner: User, viewer: User) -> bool:
-    """Чужой личный дневник виден, если владелец того же потока — единственное
-    ограничение видимости дневника; тариф владельца не учитывается (по решению
-    пользователя дневники не подчиняются ранговому каскаду ARG-110).
+async def user_archive_intake_ids(session: AsyncSession, user: User) -> set[int]:
+    """Потоки, где `user` был участником в прошлом (`user_intake_access`), БЕЗ
+    активного `user.intake_id` — только явно выданный вручную архив."""
+    rows = await session.execute(
+        select(UserIntakeAccess.intake_id).where(UserIntakeAccess.user_id == user.id)
+    )
+    return set(rows.scalars().all())
 
-    Дневник admin-владельца в чужом «Все дневники» не показываем — Динамика не для
-    админов, но `create_user` заводит личный канал любому новому аккаунту без учёта
-    роли, так что такой дневник может существовать. Не влияет на просмотр СВОЕГО
-    дневника (та ветка в assert_room_access/list_rooms не зовёт эту функцию)."""
+
+async def user_intake_scope(session: AsyncSession, user: User) -> set[int]:
+    """Активный поток + архивные — область видимости ДЛЯ ДНЕВНИКОВ И КБ ТОЛЬКО
+    (мульти-поток, архив прошлых потоков). Всё остальное (каналы, задачи,
+    календарь, ростер, запись) продолжает жить на одном `user.intake_id` —
+    `intake_visible` этот scope не использует."""
+    scope = await user_archive_intake_ids(session, user)
+    if user.intake_id is not None:
+        scope.add(user.intake_id)
+    return scope
+
+
+async def diary_visible(session: AsyncSession, owner: User, viewer: User) -> bool:
+    """Чужой личный дневник виден при пересечении областей видимости владельца и
+    смотрящего (активный поток + архив прошлых потоков каждого, мульти-поток) —
+    тариф владельца не учитывается (по решению пользователя дневники не
+    подчиняются ранговому каскаду ARG-110).
+
+    Дневник admin-владельца показываем только через поток, где он САМ был
+    участником (его архив, не активный поток) — Динамика не для админов, но
+    `create_user` заводит личный канал любому новому аккаунту без учёта роли, так
+    что такой дневник может существовать; участник видит его только если админ
+    когда-то был участником ЕГО потока. Не влияет на просмотр СВОЕГО дневника (та
+    ветка в assert_room_access/list_rooms не зовёт эту функцию)."""
+    viewer_scope = await user_intake_scope(session, viewer)
     if owner.role == "admin":
-        return False
-    return owner.intake_id == viewer.intake_id
+        owner_archive = await user_archive_intake_ids(session, owner)
+        return bool(owner_archive & viewer_scope)
+    owner_scope = await user_intake_scope(session, owner)
+    return bool(owner_scope & viewer_scope)
+
+
+def kb_intake_visible(content_intake_id: int | None, scope: set[int]) -> bool:
+    """Виден ли материал КБ по потоку с учётом архива (мульти-поток): NULL — всем;
+    иначе только если поток материала входит в scope смотрящего (активный +
+    архивные). См. `user_intake_scope`; не путать с `intake_visible` (каналы/
+    задачи/календарь — архив их не расширяет)."""
+    return content_intake_id is None or content_intake_id in scope
 
 
 def plan_visibility_clause(

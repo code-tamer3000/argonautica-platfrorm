@@ -86,6 +86,34 @@ simply the one with the largest `starts_on`. Admin API (all under `require_admin
   /api/admin/users/{id}` accepts `intake_id` to move a participant between intakes (explicit
   `null` is rejected — a participant may not be left without an intake).
 
+## user_intake_access (multi-intake archive)
+
+Moving a participant to a new intake (`PATCH .../intake_id`) is a plain overwrite — no
+history is kept on `users.intake_id` itself. `user_intake_access` is the explicit,
+admin-granted exception: one row = "this user was once a participant of this intake" and
+grants **read-only** access to that intake's diaries and KB items, on top of the active
+`users.intake_id`.
+
+| Column | Type | Constraints | Notes |
+|---|---|---|---|
+| user_id | BIGINT | FK users ON DELETE CASCADE, PK part | |
+| intake_id | BIGINT | FK intakes ON DELETE CASCADE, PK part | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+`PK (user_id, intake_id)`, INDEX on `intake_id`. Managed entirely through
+`PATCH /api/admin/users/{id}` `archive_intake_ids` (full-replace of the row set) — no
+dedicated CRUD. The active `intake_id` is never duplicated as a row here (so revoking
+archive access can never accidentally cut the active intake); passing the active
+`intake_id` in the list is silently dropped, not rejected.
+
+`app/services/visibility.py` `user_intake_scope(session, user)` = active `intake_id` +
+every `user_intake_access` row = the set used **only** by `diary_visible` and
+`kb_intake_visible`. Everything else in "Content isolation" below (channels, common
+tasks, calendar events) keeps using the single active `intake_id` via `intake_visible` —
+the archive does not widen those. See [ROOMS.md](ROOMS.md) "Personal diary rooms" and
+[KB.md](KB.md) for the exact rules, including the read-only enforcement on comments into
+an archive-only diary (`app/api/messages.py` `send_message`).
+
 ## Content isolation by intake and plan (ARG-96)
 
 Admin-authored content — channels (`rooms.type='channel'`), common tasks
@@ -105,9 +133,10 @@ channel (ARG-104 — was a platform-wide singleton with `intake_id` always NULL 
 singleton backfilled onto the historical intake). Personal diary rooms (`rooms.is_personal`)
 also keep `intake_id` NULL, but are **not** cross-intake — see "Personal diary rooms" in
 [ROOMS.md](ROOMS.md): they're browsable by other users ("Все дневники"), so visibility is
-gated by comparing the owner and the viewer directly — same intake only, tariff plays no
-role (`diary_visible`, ARG-112 — dropped the ARG-110 rank cascade for diaries on purpose),
-not via a column on the room itself.
+gated by comparing the owner's and the viewer's `user_intake_scope` (active intake +
+archive, see "user_intake_access" below) — tariff plays no role (`diary_visible`,
+ARG-112 — dropped the ARG-110 rank cascade for diaries on purpose), not via a column on
+the room itself.
 
 **Plan (`<entity>_plans`)** — many-to-many, not a column: an empty set of rows = visible to
 every plan of the user's intake; a non-empty set = only the listed plans. This is the only

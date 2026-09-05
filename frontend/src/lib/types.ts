@@ -48,10 +48,16 @@ export interface UserOut {
   // Рубка — только чтение. Ставится сервером один раз и не снимается.
   graduated_at: string | null
   settings: Record<string, unknown>
+  // Активный поток — отличить свой поток от архивных (archive_intakes) при
+  // группировке «Все дневники»/КБ (мульти-поток).
+  intake_id: number | null
   // Набор участника (ARG-106): дата старта — гейт Рубки/Календаря; текст — поп-ап
   // при первом входе. Оба null у бесхозного участника или у набора без текста.
   intake_starts_on: string | null
   intake_welcome_message: string | null
+  // Архив прошлых потоков (мульти-поток) — выдан вручную админом, читает
+  // дневники+КБ тех потоков помимо активного. Пусто в обычном случае.
+  archive_intakes: { id: number; starts_on: string }[]
 }
 
 export interface PublicUserOut {
@@ -130,6 +136,10 @@ export interface RoomOut {
   // Только is_personal: тариф владельца дневника (группировка «Все дневники»).
   owner_plan_id?: number | null
   owner_plan_name?: string | null
+  // Только is_personal: АКТИВНЫЙ поток владельца (не архив) — для группировки
+  // «Все дневники» на текущий/архивные разделы и клиентского фильтра admin
+  // «текущая экспедиция» (RoomList.tsx).
+  owner_intake_id?: number | null
   // Только dm: односторонний запрет ответа админу без is_navigator (ARG-110) —
   // прячем композер, сервер 403-ит тот же путь независимо от этого поля.
   dm_write_locked?: boolean
@@ -366,6 +376,9 @@ export interface AdminUserOut {
   plan_id: number | null
   /** Имя тарифа — приходит рядом с юзером (тот же приём, что intake_starts_on). */
   plan_name: string | null
+  /** Архив прошлых потоков (мульти-поток) — вручную выданный доступ на чтение
+   * дневников+КБ помимо активного intake_id. Пусто — обычный случай. */
+  archive_intake_ids: number[]
 }
 
 /** Тариф для обычного участника — `GET /api/plans` (только активные, id+name). */

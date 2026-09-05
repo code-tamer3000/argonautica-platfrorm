@@ -34,6 +34,7 @@ from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
 from app.models.task import TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
 from app.models.user import User
+from app.models.user_intake_access import UserIntakeAccess
 from app.schemas.expedition import StageOut, StagesUpdate
 from app.schemas.feedback import (
     FeedbackListOut,
@@ -326,11 +327,22 @@ async def list_users(
     if intake_id is not None:
         stmt = stmt.where(User.intake_id == intake_id)
     rows = await session.execute(stmt)
+    users = rows.all()
+    archive_rows = await session.execute(
+        select(UserIntakeAccess.user_id, UserIntakeAccess.intake_id)
+    )
+    archive_map: dict[int, list[int]] = {}
+    for uid, iid in archive_rows.all():
+        archive_map.setdefault(uid, []).append(iid)
     return [
         AdminUserOut.model_validate(user).model_copy(
-            update={"intake_starts_on": starts_on, "plan_name": plan_name}
+            update={
+                "intake_starts_on": starts_on,
+                "plan_name": plan_name,
+                "archive_intake_ids": archive_map.get(user.id, []),
+            }
         )
-        for user, starts_on, plan_name in rows.all()
+        for user, starts_on, plan_name in users
     ]
 
 
@@ -413,6 +425,26 @@ async def update_user(
             )
         if await session.get(Intake, new_intake_id) is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Набор не найден")
+    # Архив прошлых потоков (мульти-поток) — не колонка User, обрабатываем отдельно
+    # от общего setattr-цикла ниже: полная замена набора строк user_intake_access.
+    # Не своё поле _PATCHABLE_FIELDS, поэтому явно выкидываем его из changes.
+    new_archive_ids = changes.pop("archive_intake_ids", None)
+    if new_archive_ids is not None:
+        new_archive_ids = set(new_archive_ids)
+        if new_archive_ids:
+            found = await session.execute(
+                select(Intake.id).where(Intake.id.in_(new_archive_ids))
+            )
+            missing = new_archive_ids - set(found.scalars().all())
+            if missing:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Набор не найден: {sorted(missing)}",
+                )
+        # Активный поток не хранится в архиве отдельной строкой (см. модель) —
+        # игнорируем его в переданном наборе, а не 400-им (идемпотентнее для клиента).
+        active_intake_id = changes.get("intake_id", user.intake_id)
+        new_archive_ids.discard(active_intake_id)
     final_role = changes.get("role", user.role)
     final_observer = changes.get("is_observer", user.is_observer)
     if final_role == "admin" and final_observer:
@@ -432,6 +464,13 @@ async def update_user(
             setattr(user, field, value)
     if changes:
         user.updated_at = datetime.now(UTC)
+    if new_archive_ids is not None:
+        await session.execute(
+            delete(UserIntakeAccess).where(UserIntakeAccess.user_id == user.id)
+        )
+        session.add_all(
+            UserIntakeAccess(user_id=user.id, intake_id=iid) for iid in new_archive_ids
+        )
     await session.flush()
     if grant_cabin:
         await notify_cabin_granted(session, user.id)

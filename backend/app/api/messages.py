@@ -206,6 +206,20 @@ async def send_message(
                 status.HTTP_403_FORBIDDEN,
                 "Only the channel owner can post here; use threads to comment",
             )
+        # Архивный доступ (мульти-поток, user_intake_access) — только чтение:
+        # не-админ комментирует чужой дневник, только если владелец в ТЕКУЩЕМ
+        # активном потоке смотрящего, а не только через ранее выданный архив.
+        # Admin как обычно не ограничен (полный оверсайт, как и на чтении).
+        if current_user.role != "admin":
+            owner_for_write = await session.get(User, room.created_by)
+            if (
+                owner_for_write is None
+                or owner_for_write.intake_id != current_user.intake_id
+            ):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "Archived diary access is read-only",
+                )
 
     # Окно набора владельца дневника закрыто (ARG-96): архив только на чтение,
     # новых записей (в т.ч. тредом) быть не может.

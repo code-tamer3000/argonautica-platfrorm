@@ -35,6 +35,7 @@ from app.models.task import (
     TaskSubmissionMedia,
 )
 from app.models.user import User
+from app.models.user_intake_access import UserIntakeAccess
 
 __all__ = [
     "User",
@@ -76,4 +77,5 @@ __all__ = [
     "TaskSubmission",
     "TaskSubmissionMedia",
     "TaskComment",
+    "UserIntakeAccess",
 ]

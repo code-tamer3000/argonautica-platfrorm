@@ -24,6 +24,7 @@ from app.models.room import Room, RoomMember, RoomPlan
 from app.models.sticker import Sticker
 from app.models.task import TaskStreamNode
 from app.models.user import User
+from app.models.user_intake_access import UserIntakeAccess
 from app.schemas.room import (
     AddMemberRequest,
     CreateRoomRequest,
@@ -45,6 +46,7 @@ from app.services.visibility import (
     cohort_plan_ranks,
     is_cheap_tariff,
     plan_visibility_clause,
+    user_intake_scope,
     user_rank,
 )
 
@@ -277,6 +279,12 @@ async def list_rooms(
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.
         ranks = await cohort_plan_ranks(session, current_user.intake_id)
+        # Мульти-поток (архив прошлых потоков, user_intake_access): область
+        # видимости смотрящего для дневников = активный поток + вручную выданный
+        # архив (см. app/services/visibility.py user_intake_scope/diary_visible;
+        # эта SQL-ветка — её зеркало для списка, точечная проверка одной комнаты
+        # идёт через diary_visible в assert_room_access).
+        viewer_scope = list(await user_intake_scope(session, current_user))
         Owner = aliased(User)
         own_personal = and_(
             Room.is_personal.is_(True), Room.created_by == current_user.id
@@ -291,16 +299,30 @@ async def list_rooms(
         owner_is_cheap_tariff = exists().where(
             Plan.id == Owner.plan_id, Plan.name == CHEAP_TARIFF_NAME
         )
+        owner_archive_shared = exists().where(
+            UserIntakeAccess.user_id == Owner.id,
+            UserIntakeAccess.intake_id.in_(viewer_scope),
+        )
+        # Дневник участника — виден, если его активный ИЛИ архивный поток входит в
+        # scope смотрящего. Дневник admin-владельца — виден ТОЛЬКО через архив
+        # владельца (он был участником потока смотрящего), его активный поток не
+        # учитывается (Динамика не для админов, см. diary_visible).
+        owner_shared_with_viewer = or_(
+            and_(
+                Owner.role != "admin",
+                or_(Owner.intake_id.in_(viewer_scope), owner_archive_shared),
+            ),
+            and_(Owner.role == "admin", owner_archive_shared),
+        )
         others_personal_visible = (
             false()
-            if await is_cheap_tariff(session, current_user)
+            if not viewer_scope or await is_cheap_tariff(session, current_user)
             else and_(
                 Room.is_personal.is_(True),
                 Room.created_by != current_user.id,
                 exists().where(
                     Owner.id == Room.created_by,
-                    Owner.role != "admin",
-                    Owner.intake_id.is_not_distinct_from(current_user.intake_id),
+                    owner_shared_with_viewer,
                     ~owner_is_cheap_tariff,
                 ),
             )
@@ -404,16 +426,17 @@ async def list_rooms(
     # по тарифу на клиенте без похода в admin-only /api/admin/users (см. RoomOut).
     owner_ids = {r.created_by for r in rooms if r.is_personal}
     owner_plan_map: dict[int, tuple[int | None, str | None]] = {}
+    owner_intake_map: dict[int, int | None] = {}
     if owner_ids:
         owner_rows = await session.execute(
-            select(User.id, User.plan_id, Plan.name, User.role)
+            select(User.id, User.plan_id, Plan.name, User.role, User.intake_id)
             .outerjoin(Plan, Plan.id == User.plan_id)
             .where(User.id.in_(owner_ids))
         )
-        owner_plan_map = {
-            uid: _owner_plan_label(plan_id, plan_name, role)
-            for uid, plan_id, plan_name, role in owner_rows.all()
-        }
+        owner_plan_map = {}
+        for uid, plan_id, plan_name, role, intake_id in owner_rows.all():
+            owner_plan_map[uid] = _owner_plan_label(plan_id, plan_name, role)
+            owner_intake_map[uid] = intake_id
 
     # Обложки личных дневников — батчем, одним вызовом на весь список.
     avatar_map = await _presign_room_avatars(session, [r for r in rooms if r.is_personal])
@@ -432,6 +455,7 @@ async def list_rooms(
             item.owner_plan_id, item.owner_plan_name = owner_plan_map.get(
                 room.created_by, (None, None)
             )
+            item.owner_intake_id = owner_intake_map.get(room.created_by)
             item.avatar_url = avatar_map.get(room.id)
         out.append(item)
     return out
@@ -457,13 +481,14 @@ async def get_room(
     item = _room_out(room, plan_ids)
     if room.is_personal:
         owner_row = await session.execute(
-            select(User.plan_id, Plan.name, User.role)
+            select(User.plan_id, Plan.name, User.role, User.intake_id)
             .outerjoin(Plan, Plan.id == User.plan_id)
             .where(User.id == room.created_by)
         )
         owner = owner_row.first()
         if owner is not None:
-            item.owner_plan_id, item.owner_plan_name = _owner_plan_label(*owner)
+            item.owner_plan_id, item.owner_plan_name = _owner_plan_label(*owner[:3])
+            item.owner_intake_id = owner[3]
         signed = await _presign_room_avatars(session, [room])
         item.avatar_url = signed.get(room.id)
     last_read = (membership.last_read_message_id or 0) if membership else 0

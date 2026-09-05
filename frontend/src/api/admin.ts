@@ -31,6 +31,9 @@ export interface PatchAdminUserBody {
   display_name?: string
   email?: string | null
   intake_id?: number
+  /** Архив прошлых потоков (мульти-поток) — полная замена набора, читает
+   * дневники+КБ тех потоков помимо активного. См. lib/types.ts AdminUserOut. */
+  archive_intake_ids?: number[]
 }
 
 /**

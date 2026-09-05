@@ -46,6 +46,16 @@ as a draft — a foreign-intake/plan item doesn't reveal its existence any more 
 unpublished one does. `assert_media_access` applies the same double filter to the item(s) an
 asset is attached to. `POST /items` and `PATCH /items/{id}` accept `intake_id`/`plan_ids`.
 
+The intake side of that check is `kb_intake_visible(item.intake_id, scope)`, where `scope`
+is `user_intake_scope(session, user)` — the viewer's active `intake_id` **plus** any
+archived intakes granted via `user_intake_access` (multi-intake archive, see
+[DATA_MODEL.md](DATA_MODEL.md) "user_intake_access" and [ROOMS.md](ROOMS.md) "Personal
+diary rooms"). A participant moved to a new intake loses access to the old one's KB items
+the moment they're moved; an admin can grant it back read-only via `archive_intake_ids`
+(`PATCH /api/admin/users/{id}`) without touching the plan filter. The plan side is
+unaffected by the archive — `kb_item_plans` still compares against the viewer's current
+`plan_id` only.
+
 ## Markdown reader (attached `.md` files)
 
 There is **no separate "book" material type** — every item is a normal article.
