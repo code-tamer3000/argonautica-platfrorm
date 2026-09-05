@@ -47,7 +47,7 @@ from app.services.kb import (
     attached_plan_ids,
     load_kb_item,
 )
-from app.services.visibility import plan_visibility_clause
+from app.services.visibility import plan_visibility_clause, user_intake_scope
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
@@ -325,12 +325,14 @@ async def list_items(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[KbItemOut]:
-    """Список материалов: участник — только опубликованные своего потока/тарифа; admin — все."""
+    """Список материалов: участник — только опубликованные своего потока (+ архив
+    прошлых потоков, user_intake_access) и тарифа; admin — все."""
     stmt = select(KbItem).order_by(KbItem.sort_order, KbItem.created_at)
     if current_user.role != "admin":
+        scope = list(await user_intake_scope(session, current_user))
         stmt = stmt.where(
             KbItem.published.is_(True),
-            or_(KbItem.intake_id.is_(None), KbItem.intake_id == current_user.intake_id),
+            or_(KbItem.intake_id.is_(None), KbItem.intake_id.in_(scope)),
             plan_visibility_clause(
                 KbItemPlan.plan_id, KbItemPlan.kb_item_id, KbItem.id, current_user.plan_id
             ),

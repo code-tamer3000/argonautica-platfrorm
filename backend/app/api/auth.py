@@ -27,11 +27,11 @@ from app.schemas.auth import (
     RefreshRequest,
     TokenPair,
 )
-from app.schemas.user import ProfileUpdateRequest, UserOut
+from app.schemas.user import ArchiveIntakeOut, ProfileUpdateRequest, UserOut
 from app.services.auth import issue_token_pair, refresh_is_valid, revoke_refresh
 from app.services.media import presign_asset_urls
 from app.services.ratelimit import client_ip, enforce_rate_limit
-from app.services.visibility import is_cheap_tariff
+from app.services.visibility import is_cheap_tariff, user_archive_intake_ids
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -131,6 +131,16 @@ async def _me_out(session: AsyncSession, user: User) -> UserOut:
         ).one_or_none()
         if intake is not None:
             out.intake_starts_on, out.intake_welcome_message = intake
+    archive_ids = await user_archive_intake_ids(session, user)
+    if archive_ids:
+        rows = await session.execute(
+            select(Intake.id, Intake.starts_on)
+            .where(Intake.id.in_(archive_ids))
+            .order_by(Intake.starts_on)
+        )
+        out.archive_intakes = [
+            ArchiveIntakeOut(id=iid, starts_on=starts_on) for iid, starts_on in rows.all()
+        ]
     return out
 
 

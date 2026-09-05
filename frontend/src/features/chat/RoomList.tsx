@@ -104,8 +104,17 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
         if (r.is_personal) {
           // Свой дневник виден всегда — иначе admin потерял бы «Закреплённые».
           if (r.created_by === me?.id) return true
-          const ownerIntakeId = adminUsers.get(r.created_by)?.intake_id
-          return ownerIntakeId == null || ownerIntakeId === currentIntakeId
+          const owner = adminUsers.get(r.created_by)
+          const ownerIntakeId = owner?.intake_id ?? r.owner_intake_id ?? null
+          // Архив прошлых потоков (мульти-поток): дневник владельца, переведённого
+          // в другую экспедицию, остаётся видимым в СТАРОЙ экспедиции, если у него
+          // выдан архивный доступ на неё — иначе он «пропадал» бы из списка после
+          // перевода, хотя сервер (diary_visible) продолжает его отдавать.
+          return (
+            ownerIntakeId == null ||
+            ownerIntakeId === currentIntakeId ||
+            (owner?.archive_intake_ids.includes(currentIntakeId) ?? false)
+          )
         }
         return r.intake_id == null || r.intake_id === currentIntakeId
       })
@@ -143,14 +152,37 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
     const otherPersonal = others.filter((r) => r.is_personal)
     const otherRegular = others.filter((r) => !r.is_personal)
 
+    // Архив прошлых потоков (мульти-поток): чужой дневник владельца из НЕ своего
+    // активного потока попадает сюда только если это один из архивных потоков
+    // смотрящего (сервер diary_visible уже гарантирует это) — своя группировка,
+    // отдельная секция ниже «Все дневники», а не вперемешку по тарифу.
+    const myIntakeId = me?.intake_id ?? null
+    const archiveIntakes = me?.archive_intakes ?? []
+    const inCurrentIntake = otherPersonal.filter(
+      (r) => (r.owner_intake_id ?? null) === myIntakeId,
+    )
+    const archiveGroups = archiveIntakes
+      .map((intake) => {
+        const rooms = otherPersonal.filter((r) => r.owner_intake_id === intake.id)
+        return { intake, rooms }
+      })
+      .filter(({ rooms }) => rooms.length > 0)
+      .flatMap(({ intake, rooms }) =>
+        groupDiariesByPlan(rooms, plans).map((g) => ({
+          ...g,
+          key: `archive-${intake.id}-${g.key}`,
+          label: `Архив · ${intake.starts_on} · ${g.label}`,
+        })),
+      )
+
     return {
       dms,
       groups,
       pinnedChannels: pinned,
-      diaryGroups: groupDiariesByPlan(otherPersonal, plans),
+      diaryGroups: [...groupDiariesByPlan(inCurrentIntake, plans), ...archiveGroups],
       otherChannels: otherRegular,
     }
-  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers, plans])
+  }, [rooms, q, dmPeers, users, me?.id, me?.intake_id, me?.archive_intakes, isAdmin, currentIntakeId, adminUsers, plans])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty =

@@ -93,7 +93,7 @@ async def assert_room_access(
             owner = await session.get(User, room.created_by)
             if (
                 owner is None
-                or not diary_visible(owner, user)
+                or not await diary_visible(session, owner, user)
                 or await is_cheap_tariff(session, user)
                 or await is_cheap_tariff(session, owner)
             ):

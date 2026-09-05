@@ -50,6 +50,10 @@ class AdminUpdateUserRequest(BaseModel):
     role: Role | None = None
     # Перевод участника в другой набор — двигает начало его окна Динамики.
     intake_id: int | None = None
+    # Архив прошлых потоков (мульти-поток) — вручную выданный доступ на ЧТЕНИЕ
+    # дневников и КБ тех потоков (см. app/services/visibility.py user_intake_scope).
+    # Передано — заменяет набор строк целиком; не передано — не трогаем.
+    archive_intake_ids: list[int] | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -65,6 +69,14 @@ class ProfileUpdateRequest(BaseModel):
     bio: str | None = None
     avatar_media_id: int | None = None
     settings: dict[str, Any] | None = None
+
+
+class ArchiveIntakeOut(BaseModel):
+    """Один архивный поток из user_intake_scope — для подписи секции «Архив» во
+    «Все дневники»/КБ на клиенте (дата старта, без user_count/прочей админ-начинки)."""
+
+    id: int
+    starts_on: date
 
 
 class UserOut(BaseModel):
@@ -94,11 +106,17 @@ class UserOut(BaseModel):
     # Рубка — только чтение. См. app/services/graduation.py.
     graduated_at: datetime | None = None
     settings: dict[str, Any] = {}
+    # Активный поток — нужен клиенту, чтобы отличить СВОЙ поток от архивных
+    # (archive_intakes ниже) при группировке «Все дневники»/КБ (мульти-поток).
+    intake_id: int | None = None
     # Набор участника (ARG-106): дата старта — для гейта Рубки/Календаря на клиенте
     # (`today < intake_starts_on`); приветственный текст — для поп-апа при первом
     # входе. NULL/NULL — участник без набора или набор без текста (старые наборы).
     intake_starts_on: date | None = None
     intake_welcome_message: str | None = None
+    # Архив прошлых потоков (мульти-поток) — выдан вручную админом, читает
+    # дневники+КБ тех потоков в дополнение к активному. Пусто в обычном случае.
+    archive_intakes: list[ArchiveIntakeOut] = []
 
 
 class PublicUserOut(BaseModel):
@@ -147,3 +165,6 @@ class AdminUserOut(BaseModel):
     # приёмом, что intake_starts_on. NULL — заведён вручную без тарифа.
     plan_id: int | None = None
     plan_name: str | None = None
+    # Архив прошлых потоков (мульти-поток) — какие ещё дневники+КБ читает, помимо
+    # активного intake_id. Пусто — только активный поток (обычный случай).
+    archive_intake_ids: list[int] = []

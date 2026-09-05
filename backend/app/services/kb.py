@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kb import KbCategory, KbItem, KbItemMedia, KbItemPlan
 from app.models.user import User
-from app.services.visibility import intake_visible, plan_visible
+from app.services.visibility import kb_intake_visible, plan_visible, user_intake_scope
 
 
 async def assert_category_exists(
@@ -37,13 +37,16 @@ async def assert_kb_item_visible(
     """Не-admin видит только опубликованное; черновик — 404 (не раскрываем).
 
     Двойной фильтр поток+тариф (ARG-96): материал чужого потока/тарифа — тоже 404,
-    тем же принципом «не раскрываем существование».
+    тем же принципом «не раскрываем существование». Поток учитывает архив прошлых
+    потоков (`user_intake_scope`, мульти-поток) — материал остаётся доступен после
+    перевода, если админ выдал доступ к архиву.
     """
     if user.role == "admin":
         return
     if not item.published:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "KB item not found")
-    if not intake_visible(item.intake_id, user):
+    scope = await user_intake_scope(session, user)
+    if not kb_intake_visible(item.intake_id, scope):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "KB item not found")
     if not await plan_visible(
         session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, item.id, user.plan_id

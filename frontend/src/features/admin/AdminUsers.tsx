@@ -66,6 +66,9 @@ export function AdminUsers() {
   const [editNavigator, setEditNavigator] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
   const [editIntake, setEditIntake] = useState<number | null>(null)
+  // Архив прошлых потоков (мульти-поток) — на чтение дневников+КБ помимо
+  // активного набора. Полная замена набора строк при сохранении.
+  const [editArchiveIntakes, setEditArchiveIntakes] = useState<number[]>([])
 
   // Группы: показываем либо один выбранный набор, либо все сразу (свежие сверху).
   // Пустой набор тоже виден — только что созданный ещё никого не содержит.
@@ -118,6 +121,7 @@ export function AdminUsers() {
     setEditNavigator(user.is_navigator)
     setEditRole(user.role as 'participant' | 'admin')
     setEditIntake(user.intake_id)
+    setEditArchiveIntakes(user.archive_intake_ids)
   }
 
   function handleDelete() {
@@ -148,6 +152,7 @@ export function AdminUsers() {
         role: editRole,
         // Набор отправляем только если он выбран — отвязать участника нельзя.
         ...(editIntake !== null ? { intake_id: editIntake } : {}),
+        archive_intake_ids: editArchiveIntakes,
       },
       {
         onSuccess: () => {
@@ -394,6 +399,36 @@ export function AdminUsers() {
                 ))}
               </select>
             </div>
+            {intakes.length > 1 && (
+              <div className={styles.formRow}>
+                <label>Архив прошлых потоков</label>
+                <div className={styles.checklist}>
+                  {intakes
+                    .filter((intake) => intake.id !== editIntake)
+                    .map((intake) => (
+                      <label key={intake.id} className={styles.checkRow}>
+                        <input
+                          type="checkbox"
+                          checked={editArchiveIntakes.includes(intake.id)}
+                          onChange={(e) =>
+                            setEditArchiveIntakes((prev) =>
+                              e.target.checked
+                                ? [...prev, intake.id]
+                                : prev.filter((id) => id !== intake.id),
+                            )
+                          }
+                        />
+                        <span style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
+                          {intakeDate(intake.starts_on)}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
+                  Читает дневники и материалы КБ отмеченных потоков — на чтение, помимо активного набора.
+                </p>
+              </div>
+            )}
             <div className={styles.formRow}>
               <label>Роль</label>
               <select

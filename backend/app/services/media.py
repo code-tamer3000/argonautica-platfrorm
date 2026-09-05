@@ -34,7 +34,12 @@ from app.models.message import Message, MessageAttachment
 from app.models.user import User
 from app.schemas.media import AttachmentOut
 from app.services.rooms import assert_room_access, load_room
-from app.services.visibility import intake_visible, plan_visible
+from app.services.visibility import (
+    intake_visible,
+    kb_intake_visible,
+    plan_visible,
+    user_intake_scope,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -417,12 +422,14 @@ async def assert_media_access(
             .distinct()
         )
     ).scalars().all()
+    if kb_items and user.role != "admin":
+        scope = await user_intake_scope(session, user)
     for kb_item in kb_items:
         if user.role == "admin":
             return
         if not kb_item.published:
             continue
-        if not intake_visible(kb_item.intake_id, user):
+        if not kb_intake_visible(kb_item.intake_id, scope):
             continue
         if await plan_visible(
             session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, kb_item.id, user.plan_id
