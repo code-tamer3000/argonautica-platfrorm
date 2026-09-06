@@ -47,6 +47,9 @@ class AdminUpdateUserRequest(BaseModel):
     # Навигатор (ARG-110): смысл только при role='admin' — валидируется в эндпоинте
     # (по образцу is_observer/role=admin).
     is_navigator: bool | None = None
+    # Показать личный дневник этого админа участникам его потока (см. diary_visible) —
+    # смысл только при role='admin', тем же образцом валидируется в эндпоинте.
+    diary_public: bool | None = None
     role: Role | None = None
     # Перевод участника в другой набор — двигает начало его окна Динамики.
     intake_id: int | None = None
@@ -136,6 +139,7 @@ class AdminUserOut(BaseModel):
     can_access_cabin: bool
     is_observer: bool = False
     is_navigator: bool = False
+    diary_public: bool = False
     is_active: bool = True
     graduated_at: datetime | None = None
     created_at: datetime

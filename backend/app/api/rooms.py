@@ -291,6 +291,13 @@ async def list_rooms(
         owner_is_cheap_tariff = exists().where(
             Plan.id == Owner.plan_id, Plan.name == CHEAP_TARIFF_NAME
         )
+        # Личный дневник admin-владельца исключён по умолчанию (Динамика не для
+        # админов) — кроме `diary_public` (см. app/models/user.py): ручной разовый
+        # флаг конкретному админу, показывающий его дневник участникам ЕГО потока.
+        owner_visible_role = or_(
+            Owner.role != "admin",
+            and_(Owner.role == "admin", Owner.diary_public),
+        )
         others_personal_visible = (
             false()
             if await is_cheap_tariff(session, current_user)
@@ -299,7 +306,7 @@ async def list_rooms(
                 Room.created_by != current_user.id,
                 exists().where(
                     Owner.id == Room.created_by,
-                    Owner.role != "admin",
+                    owner_visible_role,
                     Owner.intake_id.is_not_distinct_from(current_user.intake_id),
                     ~owner_is_cheap_tariff,
                 ),

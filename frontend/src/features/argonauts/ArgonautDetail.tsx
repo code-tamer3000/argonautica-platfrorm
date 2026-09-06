@@ -106,7 +106,7 @@ export function ArgonautDetail() {
         )}
       </div>
 
-      {data.role !== 'admin' && (
+      {data.role !== 'admin' && !data.is_observer && (
         <div className={styles.tasksSection}>
           <h2 className={styles.tasksHeading}>Задачи ({data.tasks_done})</h2>
           {data.tasks.length === 0 ? (

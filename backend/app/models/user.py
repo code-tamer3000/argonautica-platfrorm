@@ -61,6 +61,13 @@ class User(Base):
     is_navigator: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Личный дневник админа (`rooms.is_personal`, обычно скрыт от участников,
+    # см. `diary_visible`) показать участникам его СВОЕГО потока — разовое ручное
+    # исключение для конкретного админа, не общее правило видимости. У остальных
+    # админов дневник по-прежнему невиден никому кроме них самих.
+    diary_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     # Выпускная анкета экспедиции: админ поднимает флаг — платформа целиком
     # перекрыта экраном анкеты (см. deps.get_current_active_user), пока человек
     # её не отправит. Снимается автоматически при отправке.

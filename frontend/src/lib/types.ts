@@ -78,6 +78,8 @@ export interface ArgonautOut {
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
+  /** Секция «Наблюдатели»: флаг users.is_observer ЛИБО тариф «Наблюдатель». */
+  is_observer: boolean
 }
 
 export type ArgonautTaskStatus = 'accepted' | 'submitted'
@@ -100,6 +102,7 @@ export interface ArgonautDetailOut {
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
+  is_observer: boolean
   diary_room_id: number | null
   tasks: ArgonautTaskOut[]
   // Текст последней сдачи задачи «Освобождаем оперативку» (см. docs/ARGONAUTS.md).
@@ -357,6 +360,9 @@ export interface AdminUserOut {
   // Навигатор (ARG-110): только у role='admin' — доступен для лички любому
   // тарифу своего потока, минуя ранговое ограничение.
   is_navigator: boolean
+  // Личный дневник этого админа показан участникам его потока в «Все дневники»
+  // (по умолчанию дневники админов скрыты, см. docs/ROOMS.md).
+  diary_public: boolean
   is_active: boolean
   graduated_at: string | null
   created_at: string

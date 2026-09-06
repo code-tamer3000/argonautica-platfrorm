@@ -1,7 +1,8 @@
 """Тесты раздела «Аргонавты»: ростер потока + профиль участника.
 
 Видимость ростера — только по потоку (правило `diary_visible`/ARG-112, не
-ранговый каскад ARG-110): наблюдатели и админы исключены, сам смотрящий тоже.
+ранговый каскад ARG-110): исключён только сам смотрящий; админы идут первым
+блоком, наблюдатели (флаг ЛИБО тариф) — последним, с `is_observer=true`.
 `tasks_done`/`tasks` считаются по common-задачам, видимым СМОТРЯЩЕМУ (двойной
 фильтр поток+тариф, ARG-96) — задача чужого тарифа не должна попасть в счётчик
 чужого участника, даже если у него самого этот тариф есть.
@@ -90,36 +91,36 @@ async def test_roster_same_intake_only(client: AsyncClient, make_user: MakeUser)
     assert viewer.id not in ids  # сам смотрящий не в списке
 
 
-async def test_roster_excludes_observer_includes_admin(
+async def test_roster_admins_first_observers_last(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
-    """Наблюдатель — вне ростера целиком; админ — в ростере (отдельная секция на
-    фронте по role), но без задач (tasks_done=0 у него по построению)."""
+    """Три блока: админы — первыми, участники — в середине, наблюдатели — хвостом.
+    Админ без задач (tasks_done=0 у него по построению)."""
     starts_on = date.today() - timedelta(days=201)
     viewer = await make_user(intake_starts_on=starts_on)
     observer = await make_user(intake_id=viewer.intake_id, is_observer=True)
+    member = await make_user(intake_id=viewer.intake_id)
     admin = await make_user(intake_id=viewer.intake_id, role="admin")
 
     viewer_h = await _headers(client, viewer)
     resp = await client.get("/api/argonauts", headers=viewer_h)
     rows = resp.json()
-    ids = {row["id"] for row in rows}
-    assert observer.id not in ids
-    assert admin.id in ids
-    admin_row = next(r for r in rows if r["id"] == admin.id)
+    order = [r["id"] for r in rows]
+    assert order == [admin.id, member.id, observer.id]
+    admin_row, member_row, observer_row = rows
     assert admin_row["role"] == "admin"
     assert admin_row["tasks_done"] == 0
-    # Админы хвостовым блоком (см. _roster) — после всех участников с рангом.
-    admin_index = next(i for i, r in enumerate(rows) if r["id"] == admin.id)
-    assert all(r["role"] != "admin" for r in rows[:admin_index])
+    assert admin_row["is_observer"] is False
+    assert member_row["is_observer"] is False
+    assert observer_row["is_observer"] is True
 
 
-async def test_roster_excludes_observer_tariff_holders(
+async def test_roster_observer_tariff_holders_in_observer_block(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     """Тариф «Наблюдатель» (OBSERVER_TARIFF_NAME) и флаг is_observer — ДВЕ разные
-    вещи (флаг ставится за пропуски, тариф покупается с начала); держатель
-    тарифа без флага всё равно исключён из ростера целиком."""
+    вещи (флаг ставится за пропуски, тариф покупается с начала); держатель тарифа
+    без флага всё равно попадает в хвостовую секцию наблюдателей."""
     starts_on = date.today() - timedelta(days=212)
     admin = await make_user(role="admin", intake_starts_on=starts_on)
     admin_h = await _headers(client, admin)
@@ -133,10 +134,12 @@ async def test_roster_excludes_observer_tariff_holders(
 
     viewer_h = await _headers(client, viewer)
     resp = await client.get("/api/argonauts", headers=viewer_h)
-    ids = {row["id"] for row in resp.json()}
-    assert tariff_observer.id not in ids
-    # Без тарифа вообще (plan_id NULL) — это НЕ «Наблюдатель», остаётся в ростере.
-    assert no_plan.id in ids
+    rows = resp.json()
+    by_id = {r["id"]: r for r in rows}
+    assert by_id[tariff_observer.id]["is_observer"] is True
+    # Без тарифа вообще (plan_id NULL) — это НЕ «Наблюдатель», обычный участник.
+    assert by_id[no_plan.id]["is_observer"] is False
+    assert rows[-1]["id"] == tariff_observer.id
 
 
 async def test_observer_cannot_access_section(client: AsyncClient, make_user: MakeUser) -> None:
@@ -160,8 +163,8 @@ async def test_detail_of_other_intake_is_404(client: AsyncClient, make_user: Mak
 
 
 async def test_admin_detail_has_no_diary_link(client: AsyncClient, make_user: MakeUser) -> None:
-    """Личный канал админа не проходит diary_visible (owner.role != 'admin') —
-    ссылка вела бы на 403, поэтому эндпоинт её не отдаёт."""
+    """Личный канал админа по умолчанию (`diary_public=False`) не проходит
+    diary_visible — ссылка вела бы на 403, поэтому эндпоинт её не отдаёт."""
     starts_on = date.today() - timedelta(days=207)
     viewer = await make_user(intake_starts_on=starts_on)
     admin = await make_user(intake_id=viewer.intake_id, role="admin")
@@ -171,6 +174,21 @@ async def test_admin_detail_has_no_diary_link(client: AsyncClient, make_user: Ma
     assert detail["role"] == "admin"
     assert detail["diary_room_id"] is None
     assert detail["tasks"] == []
+
+
+async def test_admin_detail_has_diary_link_when_diary_public(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """`diary_public=True` — эндпоинт отдаёт ссылку на дневник этого админа
+    участнику того же потока (`diary_visible` теперь проходит)."""
+    starts_on = date.today() - timedelta(days=208)
+    viewer = await make_user(intake_starts_on=starts_on)
+    admin = await make_user(intake_id=viewer.intake_id, role="admin", diary_public=True)
+    room = await _make_personal_room(session, admin.id)
+
+    viewer_h = await _headers(client, viewer)
+    detail = (await client.get(f"/api/argonauts/{admin.id}", headers=viewer_h)).json()
+    assert detail["diary_room_id"] == room.id
 
 
 # --- tasks_done / детальный список задач --------------------------------------

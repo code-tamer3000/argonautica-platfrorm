@@ -34,6 +34,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | can_access_cabin | BOOLEAN | NOT NULL, default false | grants Cabin; admin has it implicitly. See [CABIN.md](CABIN.md) |
 | is_observer | BOOLEAN | NOT NULL, default false | observer mode: materials-only, passive access. Mutually exclusive with `role='admin'`. See [AUTH.md](AUTH.md) |
 | is_navigator | BOOLEAN | NOT NULL, default false | only meaningful with `role='admin'`: visible/messageable in «начать чат» for every tariff rank of the intake, bypassing the top-2-tariff write rule. See [AUTH.md](AUTH.md), [ROOMS.md](ROOMS.md) |
+| diary_public | BOOLEAN | NOT NULL, default false | only meaningful with `role='admin'`: shows this admin's personal diary to participants of their own intake (admin diaries hidden from participants by default). See [AUTH.md](AUTH.md), [ROOMS.md](ROOMS.md) |
 | survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
 | graduated_at | TIMESTAMPTZ | NULL | экспедиция пройдена: set on survey submit, never cleared. Dynamics hidden, Tasks collapse to submitted, Рубка read-only. See [SURVEY.md](SURVEY.md) |
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |

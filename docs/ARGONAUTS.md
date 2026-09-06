@@ -4,7 +4,8 @@
 > `tasks`, `rooms` (see [DATA_MODEL.md](DATA_MODEL.md)).
 
 Roster of the current participant's intake ("who else is on this expedition with
-me"), grouped into sections by tariff (admins their own tail section), one tile
+me"), grouped into sections by tariff (admins their own leading section,
+observers a trailing one), one tile
 per person (photo, name, "N tasks done" when N>0), expanding to a profile page
 with bio, task list, and a link to that person's diary. Composition-only endpoint
 (no new business logic) in the style of `api/dashboard.py`.
@@ -13,27 +14,36 @@ A profile also opens from outside the roster: the message action menu in Rubka
 (`useMessageMenu.tsx`) carries a "Посмотреть профиль" item that navigates to
 `/argonauts/{sender_id}` for any message not authored by the viewer — hidden on
 your own messages, since `_roster` excludes the caller and `/argonauts/{myId}`
-would 404. A sender outside the viewer's roster (different intake, observer,
-`OBSERVER_TARIFF_NAME`) hits the same "Участник не найден" empty state the page
-already has for a direct link — the menu item does not pre-check membership.
+would 404. A sender outside the viewer's roster (a different intake) hits the
+same "Участник не найден" empty state the page already has for a direct link —
+the menu item does not pre-check membership.
 
-> **Observers** (`users.is_observer`) have no access: the whole `/api/argonauts`
-> router is behind `require_participant` → 403, same as Tasks/Rubka/Calendar.
+> **Observers** are *listed* in the roster but cannot *open* it: the whole
+> `/api/argonauts` router is behind `require_participant` → 403 for
+> `users.is_observer`, same as Tasks/Rubka/Calendar.
 
 ## Roster composition
 
 `GET /api/argonauts` returns every user with `intake_id == current_user.intake_id`,
-**excluding** the caller themself and two independent groups:
-- observers, `users.is_observer` — set after 5 missed days (see AUTH.md/oferta);
+**excluding only the caller themself**. Observers are included, as one trailing
+"Наблюдатели" section — and "observer" here is the union of two independent
+groups:
+- `users.is_observer` — the flag, set after 5 missed days (see AUTH.md/oferta);
 - holders of the `OBSERVER_TARIFF_NAME` tariff (`api/argonauts.py`, currently
   "Наблюдатель") — a **purchased tariff row in `plans`**, unrelated to the flag.
   A user can hold this tariff from day one with `is_observer == False` the whole
-  time; either condition alone is enough to exclude them. A user with no tariff
-  at all (`plan_id IS NULL`) is a different, unrelated case and stays in.
+  time; either condition alone puts them in the observer section. A user with no
+  tariff at all (`plan_id IS NULL`) is a different, unrelated case and stays a
+  regular participant ("Без тарифа").
+
+Both `ArgonautOut` and `ArgonautDetailOut` carry `is_observer` — **not the DB
+column**, but that union, computed in `_roster`; it is what the frontend groups
+and what hides the task count on those tiles/profiles.
 
 Admins ARE included (their own section, see below) but never carry a task count
 — they have no assignments by construction, and the tile/detail hide the
-"N задач" line entirely for `role == 'admin'` rather than show a permanent 0.
+"N задач" line entirely for `role == 'admin'` (and likewise for observers)
+rather than show a permanent 0.
 
 This follows the diary-visibility rule (ARG-112: `diary_visible` in
 [services/visibility.py](../backend/app/services/visibility.py)) — **intake only**,
@@ -48,17 +58,27 @@ is not what this section is for.
 
 ## Ordering and sections
 
-The server sorts the roster exactly like `list_contacts` (ARG-110): participants
-by ascending tariff rank (`cohort_plan_ranks`/`user_rank`), then `display_name`;
-admins always last, as one tail block. The frontend does not recompute rank — it
-slices the already-ordered list into sections wherever `role`/`plan_id` changes,
-reusing `contactPlanKey`/`groupPreOrdered` from
+The server orders the roster in three blocks: **admins first**, then participants
+by ascending tariff rank (`cohort_plan_ranks`/`user_rank`) then `display_name`
+(exactly like `list_contacts`, ARG-110), then **observers last**. The frontend
+does not recompute rank — it slices the already-ordered list into sections
+wherever the section key changes, reusing `groupPreOrdered` from
 [lib/planGroups.ts](../frontend/src/lib/planGroups.ts) (the same helper
-`NewChatModal`/`NewGroupModal` use for the contact list). Section labels are
-whatever the admin named the tariffs for that intake (typically Игрок/Спецотряд/
-Око), "Без тарифа" for participants with none, and "Админ" for the admin block.
+`NewChatModal`/`NewGroupModal` use for the contact list, though the roster passes
+its own key function, `argonautSectionKey` in `ArgonautsScreen.tsx`, instead of
+the contact list's `contactPlanKey` — observers need their own key, since a
+flag-observer may hold any tariff).
 
-`tasks_done` on a tile is shown only when `> 0` and `role != 'admin'` — a bare
+Section labels are whatever the admin named the tariffs for that intake, except
+that the roster renders them as groups: "Админы" for the admin block,
+"Наблюдатели" for the observer block, and "Игрок" → "Игроки" via `SECTION_LABELS`
+in `ArgonautsScreen.tsx`. "Спецотряд"/"Око" already read as a group and are shown
+verbatim; "Без тарифа" for participants with none. This is display-only — the
+tariff names in `plans` are never rewritten (`CHEAP_TARIFF_NAME == "Наблюдатель"`
+matching depends on them).
+
+`tasks_done` on a tile is shown only when `> 0` and the person is neither an
+admin nor an observer — a bare
 "Выполнено 0 задач" on every fresh participant's tile read as noise, not signal.
 
 ## Tasks
@@ -136,19 +156,22 @@ in that case would just be a guaranteed error, not a genuine edit affordance.
 `diary_room_id` = the target's personal channel (`rooms.is_personal AND
 rooms.created_by == user_id`), same lookup as `_personal_room_id` in
 `api/dynamics.py`. `null` if the person has none yet (button hidden client-side),
-and **always `null` for admins** — an admin's personal channel fails
-`diary_visible` (`owner.role != 'admin'`), so the link would 404/403 through
-`assert_room_access`; the endpoint omits it rather than hand out a dead button.
-Opening a real one goes through the existing `/diaries/{roomId}` route — access
-is re-checked there too, this endpoint grants no new room permission.
+and **`null` for an admin target unless `users.diary_public` is set** — a plain
+admin's personal channel fails `diary_visible` (`owner.role == 'admin'` without
+`diary_public`), so the link would 404/403 through `assert_room_access`; the
+endpoint omits it rather than hand out a dead button. When `diary_public` is set
+(see [ROOMS.md](ROOMS.md), [AUTH.md](AUTH.md)) the link is included — the target
+is already same-intake by construction (`_roster`), matching `diary_visible`'s
+other requirement. Opening a real one goes through the existing `/diaries/{roomId}`
+route — access is re-checked there too, this endpoint grants no new room permission.
 
 ## Detail 404 vs 403
 
 `GET /api/argonauts/{user_id}` re-applies the same roster filter and returns
-**404** (not 403) for anyone outside it — a foreign-intake user, an observer, or
-a nonexistent id are indistinguishable to the caller, so the response doesn't
-confirm whether an id exists outside their own intake. (Admins ARE in the
-roster now, so an admin id resolves normally — see "Roster composition".)
+**404** (not 403) for anyone outside it — a foreign-intake user or a nonexistent
+id are indistinguishable to the caller, so the response doesn't confirm whether
+an id exists outside their own intake. (Admins and observers ARE in the roster,
+so their ids resolve normally — see "Roster composition".)
 
 ## Frontend
 

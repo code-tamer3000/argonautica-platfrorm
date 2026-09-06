@@ -3,14 +3,15 @@
 Сборочный эндпоинт в стиле dashboard.py — новой бизнес-логики нет, только
 композиция уже существующих правил видимости:
   - состав ростера = участники того же intake (ARG-112 «дневники» правило: только
-    поток, без рангового каскада тарифа ARG-110), минус наблюдатели (`is_observer`
-    флаг) И минус держатели тарифа `OBSERVER_TARIFF_NAME` — это ДВЕ независимые
-    группы (флаг ставится за 5 пропусков, тариф покупается с самого начала), обе
-    исключены из ростера целиком; админы в ростере ЕСТЬ (отдельная секция на
-    фронте), но без карточки задач — у них их нет по построению;
-  - фронт группирует плитки по тарифу (Игрок/Спецотряд/Око — см. lib/planGroups
-    `contactPlanKey`/`groupPreOrdered`), поэтому сортируем так же, как
-    `list_contacts` (ARG-110): участники по рангу тарифа, админы хвостовым блоком;
+    поток, без рангового каскада тарифа ARG-110), включая наблюдателей — это ДВЕ
+    независимые группы (флаг `is_observer` ставится за 5 пропусков, тариф
+    `OBSERVER_TARIFF_NAME` покупается с самого начала), обе показываются одной
+    секцией «Наблюдатели» в самом низу (`is_observer` в ответе — объединение
+    обоих признаков, а не колонка БД); админы в ростере ЕСТЬ (отдельная секция,
+    теперь ПЕРВАЯ), но без карточки задач — у них их нет по построению;
+  - фронт режет плитки на секции по соседним элементам (см. lib/planGroups
+    `groupPreOrdered`), порядок задаёт сервер: сначала админы, затем участники по
+    рангу тарифа (как `list_contacts`, ARG-110), затем наблюдатели хвостом;
   - `tasks_done`/`tasks` считаются по common-задачам, видимым СМОТРЯЩЕМУ
     (`_visible_common_where`, тот же двойной фильтр поток+тариф, что и в
     разделе «Задачи») — individual/pair/stream задачи чужому участнику не
@@ -65,32 +66,45 @@ VISIBLE_TASK_STATUSES = ("accepted", "submitted")
 # бизнес-контента по заголовку — задача не размечена флагом в БД.
 EXPEDITION_FEAT_TASK_TITLE = "Освобождаем оперативку"
 
-# Держатели этого тарифа исключены из ростера, как и is_observer (см. docstring
-# модуля). Тот же тариф — см. `app/services/visibility.py`.
+# Держатели этого тарифа — вторая группа наблюдателей рядом с флагом is_observer
+# (см. docstring модуля). Тот же тариф — см. `app/services/visibility.py`.
 OBSERVER_TARIFF_NAME = CHEAP_TARIFF_NAME
 
 
-async def _roster(session: AsyncSession, current_user: User) -> list[User]:
-    """Состав + порядок (участники по рангу тарифа, админы хвостом) — фронт режет
-    на секции по соседним элементам, ранги сам не пересчитывает (см. модуль)."""
+async def _roster(session: AsyncSession, current_user: User) -> tuple[list[User], set[int]]:
+    """Состав + порядок (админы, участники по рангу тарифа, наблюдатели хвостом)
+    и множество id наблюдателей — фронт режет на секции по соседним элементам,
+    ранги сам не пересчитывает (см. модуль)."""
     if current_user.intake_id is None:
-        return []
-    observer_plan_ids = select(Plan.id).where(Plan.name == OBSERVER_TARIFF_NAME)
+        return [], set()
     rows = await session.execute(
         select(User).where(
             User.intake_id == current_user.intake_id,
-            User.is_observer.is_(False),
             User.id != current_user.id,
-            # Без тарифа (plan_id IS NULL) НЕ считается держателем тарифа
-            # «Наблюдатель» — NOT IN с NULL слева не отфильтровал бы иначе
-            # (SQL three-valued logic), поэтому explicit OR.
-            or_(User.plan_id.is_(None), User.plan_id.not_in(observer_plan_ids)),
         )
     )
     users = list(rows.scalars().all())
+    # Держатель тарифа «Наблюдатель» без флага — тоже наблюдатель для ростера;
+    # без тарифа (plan_id IS NULL) — НЕ наблюдатель.
+    observer_plan_ids = set(
+        (
+            await session.execute(select(Plan.id).where(Plan.name == OBSERVER_TARIFF_NAME))
+        ).scalars()
+    )
+    observer_ids = {
+        u.id
+        for u in users
+        if u.is_observer or (u.plan_id is not None and u.plan_id in observer_plan_ids)
+    }
     ranks = await cohort_plan_ranks(session, current_user.intake_id)
-    users.sort(key=lambda u: (u.role == "admin", user_rank(u, ranks), u.display_name))
-    return users
+    users.sort(
+        key=lambda u: (
+            0 if u.role == "admin" else (2 if u.id in observer_ids else 1),
+            user_rank(u, ranks),
+            u.display_name,
+        )
+    )
+    return users, observer_ids
 
 
 async def _tasks_done_by_user(
@@ -182,7 +196,7 @@ async def list_argonauts(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[ArgonautOut]:
-    users = await _roster(session, current_user)
+    users, observer_ids = await _roster(session, current_user)
     media_ids = {u.avatar_media_id for u in users if u.avatar_media_id is not None}
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, users)
@@ -197,6 +211,7 @@ async def list_argonauts(
             plan_id=u.plan_id,
             plan_name=plans.get(u.plan_id) if u.plan_id is not None else None,
             tasks_done=done.get(u.id, 0),
+            is_observer=u.id in observer_ids,
         )
         for u in users
     ]
@@ -209,7 +224,7 @@ async def get_argonaut(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ArgonautDetailOut:
     # 404 (не 403): не подтверждаем клиенту существование юзера вне его потока.
-    roster = await _roster(session, current_user)
+    roster, observer_ids = await _roster(session, current_user)
     user = next((u for u in roster if u.id == user_id), None)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Argonaut not found")
@@ -217,9 +232,12 @@ async def get_argonaut(
     media_ids = {user.avatar_media_id} if user.avatar_media_id is not None else set()
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, [user])
-    # Личный канал админа не проходит diary_visible (owner.role != 'admin') —
-    # ссылка вела бы на 403, поэтому для админов её не отдаём вовсе.
-    diary_rooms = await _diary_room_ids(session, [user.id]) if user.role != "admin" else {}
+    # Личный канал админа не проходит diary_visible, если только не выставлен
+    # diary_public (см. app/models/user.py) — ссылка вела бы на 403, поэтому для
+    # обычных админов её не отдаём вовсе. Поток совпадает по построению — user уже
+    # прошёл через `_roster` (тот же intake, что у current_user).
+    diary_visible = user.role != "admin" or user.diary_public
+    diary_rooms = await _diary_room_ids(session, [user.id]) if diary_visible else {}
 
     rows = await session.execute(
         select(
@@ -264,6 +282,7 @@ async def get_argonaut(
         plan_id=user.plan_id,
         plan_name=plans.get(user.plan_id) if user.plan_id is not None else None,
         tasks_done=tasks_done,
+        is_observer=user.id in observer_ids,
         diary_room_id=diary_rooms.get(user.id),
         tasks=tasks,
         expedition_feat=expedition_feat,
