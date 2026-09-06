@@ -166,6 +166,18 @@ async def test_is_navigator_requires_admin_role(
     assert resp.status_code == 400
 
 
+async def test_diary_public_requires_admin_role(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    participant = await make_user()
+    resp = await client.patch(
+        f"/api/admin/users/{participant.id}", headers=admin_h, json={"diary_public": True}
+    )
+    assert resp.status_code == 400
+
+
 # --- POST /api/rooms: peer-check (IDOR из «Зачем») -----------------------------
 
 
@@ -335,7 +347,8 @@ async def test_admin_diary_hidden_from_others(
 ) -> None:
     """`create_user` заводит личный дневник любому аккаунту, включая admin — но
     Динамика не для админов, так что чужой admin-дневник не должен светиться в
-    «Все дневники». Видимость дневника теперь не завязана на тариф (ARG-112) —
+    «Все дневники» ПО УМОЛЧАНИЮ (`diary_public=False`, см. `test_admin_diary_visible_when_diary_public`
+    для явного opt-in). Видимость дневника теперь не завязана на тариф (ARG-112) —
     без явного исключения по роли он был бы виден любому того же потока."""
     _, users = await _three_tier_cohort(client, make_user)
     admin_room = await _make_personal_room(session, users["admin"].id)
@@ -369,6 +382,33 @@ async def test_admin_diary_labeled_admin_for_admin_viewer(
     row = next(r for r in listed.json() if r["id"] == admin_room.id)
     assert row["owner_plan_name"] == "Админ"
     assert row["owner_plan_id"] is not None
+
+
+async def test_admin_diary_visible_when_diary_public(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """`users.diary_public` — ручное разовое исключение из `test_admin_diary_hidden_from_others`:
+    один конкретный админ показывает дневник участникам СВОЕГО потока, остальные
+    админы остаются скрыты по умолчанию."""
+    _, users = await _three_tier_cohort(client, make_user)
+    admin_room = await _make_personal_room(session, users["admin"].id)
+    users["admin"].diary_public = True
+    session.add(users["admin"])
+    await session.commit()
+
+    oko_h = await _headers(client, users["oko"])
+    seen = await client.get(f"/api/rooms/{admin_room.id}", headers=oko_h)
+    assert seen.status_code == 200
+    listed = await client.get("/api/rooms", headers=oko_h)
+    assert admin_room.id in {r["id"] for r in listed.json()}
+
+    # Другой поток того же админа (гипотетически) не должен получить доступ —
+    # проверяем через держателя того же тарифа из ЧУЖОГО потока.
+    other_intake = await make_user(intake_starts_on=date.today() - timedelta(days=999))
+    outside = await client.get(
+        f"/api/rooms/{admin_room.id}", headers=await _headers(client, other_intake)
+    )
+    assert outside.status_code == 403
 
 
 # --- Контакт-лист: админ хвостовым блоком, не «Без тарифа» ---------------------

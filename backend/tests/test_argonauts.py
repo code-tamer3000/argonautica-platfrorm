@@ -163,8 +163,8 @@ async def test_detail_of_other_intake_is_404(client: AsyncClient, make_user: Mak
 
 
 async def test_admin_detail_has_no_diary_link(client: AsyncClient, make_user: MakeUser) -> None:
-    """Личный канал админа не проходит diary_visible (owner.role != 'admin') —
-    ссылка вела бы на 403, поэтому эндпоинт её не отдаёт."""
+    """Личный канал админа по умолчанию (`diary_public=False`) не проходит
+    diary_visible — ссылка вела бы на 403, поэтому эндпоинт её не отдаёт."""
     starts_on = date.today() - timedelta(days=207)
     viewer = await make_user(intake_starts_on=starts_on)
     admin = await make_user(intake_id=viewer.intake_id, role="admin")
@@ -174,6 +174,21 @@ async def test_admin_detail_has_no_diary_link(client: AsyncClient, make_user: Ma
     assert detail["role"] == "admin"
     assert detail["diary_room_id"] is None
     assert detail["tasks"] == []
+
+
+async def test_admin_detail_has_diary_link_when_diary_public(
+    client: AsyncClient, session: AsyncSession, make_user: MakeUser
+) -> None:
+    """`diary_public=True` — эндпоинт отдаёт ссылку на дневник этого админа
+    участнику того же потока (`diary_visible` теперь проходит)."""
+    starts_on = date.today() - timedelta(days=208)
+    viewer = await make_user(intake_starts_on=starts_on)
+    admin = await make_user(intake_id=viewer.intake_id, role="admin", diary_public=True)
+    room = await _make_personal_room(session, admin.id)
+
+    viewer_h = await _headers(client, viewer)
+    detail = (await client.get(f"/api/argonauts/{admin.id}", headers=viewer_h)).json()
+    assert detail["diary_room_id"] == room.id
 
 
 # --- tasks_done / детальный список задач --------------------------------------

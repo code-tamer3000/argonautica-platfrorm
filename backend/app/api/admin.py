@@ -78,6 +78,7 @@ _PATCHABLE_FIELDS = {
     "can_access_cabin",
     "is_observer",
     "is_navigator",
+    "diary_public",
     "role",
     "intake_id",
 }
@@ -426,6 +427,14 @@ async def update_user(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Навигатором может быть только админ",
+        )
+    # Публичность дневника (см. diary_public на User) имеет смысл только у admin —
+    # по тому же образцу.
+    final_diary_public = changes.get("diary_public", user.diary_public)
+    if final_role != "admin" and final_diary_public:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Публичный дневник может быть только у админа",
         )
     for field, value in changes.items():
         if field in _PATCHABLE_FIELDS:

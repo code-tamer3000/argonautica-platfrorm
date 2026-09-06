@@ -156,11 +156,14 @@ in that case would just be a guaranteed error, not a genuine edit affordance.
 `diary_room_id` = the target's personal channel (`rooms.is_personal AND
 rooms.created_by == user_id`), same lookup as `_personal_room_id` in
 `api/dynamics.py`. `null` if the person has none yet (button hidden client-side),
-and **always `null` for admins** — an admin's personal channel fails
-`diary_visible` (`owner.role != 'admin'`), so the link would 404/403 through
-`assert_room_access`; the endpoint omits it rather than hand out a dead button.
-Opening a real one goes through the existing `/diaries/{roomId}` route — access
-is re-checked there too, this endpoint grants no new room permission.
+and **`null` for an admin target unless `users.diary_public` is set** — a plain
+admin's personal channel fails `diary_visible` (`owner.role == 'admin'` without
+`diary_public`), so the link would 404/403 through `assert_room_access`; the
+endpoint omits it rather than hand out a dead button. When `diary_public` is set
+(see [ROOMS.md](ROOMS.md), [AUTH.md](AUTH.md)) the link is included — the target
+is already same-intake by construction (`_roster`), matching `diary_visible`'s
+other requirement. Opening a real one goes through the existing `/diaries/{roomId}`
+route — access is re-checked there too, this endpoint grants no new room permission.
 
 ## Detail 404 vs 403
 

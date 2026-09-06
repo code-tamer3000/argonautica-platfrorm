@@ -232,9 +232,12 @@ async def get_argonaut(
     media_ids = {user.avatar_media_id} if user.avatar_media_id is not None else set()
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, [user])
-    # Личный канал админа не проходит diary_visible (owner.role != 'admin') —
-    # ссылка вела бы на 403, поэтому для админов её не отдаём вовсе.
-    diary_rooms = await _diary_room_ids(session, [user.id]) if user.role != "admin" else {}
+    # Личный канал админа не проходит diary_visible, если только не выставлен
+    # diary_public (см. app/models/user.py) — ссылка вела бы на 403, поэтому для
+    # обычных админов её не отдаём вовсе. Поток совпадает по построению — user уже
+    # прошёл через `_roster` (тот же intake, что у current_user).
+    diary_visible = user.role != "admin" or user.diary_public
+    diary_rooms = await _diary_room_ids(session, [user.id]) if diary_visible else {}
 
     rows = await session.execute(
         select(

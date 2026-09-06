@@ -64,6 +64,7 @@ export function AdminUsers() {
   const [editCanCabin, setEditCanCabin] = useState(false)
   const [editObserver, setEditObserver] = useState(false)
   const [editNavigator, setEditNavigator] = useState(false)
+  const [editDiaryPublic, setEditDiaryPublic] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
   const [editIntake, setEditIntake] = useState<number | null>(null)
 
@@ -116,6 +117,7 @@ export function AdminUsers() {
     setEditCanCabin(user.can_access_cabin)
     setEditObserver(user.is_observer)
     setEditNavigator(user.is_navigator)
+    setEditDiaryPublic(user.diary_public)
     setEditRole(user.role as 'participant' | 'admin')
     setEditIntake(user.intake_id)
   }
@@ -145,6 +147,8 @@ export function AdminUsers() {
         is_observer: editRole === 'admin' ? false : editObserver,
         // Навигатор имеет смысл только у админа — у участника флаг всегда снят.
         is_navigator: editRole === 'admin' ? editNavigator : false,
+        // Публичный дневник имеет смысл только у админа — у участника флаг всегда снят.
+        diary_public: editRole === 'admin' ? editDiaryPublic : false,
         role: editRole,
         // Набор отправляем только если он выбран — отвязать участника нельзя.
         ...(editIntake !== null ? { intake_id: editIntake } : {}),
@@ -454,6 +458,19 @@ export function AdminUsers() {
                 />
                 <label htmlFor="is_navigator" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
                   Навигатор (виден и доступен для лички любому тарифу потока)
+                </label>
+              </div>
+            )}
+            {editRole === 'admin' && (
+              <div className={styles.checkRow}>
+                <input
+                  type="checkbox"
+                  id="diary_public"
+                  checked={editDiaryPublic}
+                  onChange={(e) => setEditDiaryPublic(e.target.checked)}
+                />
+                <label htmlFor="diary_public" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
+                  Личный дневник виден участникам его потока
                 </label>
               </div>
             )}

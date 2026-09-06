@@ -360,6 +360,9 @@ export interface AdminUserOut {
   // Навигатор (ARG-110): только у role='admin' — доступен для лички любому
   // тарифу своего потока, минуя ранговое ограничение.
   is_navigator: boolean
+  // Личный дневник этого админа показан участникам его потока в «Все дневники»
+  // (по умолчанию дневники админов скрыты, см. docs/ROOMS.md).
+  diary_public: boolean
   is_active: boolean
   graduated_at: string | null
   created_at: string

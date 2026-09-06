@@ -33,6 +33,12 @@
     reachable contact for participants, not to work the sales funnel; this is a
     UI declutter, not a new server-side permission (the backend endpoints behind
     it are unaffected, still gated by plain `require_admin`).
+  - `diary_public` (default false, only meaningful with `role=admin`) — this
+    specific admin's personal diary is shown to participants of their own intake
+    in «Все дневники» (admin diaries are hidden from participants by default, see
+    [ROOMS.md](ROOMS.md) `diary_visible`). Setting it on a non-admin → 400. Has no
+    effect on visibility to other admins (always unrestricted) or on the owner's
+    own view of their diary.
 
 ## JWT flow
 
@@ -60,7 +66,7 @@
 
 - Whole router under `require_admin`.
 - `POST /users` — server generates a one-time password, returns it **once**, sets `must_change_password=true`.
-- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, `is_navigator`, `intake_id`). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive); setting `is_navigator=true` on a non-admin → 400.
+- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, `is_navigator`, `diary_public`, `intake_id`). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive); setting `is_navigator=true` or `diary_public=true` on a non-admin → 400.
 - Bulk account creation runbook and the password-delivery bot: [OPERATIONS in archive] and [TELEGRAM_BOT.md](TELEGRAM_BOT.md).
 - **First admin (chicken-and-egg):** `POST /users` requires an admin already logged in, so the very first account on a fresh stack can't come from it. `backend/scripts/bootstrap_admin.py` is the one exception — run inside the backend container (`python -m scripts.bootstrap_admin <username>`): creates the user with `role=admin` if new (one-time password printed once), or promotes it in place if it already exists. Idempotent, safe to rerun. `make local-up` runs it automatically for `admin` on the local stack.
 
