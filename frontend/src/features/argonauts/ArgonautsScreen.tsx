@@ -6,7 +6,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { plural } from '../../lib/format'
-import { contactPlanKey, groupPreOrdered } from '../../lib/planGroups'
+import { groupPreOrdered } from '../../lib/planGroups'
 import type { ArgonautOut } from '../../lib/types'
 import styles from './argonauts.module.css'
 
@@ -18,7 +18,7 @@ function Tile({ a }: { a: ArgonautOut }) {
     >
       <Avatar name={a.display_name} url={a.avatar_url} size={64} />
       <div className={styles.tileName}>{a.display_name}</div>
-      {a.role !== 'admin' && a.tasks_done > 0 && (
+      {a.role !== 'admin' && !a.is_observer && a.tasks_done > 0 && (
         <div className={styles.tileMeta}>
           Выполнено {a.tasks_done} {plural(a.tasks_done, ['задача', 'задачи', 'задач'])}
         </div>
@@ -27,12 +27,28 @@ function Tile({ a }: { a: ArgonautOut }) {
   )
 }
 
+/** Заголовки секций ростера во множественном числе — тарифы «Спецотряд»/«Око»
+ * читаются как группа и так, их названия из БД не трогаем. */
+const SECTION_LABELS: Record<string, string> = {
+  Игрок: 'Игроки',
+  Наблюдатель: 'Наблюдатели',
+}
+
+/** Ключ секции ростера: админы (сервер ставит их первыми), затем тарифы, затем
+ * наблюдатели одной секцией — у них может быть любой тариф либо тариф
+ * «Наблюдатель», группирует их именно флаг, а не plan_id. */
+function argonautSectionKey(a: ArgonautOut): { id: number | null; name: string | null } {
+  if (a.role === 'admin') return { id: -1, name: 'Админы' }
+  if (a.is_observer) return { id: -2, name: 'Наблюдатели' }
+  return { id: a.plan_id, name: a.plan_name && (SECTION_LABELS[a.plan_name] ?? a.plan_name) }
+}
+
 export function ArgonautsScreen() {
   const { data, isLoading } = useArgonauts()
-  // Сервер уже отдал участников по рангу тарифа, админов — хвостом (ARG-110
-  // соглашение, см. api/argonauts.py `_roster`) — просто режем на секции по
+  // Сервер уже отдал порядок: админы, участники по рангу тарифа, наблюдатели
+  // хвостом (см. api/argonauts.py `_roster`) — просто режем на секции по
   // соседним элементам, как контакт-лист «начать чат».
-  const groups = groupPreOrdered(data ?? [], contactPlanKey)
+  const groups = groupPreOrdered(data ?? [], argonautSectionKey)
 
   return (
     <div className={styles.wrap}>

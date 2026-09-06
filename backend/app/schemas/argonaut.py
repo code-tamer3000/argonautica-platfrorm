@@ -1,6 +1,7 @@
 """Pydantic-схемы раздела «Аргонавты» (ростер потока + профиль участника).
 
-См. docs/ARGONAUTS.md: состав списка — весь intake смотрящего, кроме наблюдателей;
+См. docs/ARGONAUTS.md: состав списка — весь intake смотрящего, включая наблюдателей
+(отдельной секцией внизу);
 `tasks_done`/`tasks` считаются только по common-задачам, видимым смотрящему (тот же
 двойной фильтр поток+тариф, что и в разделе «Задачи»). `expedition_feat` — текст
 последней сдачи именованной задачи «Освобождаем оперативку» (см. EXPEDITION_FEAT_TASK_TITLE
@@ -23,6 +24,9 @@ class ArgonautOut(BaseModel):
     plan_id: int | None = None
     plan_name: str | None = None
     tasks_done: int
+    # Не колонка БД, а признак секции «Наблюдатели»: флаг `users.is_observer` ЛИБО
+    # тариф OBSERVER_TARIFF_NAME (см. api/argonauts.py `_roster`).
+    is_observer: bool = False
 
 
 class ArgonautTaskOut(BaseModel):
@@ -47,6 +51,7 @@ class ArgonautDetailOut(BaseModel):
     plan_id: int | None = None
     plan_name: str | None = None
     tasks_done: int
+    is_observer: bool = False
     diary_room_id: int | None = None
     tasks: list[ArgonautTaskOut]
     expedition_feat: str | None = None

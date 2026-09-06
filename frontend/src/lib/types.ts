@@ -78,6 +78,8 @@ export interface ArgonautOut {
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
+  /** Секция «Наблюдатели»: флаг users.is_observer ЛИБО тариф «Наблюдатель». */
+  is_observer: boolean
 }
 
 export type ArgonautTaskStatus = 'accepted' | 'submitted'
@@ -100,6 +102,7 @@ export interface ArgonautDetailOut {
   plan_id: number | null
   plan_name: string | null
   tasks_done: number
+  is_observer: boolean
   diary_room_id: number | null
   tasks: ArgonautTaskOut[]
   // Текст последней сдачи задачи «Освобождаем оперативку» (см. docs/ARGONAUTS.md).
