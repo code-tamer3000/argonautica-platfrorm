@@ -71,7 +71,7 @@
 
 ## Voice messages
 
-- Recorded audio is a normal attachment with `media_assets.kind='audio'`, same presigned flow. See [FILES.md](FILES.md).
+- Recorded audio is a normal attachment with `media_assets.kind='audio'`, same presigned flow. Uploaded as-is (WebM/Opus or AAC/MP4, whatever the sender's `MediaRecorder` produced) and normalized to AAC/M4A server-side in the background (same transcode worker/queue as video) so it plays on every recipient's device, iPhone included — see [FILES.md](FILES.md) "Audio transcode".
 
 ## Realtime (WebSocket + Redis)
 

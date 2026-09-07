@@ -13,6 +13,13 @@
    и margin у флекс-элемента увёл бы её вверх относительно текста. */
 .titleRow { margin-bottom: var(--space-4); }
 
+/* Кнопки «Категории»/«Создать»: на десктопе — в одной строке с заголовком, на
+   мобиле переносятся под него и без отступа слипались бы с полем поиска ниже. */
+.headerActions { margin-bottom: 0; }
+@media (max-width: 768px) {
+  .headerActions { width: 100%; justify-content: flex-end; margin-bottom: var(--space-4); }
+}
+
 .searchBar {
   margin-bottom: var(--space-5);
 }
@@ -70,6 +77,8 @@
   font-size: 16px;
   color: var(--text-primary);
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   line-height: 1.3;
 }
 

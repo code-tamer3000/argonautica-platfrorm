@@ -141,6 +141,17 @@ export function Lightbox({
         <LightboxVideo key={current.url} url={current.url} />
       )}
 
+      <button
+        className={styles.lightboxClose}
+        onClick={(e) => {
+          e.stopPropagation()
+          onClose()
+        }}
+        aria-label="Закрыть"
+      >
+        ✕
+      </button>
+
       {total > 1 && (
         <>
           <button

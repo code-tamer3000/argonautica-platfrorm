@@ -1,14 +1,19 @@
-"""Серверный транскод видео в стриминг-дружественный H.264 720p (docs/FILES.md).
+"""Серверный транскод видео (H.264 720p) и голосовых/аудио (AAC) — docs/FILES.md.
 
-Клиент льёт ОРИГИНАЛ видео как любой файл (никакого сжатия в браузере — оно било по
-батарее/памяти и заставляло ждать ДО заливки). Дальше видео обрабатывается в фоне
-воркером: качаем оригинал из MinIO → ffprobe → транскод в H.264 720p + `+faststart`
-(moov в начало, воспроизведение стартует до полной докачки) ИЛИ fast-path, если
-исходник уже совместим → заливаем вариант + постер обратно в MinIO. Метаданные
-варианта долговечны (Postgres, media_assets.variant_*), очередь/попытки — эфемерны
-(Redis, см. transcode_queue.py).
+Клиент льёт ОРИГИНАЛ (видео/аудио) как есть — никакого сжатия в браузере. Дальше файл
+обрабатывается в фоне воркером: качаем оригинал из MinIO → ffprobe → транскод ИЛИ
+fast-path, если исходник уже совместим → заливаем вариант (+ постер для видео) обратно
+в MinIO. Метаданные варианта долговечны (Postgres, media_assets.variant_*), очередь/
+попытки — эфемерны (Redis, см. transcode_queue.py).
 
-ВНИМАНИЕ (CLAUDE.md п.7): здесь байты видео проходят через бэкенд — это осознанное
+Аудио (kind='audio', голосовые чата и аудио-материалы) транскодится в AAC/M4A —
+единственный формат, который надёжно играет на iPhone: MediaRecorder на Android/десктопе
+пишет WebM/Opus, который Safari на многих версиях iOS не декодирует вовсе — голосовое
+у части получателей молча не звучит. Транскод — не про сжатие (см. `_audio_needs_transcode`,
+там нет отказа «легче не стало»): AAC может выйти тяжелее исходного Opus, это ожидаемо и
+не повод откатываться на оригинал.
+
+ВНИМАНИЕ (CLAUDE.md п.7): здесь байты видео/аудио проходят через бэкенд — это осознанное
 исключение из «медиа мимо FastAPI», как и генерация превью картинок. Работа тяжёлая
 (сеть + ffmpeg): гоняется ТОЛЬКО в воркере, никогда в request-пути. Все функции
 синхронные (subprocess/boto3) — в воркере они и так в своём процессе/потоке.
@@ -32,6 +37,10 @@ logger = logging.getLogger(__name__)
 VARIANT_PREFIX = "video/720/"
 VARIANT_MIME = "video/mp4"
 _TARGET_MAX_HEIGHT = 720
+
+# Зеркало для аудио: свой префикс/mime, тот же принцип (оригинал не трогаем).
+AUDIO_VARIANT_PREFIX = "audio/aac/"
+AUDIO_VARIANT_MIME = "audio/mp4"  # AAC в M4A-контейнере — играет на iOS/Android/десктопе
 
 
 class TranscodeError(Exception):
@@ -76,6 +85,13 @@ def build_variant_key(storage_key: str) -> str:
     name = storage_key.rsplit("/", 1)[-1]
     stem = name.rsplit(".", 1)[0] if "." in name else name
     return f"{VARIANT_PREFIX}{stem}.mp4"
+
+
+def build_audio_variant_key(storage_key: str) -> str:
+    """Ключ аудио-варианта: `audio/aac/<storage_key без каталогов>.m4a`."""
+    name = storage_key.rsplit("/", 1)[-1]
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    return f"{AUDIO_VARIANT_PREFIX}{stem}.m4a"
 
 
 def _ffprobe(path: str) -> ProbeResult:
@@ -148,6 +164,11 @@ def _needs_transcode(probe: ProbeResult) -> bool:
     )
 
 
+def _audio_needs_transcode(probe: ProbeResult) -> bool:
+    """Fast-path: уже AAC → транскодить не нужно (записи с iPhone уже в этом формате)."""
+    return probe.audio_codec != "aac"
+
+
 def _download(bucket: str, key: str, dst: str) -> int:
     """Скачать объект из MinIO в локальный файл; вернуть размер (байты)."""
     client = _server_client()
@@ -160,20 +181,8 @@ def _download(bucket: str, key: str, dst: str) -> int:
     return total
 
 
-def _run_ffmpeg_720p(src: str, dst: str) -> None:
-    """Перекодировать в H.264 720p, AAC 128k, +faststart. Бросает TranscodeError.
-
-    scale=-2:min(720,ih) — не апскейлим (min с исходной высотой), -2 держит чётную
-    ширину (libx264 требует чётные размеры). preset veryfast / crf 23 — из спеки.
-    """
-    cmd = [
-        "ffmpeg", "-v", "error", "-y", "-i", src,
-        "-vf", "scale=-2:min(720\\,ih)",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
-        "-c:a", "aac", "-b:a", "128k",
-        "-movflags", "+faststart",
-        dst,
-    ]
+def _run_ffmpeg(cmd: list[str]) -> None:
+    """Прогнать ffmpeg-команду; бросает TranscodeError при таймауте/сбое/rc≠0."""
     try:
         proc = subprocess.run(
             cmd, capture_output=True,
@@ -188,6 +197,36 @@ def _run_ffmpeg_720p(src: str, dst: str) -> None:
             f"ffmpeg rc={proc.returncode}: "
             f"{proc.stderr[:500].decode('utf-8', 'replace')}"
         )
+
+
+def _run_ffmpeg_720p(src: str, dst: str) -> None:
+    """Перекодировать в H.264 720p, AAC 128k, +faststart.
+
+    scale=-2:min(720,ih) — не апскейлим (min с исходной высотой), -2 держит чётную
+    ширину (libx264 требует чётные размеры). preset veryfast / crf 23 — из спеки.
+    """
+    _run_ffmpeg([
+        "ffmpeg", "-v", "error", "-y", "-i", src,
+        "-vf", "scale=-2:min(720\\,ih)",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        dst,
+    ])
+
+
+def _run_ffmpeg_aac(src: str, dst: str) -> None:
+    """Перекодировать аудио в AAC/M4A, +faststart. Без видеодорожки (`-vn`).
+
+    128k — тот же битрейт, что у аудиодорожки видео-варианта; голосовые (моно, речь)
+    столько не весят, но пересжимать под битрейт смысла нет — цель здесь совместимость
+    с iOS, а не экономия байт (см. модульный докстринг)."""
+    _run_ffmpeg([
+        "ffmpeg", "-v", "error", "-y", "-i", src,
+        "-vn", "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        dst,
+    ])
 
 
 def _extract_poster(src: str, duration: int | None) -> bytes | None:
@@ -306,6 +345,59 @@ def transcode_asset(
             variant_key=variant_key,
             variant_mime=variant_mime,
             poster_key=poster_key,
+            duration=probe.duration,
+        )
+    finally:
+        for path in (src_path, dst_path):
+            if path and os.path.exists(path):
+                os.unlink(path)
+
+
+def transcode_audio_asset(
+    bucket: str, storage_key: str, source_mime: str | None = None
+) -> TranscodeResult:
+    """Полный прогон над одним аудио-объектом (голосовое чата/аудио-материал).
+
+    Шаги: скачать → ffprobe → fast-path (уже AAC) ИЛИ ffmpeg → AAC/M4A → залить
+    вариант. Оригинал в MinIO не трогаем. Размер уже ограничен на загрузке
+    (`media_max_audio_bytes`, 200 МБ) — отдельного гардрейла здесь не нужно, в отличие
+    от видео. `poster_key` в результате всегда None — у аудио нет постера.
+
+    В отличие от `transcode_asset`, здесь НЕТ отката на оригинал «легче не стало» —
+    цель транскода не сжатие, а совместимость с iOS (см. докстринг модуля).
+    """
+    if not storage_key:
+        raise TranscodeError("empty storage_key")
+
+    src_path: str | None = None
+    dst_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".src", delete=False) as tmp:
+            src_path = tmp.name
+        _download(bucket, storage_key, src_path)
+
+        probe = _ffprobe(src_path)
+        client = _server_client()
+        if _audio_needs_transcode(probe):
+            with tempfile.NamedTemporaryFile(suffix=".m4a", delete=False) as tmp:
+                dst_path = tmp.name
+            _run_ffmpeg_aac(src_path, dst_path)
+            variant_key = build_audio_variant_key(storage_key)
+            with open(dst_path, "rb") as fh:
+                client.put_object(
+                    Bucket=bucket, Key=variant_key,
+                    Body=fh, ContentType=AUDIO_VARIANT_MIME,
+                )
+            variant_mime = AUDIO_VARIANT_MIME
+        else:
+            # Fast-path: уже AAC (типично записи с iPhone) — отдаём исходник как вариант.
+            variant_key = storage_key
+            variant_mime = source_mime or AUDIO_VARIANT_MIME
+
+        return TranscodeResult(
+            variant_key=variant_key,
+            variant_mime=variant_mime,
+            poster_key=None,
             duration=probe.duration,
         )
     finally:

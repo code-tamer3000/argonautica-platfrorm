@@ -5,13 +5,6 @@
 .list { display: flex; flex-direction: column; gap: var(--space-3); }
 .listItem { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
 .listItemMain { display: flex; align-items: center; gap: var(--space-3); flex: 1; min-width: 0; }
-/* Строка задачи в списке: основной ряд + (для individual) строка адресатов под ним. */
-.taskItem { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
-.taskItemRow { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
-.assigneeLine { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: 0.75rem; color: var(--text-secondary); }
-.assigneeLineLabel { color: var(--text-secondary); }
-.assigneeChip { padding: 2px var(--space-2); background: var(--divider); color: var(--text-primary); border-radius: 9999px; }
-.assigneeEmpty { color: var(--blood-bright); }
 .listTitle { font-family: var(--font-t4); color: var(--text-primary); font-size: var(--text-ui); }
 .listMeta { font-size: 0.75rem; color: var(--text-secondary); }
 .listActions { display: flex; gap: var(--space-2); flex-shrink: 0; }
@@ -61,7 +54,7 @@
 .sectionEmoji { width: 3.5rem; flex: none; text-align: center; background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-2); color: var(--text-primary); font-size: var(--text-ui); box-sizing: border-box; }
 .sectionButtons { display: flex; gap: var(--space-1); flex: none; }
 .sectionButtons button { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); width: 1.9rem; height: 1.9rem; cursor: pointer; color: var(--text-primary); }
-.checkRow { display: flex; align-items: center; gap: var(--space-3); }
+.checkRow { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .formActions { display: flex; justify-content: flex-end; gap: var(--space-3); padding-top: var(--space-2); }
 .mediaGrid { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
 .mediaItem { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
@@ -147,10 +140,6 @@
   /* Кнопка «Открыть» обёрнута в <Link> — тянем и ссылку, и кнопку внутри. */
   .listActions > a { display: flex; }
   .listActions > a > * { flex: 1 1 auto; width: 100%; }
-
-  /* Задача (раздел «Задачи»): та же логика — заголовок/мета сверху, ряд из 4
-     кнопок отдельной строкой на всю ширину, иначе всё съезжает и наезжает. */
-  .taskItemRow { flex-direction: column; align-items: stretch; gap: var(--space-3); }
 
   /* Модалка/форма на всю ширину экрана. */
   .form { max-width: 100%; }

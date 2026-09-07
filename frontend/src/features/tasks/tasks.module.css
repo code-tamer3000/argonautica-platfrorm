@@ -13,6 +13,13 @@
 /* см. KbList: отступ на ряду, иначе кнопка «Назад» встаёт выше заголовка. */
 .titleRow { margin-bottom: var(--space-4); }
 
+/* Кнопка «Создать»: на десктопе — в одной строке с заголовком, на мобиле, если
+   переносится под него, не должна слипаться с вкладками ниже. */
+.headerActions { margin-bottom: 0; }
+@media (max-width: 768px) {
+  .headerActions { width: 100%; justify-content: flex-end; margin-bottom: var(--space-4); }
+}
+
 /* Прогресс «Выполнено X из Y». */
 .progressBar {
   display: flex;
@@ -33,6 +40,55 @@
   gap: var(--space-4);
 }
 
+/* Вкладки админа верхнего уровня (Активные/Истёк срок). */
+.tabsRow {
+  margin-bottom: var(--space-4);
+}
+
+/* Заголовок секции + фильтр по тарифам в одной строке (только «Общие»). */
+.sectionHeadRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.sectionHeadRow .sectionTitle {
+  margin: 0;
+}
+
+/* Фильтр общих задач по тарифам: кнопка со свёрнутой панелью чекбоксов. */
+.planFilter {
+  position: relative;
+  display: inline-flex;
+}
+.planFilterPanel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 200px;
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  padding: var(--space-3) var(--space-4);
+  box-shadow: var(--glow-gold);
+}
+.planFilterChip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .card:hover {
   border-color: var(--divider-gold);
   box-shadow: var(--glow-gold);
@@ -50,6 +106,8 @@
   font-size: 16px;
   color: var(--text-primary);
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
   line-height: 1.3;
 }
 

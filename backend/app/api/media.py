@@ -183,11 +183,13 @@ async def confirm_upload(
         width=body.width,
         height=body.height,
         duration=body.duration,
-        # Видео уходит в фоновый транскод (H.264 720p + faststart). Помечаем
-        # 'processing' сразу: attachment-payload вернёт это состояние, клиент покажет
-        # спиннер/постер, а по готовности воркер сменит на 'done' и пришлёт WS-событие.
-        # Оригинал заливается как есть — никакого сжатия в браузере (docs/FILES.md).
-        transcode_status="processing" if intent["kind"] == "video" else None,
+        # Видео/аудио уходят в фоновый транскод (видео → H.264 720p+faststart, аудио →
+        # AAC/M4A ради совместимости с iOS). Помечаем 'processing' сразу: у видео это
+        # даёт клиенту спиннер/постер, у аудио — просто отдаём оригинал молча, пока
+        # вариант не готов (serving_key откатывается на storage_key). По готовности
+        # воркер сменит на 'done' и пришлёт WS-событие. Оригинал заливается как есть —
+        # никакого сжатия в браузере (docs/FILES.md).
+        transcode_status="processing" if intent["kind"] in ("video", "audio") else None,
         created_by=current_user.id,
     )
     session.add(asset)
@@ -226,10 +228,11 @@ async def confirm_upload(
     if thumb_key is not None or preview_key is not None:
         await session.flush()
 
-    # Видео → фоновый транскод. Ставим в очередь ТОЛЬКО после успешного commit (иначе
-    # воркер может забрать джобу до того, как строка появится в БД — «нашёл, а её нет»).
-    # Клиентский постер (thumb_key выше) даёт мгновенное превью, пока вариант готовится.
-    if asset.kind == "video":
+    # Видео/аудио → фоновый транскод. Ставим в очередь ТОЛЬКО после успешного commit
+    # (иначе воркер может забрать джобу до того, как строка появится в БД — «нашёл, а
+    # её нет»). Клиентский постер (thumb_key выше) даёт видео мгновенное превью, пока
+    # вариант готовится; у аудио превью нет — до готовности вариант отдаём оригинал.
+    if asset.kind in ("video", "audio"):
         asset_id = asset.id
         after_commit(session, lambda: enqueue_transcode(asset_id))
 
