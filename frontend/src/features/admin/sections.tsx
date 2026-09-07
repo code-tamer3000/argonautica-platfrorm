@@ -8,10 +8,8 @@ import { AdminFaq } from './AdminFaq'
 import { AdminFeedback } from './AdminFeedback'
 import { AdminFunnel } from './AdminFunnel'
 import { AdminJournal } from './AdminJournal'
-import { AdminKb } from './AdminKb'
 import { AdminStickers } from './AdminStickers'
 import { AdminSurvey } from './AdminSurvey'
-import { AdminTasks } from './AdminTasks'
 import { AdminUsers } from './AdminUsers'
 
 export type AdminGroupKey = 'intake' | 'progress' | 'support'
@@ -39,9 +37,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { path: 'users', label: 'Пользователи', group: 'intake', Component: AdminUsers },
   { path: 'dynamics', label: 'Динамика', group: 'progress', Component: AdminDynamics },
   { path: 'journal', label: 'Дневник', group: 'progress', Component: AdminJournal },
-  { path: 'tasks', label: 'Задачи', group: 'progress', Component: AdminTasks },
   { path: 'calendar', label: 'Календарь', group: 'progress', Component: AdminCalendar },
-  { path: 'kb', label: 'База знаний', group: 'progress', Component: AdminKb },
   { path: 'cabin', label: 'Каюта', group: 'progress', Component: AdminCabin },
   { path: 'feedback', label: 'Обращения', group: 'support', Component: AdminFeedback },
   { path: 'faq', label: 'FAQ', group: 'support', Component: AdminFaq },

@@ -1,30 +1,33 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   useAdminAssignments,
+  useCreateTask,
+  useDeleteTask,
   useTasks,
+  useUpdateTask,
   type MyTaskStatus,
-  type TaskType,
   type TaskWithStatusOut,
 } from '../../api/tasks'
+import { useAdminPlans } from '../../api/plans'
 import { useUsersMap } from '../../api/users'
 import { useAuth } from '../auth/AuthContext'
 import { BackButton } from '../../components/BackButton'
 import ph from '../../components/pageHeader.module.css'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
+import { Button } from '../../components/Button'
 import { Chip, type ChipKind } from '../../components/Chip'
 import { cardClass } from '../../components/Card'
+import { Segmented } from '../../components/Segmented'
+import { KebabMenu } from '../../components/KebabMenu'
+import { ConfirmDialog } from '../../components/ConfirmDialog'
+import { Modal } from '../../components/Overlay'
+import { toast } from '../../stores/toast'
 import { dayLabel } from '../../lib/format'
 import { useUiStore } from '../../stores/ui'
+import { TaskForm, TYPE_LABEL, type TaskFormValues } from './TaskForm'
 import styles from './tasks.module.css'
-
-const TYPE_LABEL: Record<TaskType, string> = {
-  common: 'Общая',
-  individual: 'Индивидуальная',
-  pair: 'Парная',
-  stream: 'Поток',
-}
 
 const STATUS_LABEL: Record<Exclude<MyTaskStatus, null>, string> = {
   assigned: 'Назначена',
@@ -60,12 +63,31 @@ function AssigneeChips({ taskId }: { taskId: number }) {
   )
 }
 
-function TaskCard({ task, isAdmin }: { task: TaskWithStatusOut; isAdmin: boolean }) {
+function TaskCard({
+  task,
+  isAdmin,
+  onEdit,
+  onDelete,
+}: {
+  task: TaskWithStatusOut
+  isAdmin: boolean
+  onEdit?: () => void
+  onDelete?: () => void
+}) {
   return (
     <Link to={`/tasks/${task.id}`} className={cardClass({ interactive: true })}>
       <div className={styles.cardHead}>
         <span className={styles.cardTitle}>{task.title}</span>
         <Badge tone="accent">{TYPE_LABEL[task.type]}</Badge>
+        {isAdmin && onEdit && onDelete && (
+          <KebabMenu
+            ariaLabel="Действия с задачей"
+            items={[
+              { key: 'edit', label: 'Редактировать', onClick: onEdit },
+              { key: 'delete', label: 'Удалить', onClick: onDelete, danger: true },
+            ]}
+          />
+        )}
       </div>
       <div className={styles.cardChips}>
         {task.my_status && (
@@ -96,42 +118,20 @@ function TaskCard({ task, isAdmin }: { task: TaskWithStatusOut; isAdmin: boolean
   )
 }
 
-// Сворачиваемая секция списка. Раскрытой по умолчанию оставляем только одну
-// (активные общие) — остальных задач у админа кратно больше, и они топят главное.
-function CollapsibleSection({
-  title,
-  tasks,
-  isAdmin,
-  defaultOpen = false,
-}: {
-  title: string
-  tasks: TaskWithStatusOut[]
-  isAdmin: boolean
-  defaultOpen?: boolean
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  if (tasks.length === 0) return null
-  return (
-    <section className={styles.section}>
-      <button
-        type="button"
-        className={styles.sectionToggle}
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        {open ? '▾' : '▸'} {title}
-        <span className={styles.sectionCount}>{tasks.length}</span>
-      </button>
-      {open && (
-        <div className={styles.grid}>
-          {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} isAdmin={isAdmin} />
-          ))}
-        </div>
-      )}
-    </section>
-  )
-}
+type DeadlineTab = 'active' | 'overdue'
+type TypeTab = 'common' | 'individual' | 'group' | 'cross'
+
+const DEADLINE_TABS = [
+  { value: 'active' as const, label: 'Активные' },
+  { value: 'overdue' as const, label: 'Истёк срок' },
+]
+
+const TYPE_TABS = [
+  { value: 'common' as const, label: 'Общие' },
+  { value: 'individual' as const, label: 'Индивидуальные' },
+  { value: 'group' as const, label: 'Парные и потоки' },
+  { value: 'cross' as const, label: 'Перекрёстные' },
+]
 
 export function TasksList() {
   const { data, isLoading } = useTasks()
@@ -139,9 +139,9 @@ export function TasksList() {
   const isAdmin = user?.role === 'admin'
   // «Текущая экспедиция» (ARG-104): для admin этот экран не гейтится сервером
   // вообще (полный доступ) — сужаем отображение тем же общим контекстом, что и
-  // /admin/tasks. Индивидуальные/парные/потоковые задачи всегда intake_id=NULL
-  // (видимость на назначении, не потоке) — фильтр их не трогает. Выбирается ОДИН
-  // раз в /admin/expeditions, здесь только читаем — без своего контрола/баннера.
+  // раньше был у /admin/tasks. Индивидуальные/парные/потоковые задачи всегда
+  // intake_id=NULL (видимость на назначении, не потоке) — фильтр их не трогает.
+  // Выбирается ОДИН раз в /admin/expeditions, здесь только читаем.
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const intakeFiltered = isAdmin && currentIntakeId != null
 
@@ -154,21 +154,143 @@ export function TasksList() {
   const mine = items.filter((t) => t.my_status !== 'accepted')
   const mineDone = items.filter((t) => t.my_status === 'accepted')
 
-  // Админ: активные режем по типу, чтобы общие не тонули среди индивидуальных и
-  // перекрёстных (последних — по 2 на каждую пару задания).
-  const activeItems = items.filter((t) => !isOverdue(t))
-  const overdue = items.filter(isOverdue)
-  const activeCross = activeItems.filter((t) => t.pair_id != null)
-  const activeMain = activeItems.filter((t) => t.pair_id == null)
-  const activeCommon = activeMain.filter((t) => t.type === 'common')
-  const activeIndividual = activeMain.filter((t) => t.type === 'individual')
-  const activeGroup = activeMain.filter((t) => t.type === 'pair' || t.type === 'stream')
+  // Админ: два уровня вкладок — Активные/Истёк срок, внутри — Общие/Индивидуальные/
+  // Парные и потоки/Перекрёстные.
+  const [deadlineTab, setDeadlineTab] = useState<DeadlineTab>('active')
+  const [typeTab, setTypeTab] = useState<TypeTab>('common')
+
+  const deadlineItems = items.filter((t) => (deadlineTab === 'active' ? !isOverdue(t) : isOverdue(t)))
+  // Перекрёстные проверяем первыми — pair_id != null может стоять и на «обычной»
+  // задаче типа pair (сама задача пары), поэтому перекрёстность решает не type.
+  const crossItems = deadlineItems.filter((t) => t.pair_id != null)
+  const mainItems = deadlineItems.filter((t) => t.pair_id == null)
+  const commonItems = mainItems.filter((t) => t.type === 'common')
+  const individualItems = mainItems.filter((t) => t.type === 'individual')
+  const groupItems = mainItems.filter((t) => t.type === 'pair' || t.type === 'stream')
+
+  // Фильтр общих задач по тарифам (только вкладка «Общие»). Все тарифы отмечены
+  // по умолчанию; задача без ограничений (plan_ids пуст) видна всегда.
+  const { data: plans = [] } = useAdminPlans()
+  const [selectedPlanIds, setSelectedPlanIds] = useState<Set<number> | null>(null)
+  useEffect(() => {
+    if (selectedPlanIds == null && plans.length > 0) {
+      setSelectedPlanIds(new Set(plans.map((p) => p.id)))
+    }
+  }, [plans, selectedPlanIds])
+
+  function togglePlanFilter(id: number) {
+    setSelectedPlanIds((prev) => {
+      const next = new Set(prev ?? plans.map((p) => p.id))
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const commonItemsFiltered =
+    typeTab === 'common' && selectedPlanIds != null
+      ? commonItems.filter(
+          (t) => t.plan_ids.length === 0 || t.plan_ids.some((id) => selectedPlanIds.has(id)),
+        )
+      : commonItems
+
+  const tabItems: Record<TypeTab, TaskWithStatusOut[]> = {
+    common: commonItemsFiltered,
+    individual: individualItems,
+    group: groupItems,
+    cross: crossItems,
+  }
+  const visibleItems = tabItems[typeTab]
+
+  const createTask = useCreateTask()
+  const updateTask = useUpdateTask()
+  const deleteTask = useDeleteTask()
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editTask, setEditTask] = useState<TaskWithStatusOut | null>(null)
+  const [deleteTaskId, setDeleteTaskId] = useState<number | null>(null)
+
+  function handleCreate(values: TaskFormValues) {
+    if (values.type === 'pair' && values.pairs.length === 0) {
+      toast('Добавьте хотя бы одну пару', 'error')
+      return
+    }
+    if (values.type === 'stream' && values.participant_ids.length < 2) {
+      toast('В потоке должно быть минимум два участника', 'error')
+      return
+    }
+    createTask.mutate(
+      {
+        type: values.type,
+        title: values.title,
+        body: values.body || null,
+        deadline_at: values.deadline_at,
+        kb_item_id: values.kb_item_id,
+        assignee_ids: values.type === 'individual' ? values.assignee_ids : undefined,
+        pairs:
+          values.type === 'pair'
+            ? values.pairs.map(([a, b]) => ({ user_ids: [a, b] as [number, number] }))
+            : undefined,
+        participant_ids: values.type === 'stream' ? values.participant_ids : undefined,
+        media_asset_ids: values.media.map((m) => m.id),
+        intake_id: values.type === 'common' ? values.intake_id : undefined,
+        plan_ids: values.type === 'common' ? values.plan_ids : undefined,
+      },
+      {
+        onSuccess: () => {
+          toast('Создано')
+          setCreateOpen(false)
+        },
+        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+      },
+    )
+  }
+
+  function handleEdit(values: TaskFormValues) {
+    if (!editTask) return
+    updateTask.mutate(
+      {
+        id: editTask.id,
+        title: values.title,
+        body: values.body || null,
+        deadline_at: values.deadline_at,
+        kb_item_id: values.kb_item_id,
+        media_asset_ids: values.media.map((m) => m.id),
+        intake_id: editTask.type === 'common' ? values.intake_id : undefined,
+        plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
+      },
+      {
+        onSuccess: () => {
+          toast('Сохранено')
+          setEditTask(null)
+        },
+        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+      },
+    )
+  }
+
+  function handleDelete() {
+    if (deleteTaskId == null) return
+    deleteTask.mutate(deleteTaskId, {
+      onSuccess: () => {
+        toast('Удалено')
+        setDeleteTaskId(null)
+      },
+      onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+    })
+  }
 
   return (
     <div className={styles.page}>
-      <div className={`${ph.titleRow} ${styles.titleRow}`}>
-        <BackButton />
-        <h1 className={styles.pageTitle}>Задачи</h1>
+      <div className={ph.pageHeader}>
+        <div className={`${ph.titleRow} ${styles.titleRow}`}>
+          <BackButton />
+          <h1 className={styles.pageTitle}>Задачи</h1>
+        </div>
+        {isAdmin && (
+          <div className={ph.pageHeaderActions}>
+            <Button onClick={() => setCreateOpen(true)}>Создать</Button>
+          </div>
+        )}
       </div>
 
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
@@ -180,24 +302,56 @@ export function TasksList() {
       )}
 
       {isAdmin ? (
-        <>
-          {activeCommon.length > 0 && (
-            <section className={styles.section}>
-              <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>
-                Активные общие
-              </h2>
-              <div className={styles.grid}>
-                {activeCommon.map((task) => (
-                  <TaskCard key={task.id} task={task} isAdmin />
+        items.length > 0 && (
+          <>
+            <Segmented
+              className={styles.tabsRow}
+              options={DEADLINE_TABS}
+              value={deadlineTab}
+              onChange={setDeadlineTab}
+              label="Срок"
+            />
+            <Segmented
+              className={styles.tabsRow}
+              options={TYPE_TABS.map((t) => ({ ...t, label: `${t.label} (${tabItems[t.value].length})` }))}
+              value={typeTab}
+              onChange={setTypeTab}
+              label="Тип задачи"
+            />
+
+            {typeTab === 'common' && plans.length > 0 && (
+              <div className={styles.planFilterRow}>
+                <span className={styles.planFilterLabel}>Тарифы:</span>
+                {plans.map((plan) => (
+                  <label key={plan.id} className={styles.planFilterChip}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPlanIds?.has(plan.id) ?? true}
+                      onChange={() => togglePlanFilter(plan.id)}
+                    />
+                    {plan.name}
+                  </label>
                 ))}
               </div>
-            </section>
-          )}
-          <CollapsibleSection title="Индивидуальные" tasks={activeIndividual} isAdmin />
-          <CollapsibleSection title="Парные и потоки" tasks={activeGroup} isAdmin />
-          <CollapsibleSection title="Перекрёстные из пар" tasks={activeCross} isAdmin />
-          <CollapsibleSection title="Истёк срок" tasks={overdue} isAdmin />
-        </>
+            )}
+
+            {visibleItems.length === 0 ? (
+              <div className="center muted" style={{ padding: 40 }}>Здесь пусто</div>
+            ) : (
+              <div className={styles.grid}>
+                {visibleItems.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    isAdmin
+                    onEdit={() => setEditTask(task)}
+                    onDelete={() => setDeleteTaskId(task.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )
       ) : (
         <>
           {mine.length > 0 && (
@@ -221,6 +375,27 @@ export function TasksList() {
             </section>
           )}
         </>
+      )}
+
+      {createOpen && (
+        <Modal title="Создать задачу" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
+          <TaskForm onSubmit={handleCreate} />
+        </Modal>
+      )}
+
+      {editTask && (
+        <Modal title="Редактировать задачу" onClose={() => setEditTask(null)} closeOnBackdrop={false}>
+          <TaskForm initial={editTask} onSubmit={handleEdit} />
+        </Modal>
+      )}
+
+      {deleteTaskId != null && (
+        <ConfirmDialog
+          title="Удалить задачу?"
+          text="Действие необратимо."
+          onConfirm={handleDelete}
+          onClose={() => setDeleteTaskId(null)}
+        />
       )}
     </div>
   )

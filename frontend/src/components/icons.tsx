@@ -31,6 +31,7 @@ import {
   ListChecks,
   Lock,
   Menu,
+  MoreVertical,
   Settings,
   Smile,
   Sticker,
@@ -91,6 +92,7 @@ export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
 export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
 export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />
 export const IconSun = (p: IconProps) => <Sun {...DEFAULTS} {...p} />
+export const IconKebab = (p: IconProps) => <MoreVertical {...DEFAULTS} {...p} />
 export const IconMoon = (p: IconProps) => <Moon {...DEFAULTS} {...p} />
 export const IconLock = (p: IconProps) => <Lock {...DEFAULTS} {...p} />
 // Панель форматирования композера (жирный/курсив/подчёркнутый).
