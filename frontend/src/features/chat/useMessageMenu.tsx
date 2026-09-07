@@ -73,9 +73,10 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
     if (onRepost && user?.role === 'admin' && !isNews && !isGraduated) {
       items.push({ key: 'repost', label: 'Репост в новости', icon: <IconNews size={18} />, onClick: () => onRepost(msg) })
     }
-    // Автор сообщения → его карточка в «Аргонавтах». Своего профиля в ростере нет
-    // (api/argonauts.py `_roster` исключает вызывающего) — на своих сообщениях
-    // пункт не показываем. Чтение, а не запись: выпускнику (isGraduated) доступно.
+    // Автор сообщения → его карточка в «Аргонавтах». На своих сообщениях пункт
+    // не показываем — открывать профиль самого себя из меню сообщения не нужно,
+    // даже когда своя плитка есть в общем ростере (см. ArgonautsScreen.tsx).
+    // Чтение, а не запись: выпускнику (isGraduated) доступно.
     if (user?.id !== msg.sender_id) {
       items.push({
         key: 'profile',
