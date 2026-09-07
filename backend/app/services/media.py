@@ -549,12 +549,12 @@ async def presign_asset_urls(
 
 
 def serving_key(asset: MediaAsset) -> str:
-    """Какой объект отдаём под `url`. Видео с готовым транскодом — вариант; всё
-    остальное (не видео, транскод не готов/провалился/легаси) — оригинал. Так
+    """Какой объект отдаём под `url`. Видео/аудио с готовым транскодом — вариант; всё
+    остальное (не video/audio, транскод не готов/провалился/легаси) — оригинал. Так
     stale-клиент и упавший транскод всё равно получают воспроизводимый/скачиваемый
-    оригинал (docs/FILES.md «Транскод видео», rollout с blue-green)."""
+    оригинал (docs/FILES.md «Транскод видео»/«Транскод аудио», rollout с blue-green)."""
     if (
-        asset.kind == "video"
+        asset.kind in ("video", "audio")
         and asset.transcode_status == "done"
         and asset.variant_key
     ):

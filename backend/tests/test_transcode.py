@@ -1,16 +1,18 @@
-"""Тесты серверного транскода видео (docs/FILES.md «Транскод видео»).
+"""Тесты серверного транскода видео и аудио (docs/FILES.md «Транскод видео»/«Транскод аудио»).
 
 Реальные Postgres/Redis/MinIO из тестового стека, без моков. Полный путь:
-confirm видео → джоба в очереди + строка в 'processing' → воркер (`process_one_job`)
-качает из MinIO, гонит ffmpeg/ffprobe, заливает вариант+постер, обновляет БД и шлёт
-WS-событие. Плюс fast-path (уже совместимое видео не перекодируется) и провал с
-ретраями (битый файл → 'failed', оригинал остаётся).
+confirm видео/аудио → джоба в очереди + строка в 'processing' → воркер
+(`process_one_job`) качает из MinIO, гонит ffmpeg/ffprobe, заливает вариант(+постер у
+видео), обновляет БД и шлёт WS-событие. Плюс fast-path (уже совместимый файл не
+перекодируется) и провал с ретраями (битый файл → 'failed', оригинал остаётся).
 
 Воркер дёргаем как `process_one_job()` (он самодостаточен: сам открывает сессию и
 берёт джобу из очереди) — так тест детерминирован и не поднимает отдельный процесс.
-Нужны ffmpeg/ffprobe в тестовом образе (есть, из backend/Dockerfile).
+Нужны ffmpeg/ffprobe в тестовом образе (есть, из backend/Dockerfile). Аудио-фикстуры не
+коммитим бинарником — синтезируем `ffmpeg -f lavfi` (синус) прямо в тесте.
 """
 import subprocess
+import tempfile
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
@@ -86,6 +88,58 @@ async def _upload_video(
         )
     ).json()
     return asset
+
+
+async def _upload_audio(
+    client: AsyncClient, headers: dict[str, str], data: bytes, content_type: str
+) -> dict[str, Any]:
+    """Залить голосовое/аудио (presigned-PUT) и подтвердить — зеркало `_upload_video`."""
+    ticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            json={"content_type": content_type, "size": len(data), "kind": "audio"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            ticket["upload_url"], content=data, headers={"Content-Type": content_type}
+        )
+        assert put.status_code == 200, put.text
+    asset = (
+        await client.post(
+            "/api/media/assets",
+            headers=headers,
+            json={"storage_key": ticket["storage_key"], "duration": 2},
+        )
+    ).json()
+    return asset
+
+
+def _synth_audio(suffix: str, codec: str, duration: float = 2.0) -> bytes:
+    """Синус заданной длительности, закодированный `codec`, в контейнер по `suffix`.
+
+    `codec='libopus'` + `.webm` — то, что пишет MediaRecorder на Android/десктопе.
+    `codec='aac'` + `.m4a` — то, что уже отдаёт запись с iPhone (для fast-path теста).
+    """
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        path = tmp.name
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-y",
+                "-f", "lavfi", "-i", f"sine=frequency=440:duration={duration}",
+                "-c:a", codec,
+                path,
+            ],
+            capture_output=True, timeout=30,
+        )
+        assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+        return Path(path).read_bytes()
+    finally:
+        import os
+
+        os.unlink(path)
 
 
 def _probe(path: str) -> dict[str, Any]:
@@ -349,6 +403,144 @@ async def test_too_long_video_fails_without_retries(
         assert serving_key(row) == row.storage_key
 
     # Очередь пуста — джобу не вернули на второй круг.
+    assert await process_one_job() is None
+
+
+# --- аудио: confirm ставит в processing + очередь ----------------------------
+
+
+async def test_confirm_audio_marks_processing_and_enqueues(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    webm = _synth_audio(".webm", "libopus")
+    asset = await _upload_audio(client, headers, webm, "audio/webm;codecs=opus")
+
+    url_out = (await client.get(f"/api/media/{asset['id']}", headers=headers)).json()
+    assert url_out["transcode_status"] == "processing"
+    # До готовности вариант — оригинал (в отличие от видео, аудио не даёт спиннер).
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as session:
+        row = await session.get(MediaAsset, asset["id"])
+        assert row is not None
+        assert serving_key(row) == row.storage_key
+    assert await _queue_has(asset["id"])
+
+
+# --- аудио: happy-path — WebM/Opus (Android/десктоп) → AAC/M4A --------------
+
+
+async def test_worker_transcodes_webm_opus_to_aac_with_ws(
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """WebM/Opus голосовое (то, что Android/десктоп кладёт в MediaRecorder, и что
+    Safari на iPhone не всегда декодирует) → воркер даёт AAC/M4A вариант, заполняет
+    duration из ffprobe и публикует WS attachment.updated."""
+    transport = ASGIWebSocketTransport(app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        owner = await make_user()
+        headers = await _headers(client, owner)
+        room = await make_room(created_by=owner.id)
+        await add_membership(room.id, owner.id, "owner")
+
+        webm = _synth_audio(".webm", "libopus")
+        asset = await _upload_audio(client, headers, webm, "audio/webm;codecs=opus")
+        await client.post(
+            f"/api/rooms/{room.id}/messages",
+            headers=headers,
+            json={"content": "голосовое", "attachment_ids": [asset["id"]]},
+        )
+
+        token = (await login(client, owner.username, "initpass123"))["access_token"]
+        async with aconnect_ws(f"http://test/ws?token={token}", client) as ws:
+            await ws.send_json({"type": "subscribe", "room_id": room.id})
+
+            processed = await process_one_job()
+            assert processed == asset["id"]
+
+            event = await _wait(ws, lambda m: m.get("type") == "attachment.updated")
+            assert event["room_id"] == room.id
+            att = event["attachment"]
+            assert att["asset_id"] == asset["id"]
+            assert att["transcode_status"] == "done"
+            assert att["kind"] == "audio"
+
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as session:
+        row = await session.get(MediaAsset, asset["id"])
+        assert row is not None
+        assert row.transcode_status == "done"
+        assert row.variant_key and row.variant_key.startswith("audio/aac/")
+        assert row.variant_mime == "audio/mp4"
+        assert row.duration is not None and row.duration > 0
+        assert serving_key(row) == row.variant_key
+        # У аудио нет постера (в отличие от видео).
+        assert row.thumb_key is None
+
+
+# --- аудио: fast-path — уже AAC (запись с iPhone) не перекодируется ----------
+
+
+async def test_audio_fast_path_skips_transcode(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    m4a = _synth_audio(".m4a", "aac")
+    asset = await _upload_audio(client, headers, m4a, "audio/mp4")
+
+    processed = await process_one_job()
+    assert processed == asset["id"]
+
+    from app.db.session import SessionLocal
+
+    async with SessionLocal() as session:
+        row = await session.get(MediaAsset, asset["id"])
+        assert row is not None
+        assert row.transcode_status == "done"
+        # Fast-path: вариант = сам оригинал, ffmpeg не гонялся.
+        assert row.variant_key == row.storage_key
+        assert row.duration is not None and row.duration > 0
+
+
+# --- аудио: провал → ретраи → failed, оригинал играбелен ---------------------
+
+
+async def test_corrupt_audio_fails_after_retries(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Зеркало test_corrupt_video_fails_after_retries для kind='audio'."""
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    asset = await _upload_audio(
+        client, headers, b"not a real audio file", "audio/webm;codecs=opus"
+    )
+    asset_id = asset["id"]
+
+    from app.core.config import settings
+    from app.db.session import SessionLocal
+
+    for _ in range(settings.transcode_max_attempts - 1):
+        processed = await process_one_job()
+        assert processed == asset_id
+        async with SessionLocal() as session:
+            row = await session.get(MediaAsset, asset_id)
+            assert row is not None and row.transcode_status == "processing"
+
+    processed = await process_one_job()
+    assert processed == asset_id
+    async with SessionLocal() as session:
+        row = await session.get(MediaAsset, asset_id)
+        assert row is not None
+        assert row.transcode_status == "failed"
+        assert row.variant_key is None
+        assert serving_key(row) == row.storage_key
+
     assert await process_one_job() is None
 
 

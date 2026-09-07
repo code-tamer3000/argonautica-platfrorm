@@ -107,6 +107,39 @@ async def test_video_candidate_disappears_once_done(
 
 
 @pytest.mark.asyncio
+async def test_audio_candidates_only_legacy_rows(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Зеркало test_video_candidates_only_legacy_rows для kind='audio'."""
+    owner = await make_user()
+    legacy = await _asset(session, owner, kind="audio", mime_type="audio/webm")
+    processing = await _asset(
+        session, owner, kind="audio", mime_type="audio/webm",
+        transcode_status="processing",
+    )
+    done = await _asset(
+        session, owner, kind="audio", mime_type="audio/webm",
+        transcode_status="done", variant_key="audio/aac/x.m4a",
+    )
+    failed = await _asset(
+        session, owner, kind="audio", mime_type="audio/webm",
+        transcode_status="failed",
+    )
+
+    ids = {a.id for a in await backfill.select_audio_candidates(session)}
+    assert legacy.id in ids
+    assert processing.id not in ids
+    assert done.id not in ids
+    assert failed.id not in ids
+
+    retry_ids = {
+        a.id for a in await backfill.select_audio_candidates(session, retry_failed=True)
+    }
+    assert {legacy.id, failed.id} <= retry_ids
+    assert done.id not in retry_ids
+
+
+@pytest.mark.asyncio
 async def test_image_candidates_and_limit(
     session: AsyncSession, make_user: MakeUser
 ) -> None:
