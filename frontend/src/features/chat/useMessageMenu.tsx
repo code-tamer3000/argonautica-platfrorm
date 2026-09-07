@@ -86,7 +86,15 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
       })
     }
     if (!isGraduated && (user?.id === msg.sender_id || user?.role === 'admin')) {
-      items.push({ key: 'delete', label: 'Удалить', icon: <IconTrash size={18} />, danger: true, onClick: () => del.mutate(msg.id) })
+      items.push({
+        key: 'delete',
+        label: 'Удалить',
+        icon: <IconTrash size={18} />,
+        danger: true,
+        onClick: () => {
+          if (window.confirm('Удалить сообщение?')) del.mutate(msg.id)
+        },
+      })
     }
     return items
   }
