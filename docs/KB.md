@@ -18,13 +18,25 @@ participant sees the category list to group the item list.
 - Assigning: `category_id` is a whitelisted field on `POST /items` and `PATCH /items/{id}`;
   a non-existent id → `404` (`assert_category_exists`). Set to `NULL` to unassign.
 - Frontend: `KbList` groups cards by category (empty categories hidden, «Без категории»
-  last; headings suppressed when everything is uncategorized). Admin panel has a
-  «Категории» manager (add/rename/delete) and a category `<select>` on the item form.
+  last; headings suppressed when everything is uncategorized). For admins the same
+  `/kb` screen also shows a «Категории» manager (`features/kb/CategoryManager.tsx`,
+  add/rename/delete — delete is two-step via `components/ConfirmDialog.tsx`) and a
+  category `<select>` on the item form.
 
 ## Authoring (admin only)
 
 - `POST /items` — draft by default. `PATCH /items/{id}` — whitelist fields. `DELETE /items/{id}` — bulk-deletes link rows first (FK), then the item.
 - `POST /items/{id}/media` — idempotent link to a `media_asset` (files uploaded via the normal media flow, see [FILES.md](FILES.md)). `DELETE /items/{id}/media/{asset_id}` — unlink.
+
+Admin actions live inline in the participant-facing screens, not in a separate admin
+panel — there is no `/admin/kb` anymore. `features/kb/KbList.tsx` (`/kb`) shows
+«Категории» + «Создать» buttons in the header (admin only) and a per-card
+`components/KebabMenu.tsx` with «Редактировать» / «Опубликовать»↔«Снять с публикации» /
+«Удалить». `features/kb/KbViewer.tsx` (`/kb/:id`) has the same three actions via a kebab
+in `PageHeader`; delete there navigates back to `/kb` on success. Delete is always
+two-step (`components/ConfirmDialog.tsx`), never `window.confirm`. The create/edit form
+(`features/kb/KbForm.tsx`) is the same component previously in the deleted
+`features/admin/AdminKb.tsx`.
 
 ## Reading (any participant)
 

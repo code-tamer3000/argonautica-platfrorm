@@ -1,31 +1,19 @@
 import { useRef, useState } from 'react'
 import { useAdminIntakes } from '../../api/admin'
-import {
-  useKbItems,
-  useKbItem,
-  useKbCategories,
-  useCreateKbItem,
-  useUpdateKbItem,
-  useDeleteKbItem,
-  useCreateKbCategory,
-  useUpdateKbCategory,
-  useDeleteKbCategory,
-  useAttachKbMedia,
-  useDetachKbMedia,
-} from '../../api/kb'
+import { useAttachKbMedia, useDetachKbMedia, useKbCategories, useKbItem } from '../../api/kb'
 import { useAdminPlans } from '../../api/plans'
 import type { KbItemOut } from '../../lib/types'
 import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
-import { useUiStore } from '../../stores/ui'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
-import { Badge } from '../../components/Badge'
-import { PageHeader } from '../../components/PageHeader'
 import { Attachment } from '../chat/Attachment'
-import styles from './admin.module.css'
+// Форма создания/редактирования материала БЗ — перенесена из features/admin/AdminKb
+// в основной раздел «База знаний» (админ-действия теперь живут там, не в «Управлении»).
+// Стили намеренно остаются админскими: форма живёт в модалке, а не в общем макете страницы.
+import styles from '../admin/admin.module.css'
 
-interface KbFormValues {
+export interface KbFormValues {
   title: string
   body: string
   published: boolean
@@ -43,7 +31,7 @@ interface KbFormProps {
   item?: KbItemOut
 }
 
-function KbForm({ initial, onSubmit, item }: KbFormProps) {
+export function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
   const [published, setPublished] = useState(initial?.published ?? false)
@@ -299,222 +287,5 @@ function KbForm({ initial, onSubmit, item }: KbFormProps) {
         <Button type="submit">Сохранить</Button>
       </div>
     </form>
-  )
-}
-
-/** Управление плоскими категориями KB: создать, переименовать, удалить. */
-function CategoryManager({ onClose }: { onClose: () => void }) {
-  const { data: categories = [] } = useKbCategories()
-  const createCat = useCreateKbCategory()
-  const updateCat = useUpdateKbCategory()
-  const deleteCat = useDeleteKbCategory()
-  const [newTitle, setNewTitle] = useState('')
-
-  function onError(err: unknown) {
-    toast(err instanceof Error ? err.message : 'Ошибка', 'error')
-  }
-
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault()
-    const title = newTitle.trim()
-    if (!title) return
-    createCat.mutate(
-      { title },
-      { onSuccess: () => setNewTitle(''), onError },
-    )
-  }
-
-  function rename(id: number, current: string) {
-    const title = window.prompt('Новое название категории', current)?.trim()
-    if (!title || title === current) return
-    updateCat.mutate({ id, title }, { onError })
-  }
-
-  function remove(id: number) {
-    if (!window.confirm('Удалить категорию? Материалы останутся без категории.')) return
-    deleteCat.mutate(id, { onSuccess: () => toast('Категория удалена'), onError })
-  }
-
-  return (
-    <Modal title="Категории" onClose={onClose} closeOnBackdrop={false}>
-      <form onSubmit={handleAdd} className={styles.form}>
-        <label className={styles.label}>
-          Новая категория
-          <input
-            className={styles.input}
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Название"
-          />
-        </label>
-        <div className={styles.formActions}>
-          <Button type="submit" disabled={!newTitle.trim()}>
-            Добавить
-          </Button>
-        </div>
-      </form>
-
-      <div className={styles.list}>
-        {categories.length === 0 && <p className="muted">Категорий пока нет</p>}
-        {categories.map((cat) => (
-          <div className={styles.listItem} key={cat.id}>
-            <div className={styles.listItemMain}>
-              <span className={styles.listTitle}>{cat.title}</span>
-            </div>
-            <div className={styles.listActions}>
-              <Button variant="outline" onClick={() => rename(cat.id, cat.title)}>
-                Переименовать
-              </Button>
-              <Button variant="outline" onClick={() => remove(cat.id)}>
-                Удалить
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Modal>
-  )
-}
-
-export function AdminKb() {
-  const { data: allItems = [] } = useKbItems()
-  // «Текущий поток» (ARG-104, общий контекст с Задачи/Чаты, см. AdminLayout): сужает
-  // список до материалов этого потока + общих (intake_id=NULL).
-  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const items = currentIntakeId == null
-    ? allItems
-    : allItems.filter((i) => i.intake_id == null || i.intake_id === currentIntakeId)
-  const createItem = useCreateKbItem()
-  const updateItem = useUpdateKbItem()
-  const deleteItem = useDeleteKbItem()
-
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editItem, setEditItem] = useState<KbItemOut | null>(null)
-  const [categoriesOpen, setCategoriesOpen] = useState(false)
-
-  function openEdit(item: KbItemOut) {
-    setEditItem(item)
-  }
-
-  function handleCreate(values: KbFormValues) {
-    createItem.mutate(
-      {
-        title: values.title,
-        body: values.body || null,
-        published: values.published,
-        category_id: values.category_id,
-        media_asset_ids: values.media_asset_ids,
-        intake_id: values.intake_id,
-        plan_ids: values.plan_ids,
-      },
-      {
-        onSuccess: () => {
-          toast('Создано')
-          setCreateOpen(false)
-        },
-        onError: (err: unknown) =>
-          toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-      },
-    )
-  }
-
-  function handleEdit(values: KbFormValues) {
-    if (!editItem) return
-    updateItem.mutate(
-      {
-        id: editItem.id,
-        title: values.title,
-        body: values.body || null,
-        published: values.published,
-        category_id: values.category_id,
-        intake_id: values.intake_id,
-        plan_ids: values.plan_ids,
-      },
-      {
-        onSuccess: () => {
-          toast('Сохранено')
-          setEditItem(null)
-        },
-        onError: (err: unknown) =>
-          toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-      },
-    )
-  }
-
-  function togglePublished(item: KbItemOut) {
-    updateItem.mutate(
-      { id: item.id, published: !item.published },
-      {
-        onSuccess: () => toast(item.published ? 'Снято с публикации' : 'Опубликовано'),
-        onError: (err: unknown) =>
-          toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-      },
-    )
-  }
-
-  function handleDelete(id: number) {
-    if (!window.confirm('Удалить?')) return
-    deleteItem.mutate(id, {
-      onSuccess: () => toast('Удалено'),
-      onError: (err: unknown) =>
-        toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-    })
-  }
-
-  return (
-    <div className={styles.page}>
-      <PageHeader title="База знаний">
-        <div className={styles.listActions}>
-          <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
-            Категории
-          </Button>
-          <Button onClick={() => setCreateOpen(true)}>Создать</Button>
-        </div>
-      </PageHeader>
-
-      {allItems.length > 0 && items.length === 0 && (
-        <p className={styles.mediaEmpty}>В этом потоке материалов нет</p>
-      )}
-
-      <div className={styles.list}>
-        {items.map((item) => (
-          <div className={styles.listItem} key={item.id}>
-            <div className={styles.listItemMain}>
-              <span className={styles.listTitle}>{item.title}</span>
-              {item.published ? (
-                <Badge tone="accent">Опубликовано</Badge>
-              ) : (
-                <Badge>Черновик</Badge>
-              )}
-            </div>
-            <div className={styles.listActions}>
-              <Button variant="outline" onClick={() => openEdit(item)}>
-                Редактировать
-              </Button>
-              <Button variant="outline" onClick={() => togglePublished(item)}>
-                {item.published ? 'Снять' : 'Опубликовать'}
-              </Button>
-              <Button variant="outline" onClick={() => handleDelete(item.id)}>
-                Удалить
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {createOpen && (
-        <Modal title="Создать материал" onClose={() => setCreateOpen(false)} closeOnBackdrop={false}>
-          <KbForm onSubmit={handleCreate} />
-        </Modal>
-      )}
-
-      {editItem && (
-        <Modal title="Редактировать" onClose={() => setEditItem(null)} closeOnBackdrop={false}>
-          <KbForm initial={editItem} onSubmit={handleEdit} item={editItem} />
-        </Modal>
-      )}
-
-      {categoriesOpen && <CategoryManager onClose={() => setCategoriesOpen(false)} />}
-    </div>
   )
 }

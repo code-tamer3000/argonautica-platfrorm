@@ -1,27 +1,17 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import {
-  useAdminAssignments,
-  useCreateTask,
-  useDeleteTask,
-  useTasks,
-  useUpdateTask,
-  type TaskType,
-  type TaskWithStatusOut,
-} from '../../api/tasks'
 import { useKbItems } from '../../api/kb'
 import { useAdminIntakes, useAdminUsers, useAdminUsersMap } from '../../api/admin'
 import { useAdminPlans } from '../../api/plans'
+import type { TaskType, TaskWithStatusOut } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
-import { Modal } from '../../components/Overlay'
-import { Badge } from '../../components/Badge'
-import { PageHeader } from '../../components/PageHeader'
-import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
-import styles from './admin.module.css'
+// Форма создания/редактирования задачи — перенесена из features/admin/AdminTasks
+// в основной раздел «Задачи» (админ-действия теперь живут там, не в «Управлении»).
+// Стили намеренно остаются админскими: форма живёт в модалке, а не в общем макете страницы.
+import styles from '../admin/admin.module.css'
 
-const TYPE_LABEL: Record<TaskType, string> = {
+export const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
   individual: 'Индивидуальная',
   pair: 'Парная',
@@ -37,14 +27,7 @@ function intakeDate(startsOn: string): string {
   })
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  assigned: 'Назначена',
-  submitted: 'На проверке',
-  returned: 'Возвращена',
-  accepted: 'Принята',
-}
-
-interface TaskFormValues {
+export interface TaskFormValues {
   type: TaskType
   title: string
   body: string
@@ -79,7 +62,7 @@ interface TaskFormProps {
   onSubmit: (values: TaskFormValues) => void
 }
 
-function TaskForm({ initial, onSubmit }: TaskFormProps) {
+export function TaskForm({ initial, onSubmit }: TaskFormProps) {
   const editing = !!initial
   const [type, setType] = useState<TaskType>(initial?.type ?? 'common')
   const [title, setTitle] = useState(initial?.title ?? '')
@@ -448,292 +431,5 @@ function TaskForm({ initial, onSubmit }: TaskFormProps) {
         <Button type="submit">Сохранить</Button>
       </div>
     </form>
-  )
-}
-
-function ProgressPanel({ taskId }: { taskId: number }) {
-  const { data: assignments = [] } = useAdminAssignments(taskId)
-  // Сводку по набору не фильтруем: задание уже создано с конкретными получателями,
-  // и имена нужны для всех, включая участников прошлых наборов.
-  const users = useAdminUsersMap()
-  const nameOf = (uid: number) => users.get(uid)?.display_name ?? `Участник #${uid}`
-
-  if (assignments.length === 0) {
-    return <p className={styles.mediaEmpty}>Нет назначений</p>
-  }
-  return (
-    <div className={styles.list}>
-      {assignments.map((a) => (
-        <div className={styles.listItem} key={a.assignment_id}>
-          <div className={styles.listItemMain}>
-            <span className={styles.listTitle}>{nameOf(a.user_id)}</span>
-            <Badge>{STATUS_LABEL[a.status] ?? a.status}</Badge>
-            {a.late && <Badge>сдано позже</Badge>}
-            <span className={styles.listMeta}>сдач: {a.submission_count}</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// Строка задачи в админском списке. Для individual показывает адресатов прямо в
-// строке, чтобы админ сразу видел, кому выдана задача (иначе «выдал, а нигде нет»).
-function TaskRow({
-  task,
-  onOpenProgress,
-  onEdit,
-  onDelete,
-}: {
-  task: TaskWithStatusOut
-  onOpenProgress: () => void
-  onEdit: () => void
-  onDelete: () => void
-}) {
-  return (
-    <div className={styles.taskItem}>
-      <div className={styles.taskItemRow}>
-        <div className={styles.listItemMain}>
-          <span className={styles.listTitle}>{task.title}</span>
-          <Badge>{TYPE_LABEL[task.type]}</Badge>
-          <span className={styles.listMeta}>
-            сдано {task.submitted_count} · принято {task.accepted_count}
-            {task.assignee_count != null ? ` из ${task.assignee_count}` : ''}
-          </span>
-        </div>
-        <div className={styles.listActions}>
-          <Link to={`/tasks/${task.id}`}>
-            <Button variant="outline">Открыть</Button>
-          </Link>
-          <Button variant="outline" onClick={onOpenProgress}>
-            Прогресс
-          </Button>
-          <Button variant="outline" onClick={onEdit}>Редактировать</Button>
-          <Button variant="outline" onClick={onDelete}>Удалить</Button>
-        </div>
-      </div>
-      {task.type === 'individual' && <AssigneeLine taskId={task.id} />}
-    </div>
-  )
-}
-
-// Список адресатов индивидуальной задачи (кому назначена). Тянет назначения задачи
-// и резолвит имена; пустой набор подсвечиваем как явную ошибку выдачи.
-function AssigneeLine({ taskId }: { taskId: number }) {
-  const { data: assignments = [], isLoading } = useAdminAssignments(taskId)
-  const users = useAdminUsersMap()
-
-  if (isLoading) return null
-  if (assignments.length === 0) {
-    return (
-      <div className={styles.assigneeLine}>
-        <span className={styles.assigneeLineLabel}>Назначено:</span>
-        <span className={styles.assigneeEmpty}>никому</span>
-      </div>
-    )
-  }
-  return (
-    <div className={styles.assigneeLine}>
-      <span className={styles.assigneeLineLabel}>Назначено:</span>
-      {assignments.map((a) => (
-        <span key={a.assignment_id} className={styles.assigneeChip}>
-          {users.get(a.user_id)?.display_name ?? `Участник #${a.user_id}`}
-        </span>
-      ))}
-    </div>
-  )
-}
-
-// Истёкшая = есть дедлайн в прошлом. Без дедлайна или дедлайн в будущем — активна.
-function isOverdue(task: TaskWithStatusOut): boolean {
-  return task.deadline_at != null && new Date(task.deadline_at).getTime() < Date.now()
-}
-
-export function AdminTasks() {
-  const { data } = useTasks()
-  const allItems = data?.items ?? []
-  // «Текущий поток» (ARG-104, общий контекст с КБ/Чаты, см. AdminLayout): сужает
-  // список до задач этого потока + общих (intake_id=NULL). Индивидуальные/парные/
-  // потоковые задачи всегда intake_id=NULL (видимость держится на назначении, не на
-  // потоке, см. docs/TASKS.md) — фильтр их не трогает, проходят как «общие».
-  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const items = currentIntakeId == null
-    ? allItems
-    : allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
-  // Перекрёстные задачи из пар (pair_id != null) выносим в отдельный сворачиваемый
-  // раздел — иначе они засоряют общий список (по 2 на каждую пару).
-  const crossTasks = items.filter((t) => t.pair_id != null)
-  const mainTasks = items.filter((t) => t.pair_id == null)
-  const active = mainTasks.filter((t) => !isOverdue(t))
-  const overdue = mainTasks.filter(isOverdue)
-  const createTask = useCreateTask()
-  const updateTask = useUpdateTask()
-  const deleteTask = useDeleteTask()
-
-  const [createOpen, setCreateOpen] = useState(false)
-  const [editTask, setEditTask] = useState<TaskWithStatusOut | null>(null)
-  const [progressFor, setProgressFor] = useState<TaskWithStatusOut | null>(null)
-  const [crossOpen, setCrossOpen] = useState(false)
-
-  function handleCreate(values: TaskFormValues) {
-    if (values.type === 'pair' && values.pairs.length === 0) {
-      toast('Добавьте хотя бы одну пару', 'error')
-      return
-    }
-    if (values.type === 'stream' && values.participant_ids.length < 2) {
-      toast('В потоке должно быть минимум два участника', 'error')
-      return
-    }
-    createTask.mutate(
-      {
-        type: values.type,
-        title: values.title,
-        body: values.body || null,
-        deadline_at: values.deadline_at,
-        kb_item_id: values.kb_item_id,
-        assignee_ids: values.type === 'individual' ? values.assignee_ids : undefined,
-        pairs:
-          values.type === 'pair'
-            ? values.pairs.map(([a, b]) => ({ user_ids: [a, b] as [number, number] }))
-            : undefined,
-        participant_ids:
-          values.type === 'stream' ? values.participant_ids : undefined,
-        media_asset_ids: values.media.map((m) => m.id),
-        intake_id: values.type === 'common' ? values.intake_id : undefined,
-        plan_ids: values.type === 'common' ? values.plan_ids : undefined,
-      },
-      {
-        onSuccess: () => {
-          toast('Создано')
-          setCreateOpen(false)
-        },
-        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-      },
-    )
-  }
-
-  function handleEdit(values: TaskFormValues) {
-    if (!editTask) return
-    updateTask.mutate(
-      {
-        id: editTask.id,
-        title: values.title,
-        body: values.body || null,
-        deadline_at: values.deadline_at,
-        kb_item_id: values.kb_item_id,
-        media_asset_ids: values.media.map((m) => m.id),
-        intake_id: editTask.type === 'common' ? values.intake_id : undefined,
-        plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
-      },
-      {
-        onSuccess: () => {
-          toast('Сохранено')
-          setEditTask(null)
-        },
-        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-      },
-    )
-  }
-
-  function handleDelete(id: number) {
-    if (!window.confirm('Удалить задачу?')) return
-    deleteTask.mutate(id, {
-      onSuccess: () => toast('Удалено'),
-      onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
-    })
-  }
-
-  return (
-    <div className={styles.page}>
-      <PageHeader title="Задачи">
-        <Button onClick={() => setCreateOpen(true)}>Создать</Button>
-      </PageHeader>
-
-      {allItems.length === 0 && <p className={styles.mediaEmpty}>Задач пока нет</p>}
-      {allItems.length > 0 && items.length === 0 && (
-        <p className={styles.mediaEmpty}>В этом потоке задач нет</p>
-      )}
-
-      {active.length > 0 && (
-        <>
-          <h2 className={styles.sectionTitle}>Активные</h2>
-          <div className={styles.list}>
-            {active.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
-                onEdit={() => setEditTask(task)}
-                onDelete={() => handleDelete(task.id)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {overdue.length > 0 && (
-        <>
-          <h2 className={styles.sectionTitle}>Истёк срок</h2>
-          <div className={styles.list}>
-            {overdue.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
-                onEdit={() => setEditTask(task)}
-                onDelete={() => handleDelete(task.id)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {crossTasks.length > 0 && (
-        <>
-          <button
-            type="button"
-            className={styles.sectionToggle}
-            onClick={() => setCrossOpen((v) => !v)}
-          >
-            {crossOpen ? '▾' : '▸'} Перекрёстные задачи из пар ({crossTasks.length})
-          </button>
-          {crossOpen && (
-            <div className={styles.list}>
-              {crossTasks.map((task) => (
-                <TaskRow
-                  key={task.id}
-                  task={task}
-                  onOpenProgress={() => setProgressFor(progressFor?.id === task.id ? null : task)}
-                  onEdit={() => setEditTask(task)}
-                  onDelete={() => handleDelete(task.id)}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {progressFor && (
-        <Modal title={`Прогресс: ${progressFor.title}`} onClose={() => setProgressFor(null)}>
-          <ProgressPanel taskId={progressFor.id} />
-        </Modal>
-      )}
-
-      {createOpen && (
-        <Modal
-          title="Создать задачу"
-          onClose={() => setCreateOpen(false)}
-          closeOnBackdrop={false}
-        >
-          <TaskForm onSubmit={handleCreate} />
-        </Modal>
-      )}
-
-      {editTask && (
-        <Modal title="Редактировать задачу" onClose={() => setEditTask(null)} closeOnBackdrop={false}>
-          <TaskForm initial={editTask} onSubmit={handleEdit} />
-        </Modal>
-      )}
-    </div>
   )
 }

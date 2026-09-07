@@ -178,7 +178,26 @@ WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submissi
 
 Task create/edit (admin) and participant submission share `components/MediaComposer.tsx` (markdown textarea + upload-with-progress + pending chips). See [FRONTEND.md](FRONTEND.md).
 
-Recipient pickers in `AdminTasks.tsx` (individual / pair / stream) read `GET /api/admin/users`,
+There is no separate admin panel screen for tasks anymore — admin actions (create, edit,
+delete) live directly in `features/tasks/TasksList.tsx` (`/tasks`), gated by
+`user?.role === 'admin'`. `features/tasks/TaskForm.tsx` holds the create/edit form (moved
+out of the old `features/admin/AdminTasks.tsx`, which is deleted along with the
+`/admin/tasks` route). Delete is two-step via the shared `components/ConfirmDialog.tsx`
+instead of `window.confirm`; edit/delete are reached through a per-card
+`components/KebabMenu.tsx` (visible to admins only). The old standalone «Прогресс» panel
+(per-assignment status list) was dropped — it duplicated information already visible via
+assignee chips on the card and inside `TaskDetail`.
+
+The admin list has two nested tab levels built on `components/Segmented.tsx`: **Активные /
+Истёк срок** (by `deadline_at` vs now) at the top, and **Общие / Индивидуальные / Парные и
+потоки / Перекрёстные** underneath (перекрёстные = `pair_id != null`, checked before type).
+On the «Общие» tab only, a tariff filter (checkboxes over `useAdminPlans()`, all checked by
+default) narrows the list client-side: a task with empty `plan_ids` (no restriction) always
+shows; a task restricted to specific plans shows only while at least one of its `plan_ids`
+is checked. This is purely a display filter — it does not affect what the backend returns
+or what `plan_visibility_clause` enforces server-side (ARG-96).
+
+Recipient pickers in `TaskForm.tsx` (individual / pair / stream) read `GET /api/admin/users`,
 not the public `GET /api/users`: the list is scoped to the **active intake** (latest `starts_on`)
 by default, with a «Набор получателей» selector to switch to another intake or «Все наборы».
 Server-side task creation is unchanged — the filter only narrows what the admin sees.
