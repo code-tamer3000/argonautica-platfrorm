@@ -90,6 +90,8 @@ export interface ArgonautTaskOut {
   status: ArgonautTaskStatus
   deadline_at: string | null
   reviewed_at: string | null
+  /** Текст последней сдачи — раскрывается аккордеоном в самой строке. */
+  submission_text: string | null
 }
 
 export interface ArgonautDetailOut {

@@ -16,19 +16,42 @@ import { dateTimeMsk } from '../../lib/format'
 import type { ArgonautTaskOut } from '../../lib/types'
 import styles from './argonauts.module.css'
 
+// Клик по строке разворачивает текст сдачи на месте (ARG-119) — переход на
+// /tasks/{id} со списком всех сдач подряд остаётся, но второстепенной ссылкой,
+// для тех редких случаев, когда всё же нужна полная карточка задачи.
 function TaskRow({ task }: { task: ArgonautTaskOut }) {
+  const [open, setOpen] = useState(false)
   return (
-    <Link to={`/tasks/${task.task_id}`} className={styles.taskRow}>
-      <span className={styles.taskTitle}>{task.title}</span>
-      <span className={styles.taskMeta}>
-        {task.status === 'accepted' ? (
-          <Chip kind="accepted">Принята</Chip>
-        ) : (
-          <Chip kind="unreviewed">На проверке</Chip>
-        )}
-        {task.deadline_at && <span className={styles.taskDeadline}>{dateTimeMsk(task.deadline_at)}</span>}
-      </span>
-    </Link>
+    <div className={styles.taskItem}>
+      <button
+        type="button"
+        className={styles.taskRow}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={styles.taskTitle}>{task.title}</span>
+        <span className={styles.taskMeta}>
+          {task.status === 'accepted' ? (
+            <Chip kind="accepted">Принята</Chip>
+          ) : (
+            <Chip kind="unreviewed">На проверке</Chip>
+          )}
+          {task.deadline_at && <span className={styles.taskDeadline}>{dateTimeMsk(task.deadline_at)}</span>}
+        </span>
+      </button>
+      {open && (
+        <div className={styles.taskSubmission}>
+          {task.submission_text ? (
+            <div className={styles.taskSubmissionText}>{task.submission_text}</div>
+          ) : (
+            <div className={styles.taskSubmissionEmpty}>Текст сдачи недоступен.</div>
+          )}
+          <Link to={`/tasks/${task.task_id}`} className={styles.taskSubmissionLink}>
+            Открыть задачу
+          </Link>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -4,19 +4,25 @@
 > `tasks`, `rooms` (see [DATA_MODEL.md](DATA_MODEL.md)).
 
 Roster of the current participant's intake ("who else is on this expedition with
-me"), grouped into sections by tariff (admins their own leading section,
-observers a trailing one), one tile
+me", including the viewer themself), grouped into sections by tariff (admins
+their own leading section, observers a trailing one), one tile
 per person (photo, name, "N tasks done" when N>0), expanding to a profile page
 with bio, task list, and a link to that person's diary. Composition-only endpoint
 (no new business logic) in the style of `api/dashboard.py`.
 
+The viewer's own tile (`ArgonautsScreen.tsx`, `Tile`) is rendered with
+`cardClass({ accent: true })` — the same "asks for attention" gold-border variant
+`Динамика` uses for its own record — so it's identifiable at a glance without a
+separate badge (ARG-119).
+
 A profile also opens from outside the roster: the message action menu in Rubka
 (`useMessageMenu.tsx`) carries a "Посмотреть профиль" item that navigates to
 `/argonauts/{sender_id}` for any message not authored by the viewer — hidden on
-your own messages, since `_roster` excludes the caller and `/argonauts/{myId}`
-would 404. A sender outside the viewer's roster (a different intake) hits the
-same "Участник не найден" empty state the page already has for a direct link —
-the menu item does not pre-check membership.
+your own messages (opening your own profile from a message menu isn't a useful
+affordance, even though `/argonauts/{myId}` now resolves fine). A sender outside
+the viewer's roster (a different intake) hits the same "Участник не найден" empty
+state the page already has for a direct link — the menu item does not pre-check
+membership.
 
 > **Observers** are *listed* in the roster but cannot *open* it: the whole
 > `/api/argonauts` router is behind `require_participant` → 403 for
@@ -24,8 +30,9 @@ the menu item does not pre-check membership.
 
 ## Roster composition
 
-`GET /api/argonauts` returns every user with `intake_id == current_user.intake_id`,
-**excluding only the caller themself**. Observers are included, as one trailing
+`GET /api/argonauts` returns **every** user with `intake_id == current_user.intake_id`,
+including the caller themself (ARG-119) — the tile is highlighted client-side (see
+above), not filtered out server-side. Observers are included too, as one trailing
 "Наблюдатели" section — and "observer" here is the union of two independent
 groups:
 - `users.is_observer` — the flag, set after 5 missed days (see AUTH.md/oferta);
@@ -103,6 +110,15 @@ Status shown:
 - `tasks` (detail) = `accepted` **and** `submitted` (awaiting review). `returned`
   (sent back for rework) and `assigned` (not yet touched) are excluded — neither
   reads as "here's what this person did".
+
+Each row in `tasks` also carries `submission_text` — the target's **latest**
+`TaskSubmission.body` for that assignment (`_latest_submission_bodies` in
+`api/argonauts.py`, a batched max-`created_at` join, same "history kept, take the
+newest" shape as `_expedition_feat` below). The frontend (`ArgonautDetail.tsx`,
+`TaskRow`) expands it inline as an accordion on click — no navigation to
+`/tasks/{task_id}` needed just to read one person's submission (ARG-119); the
+route itself still works as a secondary "Открыть задачу" link, for the full task
+card (other people's submissions, review history).
 
 ## Expedition feat
 

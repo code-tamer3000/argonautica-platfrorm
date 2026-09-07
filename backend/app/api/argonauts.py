@@ -2,13 +2,16 @@
 
 Сборочный эндпоинт в стиле dashboard.py — новой бизнес-логики нет, только
 композиция уже существующих правил видимости:
-  - состав ростера = участники того же intake (ARG-112 «дневники» правило: только
-    поток, без рангового каскада тарифа ARG-110), включая наблюдателей — это ДВЕ
-    независимые группы (флаг `is_observer` ставится за 5 пропусков, тариф
-    `OBSERVER_TARIFF_NAME` покупается с самого начала), обе показываются одной
-    секцией «Наблюдатели» в самом низу (`is_observer` в ответе — объединение
-    обоих признаков, а не колонка БД); админы в ростере ЕСТЬ (отдельная секция,
-    теперь ПЕРВАЯ), но без карточки задач — у них их нет по построению;
+  - состав ростера = ВСЕ участники того же intake, включая самого смотрящего
+    (ARG-119: своя плитка нужна фронту, чтобы подсветить её обводкой) и
+    наблюдателей — это ДВЕ независимые группы наблюдателей (флаг `is_observer`
+    ставится за 5 пропусков, тариф `OBSERVER_TARIFF_NAME` покупается с самого
+    начала), обе показываются одной секцией «Наблюдатели» в самом низу
+    (`is_observer` в ответе — объединение обоих признаков, а не колонка БД);
+    админы в ростере ЕСТЬ (отдельная секция, теперь ПЕРВАЯ), но без карточки
+    задач — у них их нет по построению; ARG-112 «дневники» правило (только
+    поток, без рангового каскада тарифа ARG-110) по-прежнему определяет КОГО
+    показываем, просто больше не исключает самого смотрящего;
   - фронт режет плитки на секции по соседним элементам (см. lib/planGroups
     `groupPreOrdered`), порядок задаёт сервер: сначала админы, затем участники по
     рангу тарифа (как `list_contacts`, ARG-110), затем наблюдатели хвостом;
@@ -78,10 +81,7 @@ async def _roster(session: AsyncSession, current_user: User) -> tuple[list[User]
     if current_user.intake_id is None:
         return [], set()
     rows = await session.execute(
-        select(User).where(
-            User.intake_id == current_user.intake_id,
-            User.id != current_user.id,
-        )
+        select(User).where(User.intake_id == current_user.intake_id)
     )
     users = list(rows.scalars().all())
     # Держатель тарифа «Наблюдатель» без флага — тоже наблюдатель для ростера;
@@ -191,6 +191,33 @@ async def _diary_room_ids(session: AsyncSession, user_ids: list[int]) -> dict[in
     return dict(rows.tuples().all())
 
 
+async def _latest_submission_bodies(
+    session: AsyncSession, assignment_ids: list[int]
+) -> dict[int, str | None]:
+    """assignment_id -> текст ПОСЛЕДНЕЙ сдачи (ARG-119: аккордеон в списке задач
+    на странице участника, без перехода на /tasks/{id}). Возврат → новая сдача
+    (см. TaskSubmission docstring), поэтому берём максимум по `created_at`."""
+    if not assignment_ids:
+        return {}
+    latest = (
+        select(
+            TaskSubmission.assignment_id,
+            func.max(TaskSubmission.created_at).label("latest_at"),
+        )
+        .where(TaskSubmission.assignment_id.in_(assignment_ids))
+        .group_by(TaskSubmission.assignment_id)
+        .subquery()
+    )
+    rows = await session.execute(
+        select(TaskSubmission.assignment_id, TaskSubmission.body).join(
+            latest,
+            (TaskSubmission.assignment_id == latest.c.assignment_id)
+            & (TaskSubmission.created_at == latest.c.latest_at),
+        )
+    )
+    return dict(rows.tuples().all())
+
+
 @router.get("", response_model=list[ArgonautOut])
 async def list_argonauts(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -243,6 +270,7 @@ async def get_argonaut(
         select(
             Task.id,
             Task.title,
+            TaskAssignment.id,
             TaskAssignment.status,
             Task.deadline_at,
             TaskAssignment.reviewed_at,
@@ -257,6 +285,10 @@ async def get_argonaut(
         )
         .order_by(TaskAssignment.reviewed_at.desc().nullslast(), TaskAssignment.created_at.desc())
     )
+    task_rows = rows.all()
+    submission_bodies = await _latest_submission_bodies(
+        session, [row[2] for row in task_rows]
+    )
     tasks = [
         ArgonautTaskOut(
             task_id=task_id,
@@ -264,8 +296,9 @@ async def get_argonaut(
             status=task_status,
             deadline_at=deadline_at,
             reviewed_at=reviewed_at,
+            submission_text=submission_bodies.get(assignment_id),
         )
-        for task_id, title, task_status, deadline_at, reviewed_at in rows.all()
+        for task_id, title, assignment_id, task_status, deadline_at, reviewed_at in task_rows
     ]
     tasks_done = sum(1 for t in tasks if t.status == "accepted")
     feat_task_id, expedition_feat, feat_status = await _expedition_feat(

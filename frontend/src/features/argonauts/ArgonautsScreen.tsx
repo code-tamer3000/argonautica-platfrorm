@@ -5,16 +5,17 @@ import { cardClass } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { useAuth } from '../auth/AuthContext'
 import { plural } from '../../lib/format'
 import { groupPreOrdered } from '../../lib/planGroups'
 import type { ArgonautOut } from '../../lib/types'
 import styles from './argonauts.module.css'
 
-function Tile({ a }: { a: ArgonautOut }) {
+function Tile({ a, isOwn }: { a: ArgonautOut; isOwn: boolean }) {
   return (
     <Link
       to={`/argonauts/${a.id}`}
-      className={cardClass({ interactive: true, className: styles.tile })}
+      className={cardClass({ interactive: true, accent: isOwn, className: styles.tile })}
     >
       <Avatar name={a.display_name} url={a.avatar_url} size={64} />
       <div className={styles.tileName}>{a.display_name}</div>
@@ -45,6 +46,7 @@ function argonautSectionKey(a: ArgonautOut): { id: number | null; name: string |
 
 export function ArgonautsScreen() {
   const { data, isLoading } = useArgonauts()
+  const { user: me } = useAuth()
   // Сервер уже отдал порядок: админы, участники по рангу тарифа, наблюдатели
   // хвостом (см. api/argonauts.py `_roster`) — просто режем на секции по
   // соседним элементам, как контакт-лист «начать чат».
@@ -67,7 +69,7 @@ export function ArgonautsScreen() {
             {groups.length > 1 && <div className={styles.sectionTitle}>{group.label}</div>}
             <div className={styles.grid}>
               {group.items.map((a) => (
-                <Tile key={a.id} a={a} />
+                <Tile key={a.id} a={a} isOwn={a.id === me?.id} />
               ))}
             </div>
           </div>

@@ -88,7 +88,17 @@ async def test_roster_same_intake_only(client: AsyncClient, make_user: MakeUser)
     ids = {row["id"] for row in resp.json()}
     assert same_intake.id in ids
     assert other_intake.id not in ids
-    assert viewer.id not in ids  # сам смотрящий не в списке
+    assert viewer.id in ids  # ARG-119: своя плитка тоже в общем ростере
+
+
+async def test_own_detail_page_resolves(client: AsyncClient, make_user: MakeUser) -> None:
+    """ARG-119: своя плитка резолвится через GET /api/argonauts/{myId} (раньше
+    404-ила, потому что `_roster` исключала смотрящего)."""
+    viewer = await make_user()
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get(f"/api/argonauts/{viewer.id}", headers=viewer_h)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == viewer.id
 
 
 async def test_roster_admins_first_observers_last(
@@ -97,7 +107,9 @@ async def test_roster_admins_first_observers_last(
     """Три блока: админы — первыми, участники — в середине, наблюдатели — хвостом.
     Админ без задач (tasks_done=0 у него по построению)."""
     starts_on = date.today() - timedelta(days=201)
-    viewer = await make_user(intake_starts_on=starts_on)
+    # display_name distinct from make_user's default ("Test User") — иначе
+    # viewer/member делят один тай-брейк по имени и порядок между ними не задан.
+    viewer = await make_user(intake_starts_on=starts_on, display_name="ZZZ Viewer")
     observer = await make_user(intake_id=viewer.intake_id, is_observer=True)
     member = await make_user(intake_id=viewer.intake_id)
     admin = await make_user(intake_id=viewer.intake_id, role="admin")
@@ -106,12 +118,13 @@ async def test_roster_admins_first_observers_last(
     resp = await client.get("/api/argonauts", headers=viewer_h)
     rows = resp.json()
     order = [r["id"] for r in rows]
-    assert order == [admin.id, member.id, observer.id]
-    admin_row, member_row, observer_row = rows
+    assert order == [admin.id, member.id, viewer.id, observer.id]
+    admin_row, member_row, viewer_row, observer_row = rows
     assert admin_row["role"] == "admin"
     assert admin_row["tasks_done"] == 0
     assert admin_row["is_observer"] is False
     assert member_row["is_observer"] is False
+    assert viewer_row["id"] == viewer.id
     assert observer_row["is_observer"] is True
 
 
@@ -274,6 +287,10 @@ async def test_detail_tasks_include_accepted_and_submitted_not_returned(
     assert "Сдана-2" in titles
     assert "Возвращена-2" not in titles
     assert detail["tasks_done"] == 1
+    # ARG-119: текст сдачи виден прямо в строке, без перехода на /tasks/{id}.
+    by_title = {t["title"]: t for t in detail["tasks"]}
+    assert by_title["Принята-2"]["submission_text"] == "x"
+    assert by_title["Сдана-2"]["submission_text"] == "x"
 
 
 # --- diary_room_id -------------------------------------------------------------

@@ -37,6 +37,11 @@ class ArgonautTaskOut(BaseModel):
     status: str
     deadline_at: datetime | None = None
     reviewed_at: datetime | None = None
+    # Текст ПОСЛЕДНЕЙ сдачи (TaskSubmission.body) по этому назначению — фронт
+    # раскрывает его аккордеоном в самой строке, без перехода на /tasks/{id}.
+    # None, если сдачи нет (не должно случаться для accepted/submitted, но
+    # схема не завязана на это гарантией).
+    submission_text: str | None = None
 
 
 class ArgonautDetailOut(BaseModel):
