@@ -153,7 +153,7 @@ export function KbList() {
           <h1 className={styles.pageTitle}>База знаний</h1>
         </div>
         {isAdmin && (
-          <div className={ph.pageHeaderActions}>
+          <div className={`${ph.pageHeaderActions} ${styles.headerActions}`}>
             <Button variant="outline" onClick={() => setCategoriesOpen(true)}>
               Категории
             </Button>

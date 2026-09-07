@@ -54,7 +54,7 @@
 .sectionEmoji { width: 3.5rem; flex: none; text-align: center; background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-2); color: var(--text-primary); font-size: var(--text-ui); box-sizing: border-box; }
 .sectionButtons { display: flex; gap: var(--space-1); flex: none; }
 .sectionButtons button { background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); width: 1.9rem; height: 1.9rem; cursor: pointer; color: var(--text-primary); }
-.checkRow { display: flex; align-items: center; gap: var(--space-3); }
+.checkRow { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .formActions { display: flex; justify-content: flex-end; gap: var(--space-3); padding-top: var(--space-2); }
 .mediaGrid { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-2); }
 .mediaItem { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }

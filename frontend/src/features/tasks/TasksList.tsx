@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   useAdminAssignments,
@@ -10,6 +10,7 @@ import {
   type TaskWithStatusOut,
 } from '../../api/tasks'
 import { useAdminPlans } from '../../api/plans'
+import type { PlanOut } from '../../lib/types'
 import { useUsersMap } from '../../api/users'
 import { useAuth } from '../auth/AuthContext'
 import { BackButton } from '../../components/BackButton'
@@ -119,19 +120,98 @@ function TaskCard({
 }
 
 type DeadlineTab = 'active' | 'overdue'
-type TypeTab = 'common' | 'individual' | 'group' | 'cross'
 
 const DEADLINE_TABS = [
   { value: 'active' as const, label: 'Активные' },
   { value: 'overdue' as const, label: 'Истёк срок' },
 ]
 
-const TYPE_TABS = [
-  { value: 'common' as const, label: 'Общие' },
-  { value: 'individual' as const, label: 'Индивидуальные' },
-  { value: 'group' as const, label: 'Парные и потоки' },
-  { value: 'cross' as const, label: 'Перекрёстные' },
-]
+// Фильтр общих задач по тарифам: кнопка со свёрнутой панелью чекбоксов
+// («Тарифы: все» по умолчанию), а не постоянно развёрнутый ряд.
+function PlanFilter({
+  plans,
+  selected,
+  onToggle,
+}: {
+  plans: PlanOut[]
+  selected: Set<number>
+  onToggle: (id: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  const label = selected.size === plans.length ? 'Тарифы: все' : `Тарифы: ${selected.size} из ${plans.length}`
+
+  return (
+    <div className={styles.planFilter} ref={ref}>
+      <Button variant="outline" type="button" onClick={() => setOpen((v) => !v)}>
+        {label}
+      </Button>
+      {open && (
+        <div className={styles.planFilterPanel}>
+          {plans.map((plan) => (
+            <label key={plan.id} className={styles.planFilterChip}>
+              <input type="checkbox" checked={selected.has(plan.id)} onChange={() => onToggle(plan.id)} />
+              {plan.name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Сворачиваемая секция списка (Индивидуальные / Парные и потоки / Перекрёстные) —
+// заголовок, а не кнопка вкладки; отсутствующего типа задач в меню просто нет.
+function CollapsibleSection({
+  title,
+  tasks,
+  onEdit,
+  onDelete,
+}: {
+  title: string
+  tasks: TaskWithStatusOut[]
+  onEdit: (task: TaskWithStatusOut) => void
+  onDelete: (id: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (tasks.length === 0) return null
+  return (
+    <section className={styles.section}>
+      <button
+        type="button"
+        className={styles.sectionToggle}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} {title}
+        <span className={styles.sectionCount}>{tasks.length}</span>
+      </button>
+      {open && (
+        <div className={styles.grid}>
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              isAdmin
+              onEdit={() => onEdit(task)}
+              onDelete={() => onDelete(task.id)}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 export function TasksList() {
   const { data, isLoading } = useTasks()
@@ -154,10 +234,9 @@ export function TasksList() {
   const mine = items.filter((t) => t.my_status !== 'accepted')
   const mineDone = items.filter((t) => t.my_status === 'accepted')
 
-  // Админ: два уровня вкладок — Активные/Истёк срок, внутри — Общие/Индивидуальные/
-  // Парные и потоки/Перекрёстные.
+  // Админ: верхний уровень — вкладки Активные/Истёк срок; внутри — заголовки секций
+  // Общие/Индивидуальные/Парные и потоки/Перекрёстные (как раньше — заголовок, не кнопка).
   const [deadlineTab, setDeadlineTab] = useState<DeadlineTab>('active')
-  const [typeTab, setTypeTab] = useState<TypeTab>('common')
 
   const deadlineItems = items.filter((t) => (deadlineTab === 'active' ? !isOverdue(t) : isOverdue(t)))
   // Перекрёстные проверяем первыми — pair_id != null может стоять и на «обычной»
@@ -188,19 +267,11 @@ export function TasksList() {
   }
 
   const commonItemsFiltered =
-    typeTab === 'common' && selectedPlanIds != null
+    selectedPlanIds != null
       ? commonItems.filter(
           (t) => t.plan_ids.length === 0 || t.plan_ids.some((id) => selectedPlanIds.has(id)),
         )
       : commonItems
-
-  const tabItems: Record<TypeTab, TaskWithStatusOut[]> = {
-    common: commonItemsFiltered,
-    individual: individualItems,
-    group: groupItems,
-    cross: crossItems,
-  }
-  const visibleItems = tabItems[typeTab]
 
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
@@ -287,7 +358,7 @@ export function TasksList() {
           <h1 className={styles.pageTitle}>Задачи</h1>
         </div>
         {isAdmin && (
-          <div className={ph.pageHeaderActions}>
+          <div className={`${ph.pageHeaderActions} ${styles.headerActions}`}>
             <Button onClick={() => setCreateOpen(true)}>Создать</Button>
           </div>
         )}
@@ -311,45 +382,57 @@ export function TasksList() {
               onChange={setDeadlineTab}
               label="Срок"
             />
-            <Segmented
-              className={styles.tabsRow}
-              options={TYPE_TABS.map((t) => ({ ...t, label: `${t.label} (${tabItems[t.value].length})` }))}
-              value={typeTab}
-              onChange={setTypeTab}
-              label="Тип задачи"
-            />
 
-            {typeTab === 'common' && plans.length > 0 && (
-              <div className={styles.planFilterRow}>
-                <span className={styles.planFilterLabel}>Тарифы:</span>
-                {plans.map((plan) => (
-                  <label key={plan.id} className={styles.planFilterChip}>
-                    <input
-                      type="checkbox"
-                      checked={selectedPlanIds?.has(plan.id) ?? true}
-                      onChange={() => togglePlanFilter(plan.id)}
-                    />
-                    {plan.name}
-                  </label>
-                ))}
-              </div>
-            )}
-
-            {visibleItems.length === 0 ? (
+            {deadlineItems.length === 0 && (
               <div className="center muted" style={{ padding: 40 }}>Здесь пусто</div>
-            ) : (
-              <div className={styles.grid}>
-                {visibleItems.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    isAdmin
-                    onEdit={() => setEditTask(task)}
-                    onDelete={() => setDeleteTaskId(task.id)}
-                  />
-                ))}
-              </div>
             )}
+
+            {commonItems.length > 0 && (
+              <section className={styles.section}>
+                <div className={styles.sectionHeadRow}>
+                  <h2 className={`${styles.sectionTitle} ${deadlineTab === 'active' ? styles.sectionTitleActive : ''}`}>
+                    Общие
+                  </h2>
+                  {plans.length > 0 && selectedPlanIds != null && (
+                    <PlanFilter plans={plans} selected={selectedPlanIds} onToggle={togglePlanFilter} />
+                  )}
+                </div>
+                {commonItemsFiltered.length === 0 ? (
+                  <div className="muted" style={{ padding: '8px 0' }}>Здесь пусто</div>
+                ) : (
+                  <div className={styles.grid}>
+                    {commonItemsFiltered.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        isAdmin
+                        onEdit={() => setEditTask(task)}
+                        onDelete={() => setDeleteTaskId(task.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            <CollapsibleSection
+              title="Индивидуальные"
+              tasks={individualItems}
+              onEdit={setEditTask}
+              onDelete={setDeleteTaskId}
+            />
+            <CollapsibleSection
+              title="Парные и потоки"
+              tasks={groupItems}
+              onEdit={setEditTask}
+              onDelete={setDeleteTaskId}
+            />
+            <CollapsibleSection
+              title="Перекрёстные"
+              tasks={crossItems}
+              onEdit={setEditTask}
+              onDelete={setDeleteTaskId}
+            />
           </>
         )
       ) : (

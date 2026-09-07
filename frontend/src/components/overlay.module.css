@@ -66,7 +66,7 @@
 }
 .x:hover { color: var(--text-primary); }
 
-.body { padding: var(--space-5); overflow-y: auto; }
+.body { padding: var(--space-5); overflow-y: auto; overflow-x: hidden; }
 .bodyScroll { padding: var(--space-4); overflow-y: auto; flex: 1; min-height: 0; }
 
 /* Lightbox */
