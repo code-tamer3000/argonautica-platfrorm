@@ -61,9 +61,9 @@ The apex domain is **not** the platform — it's the static marketing однос
 - One codebase; only `.env` differs per environment. Names are fixed in `backend/app/core/config.py`; values are per-env. Dev compose (`docker/docker-compose.yml`) exposes ports and runs backend/frontend on the host (see CLAUDE.md commands).
 - Key nuance: `MINIO_ENDPOINT` (internal, server-side calls) and `MINIO_PUBLIC_ENDPOINT` (browser-facing, used to sign presigned URLs) are **different addresses** in prod.
 
-## Video transcode worker
+## Video/audio transcode worker
 
-Server-side video transcoding (see [FILES.md](FILES.md) "Video transcode") needs a **worker process** running the same backend image (ffmpeg is already in `backend/Dockerfile`). It is a `transcode-worker` service in all three composes (dev, staging, prod), reusing the `&backend` anchor — same image/env/deps, no host ports, healthcheck disabled (not an HTTP server).
+Server-side video (see [FILES.md](FILES.md) "Video transcode") and audio/voice-message (see "Audio transcode") transcoding share **one worker process** running the same backend image (ffmpeg is already in `backend/Dockerfile`) and the same Redis queue, dispatched by `kind`. It is a `transcode-worker` service in all three composes (dev, staging, prod), reusing the `&backend` anchor — same image/env/deps, no host ports, healthcheck disabled (not an HTTP server).
 
 **`deploy.sh` does not touch it** (it is a singleton pulling from the Redis queue, outside blue-green), so on its own it would keep running the *old* image after every deploy. Since 16.08.2026 `deploy-prod.yml` restarts it as its own step after the script and **fails the deploy** if the container is not running afterwards (previously this was a manual step nobody could see was skipped — the class of bug that only shows up as "staging transcodes video, prod doesn't"). No `--force-recreate`: compose recreates only when the image ID actually changed, so an in-flight transcode is not cut off on a deploy that did not touch the backend image.
 
@@ -73,7 +73,7 @@ By hand (fresh server, rollback, or debugging):
 cd /opt/platform && docker compose -f docker/docker-compose.prod.yml --env-file .env up -d --no-deps transcode-worker
 ```
 
-Notes: one worker is enough (it processes one job at a time by design; scale with `--scale transcode-worker=N` only if the queue backs up). If the worker is missing entirely, uploads still succeed — videos just queue forever and the original is served, **silently, with no error surfaced**. If ffmpeg is missing from the image, jobs fail and videos fall back to the original (never lost).
+Notes: one worker is enough (it processes one job at a time by design; scale with `--scale transcode-worker=N` only if the queue backs up). If the worker is missing entirely, uploads still succeed — videos/voice messages just queue forever and the original is served, **silently, with no error surfaced** (for voice this means WebM/Opus recordings keep failing to play on iPhone with no visible cause). If ffmpeg is missing from the image, jobs fail and videos/audio fall back to the original (never lost).
 
 ## HTTP/3 (QUIC) + host network tuning
 

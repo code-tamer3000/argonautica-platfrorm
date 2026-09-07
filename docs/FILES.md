@@ -5,7 +5,7 @@
 
 ## Principle
 
-Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_assets`. Client uploads/downloads go **directly to MinIO** via presigned URLs, bypassing FastAPI. The only server-side byte reads are image-thumbnail generation on confirm and **video transcoding in the background worker** (see "Video transcode"). `kind`: `image` / `video` / `file` / `audio` (voice).
+Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_assets`. Client uploads/downloads go **directly to MinIO** via presigned URLs, bypassing FastAPI. The only server-side byte reads are image-thumbnail generation on confirm and **video/audio transcoding in the background worker** (see "Video transcode" / "Audio transcode"). `kind`: `image` / `video` / `file` / `audio` (voice).
 
 ## Upload flow (presigned-PUT)
 
@@ -63,6 +63,22 @@ re-checks, but a doomed file no longer costs a full upload first.
 **Scope.** All uploaded video is transcoded (chat, tasks/journal, KB). The live `attachment.updated` swap fires only for chat (only messages have a room channel); task/KB videos pick up the variant on their next fetch.
 
 **Runtime dep.** ffmpeg/ffprobe are backend runtime deps (already in `backend/Dockerfile`, so present in the dev/test image). Dev: run the worker as a compose service (`transcode-worker` in `docker/docker-compose.yml`) or on the host (`python -m app.worker.transcode`). Prod: the user adds the worker service manually — see [DEPLOY.md](DEPLOY.md).
+
+## Audio transcode (server-side)
+
+Every uploaded `kind='audio'` object (voice messages and audio KB materials) is transcoded in the background to AAC/M4A — same queue, same worker (`app/worker/transcode.py`), same `media_assets.transcode_status`/`variant_key`/`variant_mime` fields as video, dispatched by `kind`. Service: `services/transcode.py::transcode_audio_asset`.
+
+**Why.** `useVoiceRecorder.ts` records with `MediaRecorder`, whose codec is whatever the sender's browser offers — Android/desktop Chrome writes WebM/Opus, iOS Safari writes AAC/MP4. The recorded file is served **as uploaded**, unchanged, to every recipient: a voice message recorded on Android reaches an iPhone recipient as WebM, which a meaningful share of iOS versions/webviews do not decode at all — it silently fails to play. This can't be fixed sender-side (a browser's `MediaRecorder` can't be forced into a codec it doesn't support), so the server normalizes every voice/audio file to AAC — the one format that plays on iPhone, Android and desktop without exception.
+
+**Flow.** Identical shape to video: on confirm, an audio row is created with `transcode_status='processing'` and enqueued (`after_commit`). The message sends immediately; there is no "processing" UI state for audio (no spinner) — `serving_key` just keeps returning the original until the variant is `done`, so playback is unaffected either way. The worker downloads the original → `ffprobe` → transcodes (or fast-path) → uploads the variant → updates the row → publishes `attachment.updated`. The client swaps the URL in place via the same generic `asset_id`-keyed cache patch used for video (no audio-specific frontend code needed).
+
+**ffmpeg spec.** `-vn -c:a aac -b:a 128k -movflags +faststart` into `.m4a`. **Fast-path:** if `ffprobe` shows the source is already AAC (typically iPhone recordings), transcoding is skipped and `variant_key = storage_key`. **No "heavier variant" guard** (unlike video): the goal here is codec compatibility, not size — an AAC re-encode of a highly-efficient Opus source can legitimately come out larger, and that's still correct to serve, because the point is that it *plays on iPhone at all*. **No size/duration guardrail** either: upload is already capped at `MEDIA_MAX_AUDIO_BYTES` (200 MB), which is cheap for audio-only ffmpeg regardless of length, unlike video.
+
+**Storage layout.** Originals keep their key. Variants live under `audio/aac/<uuid>.m4a`.
+
+**Retries & durability, serving & stale clients.** Same mechanics as video (see above): `TRANSCODE_MAX_ATTEMPTS` retries, terminal failure → `transcode_status='failed'` with the original left downloadable, `transcode:inflight` reclaim on worker crash. `serving_key` returns the variant iff `transcode_status='done'` and `variant_key` is set, else the original — legacy audio rows (`transcode_status=NULL`) are served unchanged until caught up by `backfill_media_derivatives.py --audio` (see Backfill below).
+
+**Scope.** All uploaded audio is transcoded (chat voice messages, tasks/journal, KB audio materials). The live `attachment.updated` swap fires only for chat.
 
 ## Fast delivery in feeds
 
@@ -159,10 +175,11 @@ Older images uploaded before thumbnails have `thumb_key = NULL`. `backend/script
 
 Older images uploaded before the client sent dimensions have `width`/`height = NULL` — the feed can't reserve an `aspect-ratio` box for them, causing layout shift. `backend/scripts/backfill_image_dims.py` pulls the **original** (not thumb) from MinIO and reads its size via Pillow (idempotent — only touches `kind='image'` rows with `width IS NULL OR height IS NULL`; batched; best-effort, broken/missing objects are skipped and logged). Same runbook pattern as `backfill_thumbnails.py`.
 
-**Historical derivatives (video 720p variant + image `preview_key`)** — `backend/scripts/backfill_media_derivatives.py`. Prod measurements showed ~90% of media traffic was full-size originals while only a handful of objects had a variant, and the `preview_key` feature shipped without a backfill. The script catches both up **one object at a time**, so a ~20–30-user platform doesn't notice:
+**Historical derivatives (video 720p variant + audio AAC variant + image `preview_key`)** — `backend/scripts/backfill_media_derivatives.py`. Prod measurements showed ~90% of media traffic was full-size originals while only a handful of objects had a variant, and the `preview_key`/audio-transcode features shipped without a backfill. The script catches all three up **one object at a time**, so a ~20–30-user platform doesn't notice:
 
-- **No second transcoder.** For video it feeds the *existing* worker queue with the same call the upload path uses (`transcode_queue.enqueue`): enqueue one job → poll `media_assets.transcode_status` until it is terminal (`done`/`failed`) → sleep → next. The worker stays single-job, ffmpeg never fans out. **A live `transcode-worker` is required** — without it jobs just sit in the queue and each object fails on `--job-timeout-seconds` (default = `TRANSCODE_CLAIM_TIMEOUT_SECONDS`).
+- **No second transcoder.** For video/audio it feeds the *existing* worker queue with the same call the upload path uses (`transcode_queue.enqueue`): enqueue one job → poll `media_assets.transcode_status` until it is terminal (`done`/`failed`) → sleep → next. The worker stays single-job, ffmpeg never fans out. **A live `transcode-worker` is required** — without it jobs just sit in the queue and each object fails on `--job-timeout-seconds` (default = `TRANSCODE_CLAIM_TIMEOUT_SECONDS`).
 - **Images** call the same `generate_image_preview` as confirm, also one at a time.
-- **Resumable from DB state only** (`transcode_status`, `variant_key`, `preview_key`) — no progress file; interrupt and rerun to continue. Video candidates are `kind='video' AND variant_key IS NULL AND transcode_status IS NULL` (live `processing` rows are left to the worker; `failed` only with `--retry-failed`, which resets the status to NULL first because the worker acks `failed` jobs without work). Image candidates are `kind='image' AND preview_key IS NULL` — note this set also contains images whose derivative legitimately came out heavier than the source, so they are re-attempted on every run (cheap, and the outcome is the same NULL).
-- **Dry-run by default**: without `--apply` it only prints the plan (count + total bytes per kind). Flags: `--videos` / `--images` (neither = both), `--limit N` (per kind), `--delay-seconds` (default 30), `--job-timeout-seconds`, `--retry-failed`.
+- **Resumable from DB state only** (`transcode_status`, `variant_key`, `preview_key`) — no progress file; interrupt and rerun to continue. Video/audio candidates are `kind IN (video, audio) AND variant_key IS NULL AND transcode_status IS NULL` (live `processing` rows are left to the worker; `failed` only with `--retry-failed`, which resets the status to NULL first because the worker acks `failed` jobs without work). Image candidates are `kind='image' AND preview_key IS NULL` — note this set also contains images whose derivative legitimately came out heavier than the source, so they are re-attempted on every run (cheap, and the outcome is the same NULL).
+- **Dry-run by default**: without `--apply` it only prints the plan (count + total bytes per kind). Flags: `--videos` / `--audio` / `--images` (none = all three), `--limit N` (per kind), `--delay-seconds` (default 30), `--job-timeout-seconds`, `--retry-failed`.
 - **Additive only** — originals are never deleted or overwritten. Per-object failures are logged and skipped; SIGINT finishes the current object and exits with a summary.
+- **Voice messages specifically:** this is how the WebM/Opus voice messages already sitting in existing chat rooms (recorded before this feature shipped) become playable on iPhone — no resend needed. Run `--audio --apply` once the worker is live.

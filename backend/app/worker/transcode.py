@@ -1,9 +1,10 @@
-"""Воркер серверного транскода видео (docs/FILES.md «Транскод видео»).
+"""Воркер серверного транскода видео и аудио (docs/FILES.md «Транскод видео»/«Транскод аудио»).
 
 Отдельный процесс/контейнер (в проде — свой сервис compose; в dev/тестах гоняется
 как host-процесс `python -m app.worker.transcode`). Тянет джобы из Redis-очереди
-(transcode_queue), по одной за раз (ffmpeg сатурирует ядра), обрабатывает через
-services/transcode и обновляет media_assets + шлёт WS-событие в комнаты чата.
+(transcode_queue) — общей для видео и аудио (kind различает саму джобу), по одной за
+раз (ffmpeg сатурирует ядра), обрабатывает через services/transcode и обновляет
+media_assets + шлёт WS-событие в комнаты чата.
 
 `process_one_job` вынесен отдельно и самодостаточен (сам открывает сессию) — его
 дёргает и цикл воркера, и интеграционные тесты (реальные Postgres/Redis/MinIO, без
@@ -20,7 +21,12 @@ from app.db.session import SessionLocal
 from app.models.media import MediaAsset
 from app.services import transcode_queue as q
 from app.services.media import build_attachment_out, message_targets_for_asset
-from app.services.transcode import TranscodeError, TranscodeRejected, transcode_asset
+from app.services.transcode import (
+    TranscodeError,
+    TranscodeRejected,
+    transcode_asset,
+    transcode_audio_asset,
+)
 from app.ws.pubsub import publish_room_event
 from app.ws.schemas import attachment_updated_event
 
@@ -60,18 +66,19 @@ async def process_one_job() -> int | None:
             await session.execute(select(MediaAsset).where(MediaAsset.id == asset_id))
         ).scalar_one_or_none()
 
-    # Строки нет / уже не видео / уже обработано — джобу закрываем без работы.
-    if asset is None or asset.kind != "video" or asset.transcode_status in (
+    # Строки нет / не видео и не аудио / уже обработано — джобу закрываем без работы.
+    if asset is None or asset.kind not in ("video", "audio") or asset.transcode_status in (
         "done",
         "failed",
     ):
         await q.ack(asset_id)
         return asset_id
 
+    transcode_fn = transcode_asset if asset.kind == "video" else transcode_audio_asset
     attempt = await q.bump_attempts(asset_id)
     try:
         result = await run_in_threadpool(
-            transcode_asset, asset.bucket, asset.storage_key, asset.mime_type
+            transcode_fn, asset.bucket, asset.storage_key, asset.mime_type
         )
     except TranscodeError as exc:
         # Отказ по гардрейлу (слишком длинное/большое) детерминирован — повтор упрётся

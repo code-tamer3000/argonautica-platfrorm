@@ -1,18 +1,22 @@
 """One-shot: догнать деривативы по историческим медиа — МЕДЛЕННО, по одному объекту.
 
-Замеры прода: ~90% медиа-трафика — полноразмерные оригиналы. Две причины:
+Замеры прода: ~90% медиа-трафика — полноразмерные оригиналы. Три причины:
   * видео, залитые до серверного транскода, остались с `transcode_status IS NULL` и
     отдаются как исходники (docs/FILES.md «Транскод видео» → Rollout);
+  * голосовые/аудио, залитые до серверного транскода в AAC, остались с тем же
+    `transcode_status IS NULL` — часть из них (WebM/Opus с Android/десктопа) на iPhone
+    не звучит вовсе (docs/FILES.md «Транскод аудио»);
   * картинки, залитые до среднего деривата для лайтбокса, остались с
     `preview_key IS NULL` (docs/FILES.md «Превью для лайтбокса»).
 
-Скрипт НЕ содержит своего транскодера. Для видео он просто **кормит уже существующую
-очередь transcode-воркера** тем же механизмом, что и горячий путь загрузки
-(`app/api/media.py::confirm_upload` → `transcode_queue.enqueue`): ставит ОДНУ джобу →
-ждёт, пока воркер доведёт её до терминального состояния в БД (`transcode_status` стал
-'done'/'failed') → пауза → следующая. Воркер остаётся однопоточным, ffmpeg не съедает
-машину, платформа (~20–30 юзеров) продолжает жить. Для картинок — та же
-`services/media.generate_image_preview`, что и на confirm, тоже по одной с паузой.
+Скрипт НЕ содержит своего транскодера. Для видео/аудио он просто **кормит уже
+существующую очередь transcode-воркера** тем же механизмом, что и горячий путь
+загрузки (`app/api/media.py::confirm_upload` → `transcode_queue.enqueue`): ставит ОДНУ
+джобу → ждёт, пока воркер доведёт её до терминального состояния в БД
+(`transcode_status` стал 'done'/'failed') → пауза → следующая. Воркер остаётся
+однопоточным, ffmpeg не съедает машину, платформа (~20–30 юзеров) продолжает жить. Для
+картинок — та же `services/media.generate_image_preview`, что и на confirm, тоже по
+одной с паузой.
 
 Свойства:
   * **дросселирование** — строго последовательно, пауза `--delay-seconds` (по умолчанию
@@ -34,9 +38,10 @@
 `--job-timeout-seconds`.
 
 Запуск внутри backend-контейнера (есть пакет app и доступ к БД/Redis/MinIO):
-    python scripts/backfill_media_derivatives.py                 # план (dry-run), оба вида
+    python scripts/backfill_media_derivatives.py                 # план (dry-run), все виды
     python scripts/backfill_media_derivatives.py --images --apply --limit 3
     python scripts/backfill_media_derivatives.py --videos --apply --limit 3 --delay-seconds 60
+    python scripts/backfill_media_derivatives.py --audio --apply --limit 10
 """
 from __future__ import annotations
 
@@ -128,6 +133,27 @@ async def select_video_candidates(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def select_audio_candidates(
+    session: AsyncSession, limit: int | None = None, retry_failed: bool = False
+) -> list[MediaAsset]:
+    """Голосовые/аудио без готового AAC-варианта — зеркало `select_video_candidates`."""
+    status_match = MediaAsset.transcode_status.is_(None)
+    if retry_failed:
+        status_match = or_(status_match, MediaAsset.transcode_status == "failed")
+    stmt = (
+        select(MediaAsset)
+        .where(
+            MediaAsset.kind == "audio",
+            MediaAsset.variant_key.is_(None),
+            status_match,
+        )
+        .order_by(MediaAsset.id)
+    )
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    return list((await session.execute(stmt)).scalars().all())
+
+
 async def select_image_candidates(
     session: AsyncSession, limit: int | None = None
 ) -> list[MediaAsset]:
@@ -167,8 +193,11 @@ async def _wait_for_transcode(asset_id: int, timeout: float) -> str | None:
     return None
 
 
-async def _process_video(asset: MediaAsset, job_timeout: float) -> tuple[bool, str]:
-    """Поставить одну джобу в очередь воркера и дождаться её завершения."""
+async def _process_transcode_job(asset: MediaAsset, job_timeout: float) -> tuple[bool, str]:
+    """Поставить одну джобу в очередь воркера и дождаться её завершения.
+
+    Кодировано по kind внутри воркера (`app/worker/transcode.py`); здесь код общий
+    для видео и аудио — это тот же однопоточный `transcode:pending`."""
     if asset.transcode_status == "failed":
         # Ретрай провалившегося: воркер закрывает 'failed'-джобу без работы
         # (`process_one_job`), поэтому сначала возвращаем статус в исходный NULL.
@@ -177,7 +206,7 @@ async def _process_video(asset: MediaAsset, job_timeout: float) -> tuple[bool, s
             if row is not None:
                 row.transcode_status = None
                 await session.commit()
-    # Ровно тот же механизм, что на горячем пути загрузки видео (api/media.py).
+    # Ровно тот же механизм, что на горячем пути загрузки (api/media.py).
     await enqueue_transcode(asset.id)
     status = await _wait_for_transcode(asset.id, job_timeout)
     if status == "done":
@@ -245,9 +274,11 @@ async def _run_batch(
     return report
 
 
-def _print_plan(videos: list[MediaAsset], images: list[MediaAsset]) -> None:
+def _print_plan(
+    videos: list[MediaAsset], audio: list[MediaAsset], images: list[MediaAsset]
+) -> None:
     print("План бэкфила (dry-run, ничего не изменено):", file=sys.stderr)
-    for label, assets in (("видео", videos), ("картинки", images)):
+    for label, assets in (("видео", videos), ("аудио", audio), ("картинки", images)):
         total_size = sum(a.size for a in assets)
         print(
             f"  {label}: {len(assets)} шт, суммарно {_mb(total_size)}", file=sys.stderr
@@ -266,11 +297,14 @@ def _print_plan(videos: list[MediaAsset], images: list[MediaAsset]) -> None:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Догнать деривативы (видео-вариант 720p / превью картинок) "
-        "по историческим медиа, по одному объекту с паузой."
+        description="Догнать деривативы (видео-вариант 720p / аудио-вариант AAC / "
+        "превью картинок) по историческим медиа, по одному объекту с паузой."
     )
     parser.add_argument(
         "--videos", action="store_true", help="обработать видео (транскод через воркер)"
+    )
+    parser.add_argument(
+        "--audio", action="store_true", help="обработать голосовые/аудио (транскод в AAC)"
     )
     parser.add_argument(
         "--images", action="store_true", help="обработать картинки (preview_key)"
@@ -293,16 +327,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--job-timeout-seconds",
         type=float,
         default=float(settings.transcode_claim_timeout_seconds),
-        help="сколько ждать воркер по одному видео (по умолчанию claim-таймаут)",
+        help="сколько ждать воркер по одной джобе (видео/аудио; по умолчанию claim-таймаут)",
     )
     parser.add_argument(
         "--retry-failed",
         action="store_true",
-        help="включить видео с transcode_status='failed' (обычно провал детерминирован)",
+        help="включить видео/аудио с transcode_status='failed' (обычно провал детерминирован)",
     )
     args = parser.parse_args(argv)
-    if not args.videos and not args.images:  # ни одного вида — значит оба
-        args.videos = args.images = True
+    if not args.videos and not args.audio and not args.images:  # ни одного вида — все
+        args.videos = args.audio = args.images = True
     return args
 
 
@@ -315,15 +349,20 @@ async def main(argv: list[str] | None = None) -> int:
             if args.videos
             else []
         )
+        audio = (
+            await select_audio_candidates(session, args.limit, args.retry_failed)
+            if args.audio
+            else []
+        )
         images = (
             await select_image_candidates(session, args.limit) if args.images else []
         )
 
     if not args.apply:
-        _print_plan(videos, images)
+        _print_plan(videos, audio, images)
         return 0
 
-    if not videos and not images:
+    if not videos and not audio and not images:
         print("Кандидатов нет — всё уже догнано.", file=sys.stderr)
         return 0
 
@@ -331,7 +370,7 @@ async def main(argv: list[str] | None = None) -> int:
         signal.signal(sig, _request_stop)
 
     print(
-        f"Старт: видео {len(videos)}, картинки {len(images)}, "
+        f"Старт: видео {len(videos)}, аудио {len(audio)}, картинки {len(images)}, "
         f"пауза {args.delay_seconds:.0f} с между объектами.",
         file=sys.stderr,
     )
@@ -341,6 +380,18 @@ async def main(argv: list[str] | None = None) -> int:
         reports.append(
             ("картинки", await _run_batch(images, "картинка", args.delay_seconds, _process_image))
         )
+    if audio and not _stop_requested:
+        reports.append(
+            (
+                "аудио",
+                await _run_batch(
+                    audio,
+                    "аудио",
+                    args.delay_seconds,
+                    lambda a: _process_transcode_job(a, args.job_timeout_seconds),
+                ),
+            )
+        )
     if videos and not _stop_requested:
         reports.append(
             (
@@ -349,7 +400,7 @@ async def main(argv: list[str] | None = None) -> int:
                     videos,
                     "видео",
                     args.delay_seconds,
-                    lambda a: _process_video(a, args.job_timeout_seconds),
+                    lambda a: _process_transcode_job(a, args.job_timeout_seconds),
                 ),
             )
         )
