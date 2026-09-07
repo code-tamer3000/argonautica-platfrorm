@@ -216,6 +216,7 @@ export function DashboardScreen() {
           state={expedition.lock_states[activeLock]}
           lock={locks?.find((l) => l.element === activeLock)}
           onClose={() => setActiveLock(null)}
+          isAdmin={user?.role === 'admin'}
         />
       )}
     </div>

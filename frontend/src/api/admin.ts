@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { http } from '../lib/apiClient'
-import type { AdminUserOut, IntakeOut, StageIn, UserOut } from '../lib/types'
+import type { AdminExpeditionLockOut, AdminUserOut, Element, IntakeOut, StageIn, UserOut } from '../lib/types'
 import { usersKey } from './users'
 
 export const adminUsersKey = ['admin', 'users'] as const
@@ -129,6 +129,27 @@ export function useSetIntakeStages() {
     onSuccess: (_data, { intakeId }) => {
       qc.invalidateQueries({ queryKey: intakeStagesKey(intakeId) })
     },
+  })
+}
+
+export const adminExpeditionLocksKey = (element: Element, intakeId?: number) =>
+  ['admin', 'expedition', 'locks', element, intakeId ?? 'all'] as const
+
+/**
+ * Кто уже ввёл гейт стихии `element` — просмотр для админского `LockDialog`.
+ * `intakeId` фильтрует по набору, как `useAdminUsers`; `enabled=false` для мест,
+ * где вызывающий не гарантированно admin.
+ */
+export function useAdminExpeditionLocks(element: Element, intakeId?: number, enabled = true) {
+  return useQuery({
+    queryKey: adminExpeditionLocksKey(element, intakeId),
+    queryFn: () =>
+      http.get<AdminExpeditionLockOut[]>(
+        intakeId === undefined
+          ? `/api/admin/expedition/locks/${element}`
+          : `/api/admin/expedition/locks/${element}?intake_id=${intakeId}`,
+      ),
+    enabled,
   })
 }
 

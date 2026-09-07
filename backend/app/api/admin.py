@@ -21,7 +21,7 @@ from app.api.dynamics import (
 from app.core.security import generate_one_time_password, hash_password
 from app.db.session import get_session
 from app.models.calendar import CalendarEvent
-from app.models.expedition import STAGE_KINDS, IntakeStage
+from app.models.expedition import ELEMENTS, STAGE_KINDS, ExpeditionLock, IntakeStage
 from app.models.feedback import Feedback
 from app.models.intake import Intake
 from app.models.kb import KbItem, KbItemMedia
@@ -34,7 +34,7 @@ from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
 from app.models.task import TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
 from app.models.user import User
-from app.schemas.expedition import StageOut, StagesUpdate
+from app.schemas.expedition import AdminExpeditionLockOut, Element, StageOut, StagesUpdate
 from app.schemas.feedback import (
     FeedbackListOut,
     FeedbackOut,
@@ -238,6 +238,50 @@ async def set_intake_stages(
             status.HTTP_400_BAD_REQUEST, "Одно из заданий не существует"
         ) from exc
     return rows
+
+
+@router.get("/expedition/locks/{element}", response_model=list[AdminExpeditionLockOut])
+async def list_expedition_locks(
+    element: Element,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[int | None, Query()] = None,
+) -> list[AdminExpeditionLockOut]:
+    """Кто уже ввёл гейт данной стихии — просмотр для `LockDialog` на дашборде
+    админа. `intake_id` фильтрует по набору, как и GET /api/admin/users; тариф
+    отдаём тем же приёмом (денормализован рядом), чтобы список группировался на
+    клиенте без второго запроса."""
+    if element not in ELEMENTS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown element")
+    stmt = (
+        select(
+            ExpeditionLock,
+            User.display_name,
+            User.intake_id,
+            Intake.starts_on,
+            Plan.name,
+        )
+        .join(User, User.id == ExpeditionLock.user_id)
+        .outerjoin(Intake, Intake.id == User.intake_id)
+        .outerjoin(Plan, Plan.id == User.plan_id)
+        .where(ExpeditionLock.element == element)
+        .order_by(User.display_name)
+    )
+    if intake_id is not None:
+        stmt = stmt.where(User.intake_id == intake_id)
+    rows = await session.execute(stmt)
+    return [
+        AdminExpeditionLockOut(
+            user_id=lock.user_id,
+            display_name=display_name,
+            intake_id=user_intake_id,
+            intake_starts_on=intake_starts_on,
+            plan_name=plan_name,
+            key_number=lock.key_number,
+            hexagram=lock.hexagram,
+            created_at=lock.created_at,
+        )
+        for lock, display_name, user_intake_id, intake_starts_on, plan_name in rows.all()
+    ]
 
 
 @router.get("/plans", response_model=list[PlanOut])

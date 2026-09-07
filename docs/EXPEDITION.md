@@ -230,6 +230,16 @@ silently clamp to a 1-day stage in `layout_stages`, which is confusing, not enfo
 Edited from **Экспедиции → Круг Экспедиции** (`AdminExpeditions.tsx`), next to the
 existing intake window editor and `AdminPlans`.
 
+`GET /api/admin/expedition/locks/{element}` — read-only roster of who has entered
+that element's gate: `user_id`, `display_name`, `intake_id`/`intake_starts_on`,
+`plan_name`, `key_number`, `hexagram`, `created_at`. Same shape as `GET
+/api/admin/users` (`intake_id` query filters by набор, `plan_name` denormalized
+next to the row so the client groups without a second request). Rendered inside
+the admin's own `LockDialog` — opening any element lock on the dashboard shows,
+below the admin's own entry form, a "кто уже ввёл" list grouped by tariff, with
+an intake filter defaulting to the active набор. No edit/delete of another
+participant's lock — view only.
+
 ## Files
 
 - `app/models/expedition.py`, `app/schemas/expedition.py` — `IntakeStage`/`ExpeditionLock`
