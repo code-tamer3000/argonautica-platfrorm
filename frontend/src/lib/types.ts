@@ -468,6 +468,19 @@ export interface LockOut {
   updated_at: string
 }
 
+/** Один введённый гейт для админского просмотра `LockDialog` — кто ввёл,
+ * что ввёл, плюс набор/тариф рядом для группировки без второго запроса. */
+export interface AdminExpeditionLockOut {
+  user_id: number
+  display_name: string
+  intake_id: number | null
+  intake_starts_on: string | null
+  plan_name: string | null
+  key_number: number
+  hexagram: string
+  created_at: string
+}
+
 export interface ExpeditionOut {
   total_days: number
   today: number | null // 1..total_days; null — до старта или после конца окна

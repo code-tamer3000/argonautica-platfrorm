@@ -67,6 +67,23 @@ class LockIn(BaseModel):
     key_number: int = Field(ge=1, le=64)
 
 
+class AdminExpeditionLockOut(BaseModel):
+    """Один введённый гейт одной стихии для админского просмотра `LockDialog` —
+    кто ввёл, что ввёл, и достаточно контекста (набор/тариф), чтобы список
+    сгруппировался на клиенте без второго запроса."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: int
+    display_name: str
+    intake_id: int | None
+    intake_starts_on: date | None
+    plan_name: str | None
+    key_number: int
+    hexagram: str
+    created_at: datetime
+
+
 class ExpeditionOut(BaseModel):
     """Круг: расписание с раскладкой по дням + текущее состояние каждого замка."""
 

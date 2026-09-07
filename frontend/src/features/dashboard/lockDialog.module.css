@@ -82,3 +82,63 @@
   gap: var(--space-3);
   justify-content: flex-end;
 }
+
+.adminSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-4);
+}
+
+.adminHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminTitle {
+  font-size: var(--text-label);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-ghost);
+}
+
+.adminSelect {
+  background: var(--bg);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-primary);
+  font-size: var(--text-label-md);
+}
+
+.adminGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.adminGroupTitle {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.adminRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-label-md);
+  padding: var(--space-1) 0;
+}
+
+.adminRowName {
+  color: var(--text-primary);
+}
+
+.adminRowGate {
+  color: var(--text-muted);
+  white-space: nowrap;
+}

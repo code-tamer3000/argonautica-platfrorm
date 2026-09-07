@@ -258,3 +258,44 @@ async def test_graduated_participant_can_still_enter_lock(
         "/api/expedition/locks/air", headers=headers, json={"key_number": 5}
     )
     assert resp.status_code == 200, resp.text
+
+
+# --- API: GET /api/admin/expedition/locks/{element} ---------------------------
+
+
+async def test_admin_lock_list_shows_participants_who_entered(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    yesterday = date.today() - timedelta(days=1)
+    intake = await get_or_create_intake(session, date.today() - timedelta(days=2))
+    entered = await make_user(intake_id=intake.id, display_name="Введший")
+    not_entered = await make_user(intake_id=intake.id, display_name="Не введший")
+    admin = await make_user(role="admin")
+    await _set_stages(session, intake.id, [_stage("air", yesterday)])
+
+    entered_headers = await _headers(client, entered)
+    put_resp = await client.put(
+        "/api/expedition/locks/air", headers=entered_headers, json={"key_number": 3}
+    )
+    assert put_resp.status_code == 200, put_resp.text
+
+    admin_headers = await _headers(client, admin)
+    resp = await client.get(
+        "/api/admin/expedition/locks/air", headers=admin_headers,
+        params={"intake_id": intake.id},
+    )
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    assert [r["user_id"] for r in rows] == [entered.id]
+    assert rows[0]["key_number"] == 3
+    assert rows[0]["display_name"] == "Введший"
+    assert not_entered.id not in [r["user_id"] for r in rows]
+
+
+async def test_admin_lock_list_forbidden_for_participant(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    user = await make_user()
+    headers = await _headers(client, user)
+    resp = await client.get("/api/admin/expedition/locks/air", headers=headers)
+    assert resp.status_code == 403, resp.text
