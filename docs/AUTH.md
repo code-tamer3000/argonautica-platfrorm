@@ -39,6 +39,17 @@
     [ROOMS.md](ROOMS.md) `diary_visible`). Setting it on a non-admin → 400. Has no
     effect on visibility to other admins (always unrestricted) or on the owner's
     own view of their diary.
+  - `plan_id` (nullable, previously set only at provisioning) — changes an
+    existing participant's tariff after the fact (e.g. a punitive downgrade to
+    the cheapest tariff). Every rank/tariff-scoped check (diaries, contacts,
+    task/KB/channel plan tags — ARG-110/114/117, see [ROOMS.md](ROOMS.md)) reads
+    `plan_id` live on each request, so it self-corrects immediately — the one
+    thing that does NOT self-correct is dm membership rows, which the endpoint
+    prunes as a side effect (`prune_dm_memberships_after_plan_change`, see
+    [ROOMS.md](ROOMS.md) "Tariff change cleanup"). Group-chat membership (e.g. a
+    tariff-named group room created by `scripts/create_plan_group_chats.py`) is
+    NOT auto-pruned — groups are explicit-membership by design; remove the user
+    via `DELETE /api/rooms/{id}/members/{user_id}` by hand if needed.
 
 ## JWT flow
 
@@ -66,7 +77,7 @@
 
 - Whole router under `require_admin`.
 - `POST /users` — server generates a one-time password, returns it **once**, sets `must_change_password=true`.
-- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, `is_navigator`, `diary_public`, `intake_id`). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive); setting `is_navigator=true` or `diary_public=true` on a non-admin → 400.
+- `PATCH /users/{id}` — whitelisted fields only (`role`, `can_create_groups`, `can_access_cabin`, `is_observer`, `is_navigator`, `diary_public`, `intake_id`, `plan_id`). Toggling `can_access_cabin` false→true sends a `cabin_granted` notification — see [NOTIFICATIONS.md](NOTIFICATIONS.md). Setting `is_observer=true` on an admin (or `role=admin` on an observer) → 400 (mutually exclusive); setting `is_navigator=true` or `diary_public=true` on a non-admin → 400. Setting `plan_id` to an id that doesn't exist in `plans` → 400; changing it prunes dm memberships as described above.
 - Bulk account creation runbook and the password-delivery bot: [OPERATIONS in archive] and [TELEGRAM_BOT.md](TELEGRAM_BOT.md).
 - **First admin (chicken-and-egg):** `POST /users` requires an admin already logged in, so the very first account on a fresh stack can't come from it. `backend/scripts/bootstrap_admin.py` is the one exception — run inside the backend container (`python -m scripts.bootstrap_admin <username>`): creates the user with `role=admin` if new (one-time password printed once), or promotes it in place if it already exists. Idempotent, safe to rerun. `make local-up` runs it automatically for `admin` on the local stack.
 

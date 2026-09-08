@@ -76,6 +76,49 @@ used across 15+ frontend files), never sliced by visibility. The roster for
   in `services/visibility.py`. Personal-diary visibility (below) does **not** —
   ARG-112 took diaries out of the rank cascade; they use only `intake_id`.
 
+### Tariff change cleanup (`plan_id` changed after the fact)
+
+`users.plan_id` was originally set-once (at provisioning) — `PATCH /api/admin/users/{id}`
+now also accepts it, for the case that motivated it: downgrading an existing
+account's tariff (e.g. a punitive downgrade to the cheapest one) instead of
+recreating the user.
+
+- Everything above in this section — contacts, diaries (ARG-114/117), dm write
+  asymmetry, channel/task/KB plan tags — is a **live** check against the
+  current `plan_id`, recomputed on every request. Changing `plan_id` alone
+  already makes all of that correct on the very next request; nothing needs
+  backfilling for these.
+- The one thing that does NOT self-correct: **existing `room_members` rows**.
+  A `dm` (and `group`) room's access check is "does a membership row exist?" —
+  it never re-derives from tariff. So an old dm with someone who is no longer
+  in the user's visible circle stays fully open (read AND write) after a
+  downgrade unless something removes that row. `update_user` does this as a
+  side effect when `plan_id` actually changes:
+  `prune_dm_memberships_after_plan_change` (`app/services/rooms.py`) walks the
+  user's `dm` rooms and deletes **their own** membership row for any peer that
+  `contact_visible` no longer allows under the new rank (a non-navigator admin
+  they can no longer message, or a participant of a higher rank). Only the
+  downgraded user's row is removed — the peer keeps their side and its history
+  untouched, same one-sided-leave semantics as `DELETE /api/rooms/{id}/members/{id}`
+  on a group. If they dm again later, `dm_key` dedup creates a fresh room the
+  normal way.
+- Channel-type rooms (regular channels, personal diaries) need no equivalent
+  cleanup: `assert_room_access` never consults `room_members` for `channel` at
+  all (see "Membership & access checks" above) — a stale row there was already
+  harmless there. `list_rooms`, however, used to leak such rows into the list
+  regardless (`Room.id.in_(member_rooms)` was OR'd in unconditionally) — that
+  branch is now restricted to non-channel rooms, closing the "shows in the room
+  list, 403 on open" symptom this produced for pre-existing stale
+  `room_members` in personal diaries/channels.
+- **Not auto-pruned: group-chat membership.** A tariff-named group room (e.g.
+  `scripts/create_plan_group_chats.py`'s «Игроки»/«Спецотряд») has no tag
+  connecting it back to a plan — `group` is explicit-membership by design
+  (assignment is stronger than tariff/stream, see `services/visibility.py`
+  module docstring), so the platform doesn't guess which groups a downgrade
+  should evict someone from. Remove them by hand via
+  `DELETE /api/rooms/{id}/members/{user_id}` (owner/admin only) when downgrading
+  someone who's in one of these.
+
 ## Channels — implicit access (variant А)
 
 - No `room_members` rows are created for all users on a channel.
