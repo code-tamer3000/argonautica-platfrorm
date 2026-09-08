@@ -33,6 +33,8 @@ from app.schemas.journal import (
     RecentDay,
     UserDynamicsOut,
 )
+from app.services.media import presign_asset_urls
+from app.services.users import avatar_url
 
 
 class _StatsResult(TypedDict):
@@ -764,6 +766,9 @@ async def get_all_dynamics(
         )
 
     user_ids = [u.id for u in participants]
+    # Аватар — presigned media-URL (приоритет) либо legacy user.avatar_url.
+    avatar_media_ids = {u.avatar_media_id for u in participants if u.avatar_media_id is not None}
+    signed_avatars = await presign_asset_urls(session, avatar_media_ids)
     # У каждого участника своё начало окна — дата старта его набора. Сообщения
     # тянем от самого раннего из них, дальше режем по каждому пользователю.
     start_by_user = {
@@ -857,7 +862,7 @@ async def get_all_dynamics(
                 user_id=user.id,
                 display_name=user.display_name,
                 username=user.username,
-                avatar_url=user.avatar_url,
+                avatar_url=avatar_url(user, signed_avatars),
                 streak=stats["streak"],
                 overdue_count=len(stats["overdue_dates"]),
                 pardons_used=len(pardons),
