@@ -57,14 +57,6 @@ export function LimboPopup() {
       <p className={styles.welcomeText}>
         Срок — до {deadline}. Не успеешь — останешься в Позиции Наблюдателя.
       </p>
-      <p className={styles.welcomeText}>
-        <strong>Задание:</strong>
-        <br />
-        Опиши весь период последних дней
-        <br />
-        Ты не вёл дневник за прошедший период. Опиши здесь весь этот срок целиком,
-        одной записью — как будто это дневник сразу за все пропущенные дни.
-      </p>
       <label className={styles.welcomeCheckboxRow}>
         <input
           type="checkbox"
