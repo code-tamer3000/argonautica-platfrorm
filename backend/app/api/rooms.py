@@ -330,9 +330,16 @@ async def list_rooms(
                 regular_channel_visible,
             ),
         )
+    # member_rooms — только для dm/group: у channel-типа (обычные каналы и личные
+    # дневники) членство лениво заводится под last_read_message_id и НЕ снимается
+    # при смене потока/тарифа/понижении, поэтому пускать channel через эту ветку
+    # в обход channel_clause протаскивает протухшие строки (комната в списке, но
+    # 403 на assert_room_access — та же проверка для channel членство не смотрит).
     result = await session.execute(
         select(Room)
-        .where(or_(channel_clause, Room.id.in_(member_rooms)))
+        .where(
+            or_(channel_clause, and_(Room.type != "channel", Room.id.in_(member_rooms)))
+        )
         .order_by(Room.created_at)
     )
     rooms = list(result.scalars().all())

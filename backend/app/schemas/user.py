@@ -53,6 +53,11 @@ class AdminUpdateUserRequest(BaseModel):
     role: Role | None = None
     # Перевод участника в другой набор — двигает начало его окна Динамики.
     intake_id: int | None = None
+    # Смена тарифа задним числом (напр. понижение). При смене эндпоинт подчищает
+    # dm-членства с собеседниками вне нового видимого круга (см.
+    # prune_dm_memberships_after_plan_change) — остальные ограничения (дневники,
+    # контакты, задачи/КБ по тарифу) пересчитываются живьём на каждый запрос.
+    plan_id: int | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
