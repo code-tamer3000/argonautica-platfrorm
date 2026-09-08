@@ -511,6 +511,9 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   }
 
   const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef
+  // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
+  // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
+  const hasText = !!text.trim()
 
   const repostAuthorId = repost
     ? repost.message.forwarded_from_sender_id ?? repost.message.sender_id
@@ -641,11 +644,16 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       <div className={styles.composerRow}>
         {!voiceActive && (
           <div className={styles.inputShell}>
+            {/* Пока печатаем — на мобиле сворачиваем кнопку стикера анимацией (width→0),
+                отдавая освободившееся место полю ввода. На десктопе класс без эффекта
+                (правило только внутри мобильного media query в chat.module.css). */}
             <button
-              className={styles.iconBtnInline}
+              className={`${styles.iconBtnInline} ${styles.stickerBtn} ${hasText ? styles.stickerBtnHidden : ''}`}
               onClick={() => setPickerOpen(v => !v)}
               title="Стикер"
               aria-label="Стикер"
+              tabIndex={hasText ? -1 : 0}
+              aria-hidden={hasText}
             >
               <IconSticker size={20} />
             </button>
