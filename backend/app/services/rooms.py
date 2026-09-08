@@ -143,6 +143,45 @@ async def dm_write_allowed(session: AsyncSession, room: Room, user: User) -> boo
     return can_message_admin(user_rank(user, ranks), ranks)
 
 
+async def prune_dm_memberships_after_plan_change(session: AsyncSession, user: User) -> None:
+    """После смены тарифа убрать dm-членства участника с собеседниками, которые
+    больше не входят в его видимый круг (`contact_visible`, ARG-110) — иначе старый
+    dm остаётся доступен в обход рангового каскада (тот же класс проблемы, что и
+    протухшие `room_members` у каналов/дневников, только для dm их не подчищает
+    сам `assert_room_access`, т.к. для dm/group он смотрит только на факт членства).
+
+    Удаляем ТОЛЬКО строку САМОГО user — собеседник свою переписку не теряет
+    (односторонний уход из dm, история у него остаётся как обычно). Обратимо:
+    если видимость вернётся (напр. тариф восстановят), `_create_dm` при
+    повторном dm с этим же собеседником находит комнату по `dm_key` и
+    восстанавливает недостающую строку членства, а не просто отдаёт комнату
+    как есть — иначе возврат тарифа не возвращал бы старую переписку. Дешёвый
+    тариф — вызывающая сторона (`update_user`), но правило общее: применяется
+    на любую смену `plan_id`, не только на понижение.
+    """
+    room_ids = (
+        await session.execute(
+            select(RoomMember.room_id)
+            .join(Room, Room.id == RoomMember.room_id)
+            .where(RoomMember.user_id == user.id, Room.type == "dm")
+        )
+    ).scalars().all()
+    if not room_ids:
+        return
+    ranks = await cohort_plan_ranks(session, user.intake_id)
+    for room_id in room_ids:
+        room = await session.get(Room, room_id)
+        if room is None:
+            continue
+        peer = await _dm_peer(session, room, user)
+        if peer is None or contact_visible(user, peer, ranks):
+            continue
+        membership = await session.get(RoomMember, (room_id, user.id))
+        if membership is not None:
+            await session.delete(membership)
+    await session.flush()
+
+
 async def assert_can_write(session: AsyncSession, room: Room, user: User) -> None:
     """Наблюдателю запись в любую комнату запрещена. Формально избыточно (он и на
     чтение комнату не проходит, см. assert_room_access) — оставлено как явный

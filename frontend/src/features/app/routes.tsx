@@ -179,7 +179,7 @@ export const routes: RouteEntry[] = [
     path: '/argonauts',
     label: 'Аргонавты',
     icon: IconUsers,
-    access: { kind: 'observerBlocked' },
+    access: { kind: 'rosterAccess' },
     Component: withCohortGate(() => <ArgonautsScreen />),
     children: [{ path: '/argonauts/:userId', Component: withCohortGate(() => <ArgonautDetail />) }],
   },

@@ -144,6 +144,18 @@ async def _create_dm(
         await session.execute(select(Room).where(Room.dm_key == dm_key))
     ).scalar_one_or_none()
     if existing is not None:
+        # dm_key переживает смену тарифа: понижение подчищает членство одной из
+        # сторон (prune_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
+        # change cleanup"), а комнату — нет. Без восстановления здесь возврат
+        # тарифа не возвращал бы старую переписку: dm_key находил бы ту же
+        # комнату и просто отдавал её «как есть», без строки членства — тот же
+        # 403 на чтение и невозможность написать, что и до отката. Membership
+        # чинится симметрично для обеих сторон — так же, как при первом
+        # создании ниже, `assert_peer_visible` уже проверил видимость current.
+        for uid in (current.id, peer_id):
+            if await session.get(RoomMember, (existing.id, uid)) is None:
+                session.add(RoomMember(room_id=existing.id, user_id=uid, role_in_room="member"))
+        await session.flush()
         response.status_code = status.HTTP_200_OK  # дедуп — не плодим
         return existing
 
@@ -330,9 +342,16 @@ async def list_rooms(
                 regular_channel_visible,
             ),
         )
+    # member_rooms — только для dm/group: у channel-типа (обычные каналы и личные
+    # дневники) членство лениво заводится под last_read_message_id и НЕ снимается
+    # при смене потока/тарифа/понижении, поэтому пускать channel через эту ветку
+    # в обход channel_clause протаскивает протухшие строки (комната в списке, но
+    # 403 на assert_room_access — та же проверка для channel членство не смотрит).
     result = await session.execute(
         select(Room)
-        .where(or_(channel_clause, Room.id.in_(member_rooms)))
+        .where(
+            or_(channel_clause, and_(Room.type != "channel", Room.id.in_(member_rooms)))
+        )
         .order_by(Room.created_at)
     )
     rooms = list(result.scalars().all())
