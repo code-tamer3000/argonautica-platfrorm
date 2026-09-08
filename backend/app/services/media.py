@@ -529,7 +529,12 @@ async def assert_media_access(
 async def presign_asset_urls(
     session: AsyncSession, asset_ids: set[int]
 ) -> dict[int, str]:
-    """`{asset_id: presigned-GET}` батчем для аватаров/стикеров.
+    """`{asset_id: presigned-GET}` батчем для аватаров/обложек/стикеров.
+
+    Подписывает `thumb_key` (≤1024px WebP), когда он есть — эти объекты видны в
+    аватарках, обложках комнат/дневников и стикерах, где оригинал (до нескольких МБ)
+    не даёт видимого выигрыша в качестве. При `thumb_key IS NULL` откат на оригинал
+    (`storage_key`), картинка не пропадает.
 
     Подпись локальна (без сети) — N+1 по сети не создаёт. Картинки аватаров/стикеров
     видны любому активному участнику, поэтому подписываем без `assert_media_access`
@@ -538,13 +543,13 @@ async def presign_asset_urls(
     if not asset_ids:
         return {}
     rows = await session.execute(
-        select(MediaAsset.id, MediaAsset.bucket, MediaAsset.storage_key).where(
-            MediaAsset.id.in_(asset_ids)
-        )
+        select(
+            MediaAsset.id, MediaAsset.bucket, MediaAsset.storage_key, MediaAsset.thumb_key
+        ).where(MediaAsset.id.in_(asset_ids))
     )
     return {
-        asset_id: presigned_get_url(bucket, key)
-        for asset_id, bucket, key in rows.all()
+        asset_id: presigned_get_url(bucket, thumb_key or storage_key)
+        for asset_id, bucket, storage_key, thumb_key in rows.all()
     }
 
 

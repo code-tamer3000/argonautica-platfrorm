@@ -120,6 +120,57 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const mentions = useMentionAutocomplete(editorRef, syncText)
   const fmt = useRichFormatting(editorRef, syncText)
 
+  // Поле упирается в max-height и начинает скроллиться внутри себя (см. CSS
+  // .composerInput) — браузер сам скроллит контейнер к каретке только пока она
+  // помещается без скролла. После этого insertLineBreak/insertText двигают каретку
+  // вниз, а scrollTop контейнера не следует за ней — курсор визуально уезжает под
+  // нижний край. Считаем позицию каретки вручную и подкручиваем сами.
+  const scrollCaretIntoView = useCallback(() => {
+    const el = editorRef.current
+    if (!el) return
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (!el.contains(range.startContainer)) return
+
+    // Каретка в самом конце содержимого — частый случай (обычный набор), не нужен
+    // точный rect: просто прижимаем к низу.
+    const atEnd = (() => {
+      const r = document.createRange()
+      r.selectNodeContents(el)
+      r.setStart(range.endContainer, range.endOffset)
+      return r.toString().length === 0
+    })()
+    if (atEnd) {
+      el.scrollTop = el.scrollHeight
+      return
+    }
+
+    let rect = range.getBoundingClientRect()
+    // Схлопнутый range сразу после <br> в конце строки часто даёт нулевой rect —
+    // подставляем zero-width-зонд, чтобы получить реальные координаты.
+    if (rect.width === 0 && rect.height === 0) {
+      const probe = document.createElement('span')
+      probe.textContent = '​'
+      range.insertNode(probe)
+      rect = probe.getBoundingClientRect()
+      const parent = probe.parentNode
+      parent?.removeChild(probe)
+      parent?.normalize()
+      // insertNode двигает selection — восстанавливаем на прежнее место.
+      sel.removeAllRanges()
+      sel.addRange(range)
+    }
+
+    const box = el.getBoundingClientRect()
+    const margin = 4
+    if (rect.bottom > box.bottom - margin) {
+      el.scrollTop += rect.bottom - (box.bottom - margin)
+    } else if (rect.top < box.top + margin) {
+      el.scrollTop -= (box.top + margin) - rect.top
+    }
+  }, [])
+
   // Смена контекста ответа (вошли/вышли из треда / другой корень) — начинаем с чистого
   // поля: текст верхнего уровня не должен утекать в тред и наоборот.
   const prevThreadRootId = useRef(threadRootId)
@@ -444,6 +495,9 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       lastTyping.current = now
       wsClient.typing(roomId)
     }
+    // rAF — ждём, пока браузер применит insertLineBreak/insertText и пересчитает
+    // layout, иначе getBoundingClientRect каретки ещё видит старую геометрию.
+    requestAnimationFrame(scrollCaretIntoView)
   }
 
   // Вставка из буфера — всегда как обычный текст (contentEditable иначе протащит чужую
@@ -457,6 +511,9 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   }
 
   const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef
+  // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
+  // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
+  const hasText = !!text.trim()
 
   const repostAuthorId = repost
     ? repost.message.forwarded_from_sender_id ?? repost.message.sender_id
@@ -586,7 +643,47 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
           растягивается в панель. */}
       <div className={styles.composerRow}>
         {!voiceActive && (
-          <>
+          <div className={styles.inputShell}>
+            {/* Пока печатаем — на мобиле сворачиваем кнопку стикера анимацией (width→0),
+                отдавая освободившееся место полю ввода. На десктопе класс без эффекта
+                (правило только внутри мобильного media query в chat.module.css). */}
+            <button
+              className={`${styles.iconBtnInline} ${styles.stickerBtn} ${hasText ? styles.stickerBtnHidden : ''}`}
+              onClick={() => setPickerOpen(v => !v)}
+              title="Стикер"
+              aria-label="Стикер"
+              tabIndex={hasText ? -1 : 0}
+              aria-hidden={hasText}
+            >
+              <IconSticker size={20} />
+            </button>
+            {/* contentEditable, не textarea — жирный/курсив/подчёркнутый видны сразу по
+                месту (execCommand, см. useRichFormatting.tsx), без сырых маркеров **, *, ++
+                в процессе набора. DOM не контролируется через value — React его не
+                перерисовывает (см. editorRef/resetEditor выше), иначе курсор скакал бы
+                на каждый ре-рендер. */}
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-multiline="true"
+              aria-label="Сообщение"
+              data-placeholder={
+                inThread
+                  ? 'Ответить в тред…'
+                  : repost
+                    ? 'Добавить сообщение к репосту…'
+                    : 'Сообщение…'
+              }
+              className={styles.composerInput}
+              onInput={onEditorInput}
+              onKeyDown={onKey}
+              onPaste={onPaste}
+              onFocus={() => { fmt.onFocus(); if (!inThread) onFocusInput?.() }}
+              onBlur={fmt.onBlur}
+              enterKeyHint="enter"
+            />
             <div className={styles.attachWrap}>
               {attachMenuOpen && (
                 <>
@@ -629,7 +726,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                 </>
               )}
               <button
-                className={styles.iconBtn}
+                className={styles.iconBtnInline}
                 onClick={() => setAttachMenuOpen((v) => !v)}
                 disabled={uploading}
                 title="Прикрепить"
@@ -640,42 +737,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                 {uploading ? <Spinner size={16} /> : <IconAttach size={18} />}
               </button>
             </div>
-            <button
-              className={styles.iconBtn}
-              onClick={() => setPickerOpen(v => !v)}
-              title="Стикер"
-              aria-label="Стикер"
-            >
-              <IconSticker size={18} />
-            </button>
-            {/* contentEditable, не textarea — жирный/курсив/подчёркнутый видны сразу по
-                месту (execCommand, см. useRichFormatting.tsx), без сырых маркеров **, *, ++
-                в процессе набора. DOM не контролируется через value — React его не
-                перерисовывает (см. editorRef/resetEditor выше), иначе курсор скакал бы
-                на каждый ре-рендер. */}
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              role="textbox"
-              aria-multiline="true"
-              aria-label="Сообщение"
-              data-placeholder={
-                inThread
-                  ? 'Ответить в тред…'
-                  : repost
-                    ? 'Добавить сообщение к репосту…'
-                    : 'Сообщение…'
-              }
-              className={styles.composerInput}
-              onInput={onEditorInput}
-              onKeyDown={onKey}
-              onPaste={onPaste}
-              onFocus={() => { fmt.onFocus(); if (!inThread) onFocusInput?.() }}
-              onBlur={fmt.onBlur}
-              enterKeyHint="enter"
-            />
-          </>
+          </div>
         )}
         {/* Есть что отправить → круглая кнопка отправки; иначе — VoiceComposer
             (в idle = кнопка-микрофон, в записи/превью = полная панель). */}

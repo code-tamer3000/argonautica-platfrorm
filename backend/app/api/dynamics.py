@@ -16,6 +16,7 @@ from app.db.session import get_session
 from app.models.intake import Intake
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
 from app.models.message import Message
+from app.models.plan import Plan
 from app.models.room import Room
 from app.models.user import User
 from app.schemas.journal import (
@@ -32,6 +33,8 @@ from app.schemas.journal import (
     RecentDay,
     UserDynamicsOut,
 )
+from app.services.media import presign_asset_urls
+from app.services.users import avatar_url
 
 
 class _StatsResult(TypedDict):
@@ -723,23 +726,32 @@ async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
         await session.flush()
 
 async def get_all_dynamics(
-    session: AsyncSession, intake_ids: Sequence[int] | None = None
+    session: AsyncSession,
+    intake_ids: Sequence[int] | None = None,
+    plan_ids: Sequence[int] | None = None,
 ) -> AdminDynamicsOut:
     """Сводка + статистика участников для страницы Динамика в панели.
 
-    `intake_ids` ограничивает выдачу набором(ами): и список, и сводные счётчики
-    считаются только по этим участникам. `None` — все наборы сразу.
+    `intake_ids`/`plan_ids` ограничивает выдачу набором(ами)/тарифом(ами): и
+    список, и сводные счётчики считаются только по этим участникам. `None` —
+    все наборы/тарифы сразу.
     """
     timeline = await load_timeline(session)
     intake_starts = await load_intake_starts(session)
     intake_ends = await load_intake_ends(session)
 
-    stmt = select(User).where(User.role == "participant")
+    stmt = (
+        select(User, Plan.name)
+        .outerjoin(Plan, Plan.id == User.plan_id)
+        .where(User.role == "participant")
+    )
     if intake_ids is not None:
         stmt = stmt.where(User.intake_id.in_(list(intake_ids)))
-    participants = list(
-        (await session.execute(stmt.order_by(User.display_name))).scalars().all()
-    )
+    if plan_ids is not None:
+        stmt = stmt.where(User.plan_id.in_(list(plan_ids)))
+    rows = (await session.execute(stmt.order_by(User.display_name))).all()
+    participants = [row[0] for row in rows]
+    plan_name_by_user: dict[int, str | None] = {row[0].id: row[1] for row in rows}
 
     if not participants:
         return AdminDynamicsOut(
@@ -754,6 +766,9 @@ async def get_all_dynamics(
         )
 
     user_ids = [u.id for u in participants]
+    # Аватар — presigned media-URL (приоритет) либо legacy user.avatar_url.
+    avatar_media_ids = {u.avatar_media_id for u in participants if u.avatar_media_id is not None}
+    signed_avatars = await presign_asset_urls(session, avatar_media_ids)
     # У каждого участника своё начало окна — дата старта его набора. Сообщения
     # тянем от самого раннего из них, дальше режем по каждому пользователю.
     start_by_user = {
@@ -847,7 +862,7 @@ async def get_all_dynamics(
                 user_id=user.id,
                 display_name=user.display_name,
                 username=user.username,
-                avatar_url=user.avatar_url,
+                avatar_url=avatar_url(user, signed_avatars),
                 streak=stats["streak"],
                 overdue_count=len(stats["overdue_dates"]),
                 pardons_used=len(pardons),
@@ -856,6 +871,8 @@ async def get_all_dynamics(
                 recent_days=recent,
                 graduated_at=user.graduated_at,
                 intake_id=user.intake_id,
+                plan_id=user.plan_id,
+                plan_name=plan_name_by_user.get(user.id),
             )
         )
 

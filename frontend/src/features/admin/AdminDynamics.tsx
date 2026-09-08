@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useAdminIntakes } from '../../api/admin'
 import { useAdminCreditDay, useAdminDynamics } from '../../api/dynamics'
+import { useAdminPlans } from '../../api/plans'
 import { Avatar } from '../../components/Avatar'
 import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { groupByPlan } from '../../lib/planGroups'
 import type {
   DayStatus,
   DynamicsSummary,
@@ -226,11 +228,27 @@ export function AdminDynamics() {
   const [intakeFilter, setIntakeFilter] = useState<number | 'all' | null>(null)
   const selectedIntake: number | 'all' = intakeFilter ?? activeIntake?.id ?? 'all'
 
+  const { data: plans = [], isLoading: plansLoading } = useAdminPlans()
+  // null — фильтр не трогали: по умолчанию все тарифы, КРОМЕ самого дешёвого
+  // (is_cheap) — держатели этого тарифа не считаются полноценными участниками
+  // потока по Динамике, но чекбокс есть — можно включить обратно.
+  const [planFilter, setPlanFilter] = useState<number[] | null>(null)
+  const defaultPlanIds = plans.filter((p) => !p.is_cheap).map((p) => p.id)
+  const selectedPlanIds = planFilter ?? defaultPlanIds
+
   const { data, isLoading } = useAdminDynamics(
     selectedIntake === 'all' ? undefined : selectedIntake,
-    !intakesLoading,
+    plans.length > 0 ? selectedPlanIds : undefined,
+    !intakesLoading && !plansLoading,
   )
   const creditDay = useAdminCreditDay()
+
+  function togglePlan(id: number) {
+    setPlanFilter((prev) => {
+      const current = prev ?? defaultPlanIds
+      return current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    })
+  }
 
   const handleToggleDay = (userId: number, day: RecentDay) => {
     if (creditDay.isPending) return
@@ -238,8 +256,8 @@ export function AdminDynamics() {
     creditDay.mutate({ userId, date: day.date, credited: day.status !== 'credited' })
   }
 
-  // Ждём наборы: до них неизвестно, какой набор активен и чем фильтровать.
-  if (intakesLoading || isLoading) return <div className="center grow"><Spinner /></div>
+  // Ждём наборы и тарифы: до них неизвестно, какой набор активен и чем фильтровать.
+  if (intakesLoading || plansLoading || isLoading) return <div className="center grow"><Spinner /></div>
 
   const users = data?.users ?? []
   const summary = data?.summary
@@ -261,6 +279,21 @@ export function AdminDynamics() {
       onToggleDay={handleToggleDay}
     />
   )
+
+  // Внутри набора карточки дополнительно делим на секции по тарифу (порядок —
+  // как в списке тарифов, «Без тарифа» последней). Если тарифов нет или в
+  // выборке всего одна группа — секция избыточна, показываем плоскую сетку.
+  const renderPlanGroups = (list: UserDynamicsOut[]) => {
+    if (plans.length === 0) return <div className={dynStyles.grid}>{list.map(renderCard)}</div>
+    const groups = groupByPlan(list, plans, (u) => ({ id: u.plan_id, name: u.plan_name }))
+    if (groups.length <= 1) return <div className={dynStyles.grid}>{list.map(renderCard)}</div>
+    return groups.map((g) => (
+      <div key={g.key}>
+        <h3 className={styles.sectionTitle} style={{ fontSize: 'var(--text-ui)' }}>{g.label}</h3>
+        <div className={dynStyles.grid}>{g.items.map(renderCard)}</div>
+      </div>
+    ))
+  }
 
   // В режиме «все наборы» карточки группируем по набору (свежие сверху) — иначе
   // это снова плоский список, из которого не видно, кто откуда.
@@ -301,6 +334,24 @@ export function AdminDynamics() {
         </div>
       )}
 
+      {plans.length > 0 && (
+        <div className={styles.formRow} style={{ maxWidth: 420 }}>
+          <label>Тарифы</label>
+          <div className={styles.checkRow}>
+            {plans.map((plan) => (
+              <label key={plan.id} className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={selectedPlanIds.includes(plan.id)}
+                  onChange={() => togglePlan(plan.id)}
+                />
+                {plan.name}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {summary && <Dashboard s={summary} total={summary.total_participants} />}
 
       {users.length === 0 && (
@@ -312,7 +363,7 @@ export function AdminDynamics() {
       )}
 
       {selectedIntake !== 'all' ? (
-        <div className={dynStyles.grid}>{sorted.map(renderCard)}</div>
+        renderPlanGroups(sorted)
       ) : (
         <>
           {intakes.map((intake) => {
@@ -324,14 +375,14 @@ export function AdminDynamics() {
                   Набор от {intakeDate(intake.starts_on)}
                   {intake.id === activeIntake?.id ? ' — активный' : ''}
                 </h2>
-                <div className={dynStyles.grid}>{groupUsers.map(renderCard)}</div>
+                {renderPlanGroups(groupUsers)}
               </section>
             )
           })}
           {orphans.length > 0 && (
             <section>
               <h2 className={styles.sectionTitle}>Без набора</h2>
-              <div className={dynStyles.grid}>{orphans.map(renderCard)}</div>
+              {renderPlanGroups(orphans)}
             </section>
           )}
         </>

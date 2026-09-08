@@ -21,6 +21,7 @@ from app.services.media import (
     attachment_download_name,
     build_attachment_out,
     ensure_buckets,
+    presign_asset_urls,
     presigned_get_url,
 )
 
@@ -785,6 +786,37 @@ def test_presigned_get_url_download_name_changes_signature() -> None:
         "chat-media", "2026/08/obj.bin", download_name="report.pdf"
     )
     assert url_inline != url_download
+
+
+# --- presign_asset_urls (аватары/обложки/стикеры) --------------------------
+
+
+async def test_presign_asset_urls_prefers_thumbnail(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Ассет с thumb_key подписывается по миниатюре, а не по оригиналу — иначе
+    аватар/обложка продолжают тянуть полноразмерный файл (ARG-122)."""
+    owner = await make_user()
+    asset = await _make_asset(session, owner.id)
+    asset.thumb_key = f"thumbnails/{asset.storage_key}.webp"
+    await session.commit()
+
+    signed = await presign_asset_urls(session, {asset.id})
+
+    assert urlsplit(signed[asset.id]).path.endswith(asset.thumb_key)
+
+
+async def test_presign_asset_urls_falls_back_to_original_without_thumbnail(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    """thumb_key IS NULL → откат на оригинал, картинка не пропадает."""
+    owner = await make_user()
+    asset = await _make_asset(session, owner.id)
+    assert asset.thumb_key is None
+
+    signed = await presign_asset_urls(session, {asset.id})
+
+    assert urlsplit(signed[asset.id]).path.endswith(asset.storage_key)
 
 
 def test_attachment_download_name_matches_across_call_sites() -> None:

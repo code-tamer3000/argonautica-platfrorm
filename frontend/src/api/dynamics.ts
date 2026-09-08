@@ -25,20 +25,23 @@ export function usePardon() {
 
 /**
  * Обзор Динамики для админа. `intakeId` режет выдачу (и сводку) по набору на
- * сервере; `undefined` — все наборы сразу. `enabled: false` — пока неизвестно,
- * какой набор активен (список наборов ещё грузится): без этого ушёл бы лишний
- * запрос за всеми наборами.
+ * сервере; `undefined` — все наборы сразу. `planIds` аналогично режет по
+ * тарифу(ам) — `undefined` означает «все тарифы», а НЕ «ни одного»; пустой
+ * массив запрещён вызывающей стороной (см. AdminDynamics.tsx). `enabled: false`
+ * — пока неизвестно, какой набор/тарифы активны (справочники ещё грузятся):
+ * без этого ушёл бы лишний запрос без нужного фильтра.
  */
-export function useAdminDynamics(intakeId?: number, enabled = true) {
+export function useAdminDynamics(intakeId?: number, planIds?: number[], enabled = true) {
+  const params = new URLSearchParams()
+  if (intakeId !== undefined) params.append('intake_id', String(intakeId))
+  for (const id of planIds ?? []) params.append('plan_id', String(id))
+  const qs = params.toString()
+
   return useQuery({
     enabled,
-    queryKey: [...adminDynamicsKey, intakeId ?? 'all'] as const,
+    queryKey: [...adminDynamicsKey, intakeId ?? 'all', planIds ?? 'all'] as const,
     queryFn: () =>
-      http.get<AdminDynamicsOut>(
-        intakeId === undefined
-          ? '/api/admin/dynamics'
-          : `/api/admin/dynamics?intake_id=${intakeId}`,
-      ),
+      http.get<AdminDynamicsOut>(`/api/admin/dynamics${qs ? `?${qs}` : ''}`),
     refetchInterval: 60_000,
   })
 }

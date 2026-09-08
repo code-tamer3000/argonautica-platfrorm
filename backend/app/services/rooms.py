@@ -6,7 +6,7 @@
 лениво только под `last_read_message_id`.
 """
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -143,41 +143,53 @@ async def dm_write_allowed(session: AsyncSession, room: Room, user: User) -> boo
     return can_message_admin(user_rank(user, ranks), ranks)
 
 
-async def prune_dm_memberships_after_plan_change(session: AsyncSession, user: User) -> None:
-    """После смены тарифа убрать dm-членства участника с собеседниками, которые
-    больше не входят в его видимый круг (`contact_visible`, ARG-110) — иначе старый
-    dm остаётся доступен в обход рангового каскада (тот же класс проблемы, что и
-    протухшие `room_members` у каналов/дневников, только для dm их не подчищает
-    сам `assert_room_access`, т.к. для dm/group он смотрит только на факт членства).
+async def resync_dm_memberships_after_plan_change(session: AsyncSession, user: User) -> None:
+    """При любой смене тарифа синхронизировать dm-членства участника с текущим
+    видимым кругом (`contact_visible`, ARG-110) — в обе стороны:
 
-    Удаляем ТОЛЬКО строку САМОГО user — собеседник свою переписку не теряет
-    (односторонний уход из dm, история у него остаётся как обычно). Обратимо:
-    если видимость вернётся (напр. тариф восстановят), `_create_dm` при
-    повторном dm с этим же собеседником находит комнату по `dm_key` и
-    восстанавливает недостающую строку членства, а не просто отдаёт комнату
-    как есть — иначе возврат тарифа не возвращал бы старую переписку. Дешёвый
-    тариф — вызывающая сторона (`update_user`), но правило общее: применяется
-    на любую смену `plan_id`, не только на понижение.
+    - Убрать членство в dm с собеседником, который больше не виден по новому
+      рангу (понижение) — иначе старый dm остаётся доступен в обход рангового
+      каскада (тот же класс проблемы, что и протухшие `room_members` у
+      каналов/дневников; для dm/group `assert_room_access` не подчищает это
+      само, т.к. смотрит только на факт членства).
+    - Вернуть членство, если видимость снова появилась (тариф вернули как
+      было) — без этого dm пропадал бы из списка комнат до первого повторного
+      сообщения через `POST /api/rooms` (там та же починка есть в `_create_dm`,
+      на случай если membership потерялась не через эту функцию — но ждать
+      явного клика «новый чат», чтобы просто увидеть уже существующий чат
+      обратно в списке, не нужно).
+
+    Проходим по `dm_key` (а не по существующим строкам `room_members`) —
+    иначе комнаты, где своя строка уже удалена прошлым понижением, не нашлись
+    бы для восстановления. Правим ТОЛЬКО строку САМОГО user, вторая сторона
+    своего членства/истории не теряет и не получает лишнего. Дешёвый тариф —
+    типичный вызывающий (`update_user`), но правило общее: применяется на
+    любую смену `plan_id`, не только на понижение.
     """
-    room_ids = (
+    rooms = (
         await session.execute(
-            select(RoomMember.room_id)
-            .join(Room, Room.id == RoomMember.room_id)
-            .where(RoomMember.user_id == user.id, Room.type == "dm")
+            select(Room).where(
+                Room.type == "dm",
+                or_(Room.dm_key.like(f"{user.id}:%"), Room.dm_key.like(f"%:{user.id}")),
+            )
         )
     ).scalars().all()
-    if not room_ids:
+    if not rooms:
         return
     ranks = await cohort_plan_ranks(session, user.intake_id)
-    for room_id in room_ids:
-        room = await session.get(Room, room_id)
-        if room is None:
+    for room in rooms:
+        if room.dm_key is None:
             continue
-        peer = await _dm_peer(session, room, user)
-        if peer is None or contact_visible(user, peer, ranks):
+        lo, hi = room.dm_key.split(":")
+        peer_id = int(hi) if int(lo) == user.id else int(lo)
+        peer = await session.get(User, peer_id)
+        if peer is None:
             continue
-        membership = await session.get(RoomMember, (room_id, user.id))
-        if membership is not None:
+        visible = contact_visible(user, peer, ranks)
+        membership = await session.get(RoomMember, (room.id, user.id))
+        if visible and membership is None:
+            session.add(RoomMember(room_id=room.id, user_id=user.id, role_in_room="member"))
+        elif not visible and membership is not None:
             await session.delete(membership)
     await session.flush()
 

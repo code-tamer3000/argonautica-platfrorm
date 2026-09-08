@@ -65,8 +65,10 @@ async def assert_task_visible(
 ) -> None:
     """Проверить видимость задачи для юзера (анти-IDOR, п.1).
 
-    common → видна любому активному участнику; admin → всё; выпускник → только свои
-    сданные задачи (см. GRADUATE_VISIBLE_STATUSES). Иначе:
+    common → видна любому активному участнику по потоку+тарифу (ARG-96), КРОМЕ уже
+    сданной/принятой самим юзером — та остаётся видна независимо от тарифа
+    (GRADUATE_VISIBLE_STATUSES, тот же список что и у выпускника ниже);
+    admin → всё; выпускник → только свои сданные задачи. Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
     - pair → юзер состоит в одной из пар этого задания (task_pair_members);
@@ -87,6 +89,20 @@ async def assert_task_visible(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
     if task.type == "common":
+        # Уже сдал/приняли, пока держал нужный тариф — доступ остаётся, даже если
+        # тариф потом сменили (назначение сильнее тарифа — тот же принцип, что и
+        # у individual/pair/stream, см. module docstring services/visibility.py).
+        # Без этого понижение тарифа задним числом стирало бы уже сделанную
+        # работу вместо того чтобы просто закрыть НОВЫЕ задачи.
+        already_done = await session.scalar(
+            select(TaskAssignment.id).where(
+                TaskAssignment.task_id == task.id,
+                TaskAssignment.user_id == user.id,
+                TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+            )
+        )
+        if already_done is not None:
+            return
         # Двойной фильтр поток+тариф (ARG-96): common-задача чужого потока/тарифа
         # для участника не видна (403) — тем же принципом, что и каналы.
         if not intake_visible(task.intake_id, user):
