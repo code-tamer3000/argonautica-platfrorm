@@ -109,6 +109,11 @@ class UserOut(BaseModel):
     # входе. NULL/NULL — участник без набора или набор без текста (старые наборы).
     intake_starts_on: date | None = None
     intake_welcome_message: str | None = None
+    # Междумирье (см. docs/LIMBO.md): не NULL — грейс-период после понижения с
+    # платного тарифа на самый дешёвый, срок на отработку прошлых задач +
+    # допзадание. Снимается сам, живьём на следующем запросе (resolve_limbo) —
+    # фронт использует только чтобы решить, показывать ли поп-ап.
+    limbo_deadline_at: datetime | None = None
 
 
 class PublicUserOut(BaseModel):

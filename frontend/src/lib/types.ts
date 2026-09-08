@@ -52,6 +52,10 @@ export interface UserOut {
   // при первом входе. Оба null у бесхозного участника или у набора без текста.
   intake_starts_on: string | null
   intake_welcome_message: string | null
+  // Междумирье: не null — грейс-период после понижения с платного тарифа на
+  // самый дешёвый (см. docs/LIMBO.md). Снимается сам на бэке, поле только для
+  // поп-апа (LimboPopup.tsx).
+  limbo_deadline_at: string | null
 }
 
 export interface PublicUserOut {

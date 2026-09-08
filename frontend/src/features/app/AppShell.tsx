@@ -10,6 +10,7 @@ import { wsClient } from '../../lib/wsClient'
 import { useUiStore } from '../../stores/ui'
 import { ConnectionBanner } from './ConnectionBanner'
 import { NotificationBell } from './NotificationBell'
+import { LimboPopup } from './LimboPopup'
 import { WelcomePopup } from './WelcomePopup'
 import { ProfileMenu } from './ProfileMenu'
 import { RequireAccess, isRouteVisible, useAccessContext } from './RequireAccess'
@@ -227,6 +228,7 @@ export function AppShell() {
         </main>
       </div>
       {!isObserver && <WelcomePopup />}
+      {!isObserver && <LimboPopup />}
       <Toasts />
     </div>
   )

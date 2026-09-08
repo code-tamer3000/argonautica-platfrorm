@@ -17,6 +17,7 @@ from app.core.security import ACCESS_TOKEN_TYPE, decode_token
 from app.db.session import get_session
 from app.models.user import User
 from app.services.graduation import assert_not_graduated
+from app.services.limbo import resolve_limbo
 
 bearer = HTTPBearer()
 
@@ -53,12 +54,18 @@ async def get_current_user(
 
 async def get_current_active_user(
     user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> User:
     """Юзер обязан сменить временный пароль перед работой с платформой.
 
     Здесь же второй барьер — выпускная анкета: пока админ ждёт её от человека
     (`survey_required`), платформа закрыта целиком. Эндпоинты самой анкеты и
     `/api/auth/me` сидят на `get_current_user`, поэтому остаются доступны.
+
+    Заодно — ленивая проверка Междумирья (`resolve_limbo`, см. services/limbo.py):
+    в проекте нет ни одного планировщика, все дедлайны считаются по факту
+    следующего запроса (тот же приём, что и у 28-дневного окна Динамики). Дешёво
+    для всех, у кого `limbo_deadline_at IS NULL` — один сравнение колонки.
     """
     if user.must_change_password:
         raise HTTPException(
@@ -70,6 +77,7 @@ async def get_current_active_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Survey required",
         )
+    await resolve_limbo(session, user)
     return user
 
 
