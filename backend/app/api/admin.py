@@ -69,7 +69,7 @@ from app.schemas.user import (
 )
 from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
-from app.services.rooms import prune_dm_memberships_after_plan_change
+from app.services.rooms import resync_dm_memberships_after_plan_change
 from app.services.survey_form import question_form
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
@@ -460,10 +460,12 @@ async def update_user(
             )
         if await session.get(Intake, new_intake_id) is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Набор не найден")
-    # Смена тарифа задним числом (напр. понижение существующего аккаунта) —
-    # после применения подчищаем dm-членства, ставшие невидимыми по новому рангу
-    # (см. prune_dm_memberships_after_plan_change). Дневники/контакты/задачи/КБ
-    # по тарифу ничего чинить не требуют — они пересчитываются живьём.
+    # Смена тарифа задним числом (напр. понижение/восстановление существующего
+    # аккаунта) — после применения синхронизируем dm-членства с новым рангом в
+    # обе стороны (см. resync_dm_memberships_after_plan_change). Дневники/
+    # контакты/задачи/КБ по тарифу ничего чинить не требуют — они пересчитываются
+    # живьём, кроме уже сданных common-задач, которые остаются видны владельцу и
+    # админу независимо от тарифа (assert_task_visible/_completed_common_where).
     plan_changed = "plan_id" in changes and changes["plan_id"] != user.plan_id
     if plan_changed and changes["plan_id"] is not None:
         if await session.get(Plan, changes["plan_id"]) is None:
@@ -499,7 +501,7 @@ async def update_user(
     if grant_cabin:
         await notify_cabin_granted(session, user.id)
     if plan_changed:
-        await prune_dm_memberships_after_plan_change(session, user)
+        await resync_dm_memberships_after_plan_change(session, user)
     return user
 
 

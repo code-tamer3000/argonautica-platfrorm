@@ -21,6 +21,31 @@ fields — an explicit assignee/pair/stream member sees their task regardless of
 because assignment is already a stronger, deliberate grant. `POST /api/tasks` and
 `PATCH /api/tasks/{id}` accept `intake_id`/`plan_ids` (read only when `type='common'`).
 
+**A common task the caller already `submitted`/`accepted` is exempt from the plan check too**
+(`GRADUATE_VISIBLE_STATUSES`, same tuple graduates use) — `assert_task_visible` checks for an
+existing `task_assignments` row in one of those statuses *before* touching `plan_visible`, and
+returns immediately if found. Otherwise a participant's tariff being changed after the fact
+(e.g. a punitive downgrade, see [ROOMS.md](ROOMS.md) "Tariff change cleanup") would 403 them
+out of work they already handed in and had accepted — erasing history instead of just closing
+off new tasks. `GET /api/tasks` already had this covered on the list side (its `my_individual`
+subquery isn't type-filtered, so a common task with an assignment row rides along regardless of
+plan) — the gap was specifically the single-task detail route, which used to 403/hang for the
+assignee's own completed task.
+
+The **Argonauts roster/profile task list** (`app/api/argonauts.py`, see
+[ARGONAUTS.md](ARGONAUTS.md)) has a narrower, asymmetric version of this exemption: it uses
+`_completed_common_where` rather than `_visible_common_where` for a card's already-
+`accepted`/`submitted` tasks. The plan check there was being evaluated against the *viewer's*
+plan, not the task owner's — so an admin (who typically holds no plan at all) or the profile
+owner themself, after a downgrade, would lose sight of their own already-completed task for a
+reason that has nothing to do with whether that completion should be visible. `_completed_common_where`
+drops the plan check *only* for those two viewers (`current_user.role == 'admin'`, or
+`TaskAssignment.user_id == current_user.id` i.e. viewing your own card) — a **third-party**
+participant on a different tariff than the task's tag still can't see it on someone else's
+profile, by design: leaking a tariff-scoped task's title/content to a viewer who was never
+entitled to it would be the same IDOR the plan filter exists to prevent in the first place,
+completed or not. Only intake (ARG-96) is dropped unconditionally for everyone.
+
 ## Assignments & lifecycle
 
 - Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels). Exception: `intake_bot.py` assigns intake-tagged welcome tasks (`tasks.intake_id` set, `type='individual'`, created with zero recipients by `scripts/provision_second_intake.py`) to each new user right after their platform account is created — see [INTAKE_BOT.md](INTAKE_BOT.md).

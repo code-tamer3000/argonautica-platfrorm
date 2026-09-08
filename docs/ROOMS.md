@@ -92,25 +92,33 @@ recreating the user.
   A `dm` (and `group`) room's access check is "does a membership row exist?" —
   it never re-derives from tariff. So an old dm with someone who is no longer
   in the user's visible circle stays fully open (read AND write) after a
-  downgrade unless something removes that row. `update_user` does this as a
-  side effect when `plan_id` actually changes:
-  `prune_dm_memberships_after_plan_change` (`app/services/rooms.py`) walks the
-  user's `dm` rooms and deletes **their own** membership row for any peer that
-  `contact_visible` no longer allows under the new rank (a non-navigator admin
-  they can no longer message, or a participant of a higher rank). Only the
-  downgraded user's row is removed — the peer keeps their side and its history
-  untouched, same one-sided-leave semantics as `DELETE /api/rooms/{id}/members/{id}`
-  on a group. **This is reversible**: if the tariff is restored (or they simply
-  become visible to each other again) and either side messages the other,
-  `POST /api/rooms` finds the existing room by `dm_key` and — instead of just
-  returning it as-is — re-adds whichever side's `RoomMember` row is missing
-  (`_create_dm`, `app/api/rooms.py`), so the old thread and its history come
-  back rather than staying permanently unreachable. Without this, a
-  reverted downgrade would leave the dm looking like it never existed again:
-  `dm_key`'s uniqueness means a "new" dm with the same peer resolves to the
-  same room, not a fresh one — silently returning it with no membership row
-  reproduces the exact 403/can't-write symptom the tariff change was
-  supposed to have fixed.
+  downgrade unless something removes that row — and, symmetrically, a dm that
+  was closed this way stays closed even after the tariff is restored unless
+  something adds the row back. `update_user` runs
+  `resync_dm_memberships_after_plan_change` (`app/services/rooms.py`) as a side
+  effect whenever `plan_id` actually changes, in **either** direction:
+  - it walks every `dm` room whose `dm_key` involves this user (not just ones
+    where a membership row currently exists — that's what lets it find rooms
+    to *restore* into, not just ones to prune),
+  - for each, resolves the peer from `dm_key` and checks `contact_visible`
+    under the new rank,
+  - removes the user's own row if the peer is no longer visible (a
+    non-navigator admin they can no longer message, or a participant of a
+    higher rank), or adds it back if the peer is visible again and the row is
+    missing.
+
+  Only **the changed user's own** row is ever touched — the peer keeps their
+  side and its history untouched either way, same one-sided-leave semantics as
+  `DELETE /api/rooms/{id}/members/{id}` on a group. This makes a restored
+  tariff bring the old dm straight back into `GET /api/rooms` on its own,
+  without needing anyone to re-message first. As a second line of defense
+  (e.g. membership went missing some other way), `POST /api/rooms` also self-heals
+  on next contact: finding an existing room by `dm_key`, it re-adds whichever
+  side's `RoomMember` row is missing instead of just returning the room as-is
+  (`_create_dm`, `app/api/rooms.py`) — without that, `dm_key`'s uniqueness
+  means a "new" dm with the same peer resolves to the same room, not a fresh
+  one, so silently returning it with no membership row would reproduce the
+  exact 403/can't-write symptom the tariff change was supposed to have fixed.
 - Channel-type rooms (regular channels, personal diaries) need no equivalent
   cleanup: `assert_room_access` never consults `room_members` for `channel` at
   all (see "Membership & access checks" above) — a stale row there was already

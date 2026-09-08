@@ -15,17 +15,21 @@
   - фронт режет плитки на секции по соседним элементам (см. lib/planGroups
     `groupPreOrdered`), порядок задаёт сервер: сначала админы, затем участники по
     рангу тарифа (как `list_contacts`, ARG-110), затем наблюдатели хвостом;
-  - `tasks_done`/`tasks` считаются по common-задачам, видимым СМОТРЯЩЕМУ
-    (`_visible_common_where`, тот же двойной фильтр поток+тариф, что и в
-    разделе «Задачи») — individual/pair/stream задачи чужому участнику не
-    показываем, это личные назначения;
+  - `tasks_done`/`tasks` считаются по common-задачам, уже сданным/принятым
+    ХОЗЯИНОМ карточки (`_completed_common_where`) — тариф СМОТРЯЩЕГО не
+    учитывается только для самого владельца карточки и для админа (иначе
+    понижение владельца или админ без тарифа стирали бы видимость уже
+    сделанной работы); для ОСТАЛЬНЫХ участников тарифная изоляция остаётся —
+    заголовок чужой тарифной задачи посторонним не течёт (см. docstring
+    хелпера). Поток (ARG-96) учитываем всегда — individual/pair/stream задачи
+    чужому участнику не показываем в любом случае, это личные назначения;
   - «выполнено» = `status == 'accepted'`; в карточке участника дополнительно
     видны `submitted` (сдано, на проверке) — `returned` не показываем, это не
     «сдано»;
   - `expedition_feat` — отдельное поле «Подвиг на Экспедицию»: текст ПОСЛЕДНЕЙ
     сдачи (любой статус) именованной задачи `EXPEDITION_FEAT_TASK_TITLE`. На
     проде эта задача — `type='individual'` (персональное задание каждому
-    участнику потока), НЕ `common` — значит `_visible_common_where` тут не
+    участнику потока), НЕ `common` — значит `_completed_common_where` тут не
     применяется (она фильтрует по `Task.type == 'common'` и всегда давала бы
     404-подобный «нет такой задачи»); видимость этого поля обеспечена тем, что
     `user` уже прошёл через `_roster` (тот же поток). Матчинг по точному
@@ -48,24 +52,24 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, or_, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_participant
 from app.db.session import get_session
 from app.models.plan import Plan
 from app.models.room import Room
-from app.models.task import Task, TaskAssignment, TaskSubmission
+from app.models.task import Task, TaskAssignment, TaskPlan, TaskSubmission
 from app.models.user import User
 from app.schemas.argonaut import ArgonautDetailOut, ArgonautOut, ArgonautTaskOut
 from app.services.media import presign_asset_urls
-from app.services.tasks import _visible_common_where
 from app.services.users import avatar_url, plan_names
 from app.services.visibility import (
     CHEAP_TARIFF_NAME,
     cohort_plan_ranks,
     contact_visible,
     is_cheap_tariff,
+    plan_visibility_clause,
     user_rank,
 )
 
@@ -104,6 +108,38 @@ EXPEDITION_FEAT_TASK_TITLE = "Освобождаем оперативку"
 # Держатели этого тарифа — вторая группа наблюдателей рядом с флагом is_observer
 # (см. docstring модуля). Тот же тариф — см. `app/services/visibility.py`.
 OBSERVER_TARIFF_NAME = CHEAP_TARIFF_NAME
+
+
+def _completed_common_where(current_user: User) -> tuple[ColumnElement[bool], ...]:
+    """common-задача видна как «выполненная» в ростере/профиле — шире, чем ещё
+    не сделанные (`_visible_common_where`, тариф смотрящего там уместен), но не
+    безусловно: полная тарифная изоляция ОСТАЁТСЯ для постороннего смотрящего
+    (не слить заголовок/текст чужой тарифной задачи — тот же IDOR-принцип, что
+    и у ещё не сделанных). Исключения ровно две — то же «назначение/оверсайт
+    сильнее тарифа», что и в `assert_task_visible` для common:
+    - сам владелец карточки — `TaskAssignment.user_id == current_user.id`,
+      понижение задним числом не должно стирать из виду ЕГО ЖЕ работу;
+    - админ — безусловный оверсайт, как everywhere else (иначе `plan_id IS
+      NULL` заваливал бы фильтр по любому непустому `task_plans`, и админ без
+      тарифа не видел бы вообще ни одной тарифной задачи ни у кого).
+    Поток (ARG-96) учитываем всегда — тарифная изоляция снята избирательно,
+    поточная нет.
+    """
+    intake_clause = or_(
+        Task.intake_id.is_(None), Task.intake_id == current_user.intake_id
+    )
+    if current_user.role == "admin":
+        return (Task.type == "common", intake_clause)
+    return (
+        Task.type == "common",
+        intake_clause,
+        or_(
+            TaskAssignment.user_id == current_user.id,
+            plan_visibility_clause(
+                TaskPlan.plan_id, TaskPlan.task_id, Task.id, current_user.plan_id
+            ),
+        ),
+    )
 
 
 async def _roster(
@@ -146,7 +182,8 @@ async def _roster(
 async def _tasks_done_by_user(
     session: AsyncSession, current_user: User, user_ids: list[int]
 ) -> dict[int, int]:
-    """user_id -> число принятых common-задач, видимых current_user."""
+    """user_id -> число принятых common-задач (уже сделанных — тариф смотрящего
+    не фильтрует владельца/админа, см. `_completed_common_where`)."""
     if not user_ids:
         return {}
     rows = await session.execute(
@@ -154,7 +191,7 @@ async def _tasks_done_by_user(
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
         .where(
-            *_visible_common_where(current_user),
+            *_completed_common_where(current_user),
             Task.deleted_at.is_(None),
             TaskAssignment.user_id.in_(user_ids),
             TaskAssignment.status == "accepted",
@@ -314,7 +351,7 @@ async def get_argonaut(
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
         .where(
-            *_visible_common_where(current_user),
+            *_completed_common_where(current_user),
             Task.deleted_at.is_(None),
             TaskAssignment.user_id == user.id,
             TaskAssignment.status.in_(VISIBLE_TASK_STATUSES),

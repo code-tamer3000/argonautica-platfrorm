@@ -100,15 +100,23 @@ admin nor an observer — a bare
 ## Tasks
 
 `tasks_done` (tile) and `tasks` (detail page) count only **`common`-type tasks
-that are visible to the VIEWER**, not to the target user. This reuses
-`_visible_common_where` from [services/tasks.py](../backend/app/services/tasks.py)
-— the same double intake+plan filter that gates the Tasks section (ARG-96) —
-built from `current_user`, not from the profile being viewed.
+already `accepted`/`submitted`**, gated by `_completed_common_where`
+(`api/argonauts.py`) — **not** `_visible_common_where` (that one gates the Tasks
+section itself, ARG-96, and still applies plan/intake to a task not yet done).
+The completed-task gate keeps the intake half of ARG-96 unconditionally, but
+drops the *plan* half for exactly two viewers: the card's own owner
+(`TaskAssignment.user_id == current_user.id`) and any admin. A downgrade
+shouldn't erase the owner's own view of work they already handed in, and an
+admin — who typically holds no plan at all — needs the same unconditional
+oversight they get everywhere else on the platform; without this a `plan_id
+IS NULL` admin would fail every non-empty `task_plans` check and see *nobody's*
+tariff-scoped completed tasks.
 
-Consequence: two viewers looking at the same argonaut's page can see different
-`tasks_done` counts, if a common task is scoped to a tariff one of them doesn't
-hold. This is intentional — leaking the *title* of a task a viewer isn't entitled
-to see would be an IDOR, even on someone else's profile.
+Consequence: a **third-party** participant looking at someone else's argonaut
+page still can't see a task scoped to a tariff they don't hold — that part is
+still intentional: leaking the *title* of a task a viewer isn't entitled to see
+would be an IDOR, even on someone else's profile, completed or not. Only the
+owner's own view and admin oversight are exempt.
 
 `individual`/`pair`/`stream` tasks are never shown here — those are private
 assignments (and, for `pair`, may carry the other participant's text), not
@@ -140,12 +148,12 @@ concept). Matched by **exact task title**, not a DB flag — nothing marks that
 task as special, so renaming it on prod silently breaks this field.
 
 On production this task is **`type='individual'`** (assigned per-user to every
-participant at intake start), not `common` — this matters: `_visible_common_where`
+participant at intake start), not `common` — this matters: `_completed_common_where`
 (used by `tasks`/`tasks_done` above) hard-filters `Task.type == 'common'` and
 would silently match nothing here, which is exactly the bug the first version of
 this field shipped with (verified against prod DB — task id 35, 21 individual
 assignments, zero rows matched the common-only query). `_expedition_feat`
-does **not** reuse `_visible_common_where`; it matches by title plus an
+does **not** reuse `_completed_common_where`; it matches by title plus an
 intake-label check (`Task.intake_id IS NULL OR Task.intake_id == current_user.intake_id`,
 same "label not a gate" semantics documented on `Task.intake_id` for individual
 tasks) — real access control comes from `user` already having passed through
