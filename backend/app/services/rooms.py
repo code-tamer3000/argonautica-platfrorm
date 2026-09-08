@@ -168,6 +168,8 @@ async def prune_dm_memberships_after_plan_change(session: AsyncSession, user: Us
     ranks = await cohort_plan_ranks(session, user.intake_id)
     for room_id in room_ids:
         room = await session.get(Room, room_id)
+        if room is None:
+            continue
         peer = await _dm_peer(session, room, user)
         if peer is None or contact_visible(user, peer, ranks):
             continue

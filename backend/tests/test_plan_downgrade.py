@@ -83,7 +83,12 @@ async def test_patch_plan_id_updates_user(
         json={"plan_id": None},
     )
     assert resp.status_code == 200
-    assert resp.json()["plan_id"] is None
+
+    # UserOut (профильная схема, тот же response_model что и у PATCH /me) не
+    # тащит plan_id — сверяем через админский список, где он есть.
+    listed = await client.get("/api/admin/users", headers=admin_h)
+    row = next(u for u in listed.json() if u["id"] == users["oko"].id)
+    assert row["plan_id"] is None
 
 
 # --- Понижение тарифа подчищает dm с собеседниками вне нового круга ------------
@@ -128,8 +133,16 @@ async def test_downgrade_prunes_dm_with_non_navigator_admin(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     """`oko` (топ-2 тариф) переписывается с НЕ-навигатор-админом — легально.
-    После понижения до `player` (не топ-2) dm с этим админом должен пропасть."""
+    После понижения до `player` (не топ-2) dm с этим админом должен пропасть.
+
+    Держим второго участника на тарифе «Око» (`oko2`), чтобы после понижения
+    исходного `oko` этот тариф не исчез из потока целиком — иначе ранги
+    потока схлопнутся до двух (`player`/`squad`), и «топ-2» тривиально
+    накроет вообще всех, включая только что понижённого — тест перестанет
+    что-либо проверять.
+    """
     plans, users = await _three_tier_cohort(client, make_user)
+    await make_user(intake_id=users["admin"].intake_id, plan_id=plans["oko"])
     admin_h = await _headers(client, users["admin"])
     oko_h = await _headers(client, users["oko"])
 
