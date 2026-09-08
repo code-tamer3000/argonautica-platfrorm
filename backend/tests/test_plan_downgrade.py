@@ -129,6 +129,59 @@ async def test_downgrade_prunes_dm_with_higher_rank_peer(
     assert room_id in {r["id"] for r in squad_rooms.json()}
 
 
+async def test_dm_restored_after_plan_reverted(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Регрессия: если тариф вернули как было, старая переписка должна
+    возвращаться при повторном dm с тем же собеседником — не оставаться
+    невидимой/недоступной для записи навсегда просто потому что `dm_key`
+    находит ТУ ЖЕ комнату и раньше отдавал её без восстановления членства."""
+    plans, users = await _three_tier_cohort(client, make_user)
+    oko_h = await _headers(client, users["oko"])
+    squad_h = await _headers(client, users["squad"])
+    admin_h = await _headers(client, users["admin"])
+
+    created = await client.post(
+        "/api/rooms", headers=oko_h, json={"type": "dm", "peer_id": users["squad"].id}
+    )
+    assert created.status_code == 201
+    room_id = created.json()["id"]
+    sent = await client.post(
+        f"/api/rooms/{room_id}/messages", headers=oko_h, json={"content": "до понижения"}
+    )
+    assert sent.status_code == 201
+
+    await client.patch(
+        f"/api/admin/users/{users['oko'].id}", headers=admin_h, json={"plan_id": plans["player"]}
+    )
+    assert (await client.get(f"/api/rooms/{room_id}", headers=oko_h)).status_code == 403
+
+    # Тариф вернули как было.
+    await client.patch(
+        f"/api/admin/users/{users['oko'].id}", headers=admin_h, json={"plan_id": plans["oko"]}
+    )
+
+    # Повторный dm с тем же собеседником — та же комната (dm_key), но членство
+    # должно вернуться, а не остаться недоступной «как есть».
+    reopened = await client.post(
+        "/api/rooms", headers=oko_h, json={"type": "dm", "peer_id": users["squad"].id}
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["id"] == room_id
+
+    oko_rooms = await client.get("/api/rooms", headers=oko_h)
+    assert room_id in {r["id"] for r in oko_rooms.json()}
+
+    history = await client.get(f"/api/rooms/{room_id}/messages", headers=oko_h)
+    assert history.status_code == 200
+    assert any(m["content"] == "до понижения" for m in history.json())
+
+    reply = await client.post(
+        f"/api/rooms/{room_id}/messages", headers=oko_h, json={"content": "после восстановления"}
+    )
+    assert reply.status_code == 201
+
+
 async def test_downgrade_prunes_dm_with_non_navigator_admin(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

@@ -144,6 +144,18 @@ async def _create_dm(
         await session.execute(select(Room).where(Room.dm_key == dm_key))
     ).scalar_one_or_none()
     if existing is not None:
+        # dm_key переживает смену тарифа: понижение подчищает членство одной из
+        # сторон (prune_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
+        # change cleanup"), а комнату — нет. Без восстановления здесь возврат
+        # тарифа не возвращал бы старую переписку: dm_key находил бы ту же
+        # комнату и просто отдавал её «как есть», без строки членства — тот же
+        # 403 на чтение и невозможность написать, что и до отката. Membership
+        # чинится симметрично для обеих сторон — так же, как при первом
+        # создании ниже, `assert_peer_visible` уже проверил видимость current.
+        for uid in (current.id, peer_id):
+            if await session.get(RoomMember, (existing.id, uid)) is None:
+                session.add(RoomMember(room_id=existing.id, user_id=uid, role_in_room="member"))
+        await session.flush()
         response.status_code = status.HTTP_200_OK  # дедуп — не плодим
         return existing
 
