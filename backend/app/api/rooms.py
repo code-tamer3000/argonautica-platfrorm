@@ -145,7 +145,7 @@ async def _create_dm(
     ).scalar_one_or_none()
     if existing is not None:
         # dm_key переживает смену тарифа: понижение подчищает членство одной из
-        # сторон (prune_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
+        # сторон (resync_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
         # change cleanup"), а комнату — нет. Без восстановления здесь возврат
         # тарифа не возвращал бы старую переписку: dm_key находил бы ту же
         # комнату и просто отдавал её «как есть», без строки членства — тот же

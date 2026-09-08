@@ -3,9 +3,11 @@
 Видимость ростера — только по потоку (правило `diary_visible`/ARG-112, не
 ранговый каскад ARG-110): исключён только сам смотрящий; админы идут первым
 блоком, наблюдатели (флаг ЛИБО тариф) — последним, с `is_observer=true`.
-`tasks_done`/`tasks` считаются по common-задачам, видимым СМОТРЯЩЕМУ (двойной
-фильтр поток+тариф, ARG-96) — задача чужого тарифа не должна попасть в счётчик
-чужого участника, даже если у него самого этот тариф есть.
+`tasks_done`/`tasks` считаются по common-задачам, уже сданным/принятым
+ХОЗЯИНОМ карточки (`_completed_common_where`) — тариф стороннего смотрящего
+всё ещё фильтрует (задача чужого тарифа не должна течь постороннему), но НЕ
+фильтрует для самого владельца карточки и для админа: их «назначение/оверсайт
+сильнее тарифа», см. docs/TASKS.md "Tariff change cleanup".
 """
 from datetime import date, timedelta
 
@@ -611,3 +613,66 @@ async def test_cheap_tariff_holder_cannot_access_section(
     assert (
         await client.get(f"/api/argonauts/{other.id}", headers=cheap_h)
     ).status_code == 403
+
+
+# --- сданная задача переживает понижение тарифа (владелец и админ) ------------
+
+
+async def test_own_completed_task_survives_downgrade(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Владелец карточки видит СВОЮ уже принятую тарифную задачу на своей же
+    странице «Аргонавты» даже после того как его понизили — `_completed_common_where`
+    не фильтрует по тарифу СМОТРЯЩЕГО, если смотрящий и есть владелец."""
+    starts_on = date.today() - timedelta(days=206)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    plan_b = await _create_plan(client, admin_h, "Тариф Б")
+    target = await make_user(intake_id=admin.intake_id, plan_id=plan_b)
+    target_h = await _headers(client, target)
+
+    task_id = await _create_common_task(
+        client, admin_h, "Только тариф Б", plan_ids=[plan_b]
+    )
+    await _submit_and_review(client, admin_h, target_h, task_id, "accept")
+
+    patched = await client.patch(
+        f"/api/admin/users/{target.id}", headers=admin_h, json={"plan_id": None}
+    )
+    assert patched.status_code == 200
+
+    listed = (await client.get("/api/argonauts", headers=target_h)).json()
+    own_row = next(r for r in listed if r["id"] == target.id)
+    assert own_row["tasks_done"] == 1
+
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=target_h)).json()
+    assert detail["tasks_done"] == 1
+    assert task_id in {t["task_id"] for t in detail["tasks"]}
+
+
+async def test_admin_sees_completed_task_regardless_of_own_plan(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Админ (обычно без тарифа вовсе) видит чужую принятую тарифную задачу на
+    карточке участника — тот же безусловный оверсайт, что и везде на платформе.
+    Контраст с `test_tasks_done_ignores_task_of_foreign_plan`: там смотрящий —
+    обычный участник без тарифа, и для НЕГО фильтр остаётся в силе."""
+    starts_on = date.today() - timedelta(days=207)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    plan_b = await _create_plan(client, admin_h, "Тариф Б")
+    target = await make_user(intake_id=admin.intake_id, plan_id=plan_b)
+    target_h = await _headers(client, target)
+
+    task_id = await _create_common_task(
+        client, admin_h, "Только тариф Б", plan_ids=[plan_b]
+    )
+    await _submit_and_review(client, admin_h, target_h, task_id, "accept")
+
+    listed = (await client.get("/api/argonauts", headers=admin_h)).json()
+    row = next(r for r in listed if r["id"] == target.id)
+    assert row["tasks_done"] == 1
+
+    detail = (await client.get(f"/api/argonauts/{target.id}", headers=admin_h)).json()
+    assert detail["tasks_done"] == 1
+    assert task_id in {t["task_id"] for t in detail["tasks"]}

@@ -58,9 +58,13 @@ export function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>()
   const id = Number(taskId ?? '0')
   const { user } = useAuth()
-  const { data: task, isLoading } = useTask(id)
+  const { data: task, isLoading, isError } = useTask(id)
   const { data: tracks } = useTaskSubmissions(id)
 
+  // isError отдельно от !task: без него 403/404 (доступ закрыли задним числом,
+  // напр. сменой тарифа) с retry на query держал экран на спиннере, а не на
+  // «не найдена» — данных никогда не будет, ждать нечего.
+  if (isError) return <div className="center grow muted">Задача не найдена</div>
   if (isLoading) return <div className="center grow"><Spinner /></div>
   if (!task) return <div className="center grow muted">Задача не найдена</div>
 

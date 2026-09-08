@@ -176,6 +176,40 @@ async def test_dm_restored_after_plan_reverted(
     assert history.status_code == 200
     assert any(m["content"] == "до понижения" for m in history.json())
 
+
+async def test_dm_reappears_in_list_immediately_after_plan_restored(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Возврат тарифа сам возвращает dm в список комнат — без обязательного
+    клика «новый чат» перед этим (`resync_dm_memberships_after_plan_change`
+    восстанавливает членство симметрично прямо в PATCH, `_create_dm` — лишь
+    подстраховка на случай, если членство пропало как-то иначе)."""
+    plans, users = await _three_tier_cohort(client, make_user)
+    oko_h = await _headers(client, users["oko"])
+    admin_h = await _headers(client, users["admin"])
+
+    created = await client.post(
+        "/api/rooms", headers=oko_h, json={"type": "dm", "peer_id": users["squad"].id}
+    )
+    assert created.status_code == 201
+    room_id = created.json()["id"]
+
+    await client.patch(
+        f"/api/admin/users/{users['oko'].id}", headers=admin_h, json={"plan_id": plans["player"]}
+    )
+    assert room_id not in {
+        r["id"] for r in (await client.get("/api/rooms", headers=oko_h)).json()
+    }
+
+    await client.patch(
+        f"/api/admin/users/{users['oko'].id}", headers=admin_h, json={"plan_id": plans["oko"]}
+    )
+
+    # Никакого повторного POST /api/rooms — комната должна появиться сама.
+    rooms_after_restore = await client.get("/api/rooms", headers=oko_h)
+    assert room_id in {r["id"] for r in rooms_after_restore.json()}
+    assert (await client.get(f"/api/rooms/{room_id}", headers=oko_h)).status_code == 200
+
     reply = await client.post(
         f"/api/rooms/{room_id}/messages", headers=oko_h, json={"content": "после восстановления"}
     )
@@ -299,3 +333,65 @@ async def test_group_membership_still_listed_via_member_rooms(
 
     listed = await client.get("/api/rooms", headers=owner_h)
     assert room_id in {r["id"] for r in listed.json()}
+
+
+# --- Понижение тарифа не стирает уже сданную common-задачу --------------------
+
+
+async def _create_common_task(
+    client: AsyncClient, headers: dict[str, str], title: str, **extra: object
+) -> int:
+    resp = await client.post(
+        "/api/tasks", headers=headers, json={"type": "common", "title": title, **extra}
+    )
+    assert resp.status_code == 201, resp.text
+    return int(resp.json()["id"])
+
+
+async def _submit_and_accept(
+    client: AsyncClient, admin_h: dict[str, str], user_h: dict[str, str], task_id: int
+) -> None:
+    resp = await client.post(
+        f"/api/tasks/{task_id}/submissions", headers=user_h, json={"body": "x"}
+    )
+    assert resp.status_code == 201, resp.text
+    tracks = (await client.get(f"/api/tasks/{task_id}/submissions", headers=admin_h)).json()
+    assignment_id = tracks[0]["assignment_id"]
+    review = await client.post(
+        f"/api/tasks/assignments/{assignment_id}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    assert review.status_code == 200, review.text
+
+
+async def test_completed_common_task_survives_downgrade(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """`oko` сдаёт и получает принятой common-задачу, помеченную под тариф
+    «Око» — держится, пока держал нужный тариф. После понижения до «Игрок»
+    задача остаётся доступной (список + деталь), а НОВАЯ тарифная задача,
+    которую он не трогал, закрывается как обычно (ARG-96 никуда не делось)."""
+    plans, users = await _three_tier_cohort(client, make_user)
+    admin_h = await _headers(client, users["admin"])
+    oko_h = await _headers(client, users["oko"])
+
+    done_task = await _create_common_task(
+        client, admin_h, "Уже сдана", plan_ids=[plans["oko"]]
+    )
+    await _submit_and_accept(client, admin_h, oko_h, done_task)
+    new_task = await _create_common_task(
+        client, admin_h, "Новая, только для Око", plan_ids=[plans["oko"]]
+    )
+
+    await client.patch(
+        f"/api/admin/users/{users['oko'].id}", headers=admin_h, json={"plan_id": plans["player"]}
+    )
+
+    done_detail = await client.get(f"/api/tasks/{done_task}", headers=oko_h)
+    assert done_detail.status_code == 200
+    listed = await client.get("/api/tasks", headers=oko_h)
+    assert done_task in {t["id"] for t in listed.json()["items"]}
+
+    # Новая задача того же (теперь недоступного) тарифа — как обычно закрыта.
+    assert (await client.get(f"/api/tasks/{new_task}", headers=oko_h)).status_code == 403
