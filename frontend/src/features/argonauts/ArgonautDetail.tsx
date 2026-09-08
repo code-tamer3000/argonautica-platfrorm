@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { argonautKey, useArgonaut } from '../../api/argonauts'
+import { useCreateRoom } from '../../api/rooms'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { Chip } from '../../components/Chip'
@@ -14,6 +15,8 @@ import { TaskComposer } from '../tasks/TaskComposer'
 import { ApiError } from '../../lib/apiClient'
 import { dateTimeMsk } from '../../lib/format'
 import type { ArgonautTaskOut } from '../../lib/types'
+import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import styles from './argonauts.module.css'
 
 // Клик по строке разворачивает текст сдачи на месте (ARG-119) — переход на
@@ -60,10 +63,22 @@ export function ArgonautDetail() {
   const navigate = useNavigate()
   const { user: me } = useAuth()
   const qc = useQueryClient()
+  const createRoom = useCreateRoom()
+  const setDmPeer = useUiStore((s) => s.setDmPeer)
   const numericId = Number(userId)
   const { data, isLoading, error } = useArgonaut(numericId)
   const [avatarOpen, setAvatarOpen] = useState(false)
   const isOwn = me?.id === numericId
+
+  async function handleWrite() {
+    try {
+      const room = await createRoom.mutateAsync({ type: 'dm', peer_id: numericId })
+      setDmPeer(room.id, numericId)
+      navigate(`/chats/${room.id}`)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Не удалось открыть чат', 'error')
+    }
+  }
 
   if (error instanceof ApiError && error.status === 404) {
     return (
@@ -121,6 +136,11 @@ export function ArgonautDetail() {
               />
             )}
           </div>
+        )}
+        {!isOwn && data.can_message && !me?.graduated_at && (
+          <Button variant="gold" onClick={handleWrite} disabled={createRoom.isPending}>
+            {createRoom.isPending ? <Spinner size={16} /> : 'Написать сообщение'}
+          </Button>
         )}
         {data.diary_room_id != null && (
           <Button variant="outline" onClick={() => navigate(`/diaries/${data.diary_room_id}`)}>

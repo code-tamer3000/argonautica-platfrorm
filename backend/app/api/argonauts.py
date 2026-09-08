@@ -33,8 +33,17 @@
     отключит поле, см. docs/ARGONAUTS.md. Заодно отдаём `expedition_feat_task_id`/
     `_status` — фронт даёт владельцу профиля отредактировать через тот же
     `POST /api/tasks/{id}/submissions`, что и обычный раздел «Задачи» (никакого
-    нового write-эндпоинта здесь нет — эта задача только читает).
+    нового write-эндпоинта здесь нет — эта задача только читает);
+  - `can_message` (только в профиле, не в списке) — зеркало `assert_peer_visible`/
+    `contact_visible` (ARG-110), той же проверки, что стоит на `POST /api/rooms`.
+    Асимметрия с составом ростера намеренная: в ростере виден весь поток (ARG-119),
+    писать можно только по рангу тарифа — «вижу карточку» не значит «могу открыть
+    чат» (см. docs/ARGONAUTS.md).
 Наблюдателю раздел закрыт целиком (`require_participant`), как Задачи/Рубка.
+Держателю самого дешёвого тарифа (`CHEAP_TARIFF_NAME`) раздел закрыт целиком тоже
+(`_deny_cheap_tariff`) — раньше он только не отображался в ростере как объект, но
+сам открывал список; теперь не открывает вовсе (симметрично с тем, что ему закрыты
+«Все дневники», см. `is_cheap_tariff`).
 """
 from typing import Annotated
 
@@ -52,12 +61,35 @@ from app.schemas.argonaut import ArgonautDetailOut, ArgonautOut, ArgonautTaskOut
 from app.services.media import presign_asset_urls
 from app.services.tasks import _visible_common_where
 from app.services.users import avatar_url, plan_names
-from app.services.visibility import CHEAP_TARIFF_NAME, cohort_plan_ranks, user_rank
+from app.services.visibility import (
+    CHEAP_TARIFF_NAME,
+    cohort_plan_ranks,
+    contact_visible,
+    is_cheap_tariff,
+    user_rank,
+)
+
+
+async def _deny_cheap_tariff(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Держатель самого дешёвого тарифа (`CHEAP_TARIFF_NAME`) не видит раздел
+    целиком — не только исключён из ростера как объект (было раньше), но и не
+    открывает его сам. Отдельная от `is_observer` проверка (та же асимметрия, что
+    в `is_cheap_tariff`/`diary_visible`): наблюдатель и дешёвый тариф — две
+    независимые группы с урезанным доступом."""
+    if await is_cheap_tariff(session, current_user):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Argonauts roster is not available for your tariff",
+        )
+
 
 router = APIRouter(
     prefix="/api/argonauts",
     tags=["argonauts"],
-    dependencies=[Depends(require_participant)],
+    dependencies=[Depends(require_participant), Depends(_deny_cheap_tariff)],
 )
 
 # «Сдано» с точки зрения ростера — принято ИЛИ ждёт проверки. 'returned'/'assigned'
@@ -74,12 +106,16 @@ EXPEDITION_FEAT_TASK_TITLE = "Освобождаем оперативку"
 OBSERVER_TARIFF_NAME = CHEAP_TARIFF_NAME
 
 
-async def _roster(session: AsyncSession, current_user: User) -> tuple[list[User], set[int]]:
-    """Состав + порядок (админы, участники по рангу тарифа, наблюдатели хвостом)
-    и множество id наблюдателей — фронт режет на секции по соседним элементам,
-    ранги сам не пересчитывает (см. модуль)."""
+async def _roster(
+    session: AsyncSession, current_user: User
+) -> tuple[list[User], set[int], dict[int, int]]:
+    """Состав + порядок (админы, участники по рангу тарифа, наблюдатели хвостом),
+    множество id наблюдателей и ранги тарифов потока (`cohort_plan_ranks`) — фронт
+    режет на секции по соседним элементам, ранги сам не пересчитывает (см. модуль).
+    Ранги отдаём наружу, а не только используем для сортировки — `get_argonaut`
+    считает по ним `can_message`, второй одинаковый запрос не нужен."""
     if current_user.intake_id is None:
-        return [], set()
+        return [], set(), {}
     rows = await session.execute(
         select(User).where(User.intake_id == current_user.intake_id)
     )
@@ -104,7 +140,7 @@ async def _roster(session: AsyncSession, current_user: User) -> tuple[list[User]
             u.display_name,
         )
     )
-    return users, observer_ids
+    return users, observer_ids, ranks
 
 
 async def _tasks_done_by_user(
@@ -223,7 +259,7 @@ async def list_argonauts(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[ArgonautOut]:
-    users, observer_ids = await _roster(session, current_user)
+    users, observer_ids, _ranks = await _roster(session, current_user)
     media_ids = {u.avatar_media_id for u in users if u.avatar_media_id is not None}
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, users)
@@ -251,7 +287,7 @@ async def get_argonaut(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> ArgonautDetailOut:
     # 404 (не 403): не подтверждаем клиенту существование юзера вне его потока.
-    roster, observer_ids = await _roster(session, current_user)
+    roster, observer_ids, ranks = await _roster(session, current_user)
     user = next((u for u in roster if u.id == user_id), None)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Argonaut not found")
@@ -304,6 +340,12 @@ async def get_argonaut(
     feat_task_id, expedition_feat, feat_status = await _expedition_feat(
         session, current_user, user.id
     )
+    # Зеркало `assert_peer_visible` на POST /api/rooms (ARG-110) — та же ранговая
+    # проверка, только для UI-подсказки "можно ли писать", не write-путь; ranks
+    # уже посчитаны внутри `_roster` для сортировки, второй запрос не нужен.
+    can_message = current_user.role == "admin" or contact_visible(
+        current_user, user, ranks
+    )
 
     return ArgonautDetailOut(
         id=user.id,
@@ -321,4 +363,5 @@ async def get_argonaut(
         expedition_feat=expedition_feat,
         expedition_feat_task_id=feat_task_id,
         expedition_feat_status=feat_status,
+        can_message=can_message,
     )

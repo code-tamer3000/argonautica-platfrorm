@@ -460,3 +460,154 @@ async def test_expedition_feat_ignores_other_intakes_task(
 
     detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
     assert detail["expedition_feat"] is None
+
+
+# --- can_message: зеркало assert_peer_visible/contact_visible (ARG-110) -------
+
+
+async def _three_tier_cohort(
+    client: AsyncClient, make_user: MakeUser, starts_on: date
+) -> dict[str, User]:
+    """Один поток, три тарифа по возрастанию цены — по одному участнику каждого,
+    плюс не-навигатор и навигатор админ (см. test_rank_visibility.py, тот же
+    паттерн, локальная копия — не тащим межмодульный импорт ради одного хелпера).
+    """
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    plan_player = await _create_plan(client, admin_h, "Игрок")
+    plan_squad = await _create_plan(client, admin_h, "Спецотряд")
+    plan_oko = await _create_plan(client, admin_h, "Око")
+
+    player = await make_user(intake_id=admin.intake_id, plan_id=plan_player)
+    squad = await make_user(intake_id=admin.intake_id, plan_id=plan_squad)
+    oko = await make_user(intake_id=admin.intake_id, plan_id=plan_oko)
+    navigator = await make_user(
+        role="admin", intake_id=admin.intake_id, is_navigator=True
+    )
+    return {
+        "admin": admin,
+        "player": player,
+        "squad": squad,
+        "oko": oko,
+        "navigator": navigator,
+    }
+
+
+async def test_can_message_false_below_rank(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Младший по тарифу не видит кнопку у старшего — та же граница, что и на
+    записи (assert_peer_visible бы 403-нул POST /api/rooms)."""
+    starts_on = date.today() - timedelta(days=220)
+    users = await _three_tier_cohort(client, make_user, starts_on)
+    player_h = await _headers(client, users["player"])
+
+    detail = (
+        await client.get(f"/api/argonauts/{users['oko'].id}", headers=player_h)
+    ).json()
+    assert detail["can_message"] is False
+
+
+async def test_can_message_true_above_or_equal_rank(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Старший по тарифу и равный по тарифу — обе стороны True (равный ранг —
+    "<=" из contact_visible)."""
+    starts_on = date.today() - timedelta(days=221)
+    users = await _three_tier_cohort(client, make_user, starts_on)
+    oko_h = await _headers(client, users["oko"])
+
+    detail_lower = (
+        await client.get(f"/api/argonauts/{users['player'].id}", headers=oko_h)
+    ).json()
+    assert detail_lower["can_message"] is True
+
+    another_player = await make_user(
+        intake_id=users["admin"].intake_id, plan_id=users["player"].plan_id
+    )
+    peer_detail = (
+        await client.get(
+            f"/api/argonauts/{another_player.id}", headers=await _headers(client, users["player"])
+        )
+    ).json()
+    assert peer_detail["can_message"] is True
+
+
+async def test_can_message_admin_only_top_two_tariffs(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Обычный (не-навигатор) админ виден в контактах только топ-2 тарифов потока
+    (can_message_admin) — здесь то же правило, отражённое в профиле админа."""
+    starts_on = date.today() - timedelta(days=222)
+    users = await _three_tier_cohort(client, make_user, starts_on)
+
+    player_view = (
+        await client.get(
+            f"/api/argonauts/{users['admin'].id}", headers=await _headers(client, users["player"])
+        )
+    ).json()
+    assert player_view["can_message"] is False
+
+    oko_view = (
+        await client.get(
+            f"/api/argonauts/{users['admin'].id}", headers=await _headers(client, users["oko"])
+        )
+    ).json()
+    assert oko_view["can_message"] is True
+
+
+async def test_can_message_navigator_visible_to_everyone(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """is_navigator обходит правило топ-2 тарифов — виден абсолютно всем."""
+    starts_on = date.today() - timedelta(days=223)
+    users = await _three_tier_cohort(client, make_user, starts_on)
+
+    player_view = (
+        await client.get(
+            f"/api/argonauts/{users['navigator'].id}",
+            headers=await _headers(client, users["player"]),
+        )
+    ).json()
+    assert player_view["can_message"] is True
+
+
+async def test_can_message_admin_viewer_unrestricted(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Смотрящий-админ не ограничен рангом — видит can_message=True для любого."""
+    starts_on = date.today() - timedelta(days=224)
+    users = await _three_tier_cohort(client, make_user, starts_on)
+    admin_h = await _headers(client, users["admin"])
+
+    detail = (
+        await client.get(f"/api/argonauts/{users['player'].id}", headers=admin_h)
+    ).json()
+    assert detail["can_message"] is True
+
+
+# --- держатель дешёвого тарифа: раздел закрыт целиком -------------------------
+
+
+async def test_cheap_tariff_holder_cannot_access_section(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """CHEAP_TARIFF_NAME ("Наблюдатель") закрывает раздел так же, как
+    is_observer — отдельная проверка `_deny_cheap_tariff`, держатель этого
+    тарифа при этом БЕЗ флага is_observer (иначе это тест на require_participant,
+    не на новую зависимость)."""
+    starts_on = date.today() - timedelta(days=225)
+    admin = await make_user(role="admin", intake_starts_on=starts_on)
+    admin_h = await _headers(client, admin)
+    cheap_plan = await _create_plan(client, admin_h, OBSERVER_TARIFF_NAME)
+
+    cheap_user = await make_user(
+        intake_id=admin.intake_id, plan_id=cheap_plan, is_observer=False
+    )
+    other = await make_user(intake_id=admin.intake_id)
+    cheap_h = await _headers(client, cheap_user)
+
+    assert (await client.get("/api/argonauts", headers=cheap_h)).status_code == 403
+    assert (
+        await client.get(f"/api/argonauts/{other.id}", headers=cheap_h)
+    ).status_code == 403
