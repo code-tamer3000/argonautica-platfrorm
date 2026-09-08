@@ -256,3 +256,39 @@ async def test_limbo_abandoned_on_manual_override(
 
     me = (await client.get("/api/auth/me", headers=user_h)).json()
     assert me["limbo_deadline_at"] is None
+
+
+async def test_limbo_popup_dismiss_resets_on_next_entry(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """«Не показывать снова» (settings.limbo_popup_dismissed) не должно
+    переживать следующий заход в Междумирье — иначе поп-ап молчал бы навсегда
+    после первого же понижения, что бы ни случилось дальше."""
+    admin, admin_h, user, _plan_paid, plan_cheap, plan_other_paid = await _setup(
+        client, make_user
+    )
+    await client.patch(
+        f"/api/admin/users/{user.id}", headers=admin_h, json={"plan_id": plan_cheap}
+    )
+    user_h = await _headers(client, user)
+
+    dismiss = await client.patch(
+        "/api/auth/me",
+        headers=user_h,
+        json={"settings": {"limbo_popup_dismissed": True}},
+    )
+    assert dismiss.status_code == 200
+    assert dismiss.json()["settings"]["limbo_popup_dismissed"] is True
+
+    # Отменить вручную (абандон) и понизить заново — новый заход должен снова
+    # показывать поп-ап.
+    await client.patch(
+        f"/api/admin/users/{user.id}", headers=admin_h, json={"plan_id": plan_other_paid}
+    )
+    await client.patch(
+        f"/api/admin/users/{user.id}", headers=admin_h, json={"plan_id": plan_cheap}
+    )
+
+    me = (await client.get("/api/auth/me", headers=user_h)).json()
+    assert me["limbo_deadline_at"] is not None
+    assert me["settings"].get("limbo_popup_dismissed") is False

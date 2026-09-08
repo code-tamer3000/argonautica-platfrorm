@@ -24,10 +24,10 @@ from app.services.visibility import CHEAP_TARIFF_NAME
 from app.ws import schemas as ws_schemas
 
 LIMBO_DAYS = 5
-MAKEUP_TASK_TITLE = "Опишите весь период последних дней, как в дневник"
+MAKEUP_TASK_TITLE = "Опиши весь период последних дней"
 MAKEUP_TASK_BODY = (
-    "Вы пропустили дневник за прошедший период. Опишите здесь весь этот срок "
-    "целиком, одной записью — как будто это дневник сразу за все пропущенные дни."
+    "Ты не вёл дневник за прошедший период. Опиши здесь весь этот срок целиком, "
+    "одной записью — как будто это дневник сразу за все пропущенные дни."
 )
 
 
@@ -86,6 +86,10 @@ async def apply_plan_change(
     user.limbo_previous_plan_id = old_plan_id
     user.limbo_deadline_at = deadline
     user.limbo_makeup_task_id = task.id
+    # Сбросить «не показывать снова» с прошлого захода в Междумирье (если был) —
+    # у каждого нового захода поп-ап должен показаться заново, а не молчать
+    # навсегда из-за галочки, снятой в прошлый раз (см. LimboPopup.tsx).
+    user.settings = {**user.settings, "limbo_popup_dismissed": False}
 
 
 async def _has_unfinished_common_tasks(session: AsyncSession, user: User) -> bool:
