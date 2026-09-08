@@ -66,3 +66,8 @@ class ArgonautDetailOut(BaseModel):
     # null у обоих — задачи нет/не видна смотрящему, либо у юзера нет назначения.
     expedition_feat_task_id: int | None = None
     expedition_feat_status: str | None = None
+    # Может ли current_user написать этому участнику личное сообщение — зеркало
+    # `assert_peer_visible`/`contact_visible` (ARG-110), той же проверки, что стоит
+    # на POST /api/rooms. Ростер по потоку шире (видны все), запись — по рангу
+    # тарифа, поэтому это отдельное поле, а не "виден в ростере => можно писать".
+    can_message: bool = False

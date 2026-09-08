@@ -76,8 +76,10 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
     // Автор сообщения → его карточка в «Аргонавтах». На своих сообщениях пункт
     // не показываем — открывать профиль самого себя из меню сообщения не нужно,
     // даже когда своя плитка есть в общем ростере (см. ArgonautsScreen.tsx).
-    // Чтение, а не запись: выпускнику (isGraduated) доступно.
-    if (user?.id !== msg.sender_id) {
+    // Чтение, а не запись: выпускнику (isGraduated) доступно. Держателю самого
+    // дешёвого тарифа раздел закрыт целиком (rosterAccess) — пункт вёл бы в
+    // редирект на главную, поэтому не показываем.
+    if (user?.id !== msg.sender_id && !user?.is_cheap_tariff) {
       items.push({
         key: 'profile',
         label: 'Посмотреть профиль',

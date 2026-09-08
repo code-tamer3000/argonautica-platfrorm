@@ -113,6 +113,10 @@ export interface ArgonautDetailOut {
   // TaskComposer, чтобы отредактировать «Подвиг» тем же POST-эндпоинтом задач.
   expedition_feat_task_id: number | null
   expedition_feat_status: 'assigned' | 'submitted' | 'returned' | 'accepted' | null
+  // Зеркало assert_peer_visible/contact_visible (ARG-110) — можно ли открыть с этим
+  // участником личный чат. Ростер шире рангового каскада, поэтому не выводится из
+  // видимости плитки в списке.
+  can_message: boolean
 }
 
 export interface RoomOut {

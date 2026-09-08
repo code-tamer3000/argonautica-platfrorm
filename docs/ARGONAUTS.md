@@ -27,6 +27,15 @@ membership.
 > **Observers** are *listed* in the roster but cannot *open* it: the whole
 > `/api/argonauts` router is behind `require_participant` → 403 for
 > `users.is_observer`, same as Tasks/Rubka/Calendar.
+>
+> **Holders of the cheapest tariff** (`CHEAP_TARIFF_NAME`, currently
+> "Наблюдатель") cannot open the section either — `_deny_cheap_tariff`, a second
+> router-level dependency next to `require_participant`, 403s them the same way.
+> This is a *separate* group from `users.is_observer` (see "Roster composition"
+> below): they are still *listed* as a tile in other participants' rosters
+> (trailing "Наблюдатели" section, alongside flag-observers), they just can't
+> open `/api/argonauts` themselves. Same asymmetry as diary access
+> (`is_cheap_tariff` in [services/visibility.py](../backend/app/services/visibility.py)).
 
 ## Roster composition
 
@@ -181,6 +190,34 @@ is already same-intake by construction (`_roster`), matching `diary_visible`'s
 other requirement. Opening a real one goes through the existing `/diaries/{roomId}`
 route — access is re-checked there too, this endpoint grants no new room permission.
 
+## Writing a message from a profile
+
+The profile page (not the tile) carries `can_message: bool` — whether the
+*current viewer* can DM this person, i.e. `current_user.role == 'admin' or
+contact_visible(current_user, user, ranks)`, the exact same predicate that
+`assert_peer_visible` runs on `POST /api/rooms` (ARG-110, rank cascade — see
+[ROOMS.md](ROOMS.md)). This is a direct read of an existing rule, not new
+business logic: a viewer's rank sees tariffs `<= their own` (Игрок → Игроки;
+Спецотряд → Спецотряд + Игроки; Око → all); a non-navigator admin is only
+message-able by the top-2 tariffs of the intake (`can_message_admin`); an
+`is_navigator` admin is message-able by everyone; a viewer who is themself an
+admin has no restriction.
+
+`can_message` is deliberately **narrower** than roster membership — the roster
+shows the whole intake (ARG-119), writing follows the ARG-110 rank cascade, same
+as it always has for `/api/users/contacts`/`POST /api/rooms`. Seeing someone's
+tile does not imply you can message them; this endpoint just tells the frontend
+in advance so it doesn't render a button that would 403 on click.
+
+`ArgonautDetail.tsx` shows a "Написать сообщение" button when `can_message` is
+true, the profile isn't the viewer's own, and the viewer hasn't graduated
+(`graduated_at` — a graduate loses write access to all of Rubka via
+`assert_can_write`, so the button would open a DM with no working composer).
+Clicking it calls the same `POST /api/rooms {type: 'dm', peer_id}` /
+`useCreateRoom()` flow as `UserProfileModal.tsx` in Rubka (dedup by `dm_key` is
+server-side, so a repeat click just reopens the existing room), then navigates
+to `/chats/{room.id}` — no new endpoint.
+
 ## Detail 404 vs 403
 
 `GET /api/argonauts/{user_id}` re-applies the same roster filter and returns
@@ -193,6 +230,11 @@ so their ids resolve normally — see "Roster composition".)
 
 `/argonauts` (grid, `ArgonautsScreen.tsx`) and `/argonauts/:userId` (profile,
 `ArgonautDetail.tsx`) — second nav item, right after Главная (see
-[FRONTEND.md](FRONTEND.md) `routes.tsx`). Gated the same way as Рубка/Календарь:
-`access: { kind: 'observerBlocked' }` + `withCohortGate` (cohort-pending
-placeholder if `today < intake.starts_on`).
+[FRONTEND.md](FRONTEND.md) `routes.tsx`). Gated by `access: { kind: 'rosterAccess'
+}` (`RequireAccess.tsx`) — closed to both `is_observer` and `is_cheap_tariff`
+(`AccessContext.canRoster`, mirrors the backend's two dependencies above); the nav
+item itself disappears for both groups via the same `isRouteVisible` check
+(`AppShell.tsx`). Falls back to `<ObserverBlocked/>` for observers (they get the
+usual "materials only" placeholder) and a plain redirect to `/` for the cheap
+tariff (no dedicated placeholder exists for that group). Also
+`withCohortGate` (cohort-pending placeholder if `today < intake.starts_on`).
