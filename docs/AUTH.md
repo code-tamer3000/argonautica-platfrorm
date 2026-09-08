@@ -56,7 +56,9 @@
     membership (e.g. a tariff-named group room created by
     `scripts/create_plan_group_chats.py`) is NOT auto-synced — groups are
     explicit-membership by design; remove the user via
-    `DELETE /api/rooms/{id}/members/{user_id}` by hand if needed.
+    `DELETE /api/rooms/{id}/members/{user_id}` by hand if needed. Landing
+    specifically on the cheapest tariff **from a paid one** additionally starts
+    Междумирье — a 5-day grace period, see [LIMBO.md](LIMBO.md).
 
 ## JWT flow
 

@@ -32,6 +32,13 @@ subquery isn't type-filtered, so a common task with an assignment row rides alon
 plan) — the gap was specifically the single-task detail route, which used to 403/hang for the
 assignee's own completed task.
 
+**A common task not yet finished can also stay reachable past a downgrade — but only for 5 days
+and only if the downgrade landed on the cheapest tariff.** That's Междумирье (see
+[LIMBO.md](LIMBO.md)): `_effective_plan_id` (`services/tasks.py`) swaps in
+`users.limbo_previous_plan_id` instead of the live `plan_id` for the common-task plan check,
+for as long as `users.limbo_deadline_at` is set — used by both `_visible_common_where` and
+`assert_task_visible`'s common branch, so list/detail/progress/attention_count all agree.
+
 The **Argonauts roster/profile task list** (`app/api/argonauts.py`, see
 [ARGONAUTS.md](ARGONAUTS.md)) has a narrower, asymmetric version of this exemption: it uses
 `_completed_common_where` rather than `_visible_common_where` for a card's already-

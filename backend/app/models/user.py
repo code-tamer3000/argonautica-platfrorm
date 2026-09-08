@@ -90,8 +90,21 @@ class User(Base):
         BigInteger, ForeignKey("intakes.id")
     )
     # Тариф, по которому участник пришёл (бот-воронка ARG-92). Nullable: ручное
-    # заведение через админку по-прежнему не требует тарифа.
+    # заведение через админку по-прежнему не требует тарифа. Changeable after
+    # provisioning (см. PATCH /api/admin/users/{id}, docs/ROOMS.md "Tariff
+    # change cleanup") — понижение с платного тарифа на самый дешёвый заводит
+    # временное «Междумирье» (см. ниже, docs/LIMBO.md).
     plan_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("plans.id"))
+    # Междумирье: все три поля NULL одновременно — не в междумирье; проставляются
+    # вместе при входе (PATCH plan_id -> самый дешёвый тариф С платного) и вместе
+    # обнуляются при выходе, успехом или истечением срока (см. services/limbo.py).
+    limbo_previous_plan_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("plans.id")
+    )
+    limbo_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    limbo_makeup_task_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("tasks.id")
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

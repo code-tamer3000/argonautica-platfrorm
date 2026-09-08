@@ -40,6 +40,9 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
 | intake_id | BIGINT | FK intakes, NULL | cohort the user belongs to; drives the Dynamics 28-day window start. Mandatory in `POST /api/admin/users`; column stays nullable for historical rows (expand/contract) |
 | plan_id | BIGINT | FK plans, NULL | tariff the participant signed up under (intake bot, [INTAKE_BOT.md](INTAKE_BOT.md)). Optional — manual admin provisioning doesn't require a plan. Changeable after the fact via `PATCH /api/admin/users/{id}` (e.g. a punitive downgrade) — see [ROOMS.md](ROOMS.md) "Tariff change cleanup" for what does and doesn't need cleanup when it changes |
+| limbo_previous_plan_id | BIGINT | FK plans, NULL | Междумирье (see [LIMBO.md](LIMBO.md)): tariff to restore to. NULL together with the two fields below — set as a trio on entry, cleared as a trio on exit |
+| limbo_deadline_at | TIMESTAMPTZ | NULL | Междумирье: 5-day cutoff, checked lazily on the participant's next request (`resolve_limbo`) — no scheduler in this codebase |
+| limbo_makeup_task_id | BIGINT | FK tasks, NULL | Междумирье: the auto-created "describe the missed period" individual task for this grace period |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |

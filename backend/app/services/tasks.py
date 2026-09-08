@@ -39,6 +39,17 @@ logger = logging.getLogger(__name__)
 GRADUATE_VISIBLE_STATUSES = ("submitted", "accepted")
 
 
+def _effective_plan_id(user: User) -> int | None:
+    """Тариф для проверки видимости common-задачи. В Междумирье (см.
+    services/limbo.py) — эффективно «как будто ещё держит прошлый тариф»:
+    задачи прошлого тарифа не закрываются раньше 5-дневного срока, отдельно от
+    live-проверки для всего остального (та по-прежнему смотрит на текущий
+    `user.plan_id` — Междумирье касается только задач)."""
+    if user.limbo_deadline_at is not None:
+        return user.limbo_previous_plan_id
+    return user.plan_id
+
+
 def _visible_common_where(user: User) -> tuple[ColumnElement[bool], ...]:
     """Условия WHERE «common-задача видна юзеру по потоку+тарифу» (ARG-96).
 
@@ -48,7 +59,9 @@ def _visible_common_where(user: User) -> tuple[ColumnElement[bool], ...]:
     return (
         Task.type == "common",
         or_(Task.intake_id.is_(None), Task.intake_id == user.intake_id),
-        plan_visibility_clause(TaskPlan.plan_id, TaskPlan.task_id, Task.id, user.plan_id),
+        plan_visibility_clause(
+            TaskPlan.plan_id, TaskPlan.task_id, Task.id, _effective_plan_id(user)
+        ),
     )
 
 
@@ -65,10 +78,11 @@ async def assert_task_visible(
 ) -> None:
     """Проверить видимость задачи для юзера (анти-IDOR, п.1).
 
-    common → видна любому активному участнику по потоку+тарифу (ARG-96), КРОМЕ уже
-    сданной/принятой самим юзером — та остаётся видна независимо от тарифа
-    (GRADUATE_VISIBLE_STATUSES, тот же список что и у выпускника ниже);
-    admin → всё; выпускник → только свои сданные задачи. Иначе:
+    common → видна любому активному участнику по потоку+тарифу (ARG-96, тариф —
+    `_effective_plan_id`: в Междумирье, см. services/limbo.py, это прошлый тариф,
+    не текущий дешёвый), КРОМЕ уже сданной/принятой самим юзером — та остаётся
+    видна независимо от тарифа (GRADUATE_VISIBLE_STATUSES, тот же список что и у
+    выпускника ниже); admin → всё; выпускник → только свои сданные задачи. Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
     - pair → юзер состоит в одной из пар этого задания (task_pair_members);
@@ -108,7 +122,7 @@ async def assert_task_visible(
         if not intake_visible(task.intake_id, user):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         if not await plan_visible(
-            session, TaskPlan.plan_id, TaskPlan.task_id, task.id, user.plan_id
+            session, TaskPlan.plan_id, TaskPlan.task_id, task.id, _effective_plan_id(user)
         ):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
