@@ -818,6 +818,14 @@ a.mention:hover { text-decoration: underline; }
 .iconBtnInline:hover:not(:disabled) { color: var(--accent); background: rgba(19, 78, 69, 0.10); }
 .iconBtnInline:disabled { opacity: 0.6; cursor: default; }
 
+/* Кнопка стикера умеет схлопываться в 0 (см. .stickerBtnHidden, только на мобиле) —
+   даёт transition width/opacity/margin разгону, чтобы схлопывание было анимированным,
+   а не рывком. overflow:hidden — иконка не «вылезает» наружу, пока width едет к 0. */
+.stickerBtn {
+  width: 40px; opacity: 1; overflow: hidden;
+  transition: width 200ms var(--ease-out-soft), opacity 160ms ease, margin 200ms var(--ease-out-soft);
+}
+
 .pendingAtt {
   display: flex; gap: var(--space-2); flex-wrap: wrap;
 }
@@ -1080,6 +1088,13 @@ a.mention:hover { text-decoration: underline; }
   /* Иконки переехали внутрь .inputShell — композеру больше не нужен запас под
      отдельные 44px-кнопки, ужимаем вертикаль (высота 44px кнопок/поля не трогается). */
   .composer { padding: 6px 10px 8px; }
+  /* Композер и нижний таб-бар — одного цвета (--bg-surface) и раньше стыковались
+     без зазора, визуально сливаясь в одну плашку. Отступ снизу отделяет их (цвет
+     фона страницы проступает в щели). Клавиатура открыта → таб-бар уезжает вниз
+     (см. AppShell), зазор не нужен — низ композера должен стоять прямо над
+     клавиатурой, а не терять место впустую. */
+  .composer { margin-bottom: var(--space-2); }
+  :global(html[data-kb='open']) .composer { margin-bottom: 0; }
   .typing { padding: 2px var(--space-4) var(--space-2); }
   /* На узком экране поле не должно вырастать в пол-экрана: раньше упирается в потолок
      и начинает скроллиться внутри — так низ композера (кнопка отправки) всегда над
@@ -1092,6 +1107,10 @@ a.mention:hover { text-decoration: underline; }
      чтобы messages+composer гарантированно помещались над клавиатурой. */
   :global(html[data-kb='open']) .journalBar { display: none; }
   :global(html[data-kb='open']) .typing { display: none; }
+
+  /* Пока в поле есть текст — прячем стикер, отдавая место полю (см. Composer.tsx
+     hasText). Рамка вне медиа-запроса не тронута — на десктопе стикер виден всегда. */
+  .stickerBtnHidden { width: 0; margin: 0; opacity: 0; pointer-events: none; }
 
   /* Стикер-пикер, @-попап и панель форматирования не должны уезжать за край */
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
