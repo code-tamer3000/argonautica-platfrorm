@@ -400,6 +400,21 @@ a.mention:hover { text-decoration: underline; }
 .uploadPct { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-width: 34px; text-align: right; }
 .composerRow { display: flex; align-items: flex-end; gap: var(--space-2); }
 
+/* Обёртка поля: стикер и скрепка живут ВНУТРИ рамки (слева/справа от текста), а не
+   рядом отдельными 44px-кнопками — иначе на узком экране полю остаётся меньше
+   половины ширины строки. Рамка/фон/скругление, которые раньше были на самом поле,
+   переехали сюда — .composerInput внутри прозрачный. */
+.inputShell {
+  flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 2px;
+  padding: 2px; min-height: 44px;
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); transition: var(--transition-base);
+}
+.inputShell:focus-within {
+  border-color: var(--divider-gold);
+  box-shadow: 0 0 0 1px var(--divider-gold);
+}
+
 /* Панель записи/предпрослушивания голосового — на месте строки ввода. */
 .voiceBar { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
 .voiceBarSpacer { flex: 1; }
@@ -420,11 +435,11 @@ a.mention:hover { text-decoration: underline; }
    под содержимое), JS-хук больше не нужен; min/max-height и скролл — тем же CSS, что и
    раньше у textarea. */
 .composerInput {
-  flex: 1; max-height: 160px; min-height: 44px;
-  padding: var(--space-3) var(--space-4);
+  flex: 1; min-width: 0; max-height: 160px; min-height: 40px;
+  padding: 10px var(--space-2);
   font-family: var(--font-t3); font-size: var(--text-body-sm); line-height: 1.5;
   white-space: pre-wrap; word-break: break-word;
-  background: var(--bg-deep); border: 1px solid var(--color-frame-deep); border-radius: var(--radius-card);
+  background: transparent; border: none; border-radius: var(--radius-btn);
   color: var(--text-primary); transition: var(--transition-base);
   /* overflow-y: auto — полоса появляется ТОЛЬКО когда поле уперлось в max-height и
      текст переполняет его. Плавная (инерционная) прокрутка: smooth + momentum на iOS. */
@@ -461,10 +476,7 @@ a.mention:hover { text-decoration: underline; }
   color: var(--text-ghost);
   pointer-events: none;
 }
-.composerInput:focus {
-  outline: none; border-color: var(--divider-gold);
-  box-shadow: 0 0 0 1px var(--divider-gold);
-}
+.composerInput:focus { outline: none; }
 /* Компактная круглая кнопка отправки — появляется только при наличии текста/вложений. */
 .sendBtn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -794,6 +806,18 @@ a.mention:hover { text-decoration: underline; }
 .iconBtn:hover:not(:disabled) { border-color: var(--divider-gold); color: var(--accent); background: rgba(19, 78, 69, 0.10); }
 .iconBtn:disabled { opacity: 0.6; cursor: default; }
 
+/* Стикер/скрепка ВНУТРИ .inputShell — без рамки, компактнее .iconBtn, который снаружи
+   строки (микрофон/корзина у VoiceComposer) должен остаться на своих 44px. */
+.iconBtnInline {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; width: 40px; height: 40px;
+  background: transparent; border: none; border-radius: var(--radius-btn);
+  color: var(--text-muted); cursor: pointer;
+  transition: var(--transition-base);
+}
+.iconBtnInline:hover:not(:disabled) { color: var(--accent); background: rgba(19, 78, 69, 0.10); }
+.iconBtnInline:disabled { opacity: 0.6; cursor: default; }
+
 .pendingAtt {
   display: flex; gap: var(--space-2); flex-wrap: wrap;
 }
@@ -1053,7 +1077,9 @@ a.mention:hover { text-decoration: underline; }
   .header { padding: var(--space-3) var(--space-4); }
   .pinsBar { padding: var(--space-2) var(--space-4); }
   .messages { padding: var(--space-3) var(--space-4); }
-  .composer { padding: var(--space-2) var(--space-3) var(--space-3); }
+  /* Иконки переехали внутрь .inputShell — композеру больше не нужен запас под
+     отдельные 44px-кнопки, ужимаем вертикаль (высота 44px кнопок/поля не трогается). */
+  .composer { padding: 6px 10px 8px; }
   .typing { padding: 2px var(--space-4) var(--space-2); }
   /* На узком экране поле не должно вырастать в пол-экрана: раньше упирается в потолок
      и начинает скроллиться внутри — так низ композера (кнопка отправки) всегда над
@@ -1236,7 +1262,9 @@ a.mention:hover { text-decoration: underline; }
 .attachWrap { position: relative; flex: 0 0 auto; display: inline-flex; }
 .attachBackdrop { position: fixed; inset: 0; z-index: 29; }
 .attachMenu {
-  position: absolute; bottom: calc(100% + var(--space-2)); left: 0; z-index: 30;
+  /* Кнопка теперь справа в .inputShell — меню растёт влево от неё, right:0, иначе
+     240px min-width уедет за правый край экрана. */
+  position: absolute; bottom: calc(100% + var(--space-2)); right: 0; z-index: 30;
   min-width: 240px;
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-2); box-shadow: var(--glow-gold);
