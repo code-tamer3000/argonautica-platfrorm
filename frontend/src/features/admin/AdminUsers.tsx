@@ -67,6 +67,8 @@ export function AdminUsers() {
   const [editDiaryPublic, setEditDiaryPublic] = useState(false)
   const [editRole, setEditRole] = useState<'participant' | 'admin'>('participant')
   const [editIntake, setEditIntake] = useState<number | null>(null)
+  // Тариф задним числом (напр. понижение до самого дешёвого) — `null` = без тарифа.
+  const [editPlanId, setEditPlanId] = useState<number | null>(null)
 
   // Группы: показываем либо один выбранный набор, либо все сразу (свежие сверху).
   // Пустой набор тоже виден — только что созданный ещё никого не содержит.
@@ -120,6 +122,7 @@ export function AdminUsers() {
     setEditDiaryPublic(user.diary_public)
     setEditRole(user.role as 'participant' | 'admin')
     setEditIntake(user.intake_id)
+    setEditPlanId(user.plan_id)
   }
 
   function handleDelete() {
@@ -152,6 +155,7 @@ export function AdminUsers() {
         role: editRole,
         // Набор отправляем только если он выбран — отвязать участника нельзя.
         ...(editIntake !== null ? { intake_id: editIntake } : {}),
+        plan_id: editPlanId,
       },
       {
         onSuccess: () => {
@@ -409,6 +413,31 @@ export function AdminUsers() {
                 <option value="admin">admin</option>
               </select>
             </div>
+            {editRole !== 'admin' && (
+              <div className={styles.formRow}>
+                <label htmlFor="edit_user_plan">Тариф</label>
+                <select
+                  id="edit_user_plan"
+                  className={styles.input}
+                  value={editPlanId ?? ''}
+                  onChange={(e) =>
+                    setEditPlanId(e.target.value === '' ? null : Number(e.target.value))
+                  }
+                >
+                  <option value="">Без тарифа</option>
+                  {plans.map((plan) => (
+                    <option key={plan.id} value={plan.id}>
+                      {plan.name}
+                    </option>
+                  ))}
+                </select>
+                <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
+                  Смена задним числом — понижение сразу закрывает чужие дневники,
+                  контакты и dm вне нового круга; из групповых тариф-чатов участника
+                  придётся убрать вручную.
+                </p>
+              </div>
+            )}
             <div className={styles.checkRow}>
               <input
                 type="checkbox"
@@ -431,23 +460,6 @@ export function AdminUsers() {
                 Доступ к разделу «Каюта»
               </label>
             </div>
-            <div className={styles.checkRow}>
-              <input
-                type="checkbox"
-                id="is_observer"
-                checked={editRole === 'admin' ? false : editObserver}
-                disabled={editRole === 'admin'}
-                onChange={(e) => setEditObserver(e.target.checked)}
-              />
-              <label htmlFor="is_observer" style={{ color: 'var(--text-primary)', fontSize: 'var(--text-ui)' }}>
-                Режим наблюдателя (только материалы: База знаний, Генные замки)
-              </label>
-            </div>
-            {editRole !== 'admin' && editObserver && (
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
-                Закрывает Рубку, Новости, Задачи, Календарь, Каюту, Динамику и уведомления.
-              </p>
-            )}
             {editRole === 'admin' && (
               <div className={styles.checkRow}>
                 <input
