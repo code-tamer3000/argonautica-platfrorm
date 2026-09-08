@@ -71,6 +71,7 @@ from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
 from app.services.survey_form import question_form
+from app.services.visibility import CHEAP_TARIFF_NAME
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
@@ -289,10 +290,16 @@ async def list_expedition_locks(
 @router.get("/plans", response_model=list[PlanOut])
 async def list_plans(
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[Plan]:
+) -> list[PlanOut]:
     """Все тарифы (включая неактивные — админ должен видеть их, чтобы включить обратно)."""
     stmt = select(Plan).order_by(Plan.price)
-    return list((await session.execute(stmt)).scalars().all())
+    plans = list((await session.execute(stmt)).scalars().all())
+    return [
+        PlanOut.model_validate(plan).model_copy(
+            update={"is_cheap": plan.name == CHEAP_TARIFF_NAME}
+        )
+        for plan in plans
+    ]
 
 
 @router.post("/plans", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
@@ -722,13 +729,15 @@ async def delete_user(
 async def admin_dynamics(
     session: Annotated[AsyncSession, Depends(get_session)],
     intake_id: Annotated[list[int] | None, Query()] = None,
+    plan_id: Annotated[list[int] | None, Query()] = None,
 ) -> AdminDynamicsOut:
-    """Сводка + динамика ДЗ участников. `intake_id` (можно несколько) режет по набору(ам).
+    """Сводка + динамика ДЗ участников. `intake_id`/`plan_id` (можно несколько
+    каждый) режут по набору(ам)/тарифу(ам).
 
-    Без параметра — все наборы сразу. Сводные счётчики считаются по той же выборке,
-    что и список: фильтр по набору меняет и её.
+    Без параметра — все наборы/тарифы сразу. Сводные счётчики считаются по той же
+    выборке, что и список: фильтр меняет и её.
     """
-    return await get_all_dynamics(session, intake_id)
+    return await get_all_dynamics(session, intake_id, plan_id)
 
 
 @router.post("/dynamics/credit", response_model=AdminDynamicsOut)

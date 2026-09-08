@@ -292,8 +292,10 @@ export function ProfileScreen() {
 
       {/* Динамика — только для участников, которые ещё в пути. У выпускника
           (graduated_at) она исчезает целиком: экспедиция пройдена, считать нечего
-          (бэкенд закрывает /api/dynamics для него 403). */}
-      {user.role !== 'admin' && !user.graduated_at && <DynamicsSection />}
+          (бэкенд закрывает /api/dynamics для него 403). Держателю самого дешёвого
+          тарифа (is_cheap_tariff) блок тоже не показываем — продукт не считает
+          их полноценными участниками потока по Динамике. */}
+      {user.role !== 'admin' && !user.graduated_at && !user.is_cheap_tariff && <DynamicsSection />}
     </div>
   )
 }
