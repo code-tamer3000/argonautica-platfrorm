@@ -34,8 +34,9 @@ only if that same PATCH also satisfies the trigger condition above.
 
 - `users.limbo_previous_plan_id` — the tariff to restore to.
 - `users.limbo_deadline_at` — `now + 5 days` at entry (`LIMBO_DAYS` in `services/limbo.py`).
-- `users.limbo_makeup_task_id` — one auto-created `type='individual'` task, title "Опишите весь
-  период последних дней, как в дневник", assigned to the participant, `deadline_at` = the same
+- `users.limbo_makeup_task_id` — one auto-created `type='individual'` task, title "Опиши весь
+  период последних дней" (`MAKEUP_TASK_TITLE`/`MAKEUP_TASK_BODY` in `services/limbo.py`),
+  assigned to the participant, `deadline_at` = the same
   5-day deadline, created via the same calendar-sync (`sync_task_calendar_event`) and
   websocket fan-out (`fan_out_task_event`) as a normal admin-created task — just built directly
   in `services/limbo.py` rather than through `POST /api/tasks`, since this is a system action,
@@ -79,10 +80,14 @@ the PWA, so the lag is invisible to a normal session.
 ## Frontend
 
 `UserOut.limbo_deadline_at` (via `GET/PATCH /api/auth/me`) gates `LimboPopup.tsx`
-(`frontend/src/features/app`), rendered next to `WelcomePopup` in `AppShell.tsx`. Unlike the
-welcome popup, there is no "don't show again" — the popup's only condition is the field being
-non-null, and the field is entirely server-controlled (clears itself via `resolve_limbo`);
-closing it only hides it for the current session (`closed` local state), it reappears on the
-next login/reload for as long as the grace period is still open. No separate "return to the
-old tariff" notification exists yet — the participant discovers it happened by the popup
-disappearing and their tariff/roster context updating on next load.
+(`frontend/src/features/app`), rendered next to `WelcomePopup` in `AppShell.tsx` — same
+component shape and dismiss mechanics as the welcome popup: a "don't show again" checkbox
+persisted to `users.settings.limbo_popup_dismissed` via `PATCH /api/auth/me` (merge-pattern,
+not a wholesale replace). The one difference from the welcome popup: `apply_plan_change`
+(`services/limbo.py`) resets that flag to `false` every time a **new** Междумирье starts, so a
+dismissal from a past grace period never silently suppresses a later one. Closing without the
+checkbox only hides it for the current render (`closed` local state) — it reappears on the next
+login/reload for as long as the grace period is still open and undismissed. No separate "return
+to the old tariff" notification exists yet — the participant discovers it happened by the popup
+disappearing (condition `limbo_deadline_at != null` no longer holds) and their tariff/roster
+context updating on next load.
