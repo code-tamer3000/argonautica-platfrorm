@@ -347,12 +347,29 @@ async def list_rooms(
     # при смене потока/тарифа/понижении, поэтому пускать channel через эту ветку
     # в обход channel_clause протаскивает протухшие строки (комната в списке, но
     # 403 на assert_room_access — та же проверка для channel членство не смотрит).
+    #
+    # Порядок — по свежести переписки (новое сообщение поднимает комнату наверх),
+    # не по дате создания комнаты. Раньше подъём делал только клиент (`bumpRoom` в
+    # useRealtime.ts) прямо в кэше react-query — переживал WS-событие, но терялся
+    # на любом refetch (remount при перезаходе в раздел, фокус окна): сервер снова
+    # отдавал `created_at`, и список визуально "откатывался". Теперь порядок задаёт
+    # сервер, `bumpRoom` остаётся как мгновенный optimistic-шаг до следующего
+    # запроса, который его же и подтвердит. Комнате без сообщений (свежесозданная
+    # dm/группа) — фолбэк на `Room.created_at`, чтобы не проваливалась в конец
+    # списка раньше своего первого сообщения.
+    last_message_sq = (
+        select(Message.room_id, func.max(Message.created_at).label("last_at"))
+        .where(Message.deleted_at.is_(None))
+        .group_by(Message.room_id)
+        .subquery()
+    )
     result = await session.execute(
         select(Room)
+        .outerjoin(last_message_sq, last_message_sq.c.room_id == Room.id)
         .where(
             or_(channel_clause, and_(Room.type != "channel", Room.id.in_(member_rooms)))
         )
-        .order_by(Room.created_at)
+        .order_by(func.coalesce(last_message_sq.c.last_at, Room.created_at).desc())
     )
     rooms = list(result.scalars().all())
     if not rooms:

@@ -25,6 +25,25 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)): rooms stay fully readable (list, history, personal diary), but every write path is closed by `assert_can_write` → 403. The «Новый чат»/«Группа» buttons are hidden for them — a room they cannot write in is a dead end.
 - **Cohort not started yet** (`today < intake.starts_on`, ARG-106): the whole Рубка (`/chats`, `/diaries` — `ChatLayout`) is replaced client-side with a "N days until start" placeholder, **except the news channel** (`rooms.is_news`) — reachable via the «Новости» nav item (`/news` → `NewsRedirect`), since the welcome popup content is itself a news post and must stay readable during the wait. Opening it this way still hides the room list/Чаты·Дневники switcher around it (`ChatLayout.hideRoomList`, set by `routes.tsx`'s `withCohortGate` when the open room is news) — it would only dead-end back into the same placeholder for every other room. Frontend-only — no backend gate, since it's the participant's own not-yet-relevant content, not another user's (unlike the Observer 403 above). See [DATA_MODEL.md](DATA_MODEL.md) "Cohort-pending gate".
 
+## List ordering
+
+`GET /api/rooms` orders by **most recent message** (`MAX(Message.created_at)` per
+room, non-deleted, `DESC`), not by `Room.created_at` — a room with fresh activity
+sorts to the top, same as any chat app. A room with no messages yet (freshly
+created dm/group) falls back to `Room.created_at` so it doesn't drop to the
+bottom before its first message.
+
+This is a server-side guarantee, not just a client trick: earlier, the "new
+message bumps the room to the top" behavior was done **only** client-side
+(`bumpRoom` in `hooks/useRealtime.ts`, mutating the react-query cache on the
+`message.new` WS event) — it was lost on every refetch (`useRooms()` has no
+`staleTime`, so remounting the chat section, a window-focus refetch, or the
+`invalidateQueries` on WS reconnect all re-pulled the list and, before this
+ordering existed, silently reset it to creation order). `bumpRoom` is kept as
+an instant optimistic step between the WS event and the next fetch — the
+following fetch now confirms the same order the server already computed, so
+there's nothing left to "reset".
+
 ## Contact visibility & rank cascade (ARG-110)
 
 `GET /api/users` is a lookup table (message senders, task/КБ authors, mentions —
