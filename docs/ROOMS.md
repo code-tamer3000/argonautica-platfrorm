@@ -100,8 +100,17 @@ recreating the user.
   they can no longer message, or a participant of a higher rank). Only the
   downgraded user's row is removed — the peer keeps their side and its history
   untouched, same one-sided-leave semantics as `DELETE /api/rooms/{id}/members/{id}`
-  on a group. If they dm again later, `dm_key` dedup creates a fresh room the
-  normal way.
+  on a group. **This is reversible**: if the tariff is restored (or they simply
+  become visible to each other again) and either side messages the other,
+  `POST /api/rooms` finds the existing room by `dm_key` and — instead of just
+  returning it as-is — re-adds whichever side's `RoomMember` row is missing
+  (`_create_dm`, `app/api/rooms.py`), so the old thread and its history come
+  back rather than staying permanently unreachable. Without this, a
+  reverted downgrade would leave the dm looking like it never existed again:
+  `dm_key`'s uniqueness means a "new" dm with the same peer resolves to the
+  same room, not a fresh one — silently returning it with no membership row
+  reproduces the exact 403/can't-write symptom the tariff change was
+  supposed to have fixed.
 - Channel-type rooms (regular channels, personal diaries) need no equivalent
   cleanup: `assert_room_access` never consults `room_members` for `channel` at
   all (see "Membership & access checks" above) — a stale row there was already
