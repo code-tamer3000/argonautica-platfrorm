@@ -28,6 +28,18 @@ Bytes live in **MinIO** (S3-compatible), private buckets. Metadata in `media_ass
 - **Video** — two posters, both best-effort. **Client**: captures a poster frame (`<video>`→canvas→WebP), uploads it as a separate object, passes its key in confirm as `thumb_storage_key`; the server verifies a live upload intent for that key (same user, kind image) before adopting it as `thumb_key` — this gives an **instant** preview while the variant is still processing. **Server**: the transcode worker also extracts a poster (`~1s` frame, WebP) and sets it as `thumb_key` (fallback for clients that couldn't capture one, e.g. iOS, and for consistency with the variant). The poster doubles as `<video poster>`.
 - `thumb_key = NULL` → no preview; the original loads instead.
 
+## Avatars, room/diary covers, stickers (`presign_asset_urls`)
+
+`presign_asset_urls` (`services/media.py`) is the batch presign used everywhere an
+asset is shown as a small tile rather than opened full-size: user avatars, room and
+diary covers (`rooms.avatar_media_id`), stickers. It presigns `thumb_key` (≤1024px
+WebP) instead of `storage_key` when a thumbnail exists, falling back to the original
+when `thumb_key IS NULL`. Before this, all nine call sites (`api/users.py`,
+`api/rooms.py`, `api/argonauts.py`, `api/auth.py`, `api/stickers.py`) served the full
+original — avatars up to a few MB, refetched on every device on every room-list open —
+even though the thumbnail had already been generated on upload. No payload/schema
+change: the field is still a presigned-GET URL, only the object it points at changes.
+
 ## Lightbox preview (mid-size derivative)
 
 Thumbnails (≤1024px, q80) are for the feed; the lightbox used to open the **original** — prod measurements showed ~90% of media traffic was full-size originals (a real case: an 11 MB JPG fetched whole for one look). So images get a second derivative: `preview_key`, a WebP at **≤1600px, q82** under a `previews/` prefix (`services/media.py::build_preview_key`), generated on confirm right next to the thumbnail (`generate_image_preview`, same best-effort contract — any failure → `NULL` + a log line, never blocks the upload).
