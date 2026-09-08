@@ -64,6 +64,7 @@ Hard rules:
 | docs/DEPLOY.md             | environments, blue-green, CI/CD, what NOT to touch (reference) |
 | docs/KB.md                 | knowledge base: items, media, comments, publish/visibility |
 | docs/TASKS.md              | tasks: common/individual, assignments, submissions, review |
+| docs/LIMBO.md              | Междумирье: 5-day grace period after a paid→cheapest tariff downgrade |
 | docs/CABIN.md              | каюта: 3 subkinds, JSONB data, access grant, admin view   |
 | docs/DYNAMICS.md           | daily-homework journal (28 days), pardons, credits, stats |
 | docs/NOTIFICATIONS.md      | bell feed: kinds, generation, realtime delivery           |

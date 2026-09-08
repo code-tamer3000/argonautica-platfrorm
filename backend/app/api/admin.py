@@ -67,6 +67,7 @@ from app.schemas.user import (
     AdminUserOut,
     UserOut,
 )
+from app.services.limbo import apply_plan_change
 from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
@@ -445,6 +446,7 @@ async def create_user(
 async def update_user(
     user_id: int,
     body: AdminUpdateUserRequest,
+    current_admin: Annotated[User, Depends(require_admin)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> User:
     """Частичное обновление юзера: применяем только переданные whitelisted-поля."""
@@ -474,6 +476,7 @@ async def update_user(
     # живьём, кроме уже сданных common-задач, которые остаются видны владельцу и
     # админу независимо от тарифа (assert_task_visible/_completed_common_where).
     plan_changed = "plan_id" in changes and changes["plan_id"] != user.plan_id
+    old_plan_id = user.plan_id
     if plan_changed and changes["plan_id"] is not None:
         if await session.get(Plan, changes["plan_id"]) is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Тариф не найден")
@@ -509,6 +512,10 @@ async def update_user(
         await notify_cabin_granted(session, user.id)
     if plan_changed:
         await resync_dm_memberships_after_plan_change(session, user)
+        # Понижение с платного тарифа на самый дешёвый — Междумирье (5 дней на
+        # отработку прошлых задач + допзадание, см. docs/LIMBO.md); если юзер уже
+        # был в Междумирье, эта же смена его снимает (админ решил вручную).
+        await apply_plan_change(session, current_admin, user, old_plan_id)
     return user
 
 
