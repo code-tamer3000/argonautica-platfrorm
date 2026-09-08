@@ -16,6 +16,7 @@ from app.db.session import get_session
 from app.models.intake import Intake
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
 from app.models.message import Message
+from app.models.plan import Plan
 from app.models.room import Room
 from app.models.user import User
 from app.schemas.journal import (
@@ -723,23 +724,32 @@ async def uncredit_day(session: AsyncSession, user_id: int, day: date) -> None:
         await session.flush()
 
 async def get_all_dynamics(
-    session: AsyncSession, intake_ids: Sequence[int] | None = None
+    session: AsyncSession,
+    intake_ids: Sequence[int] | None = None,
+    plan_ids: Sequence[int] | None = None,
 ) -> AdminDynamicsOut:
     """Сводка + статистика участников для страницы Динамика в панели.
 
-    `intake_ids` ограничивает выдачу набором(ами): и список, и сводные счётчики
-    считаются только по этим участникам. `None` — все наборы сразу.
+    `intake_ids`/`plan_ids` ограничивает выдачу набором(ами)/тарифом(ами): и
+    список, и сводные счётчики считаются только по этим участникам. `None` —
+    все наборы/тарифы сразу.
     """
     timeline = await load_timeline(session)
     intake_starts = await load_intake_starts(session)
     intake_ends = await load_intake_ends(session)
 
-    stmt = select(User).where(User.role == "participant")
+    stmt = (
+        select(User, Plan.name)
+        .outerjoin(Plan, Plan.id == User.plan_id)
+        .where(User.role == "participant")
+    )
     if intake_ids is not None:
         stmt = stmt.where(User.intake_id.in_(list(intake_ids)))
-    participants = list(
-        (await session.execute(stmt.order_by(User.display_name))).scalars().all()
-    )
+    if plan_ids is not None:
+        stmt = stmt.where(User.plan_id.in_(list(plan_ids)))
+    rows = (await session.execute(stmt.order_by(User.display_name))).all()
+    participants = [row[0] for row in rows]
+    plan_name_by_user: dict[int, str | None] = {row[0].id: row[1] for row in rows}
 
     if not participants:
         return AdminDynamicsOut(
@@ -856,6 +866,8 @@ async def get_all_dynamics(
                 recent_days=recent,
                 graduated_at=user.graduated_at,
                 intake_id=user.intake_id,
+                plan_id=user.plan_id,
+                plan_name=plan_name_by_user.get(user.id),
             )
         )
 

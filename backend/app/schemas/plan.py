@@ -36,6 +36,9 @@ class PlanOut(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    # Самый дешёвый тариф (`CHEAP_TARIFF_NAME`, см. app.services.visibility) —
+    # админка использует это, чтобы по умолчанию скрывать его фильтром в Динамике.
+    is_cheap: bool = False
 
 
 class PlanPublicOut(BaseModel):

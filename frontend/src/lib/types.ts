@@ -422,6 +422,9 @@ export interface UserDynamicsOut {
   recent_days: RecentDay[]
   /** Набор участника — по нему админский обзор группирует карточки. */
   intake_id: number | null
+  /** Тариф участника — по нему админский обзор группирует/фильтрует карточки. */
+  plan_id: number | null
+  plan_name: string | null
   // Экспедиция пройдена: строка заморожена на дне выпуска и помечена бейджем,
   // в сводных счётчиках такой участник не учитывается.
   graduated_at: string | null
@@ -567,6 +570,8 @@ export interface PlanOut {
   is_active: boolean
   created_at: string
   updated_at: string
+  /** Самый дешёвый тариф — админка «Динамика» по умолчанию скрывает его фильтром. */
+  is_cheap: boolean
 }
 
 // --- Веб-воронка приёма: CRM-дашборд (ARG-107, read-only) ---
