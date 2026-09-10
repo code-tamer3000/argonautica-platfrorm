@@ -71,18 +71,15 @@ export function useDeleteMessage(roomId: number) {
   })
 }
 
-// Репост сообщения в новостной канал (только admin). sourceRoomId — комната-источник
-// (в URL), сам пост создаётся в новостном канале. Пост придёт подписчикам новостей
-// по WS message.new — локальный кэш не трогаем. Не-хук: вызывается из submit композера.
-// targetIntakeId — только когда источник кросс-поточный (комната без intake_id):
-// сервер сам знает целевой канал по intake_id комнаты-источника, иначе требует этот
-// параметр явно (ARG-104).
-export const repostMessage = (
-  sourceRoomId: number, id: number, targetIntakeId?: number | null
+// Переслать сообщение в любую доступную для записи комнату. sourceRoomId — комната-
+// источник (в URL), targetRoomId — куда уходит копия. Пост придёт подписчикам целевой
+// комнаты по WS message.new — локальный кэш не трогаем. Не-хук: вызывается из submit
+// композера.
+export const forwardMessage = (
+  sourceRoomId: number, id: number, targetRoomId: number
 ): Promise<MessageOut> =>
   http.post<MessageOut>(
-    `/api/rooms/${sourceRoomId}/messages/${id}/repost` +
-      (targetIntakeId != null ? `?target_intake_id=${targetIntakeId}` : ''),
+    `/api/rooms/${sourceRoomId}/messages/${id}/repost?target_room_id=${targetRoomId}`,
     {},
   )
 

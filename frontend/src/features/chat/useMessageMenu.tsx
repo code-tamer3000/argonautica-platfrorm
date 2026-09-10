@@ -5,7 +5,7 @@ import { usePin } from '../../api/pins'
 import { useToggleReaction } from '../../api/reactions'
 import reactionIcon from '../../assets/reactions/star.webp'
 import {
-  IconCopy, IconEdit, IconNews, IconPin, IconReply, IconTrash, IconUsers,
+  IconCopy, IconEdit, IconForward, IconPin, IconReply, IconTrash, IconUsers,
 } from '../../components/icons'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -14,20 +14,18 @@ import type { MenuItem } from './MessageActionsMenu'
 
 interface Options {
   roomId: number
-  isNews: boolean
   canPin: boolean
   // undefined → пункт «Ответить» не показываем (внутри треда — уже отвечаем, п.2).
   onReply?: (msg: MessageOut) => void
   onEdit: (msg: MessageOut) => void
-  // Репост в новости: подхватывает сообщение в композер новостного канала (навигация
-  // + pendingRepost). undefined → пункт репоста не показываем.
-  onRepost?: (msg: MessageOut) => void
+  // Пересылка: открывает пикер комнаты, затем подхватывает сообщение в композер
+  // выбранного чата (навигация + pendingForward). undefined → пункт не показываем.
+  onForward?: (msg: MessageOut) => void
 }
 
 // Общая логика контекстного меню сообщения для ленты и треда. Видимость пунктов
-// зеркалит правила бэкенда: править — только автор текста; удалять — автор или admin;
-// репост в новости — admin и не из самого новостного канала.
-export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepost }: Options) {
+// зеркалит правила бэкенда: править — только автор текста; удалять — автор или admin.
+export function useMessageMenu({ roomId, canPin, onReply, onEdit, onForward }: Options) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const pin = usePin(roomId)
@@ -70,8 +68,8 @@ export function useMessageMenu({ roomId, isNews, canPin, onReply, onEdit, onRepo
     if (canPin && !isGraduated) {
       items.push({ key: 'pin', label: 'Закрепить', icon: <IconPin size={18} />, onClick: () => pin.mutate(msg.id) })
     }
-    if (onRepost && user?.role === 'admin' && !isNews && !isGraduated) {
-      items.push({ key: 'repost', label: 'Репост в новости', icon: <IconNews size={18} />, onClick: () => onRepost(msg) })
+    if (onForward && !isGraduated) {
+      items.push({ key: 'forward', label: 'Переслать', icon: <IconForward size={18} />, onClick: () => onForward(msg) })
     }
     // Автор сообщения → его карточка в «Аргонавтах». На своих сообщениях пункт
     // не показываем — открывать профиль самого себя из меню сообщения не нужно,

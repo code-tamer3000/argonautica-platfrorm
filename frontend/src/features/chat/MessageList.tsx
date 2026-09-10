@@ -29,19 +29,18 @@ interface Props {
   // Корень, чей тред развёрнут прямо в ленте (аккордеон под сообщением). null → все свёрнуты.
   expandedThreadId?: number | null
   canPin?: boolean
-  isNews?: boolean
   // Канал-дневник → текст сообщений рендерится как markdown (см. MessageItem).
   markdown?: boolean
   onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
-  onRepost?: (msg: MessageOut) => void
+  onForward?: (msg: MessageOut) => void
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    expandedThreadId, canPin, isNews, markdown, onClearEdit, onToggleThread, onRepost,
+    expandedThreadId, canPin, markdown, onClearEdit, onToggleThread, onForward,
     onOpenMenu, onAtBottomChange },
   ref,
 ) {
@@ -163,9 +162,8 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
                 roomId={roomId}
                 rootId={m.id}
                 canPin={canPin}
-                isNews={isNews}
                 markdown={markdown}
-                onRepost={onRepost}
+                onForward={onForward}
               />
             )}
           </div>

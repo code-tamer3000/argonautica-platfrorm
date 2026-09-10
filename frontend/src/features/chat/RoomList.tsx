@@ -14,7 +14,7 @@ import { useAuth } from '../auth/AuthContext'
 import styles from './chat.module.css'
 import { NewChatModal } from './NewChatModal'
 import { NewGroupModal } from './NewGroupModal'
-import { groupDiariesByPlan, roomAvatarUrl, roomTitle } from './util'
+import { groupDiariesByPlan, roomAvatarUrl, roomSubLabel, roomTitle } from './util'
 
 export type Tab = 'chats' | 'channels'
 
@@ -47,7 +47,7 @@ function RoomButton({ r, selectedId, onSelect, dmPeers, online, users, pinned }:
           {title}
           {pinned && <IconPin size={13} className={styles.roomPinIcon} />}
         </span>
-        <span className={styles.roomSub}>{subLabel(r)}</span>
+        <span className={styles.roomSub}>{roomSubLabel(r)}</span>
       </span>
       {r.unread_count > 0 && <span className={styles.unread}>{r.unread_count}</span>}
     </button>
@@ -60,11 +60,6 @@ interface Props {
   selectedId: number | null
   onSelect: (id: number) => void
 }
-
-const subLabel = (r: RoomOut): string =>
-  r.is_news ? 'Новостной канал' :
-    r.is_personal ? 'Личный дневник' :
-      r.type === 'channel' ? 'Дневник' : r.type === 'group' ? 'Группа' : 'Личный чат'
 
 export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const { data: rooms, isLoading } = useRooms()
