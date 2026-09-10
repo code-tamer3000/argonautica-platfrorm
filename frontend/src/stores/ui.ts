@@ -11,10 +11,13 @@ export interface PendingJournal {
   category: string
 }
 
-// Репост, «зажатый» админом: держим исходную комнату и само сообщение, пока админ
-// в новостном канале дописывает к нему комментарий в композере.
-export interface PendingRepost {
-  roomId: number
+// Пересылка, «зажатая» в композере: держим исходную комнату, само сообщение и
+// комнату-цель, пока пользователь в целевом чате дописывает к пересылке комментарий.
+// targetRoomId нужен, чтобы композер держал пересылку ТОЛЬКО в выбранной комнате
+// (пересылать можно в любую доступную для записи комнату, не только в новости).
+export interface PendingForward {
+  sourceRoomId: number
+  targetRoomId: number
   message: MessageOut
 }
 
@@ -22,9 +25,9 @@ interface UiState {
   activeRoomId: number | null
   setActiveRoom: (id: number | null) => void
 
-  // Репост, ожидающий отправки в новостной канал (см. PendingRepost).
-  pendingRepost: PendingRepost | null
-  setPendingRepost: (r: PendingRepost | null) => void
+  // Пересылка, ожидающая отправки (см. PendingForward).
+  pendingForward: PendingForward | null
+  setPendingForward: (f: PendingForward | null) => void
 
   // Черновик, «заряженный» в композер комнаты (напр. шапка ответа админа на
   // обращение из техподдержки). Композер той же комнаты подставляет text один раз
@@ -55,7 +58,7 @@ interface UiState {
   setOnline: (userId: number, on: boolean) => void
 
   // «Текущий поток» админа (ARG-104): общий контекст для разделов Задачи/КБ/Чаты
-  // в админке — задаёт поток по умолчанию в списках и куда уходит репост новости.
+  // в админке — задаёт поток по умолчанию в списках.
   // null = «все потоки» (фильтр выключен). Per-сессия, не персистится.
   adminCurrentIntakeId: number | null
   setAdminCurrentIntakeId: (id: number | null) => void
@@ -67,8 +70,8 @@ export const useUiStore = create<UiState>((set) => ({
   activeRoomId: null,
   setActiveRoom: (id) => set({ activeRoomId: id }),
 
-  pendingRepost: null,
-  setPendingRepost: (r) => set({ pendingRepost: r }),
+  pendingForward: null,
+  setPendingForward: (f) => set({ pendingForward: f }),
 
   pendingDraft: null,
   setPendingDraft: (v) => set({ pendingDraft: v }),

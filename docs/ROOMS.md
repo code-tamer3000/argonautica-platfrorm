@@ -187,30 +187,32 @@ personal/news) accept `intake_id`/`plan_ids`.
 - **Grouped by tariff on the client (display only, not a visibility filter).** `RoomOut.owner_plan_id`/`owner_plan_name` carry the diary owner's plan (batch-joined in `list_rooms`/`get_room`, `app/api/rooms.py`) — `RoomList.tsx` groups «Все дневники» into one `sectionHeader` per tariff via `groupDiariesByPlan` (`features/chat/util.ts`, thin wrapper over the generic `groupByPlan` in `lib/planGroups.ts`), ordered the same way `GET /api/plans` returns them (all tariffs including deactivated ones, price-ascending — the public, any-authenticated-user counterpart of admin-only `/api/admin/plans`, id+name only; unlike the intake bot's tariff list, this one does not filter on `is_active`, see [DATA_MODEL.md](DATA_MODEL.md) `plans`). `groupByPlan` buckets by `owner_plan_id`, sorts by that same price order, and always puts a `NULL`-id bucket ("Без тарифа") last. An admin owner is deliberately given a **sentinel** `owner_plan_id = -1` (`_ADMIN_OWNER_PLAN_ID` in `app/api/rooms.py`, not a real row in `plans`) alongside `owner_plan_name = "Админ"` — bucketing by name instead would've silently merged every admin diary into "Без тарифа" (`groupByPlan` keys on `id`, not `name`); the sentinel earns it its own section. `groupDiariesByPlan` post-processes `groupByPlan`'s output to move that sentinel section (matched by the same `-1` key, mirrored client-side as `ADMIN_OWNER_PLAN_KEY`) to the **front** of the list, ahead of every real tariff — an admin diary is exposed one at a time via manual `diary_public` opt-in (see above), so when it *is* shown it should be impossible to miss, not buried after the tariff sections. Every other section keeps `groupByPlan`'s price-ascending order, "Без тарифа" last. Since ARG-112, which tariff section a diary lands in is purely cosmetic — nothing is filtered out by it (unlike the admin section's *visibility*, which the `diary_public` opt-in does gate).
 - **Cover (`avatar_media_id`).** Only the diary's **owner** can set/clear it, via `PATCH /api/rooms/{id}/avatar` (`{avatar_media_id: <own image asset id> | null}`) — 403 for anyone else, including admin oversight of a participant's diary (not an admin feature); 403 on a non-personal room. Asset must be `kind='image'` and owned by the caller (same check as the user-profile avatar in `update_me`, `api/auth.py`). Presigned the same way as user/sticker avatars (`presign_asset_urls`, no `assert_media_access` — the room's own access check already gated the read). No fallback to the owner's user avatar: a diary without a cover shows the plain initials placeholder (`Avatar` component), same as before this field existed. No realtime push on change — other viewers pick it up on their next `GET /api/rooms`.
 
-## News channel & repost
+## News channel & forwarding
 
 - **News channel** — one `rooms.is_news = true` room **per intake** (ARG-104; was a
   platform-wide singleton before — see docs/DECISIONS.md if resurrecting that). Gated by
   the same intake+plan double filter as a regular channel (ARG-96, `assert_room_access`) —
   a participant sees only their own intake's news, not other intakes'. `ensure_news_channel(session, intake_id)`
   gets-or-creates the channel for one intake; called from app lifespan (bootstraps a
-  channel for every existing intake), from `repost_to_news`, and from
+  channel for every existing intake), from `forward_message`'s legacy path, and from
   `scripts/provision_second_intake.py`. `uq_rooms_news_per_intake` (partial unique on
   `intake_id` `WHERE is_news`) enforces one per intake. Top-level posts are admin-only;
   everyone in that intake reads.
-- **Repost into news** — admin forwards a message from any room into the news channel of
-  the **source room's own intake**. If the source room is cross-intake (`intake_id` NULL —
-  group/dm/personal), the endpoint requires an explicit `target_intake_id` query param
-  (400 without it) since there's nothing on the room to infer a target from. It is a
-  **copy** (text/sticker/attachments) with `messages.forwarded_from_sender_id` set to the
-  original author ("переслано от X" / forwarded from X), so the post lives independently
-  of the original. Endpoint and mechanics in [MESSAGES.md](MESSAGES.md).
+- **Forwarding** — any participant can forward any message they can read into any room
+  they can post a top-level message to (DM, group, own diary; news channel top-level
+  stays admin-only, same rule as a normal `send_message` there). Not limited to news
+  anymore — see "Forwarding messages" in [MESSAGES.md](MESSAGES.md) for the endpoint,
+  target authorization, and the `ForwardPicker` UI. It is a **copy** (text/sticker/
+  attachments) with `messages.forwarded_from_sender_id` set to the original author
+  ("переслано от X" / forwarded from X), so the post lives independently of the original.
+  An admin picks a specific news channel row directly from the picker (it already carries
+  its own intake) — there is no separate "which intake?" step; that only survives in the
+  legacy `target_intake_id` path (see MESSAGES.md) for stale cached clients.
 - **Admin "current intake" selector** — a session-only (not persisted) UI context set in
   `AdminLayout`, shared across the Задачи/КБ/Чаты admin screens (`stores/ui.ts`
   `adminCurrentIntakeId`). For most of those lists it's a client-side filter (a
-  "filtered, not the full list" banner over an already-fetched full list) and it
-  decides which intake a repost from a cross-intake room defaults to being asked
-  about — it does **not** change server-side authorization there; admin still
+  "filtered, not the full list" banner over an already-fetched full list) — it does
+  **not** change server-side authorization there; admin still
   bypasses the intake/plan gate entirely (`user.role == "admin"` in
   `assert_room_access`/`list_rooms`). The one exception is `GET /api/users/contacts`
   (ARG-110, "Contact visibility & rank cascade" above): the frontend sends it as

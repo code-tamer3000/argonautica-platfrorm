@@ -12,6 +12,7 @@ import {
   Compass,
   Copy,
   CornerUpLeft,
+  CornerUpRight,
   Dna,
   File,
   Flame,
@@ -80,6 +81,7 @@ export const IconPause = (p: IconProps) => <Pause {...DEFAULTS} {...p} />
 export const IconTrash = (p: IconProps) => <Trash2 {...DEFAULTS} {...p} />
 export const IconClose = (p: IconProps) => <X {...DEFAULTS} {...p} />
 export const IconReply = (p: IconProps) => <CornerUpLeft {...DEFAULTS} {...p} />
+export const IconForward = (p: IconProps) => <CornerUpRight {...DEFAULTS} {...p} />
 export const IconCopy = (p: IconProps) => <Copy {...DEFAULTS} {...p} />
 export const IconEdit = (p: IconProps) => <Pencil {...DEFAULTS} {...p} />
 export const IconFlame = (p: IconProps) => <Flame {...DEFAULTS} {...p} />

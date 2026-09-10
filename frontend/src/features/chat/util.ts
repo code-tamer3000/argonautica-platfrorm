@@ -1,5 +1,5 @@
 import { groupByPlan } from '../../lib/planGroups'
-import type { PlanPublicOut, PublicUserOut, RoomOut } from '../../lib/types'
+import type { PlanPublicOut, PublicUserOut, RoomOut, UserOut } from '../../lib/types'
 
 export function roomTitle(
   room: RoomOut,
@@ -28,6 +28,25 @@ export function roomAvatarUrl(
 
 export const roomPrefix = (room: RoomOut): string =>
   room.type === 'channel' ? '# ' : ''
+
+export const roomSubLabel = (room: RoomOut): string =>
+  room.is_news ? 'Новостной канал' :
+    room.is_personal ? 'Личный дневник' :
+      room.type === 'channel' ? 'Дневник' : room.type === 'group' ? 'Группа' : 'Личный чат'
+
+/**
+ * Может ли user отправить ВЕРХНЕУРОВНЕВОЕ сообщение в room — клиентское зеркало
+ * серверного `assert_can_post` (backend/app/api/messages.py), используется только
+ * для UX-фильтра (чей чат показать в пикере пересылки, ForwardPicker.tsx): сервер
+ * всё равно перепроверит то же самое авторитетно при самой пересылке.
+ */
+export function canPostTopLevel(room: RoomOut, user: UserOut | null | undefined): boolean {
+  if (!user || user.graduated_at) return false
+  if (room.dm_write_locked) return false
+  if (room.is_personal && room.created_by !== user.id) return false
+  if (room.is_news && user.role !== 'admin') return false
+  return true
+}
 
 export interface DiaryPlanGroup {
   key: string

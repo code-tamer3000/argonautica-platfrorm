@@ -36,8 +36,13 @@ assignee's own completed task.
 and only if the downgrade landed on the cheapest tariff.** That's Междумирье (see
 [LIMBO.md](LIMBO.md)): `_effective_plan_id` (`services/tasks.py`) swaps in
 `users.limbo_previous_plan_id` instead of the live `plan_id` for the common-task plan check,
-for as long as `users.limbo_deadline_at` is set — used by both `_visible_common_where` and
-`assert_task_visible`'s common branch, so list/detail/progress/attention_count all agree.
+for as long as `users.limbo_deadline_at` is set — used by `_visible_common_where` and
+`assert_task_visible`'s common branch. `GET /api/tasks`'s own `visible_common` clause calls
+`_visible_common_where(current_user)` rather than re-deriving the same plan filter inline (it
+originally did, independently, straight off `current_user.plan_id` — the two fell out of sync
+the moment Междумирье shipped: detail worked during the grace period, the list the participant
+actually browses did not, silently re-hiding the task a request earlier than intended).
+`compute_progress`/`attention_count` reuse the same helper too, so all four call sites agree.
 
 The **Argonauts roster/profile task list** (`app/api/argonauts.py`, see
 [ARGONAUTS.md](ARGONAUTS.md)) has a narrower, asymmetric version of this exemption: it uses

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import ColumnElement, and_, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +70,7 @@ from app.services.media import (
 from app.services.ratelimit import enforce_rate_limit
 from app.services.tasks import (
     GRADUATE_VISIBLE_STATUSES,
+    _visible_common_where,
     assert_pair_member,
     assert_task_visible,
     attention_count,
@@ -86,7 +87,6 @@ from app.services.tasks import (
     recompute_pair_completion,
     sync_task_calendar_event,
 )
-from app.services.visibility import plan_visibility_clause
 from app.ws import schemas as ws_schemas
 
 # Задачи — активность участника; наблюдателю весь раздел закрыт (в т.ч. чтение).
@@ -898,15 +898,12 @@ async def list_tasks(
             my_individual = select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == current_user.id
             )
-            # common-задача — с двойным фильтром поток+тариф (ARG-96); своё
+            # common-задача — с двойным фильтром поток+тариф (ARG-96, через тот же
+            # _visible_common_where что и compute_progress/attention_count — не
+            # дублируем условие второй раз, иначе Междумирье легко забыть починить
+            # в одном месте и не в другом, как уже случилось здесь); своё
             # индивидуальное назначение видно независимо от него.
-            visible_common = and_(
-                Task.type == "common",
-                or_(Task.intake_id.is_(None), Task.intake_id == current_user.intake_id),
-                plan_visibility_clause(
-                    TaskPlan.plan_id, TaskPlan.task_id, Task.id, current_user.plan_id
-                ),
-            )
+            visible_common = and_(*_visible_common_where(current_user))
             where.append(visible_common | (Task.id.in_(my_individual)))
     stmt = (
         select(Task)

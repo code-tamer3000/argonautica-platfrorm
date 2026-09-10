@@ -170,6 +170,18 @@ export function elementName(element: Element): string {
   return ELEMENT_NAMES[element]
 }
 
+// Дательный падеж — только для формулировки «Переход к Огню/Воздуху/Воде/
+// Земле» в хабе колеса на первый день этапа (ExpeditionWheel.tsx).
+const ELEMENT_NAMES_DATIVE: Record<Element, string> = {
+  air: 'Воздуху',
+  fire: 'Огню',
+  water: 'Воде',
+  earth: 'Земле',
+}
+export function elementNameDative(element: Element): string {
+  return ELEMENT_NAMES_DATIVE[element]
+}
+
 const STAGE_NAMES: Record<StageSpanOut['kind'], string> = {
   balance: 'Точка баланса',
   air: 'Воздух',

@@ -154,6 +154,13 @@ element name instead of below it, while at the bottom it correctly landed below 
 same code, opposite reading order depending which side of the circle you're looking
 at. A fixed screen-space offset reads the same everywhere.
 
+On the first day of an elemental stage (`today == stage.day_from`), the hub title
+reads "Переход к Огню/Воздуху/Воде/Земле" (dative case) instead of the bare element
+name — a one-day cue that the stage just changed. Every other day of the stage shows
+the plain name, same as before (`hubCaption` / `elementNameDative` in
+`ExpeditionWheel.tsx` / `wheelGeometry.ts`). Balance and final keep their fixed
+captions regardless of day.
+
 Outside the circle (`expedition.today == null` — before start or after the window
 closes) the hub simply omits its second line rather than showing placeholder text; the
 tagline above the wheel (`DashboardScreen.tsx`) already carries that state ("До старта
