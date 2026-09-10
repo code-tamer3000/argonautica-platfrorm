@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from 'react'
 import {
   buildJournalContent,
-  repostMessage,
+  forwardMessage,
   useSendMessage,
   type SendBody,
 } from '../../api/messages'
@@ -29,9 +29,6 @@ import styles from './chat.module.css'
 
 interface Props {
   roomId: number
-  // Новостной канал: здесь композер умеет «держать» репост (pendingRepost) и даёт
-  // дописать к нему комментарий перед отправкой.
-  isNews?: boolean
   // Личный дневник: композер появляется по выбору режима — проигрываем мягкое
   // выезжание при монтировании, чтобы он не «выпрыгивал».
   revealOnMount?: boolean
@@ -49,7 +46,7 @@ interface Props {
   onFocusInput?: () => void
 }
 
-export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, threadRoot, onExitThread, onFocusInput }: Props) {
+export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoot, onExitThread, onFocusInput }: Props) {
   // Режим треда активен по id (корень для превью может отсутствовать в ленте).
   const inThread = threadRootId != null
   const [text, setText] = useState('')
@@ -70,19 +67,20 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
   const [uploading, setUploading] = useState(false)
   // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
   const [voiceActive, setVoiceActive] = useState(false)
-  // Идёт отправка репоста (форвард создаётся до комментария).
+  // Идёт отправка пересылки (форвард создаётся до комментария).
   const [reposting, setReposting] = useState(false)
   const send = useSendMessage(roomId)
   const users = useUsersMap()
   const { user } = useAuth()
-  const pendingRepost = useUiStore((s) => s.pendingRepost)
-  const setPendingRepost = useUiStore((s) => s.setPendingRepost)
+  const pendingForward = useUiStore((s) => s.pendingForward)
+  const setPendingForward = useUiStore((s) => s.setPendingForward)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const pendingDraft = useUiStore((s) => s.pendingDraft)
   const setPendingDraft = useUiStore((s) => s.setPendingDraft)
-  // Репост показываем только в композере новостного канала.
-  const repost = isNews ? pendingRepost : null
+  // Пересылку показываем только в композере ВЫБРАННОЙ для неё комнаты (не любой,
+  // где этот roomId совпал бы случайно — targetRoomId фиксирован в пикере).
+  const repost = pendingForward?.targetRoomId === roomId ? pendingForward : null
   // Раздел дневника, «заряженный» именно в эту комнату: следующая отправка
   // (текст/файл/голос/стикер) уходит как запись дневника этого раздела. Мета
   // раздела берётся из активного задания (см. api/journal.ts).
@@ -407,18 +405,18 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       return
     }
 
-    // Репост в новости: сначала создаём форвард, затем — если что-то введено —
-    // отдельным сообщением-комментарием (Telegram-стиль: переслано + подпись ниже).
+    // Пересылка: сначала создаём форвард, затем — если что-то введено — отдельным
+    // сообщением-комментарием (Telegram-стиль: переслано + подпись ниже).
     if (repost) {
       setReposting(true)
       try {
-        await repostMessage(repost.roomId, repost.message.id)
+        await forwardMessage(repost.sourceRoomId, repost.message.id, roomId)
       } catch {
-        toast('Не удалось отправить репост', 'error')
+        toast('Не удалось переслать', 'error')
         setReposting(false)
         return
       }
-      setPendingRepost(null)
+      setPendingForward(null)
       setReposting(false)
       const uploads = pendingFiles
       const ref = pendingRef
@@ -434,7 +432,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
         return
       }
       if (body.content || body.attachment_ids?.length || ref) enqueueTopLevel(body, [], ref)
-      toast('Отправлено в новости')
+      toast('Переслано')
       return
     }
 
@@ -555,12 +553,12 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
       )}
       {repost && (
         <div className={styles.contextBar}>
-          <span className={styles.ctxLabel}>Репост от {repostAuthor}:</span>
+          <span className={styles.ctxLabel}>Переслать от {repostAuthor}:</span>
           <span>{repostSnippet}</span>
           <button
             className={styles.pendingChipX}
-            onClick={() => setPendingRepost(null)}
-            aria-label="Отменить репост"
+            onClick={() => setPendingForward(null)}
+            aria-label="Отменить пересылку"
           >
             ✕
           </button>
@@ -673,7 +671,7 @@ export function Composer({ roomId, isNews, revealOnMount, threadRootId = null, t
                 inThread
                   ? 'Ответить в тред…'
                   : repost
-                    ? 'Добавить сообщение к репосту…'
+                    ? 'Добавить сообщение к пересылке…'
                     : 'Сообщение…'
               }
               className={styles.composerInput}

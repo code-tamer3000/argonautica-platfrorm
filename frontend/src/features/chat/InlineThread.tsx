@@ -18,10 +18,9 @@ interface Props {
   roomId: number
   rootId: number
   canPin?: boolean
-  isNews?: boolean
   // Канал-дневник → текст ответов рендерится как markdown (см. MessageItem).
   markdown?: boolean
-  onRepost?: (msg: MessageOut) => void
+  onForward?: (msg: MessageOut) => void
 }
 
 /**
@@ -31,7 +30,7 @@ interface Props {
  * и на компе, с вложениями/стикерами/голосом. Ответ уходит в корень (плоский тред,
  * см. docs/MESSAGES.md); открытый тред обновляется по инвалидации thread-query.
  */
-export function InlineThread({ roomId, rootId, canPin, isNews, markdown, onRepost }: Props) {
+export function InlineThread({ roomId, rootId, canPin, markdown, onForward }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedAll, setExpandedAll] = useState(false)
@@ -44,10 +43,9 @@ export function InlineThread({ roomId, rootId, canPin, isNews, markdown, onRepos
   // «Ответить» в меню не показываем — мы уже в треде, ответ уходит в корень через композер.
   const msgMenu = useMessageMenu({
     roomId,
-    isNews: !!isNews,
     canPin: !!canPin,
     onEdit: (m) => setEditingId(m.id),
-    onRepost,
+    onForward,
   })
 
   // Раскрытый тред двигает last_read_message_id — иначе его ответы (id может быть

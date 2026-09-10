@@ -58,6 +58,45 @@ from app.ws.pubsub import publish_room_event
 router = APIRouter(prefix="/api/rooms", tags=["messages"])
 
 
+async def assert_can_post(
+    session: AsyncSession, room: Room, user: User, *, is_reply: bool
+) -> None:
+    """Общие правила «можно ли постить верхнеуровневое сообщение/тред-ответ в эту
+    комнату» — используется и обычной отправкой (send_message), и пересылкой
+    (forward_message проверяет ЦЕЛЕВУЮ комнату теми же правилами, что получатель
+    обычного сообщения)."""
+    await assert_room_access(session, room, user)
+    # Наблюдатель не пишет никуда (в т.ч. в новости).
+    await assert_can_write(session, room, user)
+
+    # Личный канал: верхнеуровневые сообщения только от владельца.
+    # Thread-ответы (is_reply) разрешены всем — это «комментарии».
+    if room.is_personal and room.created_by != user.id:
+        if not is_reply:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only the channel owner can post here; use threads to comment",
+            )
+
+    # Окно набора владельца дневника закрыто (ARG-96): архив только на чтение,
+    # новых записей (в т.ч. тредом) быть не может.
+    if room.is_personal:
+        owner = await session.get(User, room.created_by)
+        owner_intake_id = owner.intake_id if owner is not None else None
+        if await intake_window_closed(session, owner_intake_id) is not None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Окно набора закрыто — архив только для чтения"
+            )
+
+    # Новостной канал: верхнеуровневые посты — только admin. Комментарии (треды) — все.
+    if room.is_news and user.role != "admin":
+        if not is_reply:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only admins can post to the news channel; use threads to comment",
+            )
+
+
 async def _attachments_map(
     session: AsyncSession, message_ids: list[int]
 ) -> dict[int, list[int]]:
@@ -194,36 +233,9 @@ async def send_message(
         f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
     )
     room = await load_room(session, room_id)
-    await assert_room_access(session, room, current_user)
-    # Наблюдатель не пишет никуда (в т.ч. в новости).
-    await assert_can_write(session, room, current_user)
-
-    # Личный канал: верхнеуровневые сообщения только от владельца.
-    # Thread-ответы (reply_to_message_id задан) разрешены всем — это «комментарии».
-    if room.is_personal and room.created_by != current_user.id:
-        if body.reply_to_message_id is None:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                "Only the channel owner can post here; use threads to comment",
-            )
-
-    # Окно набора владельца дневника закрыто (ARG-96): архив только на чтение,
-    # новых записей (в т.ч. тредом) быть не может.
-    if room.is_personal:
-        owner = await session.get(User, room.created_by)
-        owner_intake_id = owner.intake_id if owner is not None else None
-        if await intake_window_closed(session, owner_intake_id) is not None:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "Окно набора закрыто — архив только для чтения"
-            )
-
-    # Новостной канал: верхнеуровневые посты — только admin. Комментарии (треды) — все.
-    if room.is_news and current_user.role != "admin":
-        if body.reply_to_message_id is None:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                "Only admins can post to the news channel; use threads to comment",
-            )
+    await assert_can_post(
+        session, room, current_user, is_reply=body.reply_to_message_id is not None
+    )
 
     if body.sticker_id is not None and await session.get(Sticker, body.sticker_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Sticker not found")
@@ -311,33 +323,30 @@ async def send_message(
     response_model=MessageOut,
     status_code=201,
 )
-async def repost_to_news(
+async def forward_message(
     room_id: int,
     message_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    target_room_id: Annotated[int | None, Query()] = None,
     target_intake_id: Annotated[int | None, Query()] = None,
 ) -> MessageOut:
-    """Репост сообщения в новостной канал (только admin).
+    """Переслать сообщение в другую комнату.
 
-    Копируем текст/стикер/вложения в новый верхнеуровневый пост новостного канала,
-    сохраняя исходного автора в forwarded_from_sender_id (атрибуция «переслано от X»).
-    Доступ к исходной комнате проверяется как везде (п.1). Проверку владения ассетом
-    (в отличие от send_message) не делаем — это админский репост; доступ к медиа у
-    зрителей новостей отработает через assert_media_access (медиа привязано к живому
-    сообщению в доступной комнате).
+    Основной путь — `target_room_id`: доступен ЛЮБОМУ участнику. Целевая комната
+    проверяется ровно теми же правилами, что верхнеуровневая отправка обычного
+    сообщения (`assert_can_post`) — DM/группа/свой дневник открыты всем, чужой личный
+    дневник и новостной канал (верхний уровень) — только владельцу/admin. Копия, а не
+    ссылка (ADR-012, docs/DECISIONS.md): текст/стикер/вложения/ref переносятся, атрибуция
+    исходного автора — в `forwarded_from_sender_id` (цепочка пересылок хранит ПЕРВОГО
+    автора, а не промежуточного пересыльщика). Проверку владения ассетом (в отличие от
+    send_message) не делаем — пересылаемые вложения по определению чужие; доступ к
+    медиа у зрителей целевой комнаты отработает через assert_media_access.
 
-    Целевой поток (ARG-104, новостной канал больше не singleton): если у комнаты-
-    источника есть свой intake_id — репост уходит в новостной канал ЭТОГО потока,
-    `target_intake_id` игнорируется. Если источник кросс-поточный (intake_id=NULL,
-    например group/dm), поток назначения не вывести из комнаты — админ обязан
-    выбрать его явно через `target_intake_id`.
+    Legacy-путь (`target_intake_id`, без `target_room_id`) — старый admin-only репост в
+    новостной канал потока; оставлен на один релиз ради закэшированных клиентов
+    (blue-green), удаляется в следующей contract-фазе.
     """
-    if current_user.role != "admin":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "Only admins can repost to the news channel"
-        )
-
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
 
@@ -349,64 +358,77 @@ async def repost_to_news(
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Message not found")
 
-    if room.intake_id is not None:
-        resolved_intake_id = room.intake_id
-    elif target_intake_id is not None:
-        resolved_intake_id = target_intake_id
+    if target_room_id is not None:
+        await enforce_rate_limit(
+            f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
+        )
+        target = await load_room(session, target_room_id)
+        await assert_can_post(session, target, current_user, is_reply=False)
     else:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "Source room is cross-intake; target_intake_id is required",
-        )
-    if await session.get(Intake, resolved_intake_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
+        if current_user.role != "admin":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Only admins can repost to the news channel"
+            )
+        if room.intake_id is not None:
+            resolved_intake_id = room.intake_id
+        elif target_intake_id is not None:
+            resolved_intake_id = target_intake_id
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Source room is cross-intake; target_intake_id is required",
+            )
+        if await session.get(Intake, resolved_intake_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
 
-    news = await ensure_news_channel(session, resolved_intake_id)
-    if news is None:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "News channel is not ready yet"
-        )
-    if source.room_id == news.id:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "Message is already in the news channel"
-        )
+        target = await ensure_news_channel(session, resolved_intake_id)
+        if target is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "News channel is not ready yet"
+            )
+        if source.room_id == target.id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Message is already in the news channel"
+            )
 
     attachment_ids = (await _attachments_map(session, [source.id])).get(source.id, [])
 
-    repost = Message(
-        room_id=news.id,
+    forwarded = Message(
+        room_id=target.id,
         sender_id=current_user.id,
         content=source.content,
         sticker_id=source.sticker_id,
-        # Цепочка репостов сохраняет ПЕРВОГО автора, а не промежуточного репостера.
+        # Цепочка пересылок сохраняет ПЕРВОГО автора, а не промежуточного пересыльщика.
         forwarded_from_sender_id=source.forwarded_from_sender_id or source.sender_id,
-        # Ссылка на материал/задачу переносится вместе с репостом.
+        # Ссылка на материал/задачу переносится вместе с пересылкой.
         ref_kind=source.ref_kind,
         ref_id=source.ref_id,
     )
-    session.add(repost)
+    session.add(forwarded)
     await session.flush()
 
     for media_asset_id in attachment_ids:
         session.add(
-            MessageAttachment(message_id=repost.id, media_asset_id=media_asset_id)
+            MessageAttachment(message_id=forwarded.id, media_asset_id=media_asset_id)
         )
 
     await session.flush()
-    await session.refresh(repost)
-    resolved = await resolve_attachments(session, [repost.id])
-    refs = await _refs_map(session, [repost], current_user)
-    out = _to_out(repost, resolved.get(repost.id, []), refs)
-    ws_out = _to_out(repost, resolved.get(repost.id, []))
-    if repost.ref_kind is not None and repost.ref_id is not None:
+    await session.refresh(forwarded)
+    resolved = await resolve_attachments(session, [forwarded.id])
+    refs = await _refs_map(session, [forwarded], current_user)
+    out = _to_out(forwarded, resolved.get(forwarded.id, []), refs)
+    ws_out = _to_out(forwarded, resolved.get(forwarded.id, []))
+    if forwarded.ref_kind is not None and forwarded.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
-            session, repost.ref_kind, repost.ref_id
+            session, forwarded.ref_kind, forwarded.ref_id
         )
-    news_id = news.id
-    event = ws_schemas.message_new_event(ws_out)
-    after_commit(session, lambda: publish_room_event(news_id, event))
-    # Репост — новый верхнеуровневый пост в новостях: уведомить всех участников.
-    await on_new_message(session, repost, news, current_user)
+    target_id = target.id
+    event = ws_schemas.message_new_event(
+        ws_out, _redacted_variant(target, ws_out.content)
+    )
+    after_commit(session, lambda: publish_room_event(target_id, event))
+    # Пересылка — новый верхнеуровневый пост в целевой комнате: уведомить получателей.
+    await on_new_message(session, forwarded, target, current_user)
     return out
 
 

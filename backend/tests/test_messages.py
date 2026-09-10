@@ -614,6 +614,150 @@ async def test_non_admin_cannot_repost(
     assert resp.status_code == 403
 
 
+async def test_participant_forwards_to_own_dm(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Обычный участник пересылает сообщение в свой dm через target_room_id — не
+    только admin, и не только в новости (общий случай пересылки)."""
+    sender = await make_user()
+    peer = await make_user()
+    source_room = await make_room(created_by=sender.id)
+    await add_membership(source_room.id, sender.id, "owner")
+
+    dm = await make_room(created_by=sender.id, type="dm")
+    await add_membership(dm.id, sender.id, "member")
+    await add_membership(dm.id, peer.id, "member")
+
+    headers = await _headers(client, sender)
+    src = await _send(client, headers, source_room.id, content="original")
+
+    resp = await client.post(
+        f"/api/rooms/{source_room.id}/messages/{src['id']}/repost",
+        headers=headers,
+        params={"target_room_id": dm.id},
+    )
+    assert resp.status_code == 201, resp.text
+    out = resp.json()
+    assert out["room_id"] == dm.id
+    assert out["sender_id"] == sender.id
+    assert out["forwarded_from_sender_id"] == sender.id
+    assert out["content"] == "original"
+
+
+async def test_forward_chain_keeps_first_author(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Пересылка пересылки сохраняет ПЕРВОГО автора, а не промежуточного пересыльщика."""
+    author = await make_user()
+    forwarder = await make_user()
+    room = await make_room(created_by=author.id)
+    await add_membership(room.id, author.id, "owner")
+    await add_membership(room.id, forwarder.id, "member")
+
+    dm1 = await make_room(created_by=forwarder.id, type="dm")
+    await add_membership(dm1.id, forwarder.id, "member")
+    dm2 = await make_room(created_by=forwarder.id, type="dm")
+    await add_membership(dm2.id, forwarder.id, "member")
+
+    author_headers = await _headers(client, author)
+    src = await _send(client, author_headers, room.id, content="original")
+
+    forwarder_headers = await _headers(client, forwarder)
+    first = await client.post(
+        f"/api/rooms/{room.id}/messages/{src['id']}/repost",
+        headers=forwarder_headers,
+        params={"target_room_id": dm1.id},
+    )
+    assert first.status_code == 201, first.text
+    first_out = first.json()
+    assert first_out["forwarded_from_sender_id"] == author.id
+
+    second = await client.post(
+        f"/api/rooms/{dm1.id}/messages/{first_out['id']}/repost",
+        headers=forwarder_headers,
+        params={"target_room_id": dm2.id},
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["forwarded_from_sender_id"] == author.id
+
+
+async def test_cannot_forward_to_inaccessible_room(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    sender = await make_user()
+    room = await make_room(created_by=sender.id)
+    await add_membership(room.id, sender.id, "owner")
+    headers = await _headers(client, sender)
+    src = await _send(client, headers, room.id, content="hi")
+
+    stranger = await make_user()
+    other_dm = await make_room(created_by=stranger.id, type="dm")
+    await add_membership(other_dm.id, stranger.id, "member")
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages/{src['id']}/repost",
+        headers=headers,
+        params={"target_room_id": other_dm.id},
+    )
+    assert resp.status_code == 403
+
+
+async def test_cannot_forward_to_news_without_admin(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    sender = await make_user()
+    room = await make_room(created_by=sender.id)
+    await add_membership(room.id, sender.id, "owner")
+    headers = await _headers(client, sender)
+    src = await _send(client, headers, room.id, content="hi")
+
+    news = await ensure_news_channel(session, sender.intake_id)
+    await session.commit()
+    assert news is not None
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages/{src['id']}/repost",
+        headers=headers,
+        params={"target_room_id": news.id},
+    )
+    assert resp.status_code == 403
+
+
+async def test_observer_cannot_forward(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    author = await make_user()
+    room = await make_room(created_by=author.id)
+    await add_membership(room.id, author.id, "owner")
+    author_headers = await _headers(client, author)
+    src = await _send(client, author_headers, room.id, content="hi")
+
+    observer = await make_user(is_observer=True)
+    observer_headers = await _headers(client, observer)
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages/{src['id']}/repost",
+        headers=observer_headers,
+        params={"target_room_id": room.id},
+    )
+    assert resp.status_code == 403
+
+
 # --- Регресс: publish-before-commit («отправлено, но потерялось») ------------
 # Раньше WS-событие message_new публиковалось ДО commit транзакции. Если commit
 # падал (blue-green, обрыв Postgres), подписчики уже видели сообщение, а в БД

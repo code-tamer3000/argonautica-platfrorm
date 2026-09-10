@@ -268,7 +268,7 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | content | TEXT | NULL | NULL if sticker/attachment-only |
 | thread_root_id | BIGINT | FK messages, NULL | NULL = top level; set = reply, points at root |
 | sticker_id | BIGINT | FK stickers, NULL | if message is a sticker |
-| forwarded_from_sender_id | BIGINT | FK users, NULL | repost into news: original author. See [MESSAGES.md](MESSAGES.md) |
+| forwarded_from_sender_id | BIGINT | FK users, NULL | forwarding: original author. See [MESSAGES.md](MESSAGES.md) |
 | ref_kind | TEXT | NULL, CHECK | ссылка на материал/задачу: `'kb'` \| `'task'`. No FK (target resolved lazily). See [MESSAGES.md](MESSAGES.md) |
 | ref_id | BIGINT | NULL | kb_item / task id; paired with `ref_kind` |
 | reply_count | INT | NOT NULL, default 0 | denormalized on root |
