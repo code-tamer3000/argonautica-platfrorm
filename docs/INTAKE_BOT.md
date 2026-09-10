@@ -21,18 +21,34 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
 
 1. **`/start`** → bot asks the applicant to describe themselves in one message
    (`ask_about`, also the opening line of `start` — same string, see «Placeholder texts»).
-2. Reply → `status=submitted`; the anketa is forwarded to the admin DM with an **«Принять»**
-   button.
-3. Admin taps **«Принять»** → the anketa message is edited in place (`editMessageText`):
-   button removed, «— ✅ Принята» appended to the header, no separate confirmation message —
-   before this, the tap fired two *extra* chat messages (a confirmation + a `📋` log echo),
-   which made it easy to reply to the wrong bubble later (see the admin-chat bug above).
+2. Reply → `status=submitted`; the anketa is forwarded to the admin DM with two buttons:
+   **«Принять»** and **«Принять с комментарием»** (ARG-124).
+3. Admin taps **«Принять»** (or **«Принять с комментарием»**) → the anketa message is
+   edited in place (`editMessageText`): buttons removed, «— ✅ Принята» appended to the
+   header, no separate confirmation message — before this, the tap fired two *extra*
+   chat messages (a confirmation + a `📋` log echo), which made it easy to reply to the
+   wrong bubble later (see the admin-chat bug above).
    `status=choosing_plan` and the 24h booking clock starts (`payment_deadline_at`, see
    «Payment window» below). In the **same** handler, `IntakeApplication.price_snapshot`
    is filled with the price of every active plan — from this instant, this one
    application never reads `plans.price` live again (see «Payment window»); an admin
    price edit still applies immediately, but only to applicants who haven't reached
-   «Принять» yet. Bot shows tariffs as buttons, read
+   «Принять» yet. Both buttons share this exact step (`_accept_application`) — they
+   only diverge in what happens next.
+   - **«Принять»**: the tariff screen is sent to the applicant right away, same as
+     before.
+   - **«Принять с комментарием»**: the tariff screen is *not* sent yet. Instead the
+     bot posts a fresh service message in the admin chat asking for a comment, and
+     remembers its `message_id → application_id` in Redis
+     (`intakebot:acmap:{message_id}`, same TTL as `intakebot:await_q:*` — see
+     `AWAIT_QUESTION_TTL_SEC`). The admin **replies** (Telegram reply, not a bare
+     message) to that service message with text and/or one photo. On that reply the
+     bot sends the applicant an «accepted» message carrying the admin's comment
+     (`sendPhoto` with the comment as caption if a photo was attached, `sendMessage`
+     otherwise), immediately followed by the usual tariff screen. If the admin never
+     replies, the Redis entry just expires — same as an abandoned `/question` — no
+     timeout/reminder is sent to either side (deliberate, see ARG-124 «Границы»).
+   Bot shows tariffs as buttons, read
    from the `plans` table **at request time** for which tariffs to list (not hardcoded —
    still no bot redeploy needed), priced from the snapshot. **One button per tariff**
    («Вода — 12 000 ₽») opening a

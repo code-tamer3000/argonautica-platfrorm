@@ -701,6 +701,175 @@ async def test_accept_edits_anketa_in_place(session: AsyncSession, monkeypatch: 
     assert len(sends) == 1 and sends[0]["chat_id"] == tg_id
 
 
+# --- «Принять с комментарием» (ARG-124) -----------------------------------------
+
+
+async def test_anketa_card_has_both_accept_buttons(session: AsyncSession, monkeypatch: Any) -> None:
+    admin_chat = 999_023
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = IntakeApplication(tg_id=random.randint(10**9, 10**12), status="submitted", about="кто я")
+    session.add(app)
+    await session.commit()
+    await session.refresh(app)
+    client = FakeClient()
+
+    await intake_bot._send_anketa_to_admin(client, app)
+
+    buttons = [b for row in client.payload("sendMessage")["reply_markup"]["inline_keyboard"] for b in row]
+    data = [b["callback_data"] for b in buttons]
+    assert data == [f"acc:{app.id}", f"acw:{app.id}"]
+
+
+async def test_accept_with_comment_moves_status_and_asks_admin_for_comment(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Тап на «Принять с комментарием» переводит заявку в choosing_plan (как обычное
+
+    «Принять»), но участнику пока ничего не уходит — только приглашение админу."""
+    admin_chat = 999_024
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    app = IntakeApplication(
+        tg_id=random.randint(10**9, 10**12), tg_username="arg", status="submitted", about="кто я",
+    )
+    session.add(app)
+    await session.commit()
+    await session.refresh(app)
+    client = FakeClient()
+
+    await intake_bot._handle_accept_with_comment(
+        client, session,
+        {
+            "id": "cb", "data": f"acw:{app.id}",
+            "message": {"message_id": 9, "chat": {"id": admin_chat}},
+        },
+    )
+    await session.commit()
+    await session.refresh(app)
+
+    assert app.status == STATUS_CHOOSING_PLAN
+    assert app.accepted_at is not None
+    assert app.price_snapshot is not None
+    # Ни сообщения о принятии, ни экрана тарифов участнику ещё нет.
+    sends = [p for m, p in client.calls if m == "sendMessage"]
+    assert all(p["chat_id"] != app.tg_id for p in sends)
+    invite = sent_to(client, admin_chat)
+    assert "комментарий" in invite["text"].lower()
+    stored = await intake_bot.redis_client.get(f"intakebot:acmap:{invite['message_id']}")
+    assert stored == str(app.id)
+    await intake_bot.redis_client.delete(f"intakebot:acmap:{invite['message_id']}")
+
+
+async def test_admin_reply_with_comment_delivers_accept_message_then_plan_list(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_025
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = IntakeApplication(
+        tg_id=random.randint(10**9, 10**12), tg_username="arg", status="submitted", about="кто я",
+    )
+    session.add(app)
+    await session.commit()
+    await session.refresh(app)
+    client = FakeClient()
+
+    await intake_bot._handle_accept_with_comment(
+        client, session,
+        {
+            "id": "cb", "data": f"acw:{app.id}",
+            "message": {"message_id": 9, "chat": {"id": admin_chat}},
+        },
+    )
+    await session.commit()
+    invite_id = sent_to(client, admin_chat)["message_id"]
+
+    client = FakeClient()
+    await intake_bot._handle_message(
+        client, session,
+        {
+            "chat": {"id": admin_chat},
+            "text": "Пиши, ждём тебя на созвоне в четверг",
+            "from": {"id": 1},
+            "reply_to_message": {"message_id": invite_id},
+        },
+    )
+    await session.commit()
+
+    sends = [p for m, p in client.calls if m == "sendMessage"]
+    to_applicant = [p for p in sends if p["chat_id"] == app.tg_id]
+    assert len(to_applicant) == 2
+    accepted, plans_screen = to_applicant
+    assert intake_bot.TEXT_ACCEPT_COMMENT_HEADER in accepted["text"]
+    assert "Пиши, ждём тебя на созвоне в четверг" in accepted["text"]
+    assert plan.name in plans_screen["text"]
+    assert await intake_bot.redis_client.get(f"intakebot:acmap:{invite_id}") is None
+
+
+async def test_admin_reply_with_photo_only_uses_send_photo(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    admin_chat = 999_026
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = IntakeApplication(
+        tg_id=random.randint(10**9, 10**12), tg_username="arg", status="submitted", about="кто я",
+    )
+    session.add(app)
+    await session.commit()
+    await session.refresh(app)
+    client = FakeClient()
+
+    await intake_bot._handle_accept_with_comment(
+        client, session,
+        {
+            "id": "cb", "data": f"acw:{app.id}",
+            "message": {"message_id": 9, "chat": {"id": admin_chat}},
+        },
+    )
+    await session.commit()
+    invite_id = sent_to(client, admin_chat)["message_id"]
+
+    client = FakeClient()
+    await intake_bot._handle_message(
+        client, session,
+        {
+            "chat": {"id": admin_chat},
+            "from": {"id": 1},
+            "photo": [{"file_id": "comment-photo"}],
+            "reply_to_message": {"message_id": invite_id},
+        },
+    )
+    await session.commit()
+
+    photo_payload = client.payload("sendPhoto")
+    assert photo_payload["chat_id"] == app.tg_id and photo_payload["photo"] == "comment-photo"
+    assert photo_payload["caption"] == intake_bot.TEXT_ACCEPT_COMMENT_HEADER
+    sends = [p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == app.tg_id]
+    assert len(sends) == 1  # только экран тарифов, текст ушёл как caption фото
+
+
+async def test_reply_not_matching_any_invite_falls_through_to_question_delivery(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Reply на чужое/устаревшее сообщение (не acmap) — прежняя ветка /question."""
+    admin_chat = 999_027
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session,
+        {
+            "chat": {"id": admin_chat},
+            "text": "какой-то ответ",
+            "from": {"id": 1},
+            "reply_to_message": {"message_id": 424242},
+        },
+    )
+
+    warning = sent_to(client, admin_chat)
+    assert "Не нашёл, кому доставить" in warning["text"]
+
+
 async def test_confirm_payment_edits_caption_in_place(session: AsyncSession, monkeypatch: Any) -> None:
     admin_chat = 999_022
     monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
