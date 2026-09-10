@@ -150,6 +150,30 @@ async def test_list_rooms_visibility(
     assert foreign.id not in ids                   # чужая группа — не видна
 
 
+async def test_dm_room_carries_peer_intake_id(
+    client: AsyncClient,
+    make_user: MakeUser,
+) -> None:
+    """RoomOut.peer_intake_id — денормализованный АКТИВНЫЙ intake_id пира dm
+    (нужен клиенту, чтобы сузить пикер пересылки до текущего потока без похода
+    в admin-only /api/admin/users). Проверяем и GET /api/rooms, и GET /api/rooms/{id}."""
+    user = await make_user()
+    peer = await make_user()
+    headers = await _headers(client, user)
+
+    dm = await client.post(
+        "/api/rooms", headers=headers, json={"type": "dm", "peer_id": peer.id}
+    )
+    dm_id = dm.json()["id"]
+
+    listing = await client.get("/api/rooms", headers=headers)
+    room = next(r for r in listing.json() if r["id"] == dm_id)
+    assert room["peer_intake_id"] == peer.intake_id
+
+    single = await client.get(f"/api/rooms/{dm_id}", headers=headers)
+    assert single.json()["peer_intake_id"] == peer.intake_id
+
+
 async def test_admin_patch_can_create_groups(
     client: AsyncClient,
     make_user: MakeUser,

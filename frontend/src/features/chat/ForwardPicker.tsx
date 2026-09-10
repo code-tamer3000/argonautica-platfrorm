@@ -28,6 +28,12 @@ interface Props {
  * сообщение). Сервер перепроверяет право на цель авторитетно при самой пересылке
  * (`POST .../repost?target_room_id=`), так что фильтр здесь — только UX, не граница
  * доступа.
+ *
+ * Дополнительно сужен до «текущего потока» (`currentIntakeId`): dm-чаты фильтруются
+ * по `peer_intake_id`, новостные каналы (admin) — по `intake_id` самой комнаты —
+ * иначе и admin-оверсайт, и обычный участник, переходивший между потоками, видят
+ * в пикере людей/каналы не своего текущего потока (ARG-104 news per intake, dm
+ * членство не завязано на intake).
  */
 export function ForwardPicker({ onPick, onClose }: Props) {
   const [q, setQ] = useState('')
@@ -35,12 +41,16 @@ export function ForwardPicker({ onPick, onClose }: Props) {
   const { data: rooms, isLoading } = useRooms()
   const users = useUsersMap()
   const dmPeers = useUiStore((s) => s.dmPeers)
-  // Admin оверсайт видит новостной канал КАЖДОГО потока (по одному на intake, ARG-104) —
-  // без сужения список «Новости» раздувается до N потоков. Сужаем тем же контекстом
-  // «текущий поток», что и Задачи/КБ/Чаты в админке (см. RoomList.tsx), а не отдельным
-  // выбором внутри пикера.
-  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  // Сужаем до «текущего потока» — иначе и admin (новостной канал КАЖДОГО потока,
+  // по одному на intake, ARG-104), и обычный участник, переходивший между потоками
+  // (dm остаются от старого потока, доступ по членству не завязан на intake),
+  // видят в пикере лишний шум: чужие новости / людей не своего текущего потока.
+  // Admin — тот же контекст «текущий поток», что и Задачи/КБ/Чаты в админке
+  // (см. RoomList.tsx); обычный участник — просто свой АКТИВНЫЙ intake_id, без
+  // отдельного переключателя (у него и так только один «текущий»).
+  const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const isAdmin = user?.role === 'admin'
+  const currentIntakeId = isAdmin ? adminCurrentIntakeId : user?.intake_id ?? null
 
   const needle = q.trim().toLowerCase()
 
@@ -48,7 +58,11 @@ export function ForwardPicker({ onPick, onClose }: Props) {
     const list = (rooms ?? []).filter((r) => canPostTopLevel(r, user))
     const matches = (r: RoomOut) =>
       !needle || roomTitle(r, dmPeers, users).toLowerCase().includes(needle)
-    const dms = list.filter((r) => r.type === 'dm' && matches(r))
+    let dms = list.filter((r) => r.type === 'dm' && matches(r))
+    if (currentIntakeId != null) {
+      // peer_intake_id отсутствует (историческая запись без набора) — не прячем.
+      dms = dms.filter((r) => r.peer_intake_id == null || r.peer_intake_id === currentIntakeId)
+    }
     const groupRooms = list.filter((r) => r.type === 'group' && matches(r))
     const channels = list.filter((r) => r.type === 'channel' && !r.is_news && matches(r))
     let news = list.filter((r) => r.is_news && matches(r))

@@ -410,6 +410,18 @@ async def list_rooms(
         )
         dm_peer_map = {rid: uid for rid, uid in peer_rows.all()}
 
+    # intake_id пира — батчем, чтобы клиент мог сузить dm-список до текущего
+    # потока (пикер пересылки, ForwardPicker.tsx) без похода в admin-only
+    # /api/admin/users (см. RoomOut.peer_intake_id).
+    peer_intake_map: dict[int, int | None] = {}
+    if dm_peer_map:
+        peer_intake_rows = await session.execute(
+            select(User.id, User.intake_id).where(
+                User.id.in_(set(dm_peer_map.values()))
+            )
+        )
+        peer_intake_map = {uid: intake_id for uid, intake_id in peer_intake_rows.all()}
+
     # Одностороннее ограничение записи в dm с админом (ARG-110, часть B): пир —
     # НЕ-навигатор-админ и у смотрящего нет рангового права ему писать. Админ
     # сам никогда не блокируется (dm_peer_map тут ни при чём для него).
@@ -468,6 +480,8 @@ async def list_rooms(
         if room.type == "dm":
             item.peer_id = dm_peer_map.get(room.id)
             item.dm_write_locked = dm_write_locked.get(room.id, False)
+            if item.peer_id is not None:
+                item.peer_intake_id = peer_intake_map.get(item.peer_id)
         node = stream_map.get(room.id)
         if node is not None:
             item.stream_node_id, item.stream_task_id = node
@@ -531,6 +545,9 @@ async def get_room(
         )
         item.peer_id = peer_row.scalar_one_or_none()
         item.dm_write_locked = not await dm_write_allowed(session, room, current_user)
+        if item.peer_id is not None:
+            peer = await session.get(User, item.peer_id)
+            item.peer_intake_id = peer.intake_id if peer is not None else None
 
     node_row = await session.execute(
         select(TaskStreamNode.id, TaskStreamNode.task_id).where(

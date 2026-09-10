@@ -90,6 +90,15 @@ used across 15+ frontend files), never sliced by visibility. The roster for
   computed per-viewer in `list_rooms`/`get_room`) so the frontend can hide the
   composer instead of letting the participant hit a dead-end send button. A
   navigator has no such asymmetry — a normal two-way dm.
+- **`RoomOut.peer_intake_id`** (dm-only, batch-computed alongside `dm_peer_map` in
+  `list_rooms`/`get_room`) denormalizes the dm peer's ACTIVE `intake_id` — dm room
+  access is purely membership-based, not intake-scoped (unlike channels), so an admin
+  oversight account or a participant who moved between intakes (`PATCH /api/admin/users`
+  `intake_id`) keeps every past dm indefinitely. `ForwardPicker.tsx` (see
+  [MESSAGES.md](MESSAGES.md) "Forwarding messages") is the one place that reads it, to
+  narrow the forward target picker's «Личные чаты» to the current intake. `null` —
+  historical dm whose peer has no intake, never filtered out. Same idea as
+  `owner_plan_id`/`owner_intake_id` on personal-diary rooms above, applied to dm.
 - Not a second copy of the ranking rule: contacts and both dm rules (peer-check,
   write asymmetry) all call the same `cohort_plan_ranks`/rank-comparison helpers
   in `services/visibility.py`. Personal-diary visibility (below) does **not** —
