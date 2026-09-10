@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
   forwardMessage,
   useSendMessage,
   type SendBody,
 } from '../../api/messages'
+import { appendMessage } from '../../api/cache'
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
 import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
@@ -70,6 +72,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // Идёт отправка пересылки (форвард создаётся до комментария).
   const [reposting, setReposting] = useState(false)
   const send = useSendMessage(roomId)
+  const qc = useQueryClient()
   const users = useUsersMap()
   const { user } = useAuth()
   const pendingForward = useUiStore((s) => s.pendingForward)
@@ -410,7 +413,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     if (repost) {
       setReposting(true)
       try {
-        await forwardMessage(repost.sourceRoomId, repost.message.id, roomId)
+        const forwarded = await forwardMessage(repost.sourceRoomId, repost.message.id, roomId)
+        // Кладём в кэш сразу: WS-эхо своего же message.new может прийти, пока в этой
+        // комнате уже висит pending-подпись в outbox (enqueueTopLevel ниже) — дедуп
+        // «моё сообщение + outbox.hasPending(roomId)» в useRealtime тогда ошибочно
+        // считает форвард эхом ЧУЖОГО (для дедупа) outbox-элемента и глотает его,
+        // форвард пропадает из ленты. appendMessage дедуплицирует по id, так что
+        // повторная вставка тем же сообщением с WS — no-op.
+        appendMessage(qc, roomId, forwarded)
       } catch {
         toast('Не удалось переслать', 'error')
         setReposting(false)

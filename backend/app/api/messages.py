@@ -381,11 +381,12 @@ async def forward_message(
         if await session.get(Intake, resolved_intake_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
 
-        target = await ensure_news_channel(session, resolved_intake_id)
-        if target is None:
+        news = await ensure_news_channel(session, resolved_intake_id)
+        if news is None:
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "News channel is not ready yet"
             )
+        target = news
         if source.room_id == target.id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "Message is already in the news channel"

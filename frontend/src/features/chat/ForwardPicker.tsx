@@ -35,6 +35,12 @@ export function ForwardPicker({ onPick, onClose }: Props) {
   const { data: rooms, isLoading } = useRooms()
   const users = useUsersMap()
   const dmPeers = useUiStore((s) => s.dmPeers)
+  // Admin оверсайт видит новостной канал КАЖДОГО потока (по одному на intake, ARG-104) —
+  // без сужения список «Новости» раздувается до N потоков. Сужаем тем же контекстом
+  // «текущий поток», что и Задачи/КБ/Чаты в админке (см. RoomList.tsx), а не отдельным
+  // выбором внутри пикера.
+  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  const isAdmin = user?.role === 'admin'
 
   const needle = q.trim().toLowerCase()
 
@@ -45,14 +51,17 @@ export function ForwardPicker({ onPick, onClose }: Props) {
     const dms = list.filter((r) => r.type === 'dm' && matches(r))
     const groupRooms = list.filter((r) => r.type === 'group' && matches(r))
     const channels = list.filter((r) => r.type === 'channel' && !r.is_news && matches(r))
-    const news = list.filter((r) => r.is_news && matches(r))
+    let news = list.filter((r) => r.is_news && matches(r))
+    if (isAdmin && currentIntakeId != null) {
+      news = news.filter((r) => r.intake_id === currentIntakeId)
+    }
     const result: Group[] = []
     if (dms.length) result.push({ key: 'dm', title: 'Личные чаты', rooms: dms })
     if (groupRooms.length) result.push({ key: 'group', title: 'Группы', rooms: groupRooms })
     if (channels.length) result.push({ key: 'channel', title: 'Дневники', rooms: channels })
     if (news.length) result.push({ key: 'news', title: 'Новости', rooms: news })
     return result
-  }, [rooms, user, needle, dmPeers, users])
+  }, [rooms, user, needle, dmPeers, users, isAdmin, currentIntakeId])
 
   const empty = !isLoading && groups.length === 0
 
