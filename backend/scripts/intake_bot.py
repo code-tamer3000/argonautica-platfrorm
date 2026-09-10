@@ -227,7 +227,8 @@ TEXT_RESUBMITTED = (
 )
 
 # --- Callback-data ------------------------------------------------------------
-# admin: acc:<app_id> (принять анкету), pay:<app_id> (подтвердить оплату)
+# admin: acc:<app_id> (принять анкету), acw:<app_id> (принять с комментарием, ARG-124),
+#        pay:<app_id> (подтвердить оплату)
 # участник: pd:<app_id>:<plan_id> (экран описания тарифа), pl:<app_id> (назад к списку),
 #           pc:<app_id>:<plan_id> (перейти к оплате), svc_pw (сменить пароль).
 # svc_q (задать вопрос) — на шаге оплаты (_payment_keyboard, самый частый момент
@@ -237,6 +238,20 @@ CB_ASK_QUESTION = "svc_q"
 CB_CHANGE_PASSWORD = "svc_pw"
 
 TEXT_STEP_DONE = "Этот шаг уже пройден."
+
+# --- «Принять с комментарием» (ARG-124) -----------------------------------------
+# Экран тарифов заявителю уходит не сразу по тапу, а только после того, как админ
+# ответит (reply) на служебное приглашение — вместе с текстом принятия и его
+# комментарием. Redis хранит {message_id приглашения → app_id}, тот же TTL, что у
+# intakebot:await_q:* (см. AWAIT_QUESTION_TTL_SEC) — если админ передумал отвечать,
+# запись протухнет сама, отдельного таймаута/напоминания не заводим (см. ARG-124
+# «Границы»).
+
+TEXT_ASK_ACCEPT_COMMENT = (
+    "✍️ Напиши комментарий одним сообщением (текст и/или фото) — я передам его "
+    "{tag} вместе с сообщением о принятии заявки."
+)
+TEXT_ACCEPT_COMMENT_HEADER = f"{STAR} <b>Твоя заявка принята!</b>"
 
 # --- /reset (ARG-95, служебная команда админского DM) --------------------------
 
@@ -801,7 +816,10 @@ async def _send_anketa_to_admin(
         client, ADMIN_CHAT_ID,
         f"{header}\n\n{html.escape(app.about or '')}",
         reply_markup={
-            "inline_keyboard": [[{"text": "✅ Принять", "callback_data": f"acc:{app.id}"}]]
+            "inline_keyboard": [[
+                {"text": "✅ Принять", "callback_data": f"acc:{app.id}"},
+                {"text": "💬 Принять с комментарием", "callback_data": f"acw:{app.id}"},
+            ]]
         },
     )
 
@@ -889,15 +907,13 @@ async def _assign_intake_welcome_tasks(
 # --- Обработчики callback-кнопок ---------------------------------------------
 
 
-async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
-    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
-    if chat_id != ADMIN_CHAT_ID:
-        return
-    app_id = int(cb["data"].split(":", 1)[1])
-    app = await session.get(IntakeApplication, app_id)
-    if app is None or app.status not in (STATUS_SUBMITTED, STATUS_EXPIRED):
-        await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
-        return
+async def _accept_application(session: AsyncSession, app: IntakeApplication) -> list[Plan]:
+    """Общая часть двух кнопок принятия («Принять» / «Принять с комментарием»):
+
+    статус, дедлайн окна оплаты, снимок цен. Не трогает ни карточку в admin-чате,
+    ни сообщения заявителю — этим дальше распоряжается вызывающий, у кнопок он
+    расходится (см. `_handle_accept` vs `_handle_accept_with_comment`).
+    """
     # Приём сгоревшей заявки — это и «принять заново», и «продлить»: воронка
     # начинается с выбора тарифа, оферта принимается ещё раз (согласие привязано к
     # конкретной оплате), часы брони заводятся с нуля.
@@ -914,19 +930,110 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
     plans = await _active_plans(session)
     app.price_snapshot = {str(plan.id): plan.price for plan in plans}
     await session.flush()
+    return plans
+
+
+def _accept_application_gate(app: IntakeApplication | None) -> bool:
+    return app is not None and app.status in (STATUS_SUBMITTED, STATUS_EXPIRED)
+
+
+async def _edit_anketa_accepted(
+    client: httpx.AsyncClient, app: IntakeApplication, tag: str, message_id: int | None
+) -> None:
+    if message_id is None:
+        return
+    await _edit_text(
+        client, ADMIN_CHAT_ID, message_id,  # type: ignore[arg-type]
+        f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята\n\n"
+        f"{html.escape(app.about or '')}",
+        reply_markup={"inline_keyboard": []},
+    )
+
+
+async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
+    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
+    if chat_id != ADMIN_CHAT_ID:
+        return
+    app_id = int(cb["data"].split(":", 1)[1])
+    app = await session.get(IntakeApplication, app_id)
+    if not _accept_application_gate(app):
+        await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
+        return
+    assert app is not None
+    plans = await _accept_application(session, app)
     await _answer_callback(client, cb["id"], "Принято")
 
     tag = _user_tag(app.tg_username, app.tg_id)
     message_id = (cb.get("message") or {}).get("message_id")
-    if message_id is not None:
-        await _edit_text(
-            client, ADMIN_CHAT_ID, message_id,  # type: ignore[arg-type]
-            f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята\n\n"
-            f"{html.escape(app.about or '')}",
-            reply_markup={"inline_keyboard": []},
-        )
+    await _edit_anketa_accepted(client, app, tag, message_id)
     await _send_plan_list(client, session, app.tg_id, app, plans=plans)
     print(f"[action] заявка #{app.id} ({tag}) принята", flush=True)
+
+
+async def _handle_accept_with_comment(
+    client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]
+) -> None:
+    """«Принять с комментарием» (ARG-124): та же смена статуса, что и «Принять», но
+
+    экран тарифов заявителю не уходит сразу — сперва бот просит у админа текст/фото
+    реплаем на служебное приглашение (см. `_deliver_accept_comment`), и только тогда
+    заявитель получает и сообщение о принятии с комментарием, и следом список
+    тарифов.
+    """
+    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
+    if chat_id != ADMIN_CHAT_ID:
+        return
+    app_id = int(cb["data"].split(":", 1)[1])
+    app = await session.get(IntakeApplication, app_id)
+    if not _accept_application_gate(app):
+        await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
+        return
+    assert app is not None
+    await _accept_application(session, app)
+    await _answer_callback(client, cb["id"], "Принято, жду комментарий")
+
+    tag = _user_tag(app.tg_username, app.tg_id)
+    message_id = (cb.get("message") or {}).get("message_id")
+    await _edit_anketa_accepted(client, app, tag, message_id)
+
+    invite = await _send(
+        client, ADMIN_CHAT_ID,  # type: ignore[arg-type]
+        TEXT_ASK_ACCEPT_COMMENT.format(tag=html.escape(tag)),
+    )
+    if invite is not None:
+        await redis_client.set(
+            f"intakebot:acmap:{invite['message_id']}", str(app.id), ex=AWAIT_QUESTION_TTL_SEC,
+        )
+    print(
+        f"[action] заявка #{app.id} ({tag}) принята с комментарием — жду текст от админа",
+        flush=True,
+    )
+
+
+async def _deliver_accept_comment(
+    client: httpx.AsyncClient, session: AsyncSession, app_id: int, message: dict[str, Any]
+) -> None:
+    """Админ ответил на приглашение «Принять с комментарием» — рассылаем заявителю
+
+    сообщение о принятии с этим комментарием (текст и/или фото), следом — экран
+    тарифов (как обычно после «Принять»).
+    """
+    app = await session.get(IntakeApplication, app_id)
+    if app is None:
+        return
+    comment = (message.get("text") or message.get("caption") or "").strip()
+    photo = message.get("photo")
+    body = TEXT_ACCEPT_COMMENT_HEADER
+    if comment:
+        body = f"{body}\n\n{html.escape(comment)}"
+    if photo:
+        file_id = photo[-1]["file_id"]  # последний элемент — самое крупное фото
+        await _send_photo(client, app.tg_id, file_id, body)
+    else:
+        await _send(client, app.tg_id, body)
+    await _send_plan_list(client, session, app.tg_id, app)
+    if ADMIN_CHAT_ID is not None:
+        await _send(client, ADMIN_CHAT_ID, "✅ Комментарий отправлен заявителю вместе со списком тарифов.")
 
 
 def _plan_screen_context(
@@ -1172,6 +1279,8 @@ async def _handle_callback(client: httpx.AsyncClient, session: AsyncSession, cb:
     data = cb.get("data") or ""
     if data.startswith("acc:"):
         await _handle_accept(client, session, cb)
+    elif data.startswith("acw:"):
+        await _handle_accept_with_comment(client, session, cb)
     elif data.startswith("pd:"):
         await _handle_plan_details(client, session, cb)
     elif data.startswith("pl:"):
@@ -1602,6 +1711,16 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
     # Ответ админа reply на пересланный вопрос → доставить участнику.
     if ADMIN_CHAT_ID is not None and chat_id == ADMIN_CHAT_ID:
         reply_to = message.get("reply_to_message")
+        # Reply на приглашение «Принять с комментарием» (ARG-124) — раньше остальных
+        # веток, это тоже reply, но не на пересланный вопрос заявителя.
+        if reply_to is not None:
+            acmap_key = f"intakebot:acmap:{reply_to['message_id']}"
+            acmap_app_id = await redis_client.get(acmap_key)
+            if acmap_app_id is not None:
+                if text or message.get("photo"):
+                    await redis_client.delete(acmap_key)
+                    await _deliver_accept_comment(client, session, int(acmap_app_id), message)
+                return
         if reply_to and text:
             await _deliver_admin_reply(client, reply_to["message_id"], text)
             return
