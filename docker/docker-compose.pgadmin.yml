@@ -1,0 +1,34 @@
+# Веб-доступ к прод-Postgres: pgAdmin (docs/DEPLOY.md «Наблюдаемость» — рядом с
+# VictoriaMetrics/Grafana, тот же паттерн, ARG-125).
+#
+# НЕ отдельный compose-проект. Поднимается ДОПОЛНИТЕЛЬНЫМ `-f`-файлом поверх
+# docker-compose.prod.yml, тем же project name («docker») — так сервис попадает в
+# ту же docker-сеть и видит `postgres` по имени:
+#
+#   docker compose -p docker -f docker/docker-compose.prod.yml -f docker/docker-compose.pgadmin.yml \
+#     --env-file .env up -d pgadmin
+#
+# pgAdmin не публикует host-порт — единственный вход снаружи через прод-nginx на
+# поддомене ${PGADMIN_DOMAIN} (docker/nginx/templates/default.conf.template).
+# Авторизация — встроенный логин pgAdmin (PGADMIN_DEFAULT_EMAIL/PGADMIN_DEFAULT_PASSWORD
+# в .env), без дополнительного слоя перед ней — тот же принцип, что и у Grafana: один
+# админ, второй слой не даёт реального выигрыша в защите.
+#
+# Подключение к прод-БД добавляется вручную при первом логине (Host=postgres,
+# Port=5432, Username=${POSTGRES_USER}, DB=${POSTGRES_DB}) — сервер не предзаполняется
+# через servers.json намеренно, чтобы не хранить пароль от прод-БД вторым способом
+# рядом с .env.
+services:
+  pgadmin:
+    image: dpage/pgadmin4:8.12
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+
+volumes:
+  pgadmin_data:
