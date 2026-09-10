@@ -19,6 +19,7 @@ import {
   R_SPOKE_OUT,
   R_TAIJI,
   elementName,
+  elementNameDative,
   elementSectorSpan,
   layoutWheel,
   polar,
@@ -171,7 +172,7 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         <YinYang cx={CX} cy={CY} r={R_TAIJI} />
       </g>
       <text x={CX} y={CY + 72} textAnchor="middle" className={styles.hubTitle}>
-        {currentStage ? stageCaption(currentStage.kind).toUpperCase() : 'ТОЧКА БАЛАНСА'}
+        {currentStage ? hubCaption(currentStage, today).toUpperCase() : 'ТОЧКА БАЛАНСА'}
       </text>
       {today != null && (
         <text x={CX} y={CY + 88} textAnchor="middle" className={styles.hubSub}>
@@ -182,9 +183,14 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
   )
 }
 
-function stageCaption(kind: string): string {
+// Первый день стихийного этапа — «Переход к Огню/Воздуху/Воде/Земле» вместо
+// голого названия стихии, чтобы смена этапа была заметна в моменте перехода
+// (остальные дни этапа — уже просто «Огонь»/«Вода» и т.д.).
+function hubCaption(stage: ExpeditionOut['stages'][number], today: number | null): string {
+  const { kind, day_from } = stage
   if (kind === 'balance') return 'Точка баланса'
   if (kind === 'final') return 'Финал'
+  if (today === day_from) return `Переход к ${elementNameDative(kind as Element)}`
   return elementName(kind as Element)
 }
 
