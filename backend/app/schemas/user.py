@@ -109,6 +109,10 @@ class UserOut(BaseModel):
     # входе. NULL/NULL — участник без набора или набор без текста (старые наборы).
     intake_starts_on: date | None = None
     intake_welcome_message: str | None = None
+    # АКТИВНЫЙ intake_id (сырой id, не только производные starts_on/welcome) —
+    # нужен клиенту, чтобы сузить свой же список dm до текущего потока (пикер
+    # пересылки, ForwardPicker.tsx), не завязываясь на admin-only /api/admin/users.
+    intake_id: int | None = None
     # Междумирье (см. docs/LIMBO.md): не NULL — грейс-период после понижения с
     # платного тарифа на самый дешёвый, срок на отработку прошлых задач +
     # допзадание. Снимается сам, живьём на следующем запросе (resolve_limbo) —

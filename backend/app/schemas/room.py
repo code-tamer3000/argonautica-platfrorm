@@ -78,6 +78,11 @@ class RoomOut(BaseModel):
     # (не топ-2 тарифа потока). True — фронт скрывает композер; сервер 403-ит тот
     # же путь (assert_can_write) независимо от этого поля.
     dm_write_locked: bool = False
+    # Только dm: АКТИВНЫЙ intake_id пира — денормализованный ярлык (та же идея,
+    # что owner_intake_id у дневника), чтобы клиент мог сузить список dm до
+    # «текущего потока» (пикер пересылки, ForwardPicker.tsx) без похода в
+    # admin-only /api/admin/users. None — пир без набора (историческая запись).
+    peer_intake_id: int | None = None
 
 
 class AddMemberRequest(BaseModel):
