@@ -130,6 +130,18 @@ async def test_me_includes_intake_gate_fields(
     assert body["intake_welcome_message"] == "Добро пожаловать в набор"
 
 
+async def test_me_includes_intake_id(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """UserOut.intake_id — сырой id (не только производные starts_on/welcome),
+    нужен клиенту сузить свой dm-список до текущего потока (ForwardPicker.tsx)."""
+    user = await make_user(password="initpass123")
+    tokens = await login(client, user.username, "initpass123")
+    resp = await client.get("/api/auth/me", headers=auth_headers(tokens["access_token"]))
+    assert resp.status_code == 200
+    assert resp.json()["intake_id"] == user.intake_id
+
+
 async def test_me_intake_welcome_message_null_by_default(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

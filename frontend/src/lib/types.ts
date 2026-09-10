@@ -52,6 +52,9 @@ export interface UserOut {
   // при первом входе. Оба null у бесхозного участника или у набора без текста.
   intake_starts_on: string | null
   intake_welcome_message: string | null
+  // АКТИВНЫЙ intake_id (сырой id) — сужение своего dm-списка до текущего потока
+  // в ForwardPicker.tsx. null у бесхозного участника.
+  intake_id: number | null
   // Междумирье: не null — грейс-период после понижения с платного тарифа на
   // самый дешёвый (см. docs/LIMBO.md). Снимается сам на бэке, поле только для
   // поп-апа (LimboPopup.tsx).
@@ -146,6 +149,9 @@ export interface RoomOut {
   // Только dm: односторонний запрет ответа админу без is_navigator (ARG-110) —
   // прячем композер, сервер 403-ит тот же путь независимо от этого поля.
   dm_write_locked?: boolean
+  // Только dm: АКТИВНЫЙ intake_id пира — денормализованный ярлык (сужение dm-списка
+  // до текущего потока в ForwardPicker, без похода в admin-only /api/admin/users).
+  peer_intake_id?: number | null
 }
 
 export interface MemberOut {
