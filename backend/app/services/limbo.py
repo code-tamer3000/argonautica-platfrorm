@@ -31,8 +31,19 @@ MAKEUP_TASK_BODY = (
 )
 
 
-async def _cheap_plan_id(session: AsyncSession) -> int | None:
-    return await session.scalar(select(Plan.id).where(Plan.name == CHEAP_TARIFF_NAME))
+async def _plan_is_cheap(session: AsyncSession, plan_id: int | None) -> bool:
+    """Тариф с этим id — самый дешёвый (`CHEAP_TARIFF_NAME`)? Специально не через
+    единый резолвленный «id дешёвого тарифа» — `plans.name` не уникален (тестовый
+    прогон заводит одноимённый тариф в каждом файле, что уже один раз сломало
+    именно этот код: `_cheap_plan_id` молча брал первую попавшуюся строку с
+    именем «Наблюдатель», а не ту, что реально держит юзер), тот же риск и в
+    проде, если тариф когда-нибудь продублируют. Сравниваем ИМЕННО ЭТОТ id
+    напрямую — тот же приём, что `is_cheap_tariff` в services/visibility.py,
+    только по голому id, а не по объекту User."""
+    if plan_id is None:
+        return False
+    name: str | None = await session.scalar(select(Plan.name).where(Plan.id == plan_id))
+    return name == CHEAP_TARIFF_NAME
 
 
 async def apply_plan_change(
@@ -55,12 +66,10 @@ async def apply_plan_change(
         user.limbo_deadline_at = None
         user.limbo_makeup_task_id = None
 
-    cheap_plan_id = await _cheap_plan_id(session)
     entering_limbo = (
-        cheap_plan_id is not None
-        and user.plan_id == cheap_plan_id
-        and old_plan_id is not None
-        and old_plan_id != cheap_plan_id
+        old_plan_id is not None
+        and await _plan_is_cheap(session, user.plan_id)
+        and not await _plan_is_cheap(session, old_plan_id)
     )
     if not entering_limbo:
         return
