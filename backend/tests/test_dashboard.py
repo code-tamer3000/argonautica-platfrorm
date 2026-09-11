@@ -62,6 +62,68 @@ async def test_participant_dashboard_shape(
     assert isinstance(body["active_tasks"], list)
     assert isinstance(body["notifications"], list)
     assert isinstance(body["unread_notifications"], int)
+    assert body["tasks_progress"] is not None
+    assert set(body["tasks_progress"].keys()) == {"done", "total"}
+    assert isinstance(body["tasks_in_review"], int)
+
+
+async def test_dashboard_tasks_progress_tracks_accepted_and_review(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Виджет «Задания» на главной: tasks_progress совпадает с /api/tasks, а
+    tasks_in_review считает только 'submitted' (ещё не отревьюенные сдачи)."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_headers = await _headers(client, admin)
+    user_headers = await _headers(client, user)
+
+    base = (await client.get("/api/tasks", headers=user_headers)).json()["progress"]
+
+    accepted_task = (
+        await client.post(
+            "/api/tasks",
+            headers=admin_headers,
+            json={"type": "individual", "title": "A", "assignee_ids": [user.id]},
+        )
+    ).json()
+    pending_task = (
+        await client.post(
+            "/api/tasks",
+            headers=admin_headers,
+            json={"type": "individual", "title": "B", "assignee_ids": [user.id]},
+        )
+    ).json()
+
+    await client.post(
+        f"/api/tasks/{accepted_task['id']}/submissions",
+        headers=user_headers,
+        json={"body": "done"},
+    )
+    tracks = (
+        await client.get(
+            f"/api/tasks/{accepted_task['id']}/submissions", headers=admin_headers
+        )
+    ).json()
+    await client.post(
+        f"/api/tasks/assignments/{tracks[0]['assignment_id']}/review",
+        headers=admin_headers,
+        json={"action": "accept"},
+    )
+    await client.post(
+        f"/api/tasks/{pending_task['id']}/submissions",
+        headers=user_headers,
+        json={"body": "waiting"},
+    )
+
+    resp = await client.get("/api/dashboard", headers=user_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    assert body["tasks_progress"]["done"] == base["done"] + 1
+    assert body["tasks_progress"]["total"] == base["total"] + 2
+    assert body["tasks_in_review"] == 1
+    # Сданное на проверку не показываем в списке «активных» — сдавать уже нечего.
+    assert pending_task["id"] not in {t["id"] for t in body["active_tasks"]}
 
 
 async def test_observer_has_no_dashboard(client: AsyncClient, make_user: MakeUser) -> None:
@@ -89,6 +151,8 @@ async def test_admin_dashboard_has_no_personal_layer(
     assert body["journal"] is None
     assert body["journal_locked"] is False
     assert body["active_tasks"] == []
+    assert body["tasks_progress"] is None
+    assert body["tasks_in_review"] == 0
 
 
 async def test_admin_dashboard_days_auto_close(

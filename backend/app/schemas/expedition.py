@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.calendar import CalendarEventOut
 from app.schemas.journal import JournalStructureOut, RecentDay
 from app.schemas.notification import NotificationOut
-from app.schemas.task import TaskWithStatusOut
+from app.schemas.task import ProgressOut, TaskWithStatusOut
 
 StageKind = Literal["balance", "air", "fire", "water", "earth", "final"]
 Element = Literal["air", "fire", "water", "earth"]
@@ -116,6 +116,11 @@ class DashboardOut(BaseModel):
     journal_locked: bool
     upcoming_events: list[CalendarEventOut]
     active_tasks: list[TaskWithStatusOut]
+    # Прогресс/на-проверке по ВСЕМ видимым задачам юзера, не только по active_tasks
+    # (та же арифметика, что в /api/tasks — TaskListOut.progress) — питает виджет
+    # «Задания» на главной. None для админа (там, как и active_tasks, не считается).
+    tasks_progress: ProgressOut | None
+    tasks_in_review: int
     notifications: list[NotificationOut]
     unread_notifications: int
     news_preview: NewsPreviewOut | None

@@ -26,7 +26,7 @@ from app.models.message import Message
 from app.models.room import Room
 from app.models.user import User
 from app.schemas.expedition import DashboardOut, ExpeditionOut, NewsPreviewOut, StageSpanOut
-from app.schemas.task import TaskWithStatusOut
+from app.schemas.task import ProgressOut, TaskWithStatusOut
 from app.services.expedition import circle_day_number
 from app.services.graduation import is_graduated
 from app.services.redaction import redact_zoom_links
@@ -127,6 +127,8 @@ async def get_dashboard(
     journal_today_done = False
     journal_locked = False
     active_tasks: list[TaskWithStatusOut] = []
+    tasks_progress: ProgressOut | None = None
+    tasks_in_review = 0
     if current_user.role != "admin":
         journal = await get_structure(current_user, session)
         window_closed_on = await intake_window_closed(session, current_user.intake_id)
@@ -141,6 +143,8 @@ async def get_dashboard(
         active_tasks = [
             t for t in task_list.items if t.my_status in ACTIVE_TASK_STATUSES
         ][:ACTIVE_TASKS_LIMIT]
+        tasks_progress = task_list.progress
+        tasks_in_review = sum(1 for t in task_list.items if t.my_status == "submitted")
 
     events = await list_events(current_user, session, from_=datetime.now(UTC))
     notifications = await list_notifications(current_user, session, limit=NOTIFICATIONS_LIMIT)
@@ -153,6 +157,8 @@ async def get_dashboard(
         journal_locked=journal_locked,
         upcoming_events=events[:UPCOMING_EVENTS_LIMIT],
         active_tasks=active_tasks,
+        tasks_progress=tasks_progress,
+        tasks_in_review=tasks_in_review,
         notifications=notifications.items,
         unread_notifications=notifications.unread_count,
         news_preview=news,

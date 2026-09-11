@@ -447,6 +447,53 @@
   color: var(--text-muted);
 }
 
+/* Карточка «Задания экспедиции» — прогресс-кольцо + строки с обратным отсчётом
+   до дедлайна вместо календарной даты (единственный акцент допущен на срочном,
+   не на просроченном — тон витрины положительный, см. docs/TASKS.md). */
+.taskProgressRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+}
+
+.taskRing {
+  flex-shrink: 0;
+}
+
+.taskRingLabel {
+  font-family: var(--font-t1);
+  font-size: 15px;
+  fill: var(--text-primary);
+}
+
+.taskProgressText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+}
+
+.itemSoon {
+  border-left: 2px solid var(--accent);
+  padding-left: var(--space-2);
+  margin-left: calc(var(--space-2) * -1);
+  align-items: center;
+}
+
+.itemWhenMuted {
+  color: var(--text-muted);
+}
+
+.taskFoot {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--accent-bright);
+}
+
 .newsAuthor {
   display: flex;
   align-items: center;
