@@ -87,6 +87,13 @@ export function TaskDetail() {
     : list.filter((t) => t.user_id === user?.id || task.type === 'common')
   const myTrack = list.find((t) => t.user_id === user?.id) ?? null
 
+  // Возвращённую работу уже показываем прямо в композере (ReturnedFeedback, ниже,
+  // рядом с формой пересдачи) — не дублируем тот же трек ещё раз в общем списке.
+  const showsOwnReturnedAbove = !canReview && myTrack?.status === 'returned'
+  const sectionTracks = showsOwnReturnedAbove
+    ? visibleTracks.filter((t) => t.assignment_id !== myTrack!.assignment_id)
+    : visibleTracks
+
   return (
     <div className={styles.viewer}>
       <PageHeader title={task.title} />
@@ -149,6 +156,9 @@ export function TaskDetail() {
               {myTrack.late && <Chip kind="late">Сдано позже</Chip>}
             </div>
           )}
+          {/* Возвращена — комментарий проверяющего и предыдущая сдача прямо тут,
+              рядом с формой пересдачи, а не где-то ниже среди всех треков. */}
+          {showsOwnReturnedAbove && myTrack && <ReturnedFeedback track={myTrack} />}
           {/* Выпускник свою сдачу видит, но дослать/переслать уже не может. */}
           {!isGraduated && <TaskComposer taskId={id} status={myTrack?.status} />}
         </section>
@@ -157,15 +167,49 @@ export function TaskDetail() {
       {/* Треки со сдачами: общая — все публичные, индивидуальная — только свой.
           Для парного задания треков нет (сдачи — в перекрёстных задачах).
           Проверяющему делим на «на проверке» и «принятые», чтобы новые сдачи было
-          сразу видно и они не тонули среди уже принятых. */}
-      {task.type !== 'pair' && task.type !== 'stream' && (
+          сразу видно и они не тонули среди уже принятых. Свой возвращённый трек уже
+          показан выше (ReturnedFeedback) — секцию для него не дублируем; если после
+          фильтра участнику показывать больше нечего, секцию не рендерим вовсе. */}
+      {task.type !== 'pair' && task.type !== 'stream' && (canReview || sectionTracks.length > 0) && (
         <TracksSection
           title={task.type === 'common' && !isAdmin ? 'Работы участников' : 'Сдачи'}
-          tracks={visibleTracks}
+          tracks={sectionTracks}
           taskId={id}
           canReview={canReview}
         />
       )}
+    </div>
+  )
+}
+
+// Возврат на доработку: комментарий проверяющего — самое важное, поэтому сверху;
+// прошлая сдача — под ним, свёрнута в <details> (важно, что она никуда не делась,
+// но перечитывать её целиком заново не обязательно). Обе — про ОДНУ последнюю
+// сдачу трека: комментарий пишется именно на неё (см. review_assignment).
+function ReturnedFeedback({ track }: { track: TaskTrackOut }) {
+  const latest = track.submissions[track.submissions.length - 1]
+  if (!latest) return null
+  const bodyHtml = latest.body ? DOMPurify.sanitize(marked.parse(latest.body) as string) : ''
+
+  return (
+    <div className={styles.returnedPanel}>
+      <div className={styles.returnedPanelTitle}>Комментарий проверяющего</div>
+      <SubmissionComments submissionId={latest.id} />
+      <details className={styles.returnedPrev}>
+        <summary className={styles.returnedPrevSummary}>
+          Твоя предыдущая сдача · {dateTimeMsk(latest.created_at)}
+        </summary>
+        {bodyHtml && (
+          <div className={styles.submissionBody} dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+        )}
+        {latest.attachments.length > 0 && (
+          <div className={styles.submissionMedia}>
+            {latest.attachments.map((att) => (
+              <Attachment key={att.asset_id} attachment={att} />
+            ))}
+          </div>
+        )}
+      </details>
     </div>
   )
 }
