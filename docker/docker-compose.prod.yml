@@ -132,6 +132,11 @@ services:
       # Поддомен метрик (Grafana, docker-compose.observability.yml) — авторизация
       # встроенным логином Grafana, см. docs/DEPLOY.md → «Наблюдаемость».
       METRICS_DOMAIN: ${METRICS_DOMAIN}
+      # Поддомен pgAdmin (docker-compose.pgadmin.yml, ARG-125), см. docs/DEPLOY.md →
+      # «Наблюдаемость». Без явного проброса сюда nginx-контейнер не видит переменную,
+      # envsubst не подставляет её в шаблон, и в конфиге остаётся буквальный
+      # "$PGADMIN_DOMAIN" — nginx падает с emerg: unknown "pgadmin_domain" variable.
+      PGADMIN_DOMAIN: ${PGADMIN_DOMAIN}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       - ./nginx/active_backend.conf:/etc/nginx/active_backend.conf:ro
