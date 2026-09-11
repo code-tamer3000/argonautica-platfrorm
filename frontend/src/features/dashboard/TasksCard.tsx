@@ -25,22 +25,42 @@ function deadlineLabel(iso: string): string {
   return `через ${days} ${plural(days, ['день', 'дня', 'дней'])}`
 }
 
+function isOverdue(task: TaskWithStatusOut): boolean {
+  return task.deadline_at != null && new Date(task.deadline_at).getTime() < Date.now()
+}
+
+// Приоритет строки в списке: 0 — самый заметный (выше). Возвращённая задача важнее
+// просроченной (её уже смотрели и отправили обратно — это прямое действие от юзера,
+// а не просто тикающие часы); дальше горящий срок, дальше всё остальное как пришло.
+function rowPriority(task: TaskWithStatusOut): number {
+  if (task.my_status === 'returned') return 0
+  if (isOverdue(task)) return 1
+  if (task.deadline_soon) return 2
+  return 3
+}
+
 function TaskRow({ task }: { task: TaskWithStatusOut }) {
   const when = task.deadline_at ? deadlineLabel(task.deadline_at) : 'без срока'
-  const overdue = task.deadline_at != null && differenceInCalendarDays(new Date(task.deadline_at), new Date()) < 0
+  const returned = task.my_status === 'returned'
+  const overdue = isOverdue(task)
+  const flagged = returned || overdue || task.deadline_soon
+
   return (
-    <Link
-      to={`/tasks/${task.id}`}
-      className={task.deadline_soon ? `${styles.item} ${styles.itemSoon}` : styles.item}
-    >
+    <Link to={`/tasks/${task.id}`} className={flagged ? `${styles.item} ${styles.itemFlag}` : styles.item}>
       <span className={overdue ? `${styles.itemWhen} ${styles.itemWhenMuted}` : styles.itemWhen}>{when}</span>
       <span className={styles.itemBody}>
         <span className={styles.itemTitle}>{task.title}</span>
         <span className={styles.itemMeta}>
-          {task.my_status === 'returned' ? 'вернули на доработку' : overdue ? 'ещё можно сдать' : 'не сдано'}
+          {returned ? 'вернули на доработку' : overdue ? 'ещё можно сдать' : 'не сдано'}
         </span>
       </span>
-      {task.deadline_soon && <Chip kind="soon">Подходит срок</Chip>}
+      {returned ? (
+        <Chip kind="returned">Возвращена</Chip>
+      ) : overdue ? (
+        <Chip kind="overdue">Просрочено</Chip>
+      ) : task.deadline_soon ? (
+        <Chip kind="soon">Подходит срок</Chip>
+      ) : null}
     </Link>
   )
 }
@@ -76,7 +96,17 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
   )
 }
 
+// Возвращённые и просроченные — наверх (стабильно, в пределах группы порядок как
+// пришёл с бэка: сперва по дедлайну, потом без него по created_at desc).
+function sortByAttention(tasks: TaskWithStatusOut[]): TaskWithStatusOut[] {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((a, b) => rowPriority(a.task) - rowPriority(b.task) || a.index - b.index)
+    .map(({ task }) => task)
+}
+
 export function TasksCard({ activeTasks, progress, inReview }: Props) {
+  const sortedTasks = sortByAttention(activeTasks)
   const footer =
     progress == null || progress.total === 0
       ? null
@@ -106,11 +136,11 @@ export function TasksCard({ activeTasks, progress, inReview }: Props) {
         </div>
       )}
 
-      {activeTasks.length === 0 ? (
+      {sortedTasks.length === 0 ? (
         <EmptyState size="inline">Все задания сданы ✦</EmptyState>
       ) : (
         <div className={styles.list}>
-          {activeTasks.map((t) => (
+          {sortedTasks.map((t) => (
             <TaskRow key={t.id} task={t} />
           ))}
         </div>
