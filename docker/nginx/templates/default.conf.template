@@ -329,6 +329,9 @@ server {
     # должно мешать (пере)запуску прод-nginx для остальных доменов.
     resolver 127.0.0.11 valid=10s;
 
+    # БЕЗ X-Script-Name: pgAdmin режет этот префикс из PATH_INFO (нужно только для
+    # деплоя под подпуть). При "/" он схлопывает путь в пустую строку, и pgAdmin
+    # бесконечно редиректит "/" → "/" (проверено: ERR_TOO_MANY_REDIRECTS в проде).
     location / {
         set $pgadmin_upstream http://pgadmin:80;
         proxy_pass $pgadmin_upstream;
@@ -339,7 +342,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Script-Name /;
     }
 }
 
