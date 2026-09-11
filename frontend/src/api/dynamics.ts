@@ -1,15 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { AdminDynamicsOut, MyDynamicsOut } from '../lib/types'
+import type { AdminDynamicsOut, MyDynamicsOut, RecentDay } from '../lib/types'
 
 export const myDynamicsKey = ['dynamics', 'me'] as const
 export const adminDynamicsKey = ['dynamics', 'admin'] as const
+export const myDynamicsDaysKey = ['dynamics', 'me', 'days'] as const
+export const adminDynamicsDaysKey = ['dynamics', 'admin', 'days'] as const
 
 export function useMyDynamics(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: myDynamicsKey,
     queryFn: () => http.get<MyDynamicsOut>('/api/dynamics/my-stats'),
     enabled: options?.enabled ?? true,
+  })
+}
+
+/** Календарь на весь период набора (28 дней) — блок Динамики в профиле.
+ * В отличие от `useMyDynamics`, `credited` здесь неотличим от `closed` (см. бэкенд). */
+export function useMyDynamicsDays(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: myDynamicsDaysKey,
+    queryFn: () => http.get<RecentDay[]>('/api/dynamics/my-days'),
+    enabled: options?.enabled ?? true,
+  })
+}
+
+/** Полный период (28 дней) одного участника — раскрытие карточки в админской
+ * Динамике по клику (список `useAdminDynamics` отдаёт только ±окно). */
+export function useAdminUserDays(userId: number | null) {
+  return useQuery({
+    queryKey: [...adminDynamicsDaysKey, userId] as const,
+    queryFn: () => http.get<RecentDay[]>(`/api/admin/dynamics/${userId}/days`),
+    enabled: userId != null,
   })
 }
 

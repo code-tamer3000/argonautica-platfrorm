@@ -7,6 +7,7 @@ import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '.
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
+import { DynamicsCalendar } from './DynamicsCalendar'
 import { NotificationsSection } from './NotificationsSection'
 import { SurveyGiftSection } from './SurveyGiftSection'
 import { toast } from '../../stores/toast'
@@ -118,6 +119,15 @@ function DynamicsSection() {
             : 'Все помилования использованы'}
         </span>
       </div>
+
+      {dyn.partial_count > 0 && (
+        <p className={styles.dynPartialNote}>
+          Частично заполнено: {dyn.partial_count} {streakLabel(dyn.partial_count)} — что-то
+          написано, но не все разделы. На просрочку это не влияет.
+        </p>
+      )}
+
+      <DynamicsCalendar />
     </div>
   )
 }

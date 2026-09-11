@@ -7,7 +7,7 @@
 
 .statRow {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--space-3);
 }
 
@@ -177,6 +177,21 @@
   gap: 6px;
 }
 
+.expandBtn {
+  align-self: flex-start;
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--font-t4);
+}
+
+.expandBtn:hover {
+  color: var(--gold, #d4a017);
+}
+
 /* Одна ячейка дня */
 .cell {
   display: flex;
@@ -259,6 +274,12 @@
   background: color-mix(in srgb, #4299e1 15%, transparent);
   color: #2b6cb0;
   border-color: color-mix(in srgb, #4299e1 35%, transparent);
+}
+
+.cell_partial {
+  background: color-mix(in srgb, #ed8936 18%, transparent);
+  color: #9c4221;
+  border-color: color-mix(in srgb, #ed8936 40%, transparent);
 }
 
 .cell_today_open {

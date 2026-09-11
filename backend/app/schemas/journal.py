@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 InputType = Literal["text", "title"]
 
 DayStatus = Literal[
-    "closed", "credited", "missed", "pardoned",
+    "closed", "credited", "missed", "pardoned", "partial",
     "today_open", "today_closed", "before_start", "upcoming",
 ]
 
@@ -28,6 +28,13 @@ class MyDynamicsOut(BaseModel):
     # (intakes.ends_on), отправка ДЗ и помилование — 403. Фронт по этому флагу
     # прячет форму отправки/кнопки помилования.
     window_closed: bool = False
+    # Дней, где что-то написано, но не все разделы активного в тот день задания —
+    # для просрочки/стрика такой день по-прежнему пропущен (см. _calc_stats), это
+    # только отдельный счётчик для интерфейса.
+    partial_count: int = 0
+    # Сколько дней из 28-дневного периода набора уже закрыто (свои + зачтённые
+    # админом) — для мини-статистики виджета на главной.
+    closed_count: int = 0
 
 
 class UserDynamicsOut(BaseModel):
@@ -37,6 +44,7 @@ class UserDynamicsOut(BaseModel):
     avatar_url: str | None
     streak: int
     overdue_count: int
+    partial_count: int = 0
     pardons_used: int
     active_today: bool
     journal_today: bool
@@ -59,11 +67,19 @@ class DynamicsSummary(BaseModel):
     journal_today: int
     no_overdue: int
     avg_streak: float
+    partial_total: int = 0
 
 
 class AdminDynamicsOut(BaseModel):
     summary: DynamicsSummary
     users: list[UserDynamicsOut]
+
+
+class JournalAnchorOut(BaseModel):
+    """Ближайшая к запрошенной дате запись дневника — для перехода из плитки
+    календаря (профиль) к сообщению в ленте. `None` — в комнате нет ни одной записи."""
+    message_id: int | None
+    date: date | None
 
 
 class PardonRequest(BaseModel):

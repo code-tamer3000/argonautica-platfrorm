@@ -2,10 +2,12 @@ import { differenceInCalendarDays, format } from 'date-fns'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useDashboard } from '../../api/dashboard'
+import { useMyDynamics } from '../../api/dynamics'
 import { useExpeditionLocks } from '../../api/expedition'
 import { useRooms } from '../../api/rooms'
 import { Card } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
+import { IconFlame } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { useAuth } from '../auth/AuthContext'
 import type { Element } from '../../lib/types'
@@ -35,6 +37,12 @@ export function DashboardScreen() {
       ? Math.max(0, differenceInCalendarDays(new Date(user.intake_starts_on), new Date()))
       : 0
   const isPending = beforeStart > 0
+
+  // Та же видимость, что у блока Динамики в профиле (см. ProfileScreen): выпускнику
+  // и держателю самого дешёвого тарифа считать уже/ещё нечего, админ Динамику не ведёт.
+  const showDynamicsStats =
+    !isPending && !!user && user.role !== 'admin' && !user.graduated_at && !user.is_cheap_tariff
+  const { data: dyn } = useMyDynamics({ enabled: showDynamicsStats })
 
   if (isLoading || !data) {
     return (
@@ -106,6 +114,24 @@ export function DashboardScreen() {
                 <Link to={`/diaries/${myDiaryRoomId}`} className="btn btn-gold">
                   {data.journal_today_done ? 'День закрыт · открыть дневник' : 'Заполнить дневник за сегодня'}
                 </Link>
+              )}
+              {/* Мини-статистика Динамики: раньше это видели только те, кто зашёл
+                  в профиль — а туда почти никто не заходит (ARG-126). */}
+              {showDynamicsStats && dyn && (
+                <div className={styles.miniStats}>
+                  <div className={styles.miniStat}>
+                    <IconFlame size={16} className={styles.miniStatIcon} />
+                    <span className={styles.miniStatValue}>{dyn.streak}</span>
+                    <span className={styles.miniStatLabel}>{plural(dyn.streak, ['день', 'дня', 'дней'])} подряд</span>
+                  </div>
+                  <div className={styles.miniStat}>
+                    <span className={styles.miniStatValue}>{dyn.closed_count} из 28</span>
+                    <span className={styles.miniStatLabel}>дней закрыто</span>
+                  </div>
+                  <Link to="/profile" className={styles.miniStatsLink}>
+                    Смотреть полную статистику
+                  </Link>
+                </div>
               )}
             </Card>
           )}

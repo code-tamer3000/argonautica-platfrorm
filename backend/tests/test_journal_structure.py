@@ -14,6 +14,7 @@ from app.api.dynamics import (
     ProgramVersion,
     _calc_stats,
     _platform_today,
+    _recent_days,
     active_version_for,
     required_keys_for,
 )
@@ -62,6 +63,43 @@ def test_calc_stats_scores_each_day_by_its_active_program() -> None:
     stats2 = _calc_stats(per_day2, pardons=[], program_start=start, timeline=timeline)
     assert before in stats2["closed_days"]
     assert after in stats2["closed_days"]
+
+
+def test_calc_stats_flags_partial_days_without_changing_overdue() -> None:
+    """Частичный день (что-то есть, но не все разделы задания) — отдельная метка
+    (ARG-126), но правил Динамики не меняет: как и пустой день, остаётся
+    в overdue_dates и не закрывается сам собой."""
+    start, boundary, timeline = _timeline()
+    partial_day = boundary + timedelta(days=1)  # задание {a,b,c}, есть только "a"
+    empty_day = boundary + timedelta(days=2)  # задание {a,b,c}, пусто
+
+    per_day = {partial_day: {"a"}}
+    stats = _calc_stats(per_day, pardons=[], program_start=start, timeline=timeline)
+
+    assert partial_day in stats["partial_dates"]
+    assert empty_day not in stats["partial_dates"]
+    # Регрессия: новый статус ничего не снимает с просрочки.
+    assert partial_day in stats["overdue_dates"]
+    assert empty_day in stats["overdue_dates"]
+    assert partial_day not in stats["closed_days"]
+
+
+def test_recent_days_reports_partial_status() -> None:
+    start, boundary, timeline = _timeline()
+    partial_day = boundary + timedelta(days=1)
+    per_day = {partial_day: {"a"}}
+    stats = _calc_stats(per_day, pardons=[], program_start=start, timeline=timeline)
+
+    days = _recent_days(
+        stats["closed_days"],
+        stats["pardoned"],
+        start,
+        window_start=partial_day,
+        window_end=partial_day,
+        partial=set(stats["partial_dates"]),
+    )
+    assert len(days) == 1
+    assert days[0].status == "partial"
 
 
 # ─── Эндпоинт структуры (участник) ──────────────────────────────────────────
