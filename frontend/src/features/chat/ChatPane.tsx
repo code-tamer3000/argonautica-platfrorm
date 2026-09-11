@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useMyDynamics } from '../../api/dynamics'
 import { useMarkRead, useMessages } from '../../api/messages'
 import { useRoom, useRooms, useSetDiaryAvatar } from '../../api/rooms'
@@ -12,7 +13,6 @@ import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { useAuth } from '../auth/AuthContext'
-import { ChannelCalendar } from './ChannelCalendar'
 import { Composer } from './Composer'
 import { DailyJournalForm } from './DailyJournalForm'
 import { ForwardPicker } from './ForwardPicker'
@@ -36,6 +36,7 @@ const subLabel = (type: string, isPersonal = false, isNews = false): string =>
 
 export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpenRoom?: (id: number) => void; onBack?: () => void }) {
   const { user } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { data: rooms } = useRooms()
   const listedRoom = rooms?.find((r) => r.id === roomId)
   // Комнаты нет в списке (админ вошёл в комнату подгруппы потока — членства нет) —
@@ -62,7 +63,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [threadRootId, setThreadRootId] = useState<number | null>(null)
   const [showPins, setShowPins] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
-  const [showCalendar, setShowCalendar] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
@@ -129,7 +129,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     collapsedThreadRootRef.current = null // не доводить к корню из прошлой комнаты
     setShowPins(false)
     setShowMembers(false)
-    setShowCalendar(false)
     setShowProfile(false)
     setHighlightedMsgId(null)
     setPendingJournal(null)
@@ -166,6 +165,37 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     setHighlightedMsgId(msgId)
     setTimeout(() => setHighlightedMsgId(null), 2000)
   }
+
+  // Переход из плитки календаря в профиле (?anchor=<messageId>): сообщение почти
+  // наверняка ещё не в загруженной странице ленты (лента грузит от новых к старым
+  // порциями по 40) — догружаем историю, пока не найдём его или не кончится лента.
+  // Ограничение попыток — на случай битой ссылки, чтобы не подгружать всю историю.
+  const anchorAttempts = useRef(0)
+  useEffect(() => { anchorAttempts.current = 0 }, [roomId])
+  useEffect(() => {
+    const raw = searchParams.get('anchor')
+    if (!raw) return
+    const anchorId = Number(raw)
+    const clearAnchor = () =>
+      setSearchParams((p) => { p.delete('anchor'); return p }, { replace: true })
+    if (!Number.isFinite(anchorId)) { clearAnchor(); return }
+
+    const found = messageListRef.current?.scrollToMessage(anchorId)
+    if (found) {
+      setHighlightedMsgId(anchorId)
+      setTimeout(() => setHighlightedMsgId(null), 2000)
+      clearAnchor()
+      return
+    }
+    if (query.hasNextPage && anchorAttempts.current < 20) {
+      anchorAttempts.current += 1
+      void query.fetchNextPage()
+    } else {
+      toast('Запись не найдена рядом — открой дневник вручную', 'error')
+      clearAnchor()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, messages, query.hasNextPage])
 
   // Свернуть тред, оставшись на месте разговора. Раскрытый тред обычно упирается в
   // низ ленты, поэтому лента «прилипла» к нижней кромке; при схлопывании ResizeObserver
@@ -242,9 +272,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       if (peer) setShowProfile(true)
     } else if (room?.type === 'group') {
       setShowMembers(true)
-    } else if (room?.is_personal) {
-      setShowCalendar((v) => !v)
     }
+    // Личный дневник: раньше клик по шапке раскрывал календарь месяца — убран
+    // (ARG-126), им никто не пользовался, а полный период теперь в профиле.
   }
 
   // Обложка своего дневника: файл жмётся тем же клиентским пайплайном, что и
@@ -330,20 +360,13 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
                 onChange={handleDiaryAvatarChange}
               />
             </div>
-            <button
-              type="button"
-              className={styles.headerInfoTextBtn}
-              onClick={openHeaderInfo}
-              title={showCalendar ? 'Свернуть календарь' : 'Развернуть календарь'}
-            >
-              <div className={styles.headerInfoText}>
-                <div className={styles.headerTitle}>
-                  {room.type === 'channel' ? '# ' : ''}
-                  {title}
-                </div>
-                <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
+            <div className={styles.headerInfoText}>
+              <div className={styles.headerTitle}>
+                {room.type === 'channel' ? '# ' : ''}
+                {title}
               </div>
-            </button>
+              <div className={styles.headerSub}>{subLabel(room.type, room.is_personal, room.is_news)}</div>
+            </div>
           </div>
         ) : (
           <button
@@ -352,7 +375,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
             title={
               room.type === 'dm' ? 'Открыть профиль' :
               room.type === 'group' ? 'Участники' :
-              room.is_personal ? (showCalendar ? 'Свернуть календарь' : 'Развернуть календарь') :
               undefined
             }
           >
@@ -382,7 +404,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {room.type !== 'channel' && (
         <PinsBar roomId={roomId} onOpenList={() => setShowPins(true)} onNavigate={navigateToMessage} />
       )}
-      {room.is_personal && showCalendar && <ChannelCalendar roomId={roomId} />}
       {/* Комната подгруппы потока — голосование за общую фразу над лентой. */}
       {room.stream_node_id != null && room.stream_task_id != null && (
         <StreamRoomWidget taskId={room.stream_task_id} nodeId={room.stream_node_id} />
