@@ -283,6 +283,43 @@
   color: var(--text-secondary);
 }
 
+/* Панель возврата на доработку: комментарий проверяющего сверху (самое важное),
+   прошлая сдача — под ним, свёрнута. Полоска нейтральная (--stone), не тревожная —
+   тот же принцип, что у чипа «Возвращена». */
+.returnedPanel {
+  border: 1px solid var(--divider);
+  border-left: 3px solid var(--stone);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.returnedPanelTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  letter-spacing: 0.5px;
+  color: var(--stone-warm);
+  margin-bottom: var(--space-2);
+}
+
+.returnedPrev {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--color-frame-deep);
+}
+
+.returnedPrevSummary {
+  cursor: pointer;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.returnedPrev[open] .returnedPrevSummary {
+  margin-bottom: var(--space-3);
+}
+
 /* Трек: сдачи одного участника. */
 .track {
   border: 1px solid var(--divider);

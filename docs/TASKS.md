@@ -256,3 +256,18 @@ Recipient pickers in `TaskForm.tsx` (individual / pair / stream) read `GET /api/
 not the public `GET /api/users`: the list is scoped to the **active intake** (latest `starts_on`)
 by default, with a «Набор получателей» selector to switch to another intake or «Все наборы».
 Server-side task creation is unchanged — the filter only narrows what the admin sees.
+
+**Returned status is not an alarm.** `Chip kind="returned"` used to be blood-red
+everywhere (`/tasks` card, `TaskDetail` head/status chips, the dashboard widget) — a task
+sent back for another pass isn't a failure, so it now renders in the neutral `--stone`
+family (a token that wasn't claimed by anything else), same as `--blood`/`--color-more`
+are reserved for danger/attention elsewhere.
+
+When *your own* track is `returned`, `TaskDetail.tsx` shows a `ReturnedFeedback` panel
+right next to the resubmission form — reviewer's comment on top (the whole point of
+coming back to the task), your previous submission collapsed under a `<details>` below
+it (still one click away, not re-litigated in full). That track is then excluded from the
+`TracksSection` list further down the page so the same submission+comment thread doesn't
+render twice; the section itself is skipped entirely for a participant if that was the
+only thing in it. Admins/cross-authors (`canReview`) are unaffected — they still see every
+track in the flat list, review actions and all.
