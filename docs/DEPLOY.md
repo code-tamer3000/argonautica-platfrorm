@@ -245,6 +245,47 @@ Linux-хоста. На Docker Desktop (Mac/Windows), где `--network host` н�
 Postgres, Redis, MinIO в это не включены. Если эти цифры понадобятся — заводить как
 отдельную задачу сбора (`/idea`), не дорисовывать здесь на месте.
 
+## Веб-доступ к прод-Postgres: pgAdmin (ARG-125)
+
+Тот же класс задачи, что и `/metrics` выше — «посмотреть/поправить руками, не по
+ssh-психу» — только для базы, а не метрик. До этого единственный способ был
+`ssh <прод-сервер>` → `docker exec -it docker-postgres-1 psql`.
+
+pgAdmin ставится за прод-nginx на поддомене `${PGADMIN_DOMAIN}` (`db.argonautica-systems.ru`),
+тем же паттерном, что Grafana: отдельный compose-фрагмент, `docker-compose.prod.yml`
+по составу сервисов не редактируется. Авторизация — только встроенный логин pgAdmin
+(`PGADMIN_DEFAULT_EMAIL`/`PGADMIN_DEFAULT_PASSWORD` в `.env`), без basic auth перед
+ней — один админ, второй слой не даёт реального выигрыша. Доступ к БД — полный (тот
+же уровень, что даёт `psql` сейчас), отдельной read-only роли нет.
+
+**Фрагмент** — `docker/docker-compose.pgadmin.yml` (сервис `pgadmin`).
+
+Развёртывание на прод:
+
+```bash
+cd /opt/platform
+docker compose -p docker -f docker/docker-compose.prod.yml -f docker/docker-compose.pgadmin.yml \
+  --env-file .env up -d pgadmin
+```
+
+Тот же **project name** (`docker`), что у прод-стека — обязательно, иначе pgAdmin
+попадёт в свою собственную сеть и не увидит `postgres` по имени. Контейнер не
+публикует host-порт — вход только через nginx, как у Grafana.
+
+**TLS для `${PGADMIN_DOMAIN}`** — тот же webroot-путь через `:80` прода; скрипт
+продления `docker/nginx/renew-pgadmin-cert.sh` (аналог `renew-metrics-cert.sh`), cron
+на сервере. Первичная выдача — тем же `certbot/certbot` контейнером с `certonly`
+(см. `renew-staging-cert.sh` для точного паттерна volume/webroot), затем nginx recreate.
+
+**Подключение к БД добавляется вручную** при первом логине в pgAdmin (Host `postgres`,
+Port `5432`, Username/DB — значения `POSTGRES_USER`/`POSTGRES_DB` из `.env`) — сервер
+намеренно не предзаполнен через `servers.json`, чтобы пароль от прод-БД не хранился
+вторым способом рядом с `.env`.
+
+Известный риск: pgAdmin тяжелее Grafana по памяти (~200+ МБ) — на 4 ГБ без свопа
+(см. заметку про свободный бюджет прод-сервера) стоит проверить `free -m` перед
+разворачиванием, если сервис поднимается одновременно с чем-то ещё непривычно тяжёлым.
+
 ## Backups
 
 `docker/backup.sh` (cron, daily) — `pg_dump | gzip` → MinIO bucket `backups`, 30-day retention. Runbook in archived DEPLOY §6.

@@ -8,7 +8,17 @@
   gap: var(--space-5);
 }
 
-/* ── Шапка профиля ── */
+/* ── О себе: шапка + форма редактирования в одной карточке ── */
+.aboutCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
 .header {
   display: flex;
   align-items: flex-start;
@@ -159,6 +169,27 @@
   font-family: var(--font-t1);
   font-size: 18px;
   color: var(--text-secondary);
+  margin: 0;
+}
+
+.settingSubsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--divider);
+}
+.settingSubsection:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.settingSubTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-ghost);
   margin: 0;
 }
 
@@ -452,6 +483,109 @@
   .dynStreakNum { font-size: 28px; }
   .dynOverdueItem { flex-direction: column; align-items: flex-start; gap: var(--space-2); }
   .dynPardonBtn { width: 100%; justify-content: center; }
+}
+
+/* ── Календарь Динамики (весь период набора) ── */
+.calendarWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dayGrid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-2);
+}
+
+.dayCell {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  font-variant-numeric: tabular-nums;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius-btn);
+  border: 1px solid var(--divider);
+  background: var(--bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: transform 0.08s ease;
+}
+.dayCell:hover { transform: translateY(-1px); }
+
+.dayCellDone {
+  background: color-mix(in srgb, #48bb78 16%, transparent);
+  color: #48bb78;
+  border-color: color-mix(in srgb, #48bb78 35%, transparent);
+}
+
+.dayCellPartial {
+  background: color-mix(in srgb, #ed8936 16%, transparent);
+  color: #ed8936;
+  border-color: color-mix(in srgb, #ed8936 38%, transparent);
+}
+
+.dayCellPardoned {
+  background: color-mix(in srgb, #4299e1 15%, transparent);
+  color: #4299e1;
+  border-color: color-mix(in srgb, #4299e1 35%, transparent);
+}
+
+.dayCellMissed {
+  background: color-mix(in srgb, var(--blood) 10%, transparent);
+  color: var(--blood-bright);
+  border-color: color-mix(in srgb, var(--blood) 25%, transparent);
+}
+
+.dayCellToday {
+  border-color: var(--divider-gold-strong);
+  border-style: dashed;
+  color: var(--text-primary);
+}
+
+.dayCellFuture {
+  color: var(--text-ghost);
+  opacity: 0.6;
+}
+
+.calendarLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.calendarLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border-width: 1px;
+  border-style: solid;
+}
+
+.dayModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dayModalStatus {
+  margin: 0;
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+
+.dayModalSections {
+  margin: 0;
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
 }
 
 /* ── Книга экспедиции (подарок за выпускную анкету) ── */

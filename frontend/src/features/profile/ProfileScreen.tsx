@@ -7,6 +7,7 @@ import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '.
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
+import { DynamicsCalendar } from './DynamicsCalendar'
 import { NotificationsSection } from './NotificationsSection'
 import { SurveyGiftSection } from './SurveyGiftSection'
 import { toast } from '../../stores/toast'
@@ -47,13 +48,15 @@ function DynamicsSection() {
   return (
     <div className={styles.dynCard}>
       <h2 className={styles.dynTitle}>
-        Домашние задания
+        Отписки по дневнику
         {dyn.window_closed && (
           <span style={{ marginLeft: 8, fontWeight: 400, color: 'var(--text-secondary)', fontSize: 'var(--text-ui)' }}>
             · архив, набор закрыт
           </span>
         )}
       </h2>
+
+      <DynamicsCalendar />
 
       {/* Стрик */}
       {dyn.streak > 0 && (
@@ -114,7 +117,7 @@ function DynamicsSection() {
         ))}
         <span className={styles.dynPardonsLabel}>
           {dyn.pardons_remaining > 0
-            ? `Осталось помилований: ${dyn.pardons_remaining}`
+            ? `Осталось возможностей поплавать с китами: ${dyn.pardons_remaining}`
             : 'Все помилования использованы'}
         </span>
       </div>
@@ -132,8 +135,8 @@ function ThemeSection() {
   const setTheme = useThemeStore((s) => s.setTheme)
 
   return (
-    <div className={styles.settingCard}>
-      <h2 className={styles.settingTitle}>Оформление</h2>
+    <div className={styles.settingSubsection}>
+      <h3 className={styles.settingSubTitle}>Оформление</h3>
       <div className={styles.themeToggle} role="group" aria-label="Тема оформления">
         {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
           <button
@@ -217,78 +220,71 @@ export function ProfileScreen() {
   return (
     <div className={styles.page}>
       <PageHeader title="Профиль" />
-      {/* Шапка профиля */}
-      <div className={styles.header}>
-        <div className={styles.avatarWrap}>
-          {avatarUploading
-            ? <div className={styles.avatarPlaceholder}><Spinner size={24} /></div>
-            : <Avatar name={user.display_name} url={user.avatar_url} size={72} />
-          }
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
-          <button
-            className={styles.avatarEditBtn}
-            onClick={() => fileRef.current?.click()}
-            disabled={avatarUploading || patchMe.isPending}
-            title="Изменить фото"
-          >
-            Сменить
-          </button>
-        </div>
-        <div className={styles.headerInfo}>
-          <div className={styles.headerName}>{user.display_name}</div>
-          <div className={styles.headerUsername}>@{user.username}</div>
-          {user.avatar_url && (
-            <button className={styles.removeAvatarBtn} onClick={handleRemoveAvatar} disabled={patchMe.isPending}>
-              Удалить фото
+
+      {/* О себе: аватар + имя + редактируемые поля — один блок */}
+      <div className={styles.aboutCard}>
+        <div className={styles.header}>
+          <div className={styles.avatarWrap}>
+            {avatarUploading
+              ? <div className={styles.avatarPlaceholder}><Spinner size={24} /></div>
+              : <Avatar name={user.display_name} url={user.avatar_url} size={72} />
+            }
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={handleAvatarChange} />
+            <button
+              className={styles.avatarEditBtn}
+              onClick={() => fileRef.current?.click()}
+              disabled={avatarUploading || patchMe.isPending}
+              title="Изменить фото"
+            >
+              Сменить
             </button>
+          </div>
+          <div className={styles.headerInfo}>
+            <div className={styles.headerName}>{user.display_name}</div>
+            <div className={styles.headerUsername}>@{user.username}</div>
+            {user.avatar_url && (
+              <button className={styles.removeAvatarBtn} onClick={handleRemoveAvatar} disabled={patchMe.isPending}>
+                Удалить фото
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className={styles.formCard}>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="displayName">Имя</label>
+            <input
+              id="displayName"
+              className={styles.fieldInput}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              maxLength={80}
+            />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.fieldLabel} htmlFor="bio">О себе</label>
+            <textarea
+              id="bio"
+              className={styles.fieldTextarea}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={3}
+              maxLength={300}
+              placeholder="Расскажите о себе…"
+            />
+          </div>
+          {isDirty && (
+            <div className={styles.formActions}>
+              <Button variant="outline" onClick={() => { setDisplayName(user.display_name); setBio(user.bio ?? '') }}>
+                Отмена
+              </Button>
+              <Button variant="gold" onClick={handleSave} disabled={patchMe.isPending}>
+                {patchMe.isPending ? 'Сохранение…' : 'Сохранить'}
+              </Button>
+            </div>
           )}
         </div>
       </div>
-
-      {/* Форма редактирования */}
-      <div className={styles.formCard}>
-        <div className={styles.field}>
-          <label className={styles.fieldLabel} htmlFor="displayName">Имя</label>
-          <input
-            id="displayName"
-            className={styles.fieldInput}
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            maxLength={80}
-          />
-        </div>
-        <div className={styles.field}>
-          <label className={styles.fieldLabel} htmlFor="bio">О себе</label>
-          <textarea
-            id="bio"
-            className={styles.fieldTextarea}
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            rows={3}
-            maxLength={300}
-            placeholder="Расскажите о себе…"
-          />
-        </div>
-        {isDirty && (
-          <div className={styles.formActions}>
-            <Button variant="outline" onClick={() => { setDisplayName(user.display_name); setBio(user.bio ?? '') }}>
-              Отмена
-            </Button>
-            <Button variant="gold" onClick={handleSave} disabled={patchMe.isPending}>
-              {patchMe.isPending ? 'Сохранение…' : 'Сохранить'}
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* Оформление — доступно всем */}
-      <ThemeSection />
-
-      {/* Уведомления — доступно всем */}
-      <NotificationsSection />
-
-      {/* Книга экспедиции — у тех, кто сдал выпускную анкету */}
-      <SurveyGiftSection />
 
       {/* Динамика — только для участников, которые ещё в пути. У выпускника
           (graduated_at) она исчезает целиком: экспедиция пройдена, считать нечего
@@ -296,6 +292,16 @@ export function ProfileScreen() {
           тарифа (is_cheap_tariff) блок тоже не показываем — продукт не считает
           их полноценными участниками потока по Динамике. */}
       {user.role !== 'admin' && !user.graduated_at && !user.is_cheap_tariff && <DynamicsSection />}
+
+      {/* Настройки: оформление + уведомления — один блок, доступно всем */}
+      <div className={styles.settingCard}>
+        <h2 className={styles.settingTitle}>Настройки</h2>
+        <ThemeSection />
+        <NotificationsSection />
+      </div>
+
+      {/* Книга экспедиции — у тех, кто сдал выпускную анкету */}
+      <SurveyGiftSection />
     </div>
   )
 }

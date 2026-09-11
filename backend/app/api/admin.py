@@ -13,6 +13,7 @@ from app.api.dynamics import (
     create_program,
     credit_day,
     delete_program,
+    get_admin_user_days,
     get_all_dynamics,
     list_programs,
     uncredit_day,
@@ -47,6 +48,7 @@ from app.schemas.journal import (
     JournalProgramIn,
     JournalProgramOut,
     JournalProgramUpdate,
+    RecentDay,
 )
 from app.schemas.plan import PlanCreateRequest, PlanOut, PlanUpdateRequest
 from app.schemas.push import (
@@ -745,6 +747,16 @@ async def admin_dynamics(
     выборке, что и список: фильтр меняет и её.
     """
     return await get_all_dynamics(session, intake_id, plan_id)
+
+
+@router.get("/dynamics/{user_id}/days", response_model=list[RecentDay])
+async def admin_dynamics_user_days(
+    user_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[RecentDay]:
+    """Полный период (28 дней) одного участника — раскрытие карточки по клику
+    (список `/dynamics` отдаёт только ±окно вокруг сегодня)."""
+    return await get_admin_user_days(session, user_id)
 
 
 @router.post("/dynamics/credit", response_model=AdminDynamicsOut)

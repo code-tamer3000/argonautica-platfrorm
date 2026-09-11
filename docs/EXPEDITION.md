@@ -126,11 +126,14 @@ stopped exactly at the disc read as clipped short rather than passing behind it.
 lockstep with the rays.
 
 Every day disc shows its real moon phase (`moon.ts`, filled via `moonLitPath`)
-regardless of state, and additionally gets one of four visual weights — `dayDone`
-(closed/credited/today_closed/pardoned, opacity 0.75), `dayMissed` (opacity 0.35),
+regardless of state, and additionally gets one of five visual weights — `dayDone`
+(closed/credited/today_closed/pardoned, opacity 0.75), `dayPartial` (something written
+but not every section of that day's задание — opacity 0.6, ring drawn in `--accent`
+instead of the element hue so it also reads as a distinct *colour*, not just a fainter
+one, see [DYNAMICS.md](DYNAMICS.md) "Partial days"), `dayMissed` (opacity 0.35),
 `dayFuture` (opacity 0.28), `dayToday` (full opacity, larger, golden halo) — so a
-completed day, a missed one, and one still ahead read as three distinct states, not
-two conflated ones. The handful of days on the centre ring (`R_CENTER`) render a touch
+completed day, a partial one, a missed one, and one still ahead read as four distinct
+states, not two or three conflated ones. The handful of days on the centre ring (`R_CENTER`) render a touch
 larger (r 6.5, today 8) than element-band days (r 9, today 12.5 — larger still since
 there are many more of them, so a slightly smaller base radius keeps the ring from
 crowding) so they don't get lost that close to the hub.
@@ -205,7 +208,7 @@ today renders `today_closed`, future days stay `upcoming` untouched. Pardons/cre
 the streak math are untouched; this only widens what counts as closed for the admin's
 own read of `days[]`.
 
-`expedition.days` is the **whole circle's** day-status list (`closed`/`missed`/
+`expedition.days` is the **whole circle's** day-status list (`closed`/`partial`/`missed`/
 `pardoned`/`today_*`/`before_start`/`upcoming` — same `DayStatus` enum as Dynamics'
 `RecentDay`), not the ±window `GET /api/dynamics/my-stats` uses. `dynamics._recent_days`
 grew optional `window_start`/`window_end` params for this (default unchanged) rather than

@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
 import { beginRoomOpen, noteRoomHistoryLoaded } from '../lib/metrics'
-import type { JournalSection, MessageOut, ReadStateOut, RefKind } from '../lib/types'
+import type { JournalAnchorOut, JournalSection, MessageOut, ReadStateOut, RefKind } from '../lib/types'
 import { roomsKey } from './rooms'
 import { appendMessage } from './cache'
 
@@ -117,6 +117,14 @@ export function useJournalDays(roomId: number, year: number, month: number, enab
       http.get<JournalDays>(`/api/rooms/${roomId}/journal-days?year=${year}&month=${month}`),
     enabled,
   })
+}
+
+// Ближайшая к дате запись дневника — переход из плитки календаря в профиле
+// к сообщению в ленте (сначала запись в эту дату, иначе ближайшая предыдущая,
+// иначе ближайшая следующая; см. backend get_journal_anchor). Дёргается по клику,
+// не как хук — незачем держать это в кэше react-query.
+export function fetchJournalAnchor(roomId: number, dateStr: string) {
+  return http.get<JournalAnchorOut>(`/api/rooms/${roomId}/journal-anchor?date=${dateStr}`)
 }
 
 export function useMarkRead(roomId: number) {

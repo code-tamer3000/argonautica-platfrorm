@@ -23,6 +23,7 @@ from app.models.message import Message, MessageAttachment, MessageReaction, Pinn
 from app.models.room import Room
 from app.models.sticker import Sticker
 from app.models.user import User
+from app.schemas.journal import JournalAnchorOut
 from app.schemas.media import AttachmentOut
 from app.schemas.message import (
     EditMessageRequest,
@@ -919,3 +920,49 @@ async def get_journal_days(
         return sorted(cats, key=lambda c: (order.get(c, len(order)), c))
 
     return {str(day): _ordered(day, cats) for day, cats in per_day.items()}
+
+
+@router.get("/{room_id}/journal-anchor", response_model=JournalAnchorOut)
+async def get_journal_anchor(
+    room_id: int,
+    on_date: Annotated[date, Query(alias="date")],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> JournalAnchorOut:
+    """Ближайшая к дате запись дневника — переход из плитки календаря в профиле
+    к сообщению в ленте. Сначала запись в эту дату, иначе ближайшая предыдущая,
+    иначе ближайшая следующая (см. app/schemas/journal.py JournalAnchorOut)."""
+    from app.api.dynamics import _journal_category, _platform_day
+
+    room = await load_room(session, room_id)
+    await assert_room_access(session, room, current_user)
+
+    rows = await session.execute(
+        select(Message.id, Message.created_at, Message.content)
+        .where(
+            Message.room_id == room_id,
+            Message.deleted_at.is_(None),
+            Message.thread_root_id.is_(None),
+            Message.content.like("<!--journal:%"),
+        )
+        .order_by(Message.created_at)
+    )
+    by_day: dict[date, int] = {}
+    for mid, created_at, content in rows.all():
+        if _journal_category(content) is None:
+            continue
+        day = _platform_day(created_at)
+        by_day.setdefault(day, mid)
+
+    if not by_day:
+        return JournalAnchorOut(message_id=None, date=None)
+    if on_date in by_day:
+        return JournalAnchorOut(message_id=by_day[on_date], date=on_date)
+
+    earlier = [d for d in by_day if d < on_date]
+    if earlier:
+        best = max(earlier)
+        return JournalAnchorOut(message_id=by_day[best], date=best)
+
+    best = min(d for d in by_day if d > on_date)
+    return JournalAnchorOut(message_id=by_day[best], date=best)

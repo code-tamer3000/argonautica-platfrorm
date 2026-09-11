@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useAdminIntakes } from '../../api/admin'
-import { useAdminCreditDay, useAdminDynamics } from '../../api/dynamics'
+import { useAdminCreditDay, useAdminDynamics, useAdminUserDays } from '../../api/dynamics'
 import { useAdminPlans } from '../../api/plans'
 import { Avatar } from '../../components/Avatar'
 import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { DAY_STATUS_ICON, DAY_STATUS_TEXT } from '../../lib/dynamicsStatus'
 import { groupByPlan } from '../../lib/planGroups'
 import type {
   DayStatus,
@@ -19,31 +20,15 @@ import dynStyles from './dynamics.module.css'
 
 // ─── Ячейка дня ──────────────────────────────────────────────────────────────
 
-const STATUS_ICON: Record<string, string> = {
-  closed:       '✓',
-  credited:     '✓',
-  missed:       '✗',
-  pardoned:     '~',
-  today_open:   '○',
-  today_closed: '✓',
-  before_start: '·',
-  upcoming:     '·',
-}
+const STATUS_ICON = DAY_STATUS_ICON
+const STATUS_TEXT = DAY_STATUS_TEXT
 
-const STATUS_TEXT: Record<string, string> = {
-  closed:       'Выполнено',
-  credited:     'Зачтено',
-  missed:       'Пропущено',
-  pardoned:     'Помиловано',
-  today_open:   'Сегодня',
-  today_closed: 'Сегодня ✓',
-  before_start: '—',
-  upcoming:     'Впереди',
-}
-
-// Дни, которые админ может переключать вручную: пропущенный — зачесть; помилованный
-// (потрачен кит) — зачесть с возвратом кита; зачтённый — снять зачёт. Остальные не трогаем.
-const TOGGLABLE: ReadonlySet<DayStatus> = new Set<DayStatus>(['missed', 'pardoned', 'credited'])
+// Дни, которые админ может переключать вручную: пропущенный/частичный — зачесть;
+// помилованный (потрачен кит) — зачесть с возвратом кита; зачтённый — снять зачёт.
+// Остальные не трогаем.
+const TOGGLABLE: ReadonlySet<DayStatus> = new Set<DayStatus>([
+  'missed', 'partial', 'pardoned', 'credited',
+])
 
 /** `YYYY-MM-DD` → «2 июня 2026». Дата набора — календарная, без часовых поясов. */
 function intakeDate(startsOn: string): string {
@@ -138,6 +123,11 @@ function Dashboard({ s, total }: { s: DynamicsSummary; total: number }) {
           label="Средний стрик"
           sub="дней подряд"
         />
+        <StatCard
+          value={s.partial_total}
+          label="Частично выполнено"
+          sub="что-то есть, не всё"
+        />
       </div>
     </div>
   )
@@ -149,11 +139,20 @@ function UserCard({
   u,
   onToggleDay,
   busy,
+  expanded,
+  onToggleExpand,
 }: {
   u: UserDynamicsOut
   onToggleDay: (userId: number, day: RecentDay) => void
   busy: boolean
+  expanded: boolean
+  onToggleExpand: () => void
 }) {
+  // Список отдаёт только ±окно вокруг сегодня; по клику подгружаем весь
+  // 28-дневный период участника отдельным запросом.
+  const { data: fullDays, isLoading: fullLoading } = useAdminUserDays(expanded ? u.user_id : null)
+  const days = expanded && fullDays ? fullDays : u.recent_days
+
   return (
     <div
       className={`${dynStyles.card} ${u.active_today ? dynStyles.cardActive : ''} ${
@@ -204,15 +203,23 @@ function UserCard({
       </div>
 
       <div className={dynStyles.days}>
-        {u.recent_days.map((d) => (
-          <DayCell
-            key={d.date}
-            day={d}
-            busy={busy}
-            onToggle={(day) => onToggleDay(u.user_id, day)}
-          />
-        ))}
+        {expanded && fullLoading && !fullDays ? (
+          <div className="center" style={{ padding: 'var(--space-2)' }}><Spinner size={16} /></div>
+        ) : (
+          days.map((d) => (
+            <DayCell
+              key={d.date}
+              day={d}
+              busy={busy}
+              onToggle={(day) => onToggleDay(u.user_id, day)}
+            />
+          ))
+        )}
       </div>
+
+      <button type="button" className={dynStyles.expandBtn} onClick={onToggleExpand}>
+        {expanded ? 'Свернуть' : 'Весь период (28 дней)'}
+      </button>
     </div>
   )
 }
@@ -242,6 +249,9 @@ export function AdminDynamics() {
     !intakesLoading && !plansLoading,
   )
   const creditDay = useAdminCreditDay()
+  // Раскрытая карточка (весь 28-дневный период) — одна за раз, схлопывается по
+  // повторному клику или клику на другую.
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null)
 
   function togglePlan(id: number) {
     setPlanFilter((prev) => {
@@ -277,6 +287,8 @@ export function AdminDynamics() {
       u={u}
       busy={creditDay.isPending}
       onToggleDay={handleToggleDay}
+      expanded={expandedUserId === u.user_id}
+      onToggleExpand={() => setExpandedUserId((id) => (id === u.user_id ? null : u.user_id))}
     />
   )
 

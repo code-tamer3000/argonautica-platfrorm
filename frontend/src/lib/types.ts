@@ -407,7 +407,7 @@ export interface IntakeOut {
 }
 
 // --- Динамика (прогресс ДЗ) ---
-export type DayStatus = 'closed' | 'credited' | 'missed' | 'pardoned' | 'today_open' | 'today_closed' | 'before_start' | 'upcoming'
+export type DayStatus = 'closed' | 'credited' | 'missed' | 'pardoned' | 'partial' | 'today_open' | 'today_closed' | 'before_start' | 'upcoming'
 
 export interface RecentDay {
   date: string
@@ -423,6 +423,11 @@ export interface MyDynamicsOut {
   program_start: string
   // Окно набора закрыто (ARG-96): статистика заморожена, форма отправки/помилования скрыта.
   window_closed: boolean
+  // Дней, где что-то написано, но не все разделы активного задания — просрочку/стрик
+  // не снимает (см. docs/DYNAMICS.md), только отдельный счётчик для интерфейса.
+  partial_count: number
+  // Сколько дней из 28-дневного периода набора уже закрыто (свои + зачтённые админом).
+  closed_count: number
 }
 
 export interface UserDynamicsOut {
@@ -432,6 +437,7 @@ export interface UserDynamicsOut {
   avatar_url: string | null
   streak: number
   overdue_count: number
+  partial_count: number
   pardons_used: number
   active_today: boolean
   journal_today: boolean
@@ -452,11 +458,17 @@ export interface DynamicsSummary {
   journal_today: number
   no_overdue: number
   avg_streak: number
+  partial_total: number
 }
 
 export interface AdminDynamicsOut {
   summary: DynamicsSummary
   users: UserDynamicsOut[]
+}
+
+export interface JournalAnchorOut {
+  message_id: number | null
+  date: string | null
 }
 
 // --- Круг Экспедиции: расписание этапов потока + замки-гексаграммы ---

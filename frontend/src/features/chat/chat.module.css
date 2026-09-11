@@ -205,14 +205,6 @@
   border-radius: var(--radius-card); padding: var(--space-2); box-shadow: var(--glow-gold);
   display: flex; flex-direction: column; gap: 2px;
 }
-.headerInfoTextBtn {
-  display: flex; align-items: center; min-width: 0; flex: 1;
-  background: transparent; border: none; padding: var(--space-1);
-  margin: calc(-1 * var(--space-1)); border-radius: var(--radius-btn);
-  cursor: pointer; text-align: left; color: inherit; transition: var(--transition-base);
-}
-.headerInfoTextBtn:hover { background: rgba(19, 78, 69, 0.10); }
-
 /* --- Полоса закреплённого (Telegram-style, под шапкой) --- */
 .pinsBar {
   display: flex; align-items: center; gap: var(--space-3);
@@ -1117,54 +1109,6 @@ a.mention:hover { text-decoration: underline; }
   .mentionPop { left: var(--space-3); right: var(--space-3); max-width: none; }
   .fmtBar { left: var(--space-3); }
   .attVideo { max-width: 100%; }
-}
-
-/* --- Календарь личного канала --- */
-.calendarWrap {
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--color-frame-deep);
-  background: var(--bg-deep);
-}
-.calendarNav {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: var(--space-2);
-}
-.calendarTitle {
-  font-family: var(--font-t4); font-size: var(--text-label-md);
-  color: var(--text-secondary);
-}
-.calendarNavBtn {
-  background: transparent; border: none; color: var(--text-muted);
-  cursor: pointer; font-size: 16px; padding: 0 var(--space-2);
-  line-height: 1;
-}
-.calendarNavBtn:hover { color: var(--accent); }
-.calendarGrid {
-  display: grid; grid-template-columns: repeat(7, 1fr);
-  gap: 2px; text-align: center;
-}
-.calendarWeekday {
-  font-size: 10px; color: var(--text-ghost);
-  font-family: var(--font-t4); letter-spacing: 0.04em;
-  padding-bottom: 2px;
-}
-.calendarDay {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; margin: 1px auto;
-  border-radius: 50%; font-size: 12px; color: var(--text-muted);
-  transition: background var(--transition-base);
-}
-.calendarDayDone {
-  background: var(--accent); color: var(--bg-base); font-weight: 600;
-}
-.calendarDayPartial {
-  box-shadow: inset 0 0 0 1.5px var(--accent); color: var(--text-primary);
-}
-.calendarDayToday {
-  outline: 1px solid var(--accent);
-}
-.calendarDayDone.calendarDayToday {
-  outline: 2px solid var(--divider-gold);
 }
 
 /* --- Бар «отписки дня» (выбор категории дневника над композером) --- */

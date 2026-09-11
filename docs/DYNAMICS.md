@@ -71,15 +71,32 @@ Homework entries are ordinary **`messages` in the participant's personal diary r
 
 ## Endpoints
 
-- `GET /api/dynamics/my-stats` — closed days / streak / misses / a ±day window, computed from personal-room messages + pardons/credits.
+- `GET /api/dynamics/my-stats` — closed/partial day counts, streak / misses / a ±day window, computed from personal-room messages + pardons/credits.
+- `GET /api/dynamics/my-days` — the full 28-day calendar of the participant's own набор (as opposed to the ±window `my-stats` returns) — feeds the Динамика block on `ProfileScreen`. `credited` is collapsed to `closed` here: a participant is never shown the difference between a day they closed themselves and one an admin credited manually (that distinction matters only to admins, see below).
 - `POST /api/dynamics/pardon` — pardon a missed day (limit 3).
 - `GET /api/dynamics/structure` — the задание active today (sections for the widget/composer).
 - `GET /api/rooms/{id}/journal-days` — `{date: [section keys]}` map for a month (keys ordered by the задание active that day).
-- Admin dynamics: `GET /api/admin/dynamics` (summary + per-participant rows), `POST /api/admin/dynamics/credit` (grant/revoke a day).
+- `GET /api/rooms/{id}/journal-anchor?date=` — nearest journal entry to a date (own or same message id), for jumping from a calendar day tile straight to that entry in the room feed. Picks: the entry on that exact day, else the nearest **earlier** entry, else the nearest **later** one. `{message_id, date}`, both `null` if the room has no journal entries at all.
+- Admin dynamics: `GET /api/admin/dynamics` (summary + per-participant rows, each with a ±window `recent_days`), `GET /api/admin/dynamics/{user_id}/days` (that one participant's full 28-day period — used when a card is expanded in the admin UI, since the list response only carries the ±window), `POST /api/admin/dynamics/credit` (grant/revoke a day).
   - `intake_id` (repeatable query param) narrows the overview to one or more наборы; without it — all наборы at once. The **summary counters are computed over the same filtered set**, so they always describe exactly the rows on screen. Each row carries `intake_id` for grouping.
   - The admin UI defaults to the **active набор** (the one with the greatest `starts_on`, same criterion as «Пользователи»); «Все наборы» shows everyone grouped by набор, plus a «Без набора» section for users with `intake_id = NULL`.
   - `POST /api/admin/dynamics/credit` always answers with the **unfiltered** overview; the client therefore invalidates its cache instead of writing that body into a filtered cache entry.
 - Admin structure: `GET/POST /api/admin/journal/programs`, `PATCH/DELETE /api/admin/journal/programs/{id}` (create/edit/delete задания; can't delete the earliest; `starts_on` unique).
+
+## Partial days (ARG-126)
+
+A day where the participant wrote **something** but not every section of the задание
+active that day is a distinct `DayStatus`, `"partial"` — separate from `"missed"` (nothing
+written at all). `_calc_stats` computes it alongside `overdue_dates` in the same
+program_start→yesterday walk (`partial_dates`) and reports a count (`partial_count`) on
+both `MyDynamicsOut` and `UserDynamicsOut`/`DynamicsSummary` (`partial_total`, ongoing
+participants only, same convention as the other summary counters).
+
+**This changes nothing about scoring.** A partial day is still not in `closed_days`, still
+lands in `overdue_dates`, still breaks the streak — exactly like an empty day. `partial` is
+purely a rendering/reporting label layered on top of the existing missed/closed split, on
+the calendar in the profile, the admin Динамика grid, and the Круг Экспедиции wheel
+(`ExpeditionWheel`, which previously only distinguished done/missed/future).
 
 ## Reuse: Круг Экспедиции
 

@@ -40,6 +40,7 @@ from app.services.users import avatar_url
 class _StatsResult(TypedDict):
     closed_days: set[date]
     overdue_dates: list[date]
+    partial_dates: list[date]
     streak: int
     today_cats: list[str]
     pardoned: set[date]
@@ -262,17 +263,20 @@ def _calc_stats(
     today_cats = list(per_day.get(today, set()))
 
     # Дни с просрочкой: прошедшие дни >= program_start с непустым заданием,
-    # не закрытые и не помилованные.
+    # не закрытые и не помилованные. Частичные дни (что-то написано, но не все
+    # разделы) — отдельно; правил Динамики они НЕ меняют: как и пустой день, идут
+    # в просрочку и рвут стрик (см. docs/DYNAMICS.md), partial_dates — только для
+    # отображения/счётчика в интерфейсе.
     overdue_dates: list[date] = []
+    partial_dates: list[date] = []
     if yesterday >= program_start:
         check = program_start
         while check <= yesterday:
-            if (
-                required_keys_for(check, timeline)
-                and check not in closed_days
-                and check not in pardoned
-            ):
+            required = required_keys_for(check, timeline)
+            if required and check not in closed_days and check not in pardoned:
                 overdue_dates.append(check)
+                if per_day.get(check):
+                    partial_dates.append(check)
             check += timedelta(days=1)
 
     # Стрик: последовательность закрытых/помилованных дней назад от текущего.
@@ -290,6 +294,7 @@ def _calc_stats(
     return {
         "closed_days": closed_days,
         "overdue_dates": overdue_dates,
+        "partial_dates": partial_dates,
         "streak": streak,
         "today_cats": today_cats,
         "pardoned": pardoned,
@@ -310,10 +315,12 @@ def _recent_days(
     today: date | None = None,
     window_start: date | None = None,
     window_end: date | None = None,
+    partial: set[date] | None = None,
 ) -> list[RecentDay]:
     # `today` подменяется для выпускника — окно строим вокруг дня выпуска (см. _calc_stats).
     today = today or _platform_today()
     credited = credited or set()
+    partial = partial or set()
     program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
     # Окно по умолчанию: WINDOW_PAST дней назад → сегодня → WINDOW_FUTURE дней
@@ -339,6 +346,8 @@ def _recent_days(
             st = "closed"
         elif d in pardoned:
             st = "pardoned"
+        elif d in partial:
+            st = "partial"
         else:
             st = "missed"
         result.append(RecentDay(date=d, status=st))
@@ -423,6 +432,7 @@ async def get_my_day_statuses(
         today=as_of,
         window_start=window_start,
         window_end=window_end,
+        partial=set(stats["partial_dates"]),
     )
 
 
@@ -444,6 +454,7 @@ async def get_my_stats(
     stats = _calc_stats(
         per_day, pardons, program_start, timeline, credits, today=window_closed_on
     )
+    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -453,7 +464,30 @@ async def get_my_stats(
         today_progress=stats["today_cats"],
         program_start=program_start,
         window_closed=window_closed_on is not None,
+        partial_count=len(stats["partial_dates"]),
+        closed_count=sum(1 for d in stats["closed_days"] if program_start <= d <= program_end),
     )
+
+
+@router.get("/my-days", response_model=list[RecentDay])
+async def get_my_days(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[RecentDay]:
+    """Календарь на весь период набора (28 дней) — для блока Динамики в профиле,
+    в отличие от `my-stats`, который не отдаёт сетку дней вовсе (только числа).
+
+    Зачтённый админом день (`credited`) участнику не отличим от закрытого им самим
+    (`closed`) — эта разница важна только админу (см. `get_all_dynamics`).
+    """
+    timeline = await load_timeline(session)
+    program_start = await load_program_start(session, current_user, timeline)
+    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    days = await get_my_day_statuses(session, current_user, program_start, program_end)
+    return [
+        RecentDay(date=d.date, status="closed" if d.status == "credited" else d.status)
+        for d in days
+    ]
 
 
 @router.post("/pardon", response_model=MyDynamicsOut)
@@ -491,6 +525,7 @@ async def use_pardon(
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
     stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
+    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -499,6 +534,8 @@ async def use_pardon(
         pardons_remaining=max(0, MAX_PARDONS - len(pardons)),
         today_progress=stats["today_cats"],
         program_start=program_start,
+        partial_count=len(stats["partial_dates"]),
+        closed_count=sum(1 for d in stats["closed_days"] if program_start <= d <= program_end),
     )
 
 
@@ -854,7 +891,12 @@ async def get_all_dynamics(
         as_of = graduated_on or window_closed_on or today
         stats = _calc_stats(per_day, pardons, user_start, timeline, credits, today=as_of)
         recent = _recent_days(
-            stats["closed_days"], stats["pardoned"], user_start, set(credits), today=as_of
+            stats["closed_days"],
+            stats["pardoned"],
+            user_start,
+            set(credits),
+            today=as_of,
+            partial=set(stats["partial_dates"]),
         )
         journal_today = graduated_on is None and today in stats["closed_days"]
         users_out.append(
@@ -865,6 +907,7 @@ async def get_all_dynamics(
                 avatar_url=avatar_url(user, signed_avatars),
                 streak=stats["streak"],
                 overdue_count=len(stats["overdue_dates"]),
+                partial_count=len(stats["partial_dates"]),
                 pardons_used=len(pardons),
                 active_today=user.id in active_today_ids,
                 journal_today=journal_today,
@@ -887,5 +930,45 @@ async def get_all_dynamics(
         journal_today=sum(1 for u in ongoing if u.journal_today),
         no_overdue=sum(1 for u in ongoing if u.overdue_count == 0),
         avg_streak=round(sum(streaks) / total, 1) if total else 0.0,
+        partial_total=sum(u.partial_count for u in ongoing),
     )
     return AdminDynamicsOut(summary=summary, users=users_out)
+
+
+async def get_admin_user_days(session: AsyncSession, user_id: int) -> list[RecentDay]:
+    """Полный 28-дневный календарь одного участника — раскрытие карточки в
+    админской Динамике по клику (список `get_all_dynamics` отдаёт только ±окно
+    вокруг сегодня, см. WINDOW_PAST/WINDOW_FUTURE)."""
+    user = await session.get(User, user_id)
+    if user is None or user.role != "participant":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Участник не найден")
+
+    timeline = await load_timeline(session)
+    intake_starts = await load_intake_starts(session)
+    intake_ends = await load_intake_ends(session)
+    program_start = program_start_for(user, intake_starts, timeline)
+    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+
+    room_id = await _personal_room_id(session, user.id)
+    messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
+    pardons = await _load_pardons(session, user.id)
+    credits = await _load_credits(session, user.id)
+    per_day = _calc_closed_days(messages)
+
+    graduated_on = _platform_day(user.graduated_at) if user.graduated_at else None
+    window_ends_on = intake_ends.get(user.intake_id) if user.intake_id else None
+    today = _platform_today()
+    window_closed_on = window_ends_on if window_ends_on and today > window_ends_on else None
+    as_of = graduated_on or window_closed_on or today
+
+    stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+    return _recent_days(
+        stats["closed_days"],
+        stats["pardoned"],
+        program_start,
+        set(credits),
+        today=as_of,
+        window_start=program_start,
+        window_end=program_end,
+        partial=set(stats["partial_dates"]),
+    )

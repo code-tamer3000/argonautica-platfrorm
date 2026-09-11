@@ -118,12 +118,22 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
         // Кольцо центра — всего несколько дней (Точка Баланса/Финал), радиус
         // чуть крупнее полосных лун, чтобы не терялись рядом с хабом.
         const r = isToday ? (onCenterRing ? 8 : 12.5) : onCenterRing ? 6.5 : 9
-        const color = d.element ? `var(--el-${d.element})` : 'var(--accent)'
-        // Прошедший день зачтён (закрыт/зачтён/помилован) или пропущен; будущий
-        // день ещё не наступил — три разных начертания, не два (см. docs/EXPEDITION.md).
+        // Прошедший день зачтён (закрыт/зачтён/помилован), частично заполнен
+        // (что-то есть, не всё) или пропущен; будущий ещё не наступил — четыре
+        // разных начертания (см. docs/EXPEDITION.md, docs/DYNAMICS.md).
         const isDone = status === 'closed' || status === 'credited' || status === 'today_closed' || status === 'pardoned'
+        const isPartial = status === 'partial'
         const isMissed = status === 'missed'
-        const dayClass = isToday ? styles.dayToday : isDone ? styles.dayDone : isMissed ? styles.dayMissed : styles.dayFuture
+        const color = isPartial ? 'var(--accent)' : d.element ? `var(--el-${d.element})` : 'var(--accent)'
+        const dayClass = isToday
+          ? styles.dayToday
+          : isPartial
+            ? styles.dayPartial
+            : isDone
+              ? styles.dayDone
+              : isMissed
+                ? styles.dayMissed
+                : styles.dayFuture
 
         return (
           <g key={d.day} transform={`translate(${pos.x.toFixed(1)} ${pos.y.toFixed(1)})`} className={dayClass}>
@@ -132,6 +142,7 @@ export function ExpeditionWheel({ expedition, onLockClick }: Props) {
               {dateIso ? ` · ${format(new Date(`${dateIso}T00:00:00`), 'd MMMM', { locale: ru })}` : ''}
               {phase ? ` · ${moonPhaseName(phase)}` : ''}
               {isToday ? ' · сегодня' : ''}
+              {isPartial ? ' · частично выполнено' : ''}
             </title>
             <circle r={r} fill="none" stroke={color} strokeWidth={isToday ? 1.4 : 1} />
             {phase && (
