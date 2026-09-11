@@ -7,7 +7,7 @@ import type {
   NewsPreviewOut,
   NotificationOut,
 } from '../lib/types'
-import type { TaskWithStatusOut } from './tasks'
+import type { ProgressOut, TaskWithStatusOut } from './tasks'
 
 // Композиция полей нескольких доменов — как и на бэкенде (schemas/expedition.py),
 // держим DashboardOut рядом с эндпоинтом, а не в lib/types.ts (там TaskWithStatusOut
@@ -19,6 +19,8 @@ export interface DashboardOut {
   journal_locked: boolean
   upcoming_events: CalendarEventOut[]
   active_tasks: TaskWithStatusOut[]
+  tasks_progress: ProgressOut | null // null для админа (как и active_tasks)
+  tasks_in_review: number
   notifications: NotificationOut[]
   unread_notifications: number
   news_preview: NewsPreviewOut | null

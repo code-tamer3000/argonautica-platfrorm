@@ -21,12 +21,21 @@
   color: var(--accent-bright);
 }
 
+/* Возвращена на доработку — это не «что-то сломалось», а обычный шаг ревью,
+   поэтому не blood: нейтральный тёплый камень (--stone), нигде больше не занятый. */
 .returned {
-  border-color: var(--blood);
-  color: var(--blood-bright);
+  border-color: var(--stone);
+  color: var(--stone-warm);
 }
 
 .soon {
+  border-color: var(--color-more);
+  color: var(--color-more-yar);
+}
+
+/* Просрочено, но ещё не сдано — тот же спокойный акцент, что «Подходит срок»
+   (морская зелень, не тревожный цвет), только для другого триггера. */
+.overdue {
   border-color: var(--color-more);
   color: var(--color-more-yar);
 }

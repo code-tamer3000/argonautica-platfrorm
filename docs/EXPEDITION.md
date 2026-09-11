@@ -186,6 +186,8 @@ query), not new business logic. Behind `require_participant`.
   journal_locked: bool,                     // graduate / closed intake window — hide the CTA
   upcoming_events: CalendarEventOut[],
   active_tasks: TaskWithStatusOut[],        // my_status in (null, assigned, returned); [] for admin
+  tasks_progress: { done, total } | null,   // same numbers as GET /api/tasks; null for admin
+  tasks_in_review: int,                     // my_status == 'submitted' count; 0 for admin
   notifications: NotificationOut[],
   unread_notifications: int,
   news_preview: { room_id, author_name, preview, created_at } | null,
@@ -195,8 +197,19 @@ query), not new business logic. Behind `require_participant`.
 `expedition` is `null` when the caller has no `intake_id` or that intake has no
 `starts_on` — practically, admins without an assigned intake. An admin **with** one sees
 the circle (so the schedule can be sanity-checked) but no personal layer: `journal` is
-always `null` and `active_tasks` always `[]` for `role == 'admin'` — admins don't do
-Dynamics or take tasks.
+always `null` and `active_tasks`/`tasks_progress`/`tasks_in_review` are always
+`[]`/`null`/`0` for `role == 'admin'` — admins don't do Dynamics or take tasks.
+
+`tasks_progress` and `tasks_in_review` are read off the same `list_tasks()` call that
+already builds `active_tasks` (no extra query): `tasks_progress` is `TaskListOut.progress`
+verbatim, `tasks_in_review` counts items with `my_status == "submitted"` — those are
+deliberately excluded from `active_tasks` (nothing left to *do*, it's just awaiting
+review) but still worth surfacing on the landing widget so a submitted task doesn't
+silently vanish from view. This pair feeds the "Задания экспедиции" card on the
+dashboard (`frontend/src/features/dashboard/TasksCard.tsx`): a progress ring plus a
+per-task countdown ("завтра" / "через N дней" instead of a calendar date) — the only
+accent allowed on the widget is `deadline_soon` (soft warm chip), never a red/urgent
+treatment for something already overdue; see docs/TASKS.md.
 
 Since an admin never journals, every elapsed day in `expedition.days` would otherwise
 read as `missed` by default (no closing message ⇒ `missed`, see `_recent_days` in

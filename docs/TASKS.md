@@ -211,6 +211,29 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
 WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events. Stream mutations (текст, вариант, голос, продавленная фраза, переход стадии) — тоже `task.updated` на родительскую задачу; отдельных stream-событий нет. Плюс `room.created` на членов узла, когда сервер завёл комнату подгруппы, и
 `room.closed` — когда фраза узла утверждена и комната закрылась.
 
+## Dashboard widget
+
+The landing screen (`GET /api/dashboard`, see [EXPEDITION.md](EXPEDITION.md)) shows a
+"Задания экспедиции" card (`frontend/src/features/dashboard/TasksCard.tsx`) right after
+the "Сегодня" card — a progress ring (`tasks_progress`, same numbers as `GET /api/tasks`)
+plus the same up-to-5 `active_tasks` list already used elsewhere, but each row shows a
+relative countdown ("сегодня" / "завтра" / "через N дней" / "без срока") instead of a
+calendar date. Deliberately positive tone: an overdue task reads as "срок прошёл · ещё
+можно сдать" in muted text, never red.
+
+Rows that need attention — returned, overdue, or `deadline_soon` — get a thin gold rule
+(`.itemFlag`) and are sorted to the top of the (already ≤ 5-item) list, in that priority
+order (returned first: it's a direct action from someone, not just a ticking clock);
+within the same priority the original `list_tasks()` order is kept (stable sort). Each
+still gets a chip, but the chip is the only place colour carries meaning: `returned`
+reuses the same blood-toned chip already shown on `/tasks` for that status (consistency,
+not a new alarm colour); `overdue` and `soon` both use the calm teal `--color-more` chip
+— overdue is *not* redder than "подходит срок", on purpose. A task the user has already
+submitted (`my_status == 'submitted'`) doesn't appear in the row list (there's nothing to
+*do*) but is counted separately in `tasks_in_review` and surfaced as "На проверке: N —
+ждём ответа" so it doesn't look forgotten. No new tables, no push/scheduler — purely a
+read-side reshuffle of numbers `list_tasks()` already computes.
+
 ## Frontend note
 
 Task create/edit (admin) and participant submission share `components/MediaComposer.tsx` (markdown textarea + upload-with-progress + pending chips). See [FRONTEND.md](FRONTEND.md).
@@ -238,3 +261,18 @@ Recipient pickers in `TaskForm.tsx` (individual / pair / stream) read `GET /api/
 not the public `GET /api/users`: the list is scoped to the **active intake** (latest `starts_on`)
 by default, with a «Набор получателей» selector to switch to another intake or «Все наборы».
 Server-side task creation is unchanged — the filter only narrows what the admin sees.
+
+**Returned status is not an alarm.** `Chip kind="returned"` used to be blood-red
+everywhere (`/tasks` card, `TaskDetail` head/status chips, the dashboard widget) — a task
+sent back for another pass isn't a failure, so it now renders in the neutral `--stone`
+family (a token that wasn't claimed by anything else), same as `--blood`/`--color-more`
+are reserved for danger/attention elsewhere.
+
+When *your own* track is `returned`, `TaskDetail.tsx` shows a `ReturnedFeedback` panel
+right next to the resubmission form — reviewer's comment on top (the whole point of
+coming back to the task), your previous submission collapsed under a `<details>` below
+it (still one click away, not re-litigated in full). That track is then excluded from the
+`TracksSection` list further down the page so the same submission+comment thread doesn't
+render twice; the section itself is skipped entirely for a participant if that was the
+only thing in it. Admins/cross-authors (`canReview`) are unaffected — they still see every
+track in the flat list, review actions and all.
