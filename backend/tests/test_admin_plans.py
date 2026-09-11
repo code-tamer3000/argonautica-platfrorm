@@ -46,11 +46,35 @@ async def test_create_and_list_plans(
     plan = await create_plan(client, headers, name="Земля", price=12000)
     assert plan["is_active"] is True
     assert plan["price"] == 12000
+    # По умолчанию тариф не входит в контур учёта дисциплины — это осознанное
+    # ручное решение админа, не автоматика (см. ARG-129/ARG-128).
+    assert plan["discipline_tracked"] is False
 
     listed = await client.get("/api/admin/plans", headers=headers)
     assert listed.status_code == 200
     ids = [p["id"] for p in listed.json()]
     assert plan["id"] in ids
+
+
+async def test_discipline_tracked_flag_set_on_create_and_updated(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    headers = await admin_headers(client, make_user)
+
+    plan = await create_plan(
+        client, headers, name="Вода", price=7000, discipline_tracked=True
+    )
+    assert plan["discipline_tracked"] is True
+
+    updated = await client.patch(
+        f"/api/admin/plans/{plan['id']}",
+        headers=headers,
+        json={"discipline_tracked": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["discipline_tracked"] is False
+    # Остальные поля не тронуты частичным обновлением.
+    assert updated.json()["price"] == 7000
 
 
 async def test_update_plan_price_and_deactivate(

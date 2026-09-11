@@ -43,6 +43,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | limbo_previous_plan_id | BIGINT | FK plans, NULL | Междумирье (see [LIMBO.md](LIMBO.md)): tariff to restore to. NULL together with the two fields below — set as a trio on entry, cleared as a trio on exit |
 | limbo_deadline_at | TIMESTAMPTZ | NULL | Междумирье: 5-day cutoff, checked lazily on the participant's next request (`resolve_limbo`) — no scheduler in this codebase |
 | limbo_makeup_task_id | BIGINT | FK tasks, NULL | Междумирье: the auto-created "describe the missed period" individual task for this grace period |
+| discipline_reset_at | TIMESTAMPTZ | NULL | Точка отсчёта для счётчика поздних сдач задач (ARG-130/ARG-128): NULL = с начала. Пишется при входе/выходе из Междумирья (`POST /users/{id}/limbo`, `apply_plan_change`) — см. [LIMBO.md](LIMBO.md), [TASKS.md](TASKS.md) |
 | settings | JSONB | NOT NULL, default `'{}'` | UI prefs; no migration per key |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
@@ -148,6 +149,7 @@ reading `users` directly), so price/name edits apply without a bot redeploy. See
 | price | INTEGER | NOT NULL | rubles, whole number |
 | description | TEXT | NOT NULL, default `''` | shown behind the bot's «Подробнее» button |
 | is_active | BOOLEAN | NOT NULL, default true | false hides it from the intake bot's tariff list only — the public `GET /api/plans` (platform's "Все дневники" grouping) does NOT filter on this, so plans with existing holders never lose their group label |
+| discipline_tracked | BOOLEAN | NOT NULL, default false | Explicit admin-set flag (ARG-129/ARG-128): this tariff's holders get task-overdue/diary-miss tracking in Dynamics and can be flagged as Междумирье candidates. NOT derived from price/rank (`cohort_plan_ranks` is floating per-cohort) — set deliberately in the tariff admin screen |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | updated_at | TIMESTAMPTZ | NOT NULL | |
 
@@ -680,6 +682,7 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 | user_id | BIGINT | FK users, NOT NULL | |
 | status | TEXT | NOT NULL, default `'assigned'`, CHECK | `'assigned'` \| `'submitted'` \| `'returned'` \| `'accepted'` |
 | late | BOOLEAN | NOT NULL, default false | set on first submission after deadline |
+| deadline_at | TIMESTAMPTZ | NULL | Per-assignee deadline override (ARG-133/ARG-128), **common only** — individual/pair/stream never set this, their deadline is already one-per-assignment via the task itself. NULL = use `tasks.deadline_at` as-is. Effective deadline = `services.tasks.effective_deadline(task, assignment)`, used everywhere `tasks.deadline_at` used to be read for one user (late-flagging, deadline_soon, overdue-tasks metric). See [TASKS.md](TASKS.md) |
 | reviewed_at | TIMESTAMPTZ | NULL | |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 

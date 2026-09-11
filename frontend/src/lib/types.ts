@@ -428,6 +428,16 @@ export interface MyDynamicsOut {
   partial_count: number
   // Сколько дней из 28-дневного периода набора уже закрыто (свои + зачтённые админом).
   closed_count: number
+  // Просроченные задачи (дедлайн прошёл, не сдано/не принято) — ARG-130/ARG-128.
+  overdue_tasks: OverdueTaskOut[]
+  // Сдач после дедлайна с последнего входа/выхода из Междумирья.
+  late_submissions_count: number
+}
+
+export interface OverdueTaskOut {
+  task_id: number
+  title: string
+  deadline_at: string
 }
 
 export interface UserDynamicsOut {
@@ -450,6 +460,11 @@ export interface UserDynamicsOut {
   // Экспедиция пройдена: строка заморожена на дне выпуска и помечена бейджем,
   // в сводных счётчиках такой участник не учитывается.
   graduated_at: string | null
+  // Просроченные задачи и сдачи после дедлайна — ARG-130/ARG-128.
+  overdue_tasks_count: number
+  late_submissions_count: number
+  // Кандидат на ручной перевод в Междумирье (ARG-132) — см. AdminDynamics.tsx.
+  limbo_eligible: boolean
 }
 
 export interface DynamicsSummary {
@@ -609,6 +624,8 @@ export interface PlanOut {
   price: number
   description: string
   is_active: boolean
+  /** Тариф входит в контур учёта дисциплины (просрочки задач, пропуски дневника, кандидат в Междумирье). */
+  discipline_tracked: boolean
   created_at: string
   updated_at: string
   /** Самый дешёвый тариф — админка «Динамика» по умолчанию скрывает его фильтром. */

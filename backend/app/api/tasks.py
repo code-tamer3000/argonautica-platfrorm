@@ -42,6 +42,7 @@ from app.models.task import (
 from app.models.user import User
 from app.schemas.task import (
     AdminAssignmentOut,
+    AssignmentDeadlineUpdate,
     CrossTaskCreate,
     CrossTaskUpdate,
     MeetingUpdate,
@@ -64,6 +65,7 @@ from app.schemas.task import (
 from app.services import stream as stream_service
 from app.services.graduation import assert_not_graduated, is_graduated
 from app.services.media import (
+    presign_asset_urls,
     resolve_submission_attachments,
     resolve_task_attachments,
 )
@@ -77,8 +79,10 @@ from app.services.tasks import (
     compute_progress,
     cross_task_of,
     deadline_soon,
+    effective_deadline,
     fan_out_task_event,
     get_or_create_assignment,
+    late_submissions_count,
     load_pair,
     load_task,
     pair_member_ids,
@@ -87,6 +91,7 @@ from app.services.tasks import (
     recompute_pair_completion,
     sync_task_calendar_event,
 )
+from app.services.users import avatar_url
 from app.ws import schemas as ws_schemas
 
 # Задачи — активность участника; наблюдателю весь раздел закрыт (в т.ч. чтение).
@@ -998,7 +1003,9 @@ async def list_tasks(
             pairs=pairs_by_task.get(t.id),
             my_status=(a.status if (a := my_assignments.get(t.id)) else None),
             late=bool(a.late) if (a := my_assignments.get(t.id)) else False,
-            deadline_soon=deadline_soon(t, now, days),
+            deadline_soon=deadline_soon(
+                effective_deadline(t, my_assignments.get(t.id)), now, days
+            ),
             assignee_count=(
                 assignee_counts.get(t.id, 0)
                 if t.type in ("individual", "pair")
@@ -1073,7 +1080,9 @@ async def get_task(
         stream=await _visible_stream_for(session, task, current_user),
         my_status=my.status if my else None,
         late=bool(my.late) if my else False,
-        deadline_soon=deadline_soon(task, now, settings.task_deadline_soon_days),
+        deadline_soon=deadline_soon(
+            effective_deadline(task, my), now, settings.task_deadline_soon_days
+        ),
         assignee_count=(total if task.type in ("individual", "pair") else None),
         submitted_count=submitted,
         accepted_count=accepted,
@@ -1175,11 +1184,8 @@ async def create_submission(
         )
 
     assignment.status = "submitted"
-    if (
-        is_first
-        and task.deadline_at is not None
-        and datetime.now(UTC) > task.deadline_at
-    ):
+    deadline = effective_deadline(task, assignment)
+    if is_first and deadline is not None and datetime.now(UTC) > deadline:
         assignment.late = True
     if task.sets_display_name and body.body and body.body.strip():
         current_user.display_name = body.body.strip()
@@ -1196,6 +1202,9 @@ async def create_submission(
     attachments = (
         await resolve_submission_attachments(session, [submission.id])
     ).get(submission.id, [])
+    late_count = (
+        await late_submissions_count(session, current_user) if assignment.late else 0
+    )
     return SubmissionOut(
         id=submission.id,
         assignment_id=assignment.id,
@@ -1203,6 +1212,8 @@ async def create_submission(
         body=submission.body,
         created_at=submission.created_at,
         attachments=attachments,
+        late=assignment.late,
+        late_submissions_count=late_count,
     )
 
 
@@ -1214,34 +1225,149 @@ async def list_task_assignments(
 ) -> list[AdminAssignmentOut]:
     """Админский экран прогресса задачи: строки назначений + число сдач.
 
-    Для common здесь только те, кто уже взаимодействовал (у кого лениво создана
-    строка назначения); не взаимодействовавшие ещё не имеют строки.
+    Для common (ARG-133) — ПОЛНЫЙ список тех, кому задача видна (участники по
+    потоку+тарифу, `participant_count`'s набор фильтров), включая тех, кто ещё
+    не сдавал (строки назначения у них нет — ленивое создание): у таких
+    `assignment_id`/`status`/`reviewed_at` = None, submission_count = 0,
+    deadline_at = дедлайн задачи как есть (override нечему быть — назначения нет).
+    Для individual/pair/stream — только реально назначенные (видимость там уже
+    через явное членство).
     """
     task = await load_task(session, task_id)
 
-    rows = await session.execute(
-        select(
-            TaskAssignment,
-            func.count(TaskSubmission.id),
-        )
-        .outerjoin(
-            TaskSubmission, TaskSubmission.assignment_id == TaskAssignment.id
-        )
+    sub_count_rows = await session.execute(
+        select(TaskAssignment.id, func.count(TaskSubmission.id))
+        .outerjoin(TaskSubmission, TaskSubmission.assignment_id == TaskAssignment.id)
         .where(TaskAssignment.task_id == task.id)
         .group_by(TaskAssignment.id)
-        .order_by(TaskAssignment.id)
+    )
+    sub_counts: dict[int, int] = {aid: count for aid, count in sub_count_rows.all()}
+
+    if task.type != "common":
+        rows = (
+            await session.execute(
+                select(TaskAssignment).where(TaskAssignment.task_id == task.id)
+            )
+        ).scalars().all()
+        users = {
+            u.id: u
+            for u in (
+                await session.execute(
+                    select(User).where(User.id.in_([a.user_id for a in rows]))
+                )
+            ).scalars().all()
+        }
+        signed = await presign_asset_urls(
+            session, {u.avatar_media_id for u in users.values() if u.avatar_media_id}
+        )
+        return [
+            AdminAssignmentOut(
+                assignment_id=a.id,
+                user_id=a.user_id,
+                display_name=(
+                    u.display_name if (u := users.get(a.user_id)) else f"#{a.user_id}"
+                ),
+                avatar_url=(avatar_url(u, signed) if (u := users.get(a.user_id)) else None),
+                status=a.status,
+                late=a.late,
+                reviewed_at=a.reviewed_at,
+                submission_count=sub_counts.get(a.id, 0),
+                deadline_at=effective_deadline(task, a),
+            )
+            for a in sorted(rows, key=lambda a: a.id)
+        ]
+
+    # common: полный ростер видящих + LEFT JOIN уже созданных назначений.
+    plan_ids = await _task_plan_ids(session, task.id)
+    filters: list[ColumnElement[bool]] = [
+        User.role == "participant",
+        User.is_observer.is_(False),
+    ]
+    if task.intake_id is not None:
+        filters.append(User.intake_id == task.intake_id)
+    if plan_ids:
+        filters.append(User.plan_id.in_(plan_ids))
+    participants = (
+        await session.execute(select(User).where(*filters).order_by(User.display_name))
+    ).scalars().all()
+    assignments_by_user = {
+        a.user_id: a
+        for a in (
+            await session.execute(
+                select(TaskAssignment).where(TaskAssignment.task_id == task.id)
+            )
+        ).scalars().all()
+    }
+    signed = await presign_asset_urls(
+        session, {u.avatar_media_id for u in participants if u.avatar_media_id}
     )
     return [
         AdminAssignmentOut(
-            assignment_id=a.id,
-            user_id=a.user_id,
-            status=a.status,
-            late=a.late,
-            reviewed_at=a.reviewed_at,
-            submission_count=count,
+            assignment_id=a.id if a else None,
+            user_id=u.id,
+            display_name=u.display_name,
+            avatar_url=avatar_url(u, signed),
+            status=a.status if a else None,
+            late=bool(a.late) if a else False,
+            reviewed_at=a.reviewed_at if a else None,
+            submission_count=sub_counts.get(a.id, 0) if a else 0,
+            deadline_at=effective_deadline(task, a),
         )
-        for a, count in rows.all()
+        for u in participants
+        for a in [assignments_by_user.get(u.id)]
     ]
+
+
+@router.patch("/{task_id}/assignments/{user_id}/deadline", response_model=AdminAssignmentOut)
+async def update_assignment_deadline(
+    task_id: int,
+    user_id: int,
+    body: AssignmentDeadlineUpdate,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> AdminAssignmentOut:
+    """Продлить (или снять override) дедлайн ОДНОМУ участнику общей задачи, не
+    трогая дедлайн остальных (ARG-133). Только для `type='common'` — у
+    individual/pair/stream дедлайн уже осмысленно один через саму задачу.
+
+    Если у участника ещё нет строки назначения (не сдавал) — создаём её здесь
+    же (лениво, как get_or_create_assignment), иначе продлевать было бы нечему.
+    """
+    task = await load_task(session, task_id)
+    if task.type != "common":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Персональный дедлайн доступен только для общих задач",
+        )
+    target = await session.get(User, user_id)
+    if target is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Пользователь не найден")
+
+    assignment = await get_or_create_assignment(session, task, target)
+    assignment.deadline_at = body.deadline_at
+    await session.flush()
+
+    submission_count = (
+        await session.scalar(
+            select(func.count())
+            .select_from(TaskSubmission)
+            .where(TaskSubmission.assignment_id == assignment.id)
+        )
+    ) or 0
+    signed = await presign_asset_urls(
+        session, {target.avatar_media_id} if target.avatar_media_id else set()
+    )
+    return AdminAssignmentOut(
+        assignment_id=assignment.id,
+        user_id=target.id,
+        display_name=target.display_name,
+        avatar_url=avatar_url(target, signed),
+        status=assignment.status,
+        late=assignment.late,
+        reviewed_at=assignment.reviewed_at,
+        submission_count=submission_count,
+        deadline_at=effective_deadline(task, assignment),
+    )
 
 
 # --- внутренние хелперы -----------------------------------------------------

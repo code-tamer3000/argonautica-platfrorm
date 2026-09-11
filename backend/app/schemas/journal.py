@@ -17,6 +17,14 @@ class RecentDay(BaseModel):
     status: DayStatus
 
 
+class OverdueTaskOut(BaseModel):
+    """Задача с прошедшим дедлайном, ещё не сданная/не принятая — см.
+    `services.tasks.overdue_tasks_for` и docs/TASKS.md."""
+    task_id: int
+    title: str
+    deadline_at: datetime
+
+
 class MyDynamicsOut(BaseModel):
     streak: int
     overdue_dates: list[date]
@@ -35,6 +43,12 @@ class MyDynamicsOut(BaseModel):
     # Сколько дней из 28-дневного периода набора уже закрыто (свои + зачтённые
     # админом) — для мини-статистики виджета на главной.
     closed_count: int = 0
+    # Просроченные задачи (дедлайн прошёл, не сдано/не принято) — рядом с
+    # пропусками дневника в блоке «Динамика» (ARG-130/ARG-128).
+    overdue_tasks: list[OverdueTaskOut] = Field(default_factory=list)
+    # Сдач после дедлайна с последнего входа/выхода из Междумирья
+    # (users.discipline_reset_at, NULL = с начала) — для попапа-предупреждения.
+    late_submissions_count: int = 0
 
 
 class UserDynamicsOut(BaseModel):
@@ -59,6 +73,14 @@ class UserDynamicsOut(BaseModel):
     # Экспедиция пройдена: строка остаётся в списке, но заморожена на дне выпуска
     # и помечена отдельно (в сводных счётчиках такой участник не учитывается).
     graduated_at: datetime | None = None
+    # Просроченные задачи и сдачи после дедлайна — та же метрика, что в
+    # MyDynamicsOut, но для админского обзора (агрегат, без списка задач).
+    overdue_tasks_count: int = 0
+    late_submissions_count: int = 0
+    # Кандидат на ручной перевод в Междумирье (ARG-132): тариф discipline_tracked
+    # И (просрочек задач >= 3 ИЛИ пропусков дневника >= 5). Только для подсветки
+    # кнопки в AdminDynamics — вход остаётся решением админа, не автоматикой.
+    limbo_eligible: bool = False
 
 
 class DynamicsSummary(BaseModel):
