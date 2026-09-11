@@ -355,6 +355,11 @@ class TaskAssignment(Base):
     late: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Персональный override дедлайна общей задачи для ЭТОГО участника (ARG-133).
+    # NULL — использовать tasks.deadline_at как есть. Только для common: у
+    # individual/pair/stream дедлайн уже осмысленно один на назначение через
+    # сам объект задачи, здесь для них не используется. См. effective_deadline_for.
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -347,6 +347,164 @@ async def test_late_flag_when_deadline_passed(
     assert got["late"] is True
 
 
+# --- ростер + персональный дедлайн (ARG-133) ---------------------------------
+
+
+async def test_common_roster_includes_non_submitters(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    submitter = await make_user(display_name="Сдал")
+    silent = await make_user(display_name="Молчит")
+    admin_h = await _headers(client, admin)
+    submitter_h = await _headers(client, submitter)
+
+    task = await _create_task(client, admin_h, type="common", title="Общая")
+    await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=submitter_h, json={"body": "hi"}
+    )
+
+    rows = (
+        await client.get(f"/api/tasks/{task['id']}/assignments", headers=admin_h)
+    ).json()
+    by_user = {r["user_id"]: r for r in rows}
+    assert submitter.id in by_user
+    assert by_user[submitter.id]["assignment_id"] is not None
+    assert by_user[submitter.id]["status"] == "submitted"
+    # Не сдавал — но всё равно в ростере, с пустым статусом и без строки назначения.
+    assert silent.id in by_user
+    assert by_user[silent.id]["assignment_id"] is None
+    assert by_user[silent.id]["status"] is None
+    assert by_user[silent.id]["display_name"] == "Молчит"
+
+
+async def test_extend_deadline_for_one_participant_only(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    slow = await make_user(display_name="Опаздывает")
+    other = await make_user(display_name="Другой")
+    admin_h = await _headers(client, admin)
+    slow_h = await _headers(client, slow)
+
+    past = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    future = (datetime.now(UTC) + timedelta(days=3)).isoformat()
+    task = await _create_task(
+        client, admin_h, type="common", title="С дедлайном", deadline_at=past
+    )
+
+    # Продлеваем срок только "slow" — до будущей даты.
+    updated = await client.patch(
+        f"/api/tasks/{task['id']}/assignments/{slow.id}/deadline",
+        headers=admin_h,
+        json={"deadline_at": future},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["deadline_at"] is not None
+
+    rows = {
+        r["user_id"]: r
+        for r in (
+            await client.get(f"/api/tasks/{task['id']}/assignments", headers=admin_h)
+        ).json()
+    }
+    # У другого участника дедлайн общий (задачный), не тронут продлением.
+    assert rows[other.id]["deadline_at"] == task["deadline_at"]
+    assert rows[other.id]["deadline_at"] != rows[slow.id]["deadline_at"]
+
+    # Сдача "slow" после ИЗНАЧАЛЬНОГО (прошедшего) дедлайна, но до продлённого —
+    # не считается поздней, потому что эффективный дедлайн для него сдвинут.
+    submitted = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=slow_h, json={"body": "вовремя"}
+    )
+    assert submitted.status_code == 201, submitted.text
+    got = (await client.get(f"/api/tasks/{task['id']}", headers=slow_h)).json()
+    assert got["late"] is False
+
+
+async def test_extend_deadline_rejected_for_non_common(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+
+    task = await _create_task(
+        client, admin_h, type="individual", title="Инд", assignee_ids=[user.id]
+    )
+    resp = await client.patch(
+        f"/api/tasks/{task['id']}/assignments/{user.id}/deadline",
+        headers=admin_h,
+        json={"deadline_at": None},
+    )
+    assert resp.status_code == 400
+
+
+async def test_extend_deadline_requires_admin(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    user = await make_user()
+    other = await make_user()
+    user_h = await _headers(client, user)
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+
+    task = await _create_task(client, admin_h, type="common", title="Общая")
+    resp = await client.patch(
+        f"/api/tasks/{task['id']}/assignments/{other.id}/deadline",
+        headers=user_h,
+        json={"deadline_at": None},
+    )
+    assert resp.status_code == 403
+
+
+# --- очередь ревью (ARG-134) --------------------------------------------------
+
+
+async def test_review_queue_lists_pending_submissions_across_tasks(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    a = await make_user(display_name="Первый")
+    b = await make_user(display_name="Второй")
+    admin_h = await _headers(client, admin)
+    a_h = await _headers(client, a)
+    b_h = await _headers(client, b)
+
+    task1 = await _create_task(client, admin_h, type="common", title="Задача 1")
+    task2 = await _create_task(
+        client, admin_h, type="individual", title="Задача 2", assignee_ids=[b.id]
+    )
+
+    await client.post(f"/api/tasks/{task1['id']}/submissions", headers=a_h, json={"body": "x"})
+    await client.post(f"/api/tasks/{task2['id']}/submissions", headers=b_h, json={"body": "y"})
+
+    queue = (await client.get("/api/admin/review-queue", headers=admin_h)).json()
+    ids = {(q["task_id"], q["user_id"]) for q in queue}
+    assert (task1["id"], a.id) in ids
+    assert (task2["id"], b.id) in ids
+
+    # Приняли одну — из очереди она пропадает.
+    row = next(q for q in queue if q["task_id"] == task1["id"])
+    await client.post(
+        f"/api/tasks/assignments/{row['assignment_id']}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    queue_after = (await client.get("/api/admin/review-queue", headers=admin_h)).json()
+    assert task1["id"] not in {q["task_id"] for q in queue_after}
+    assert task2["id"] in {q["task_id"] for q in queue_after}
+
+
+async def test_review_queue_requires_admin(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    user = await make_user()
+    user_h = await _headers(client, user)
+    resp = await client.get("/api/admin/review-queue", headers=user_h)
+    assert resp.status_code == 403
+
+
 # --- прогресс / внимание -----------------------------------------------------
 
 

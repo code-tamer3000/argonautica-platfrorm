@@ -20,6 +20,14 @@ class Plan(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
+    # Явный флаг: тариф входит в контур учёта дисциплины (просрочки задач,
+    # пропуски дневника, кандидат в Междумирье). Не выводится автоматически по
+    # цене/рангу — ранг тарифа внутри набора плавающий (cohort_plan_ranks в
+    # services/visibility.py), а это должно быть осознанным решением админа.
+    # См. docs/LIMBO.md.
+    discipline_tracked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

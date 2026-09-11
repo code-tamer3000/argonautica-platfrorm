@@ -296,6 +296,10 @@ class SubmissionOut(BaseModel):
     body: str | None
     created_at: datetime
     attachments: list[AttachmentOut] = []
+    # Сдано после дедлайна — и общий счётчик поздних сдач ПОСЛЕ этой (ARG-131),
+    # чтобы фронт сразу показал попап-предупреждение без второго запроса.
+    late: bool = False
+    late_submissions_count: int = 0
 
 
 class TaskTrackOut(BaseModel):
@@ -337,11 +341,45 @@ class TaskCommentOut(BaseModel):
 
 
 class AdminAssignmentOut(BaseModel):
-    """Строка админского экрана прогресса задачи."""
+    """Строка админского экрана прогресса задачи.
 
-    assignment_id: int
+    Для common (ARG-133) включает и тех, кому задача видна, но кто ещё не
+    сдавал — у них строки назначения ещё нет (ленивое создание), поэтому
+    `assignment_id`/`status`/`reviewed_at` — `None`, а `submission_count` — 0.
+    Для individual/pair/stream — только реально назначенные (видимость там уже
+    через явное членство, «пустых» строк не бывает)."""
+
+    assignment_id: int | None
     user_id: int
-    status: str
+    display_name: str
+    avatar_url: str | None = None
+    status: str | None
     late: bool
     reviewed_at: datetime | None
     submission_count: int
+    # Эффективный дедлайн (персональный override ?? дедлайн задачи) — ARG-133.
+    deadline_at: datetime | None = None
+
+
+class ReviewQueueItemOut(BaseModel):
+    """Строка админского раздела «Проверка» (ARG-134) — все сдачи в статусе
+    'submitted' по всем задачам сразу, отсортированные по дате сдачи (старые
+    первыми). Развернуть в трек со сдачами — отдельным запросом
+    GET /api/tasks/{task_id}/submissions (уже существующий, TaskTrackOut)."""
+
+    assignment_id: int
+    task_id: int
+    task_title: str
+    task_type: str
+    user_id: int
+    display_name: str
+    avatar_url: str | None = None
+    submitted_at: datetime
+    late: bool
+
+
+class AssignmentDeadlineUpdate(BaseModel):
+    """Персональный override дедлайна одному участнику общей задачи (ARG-133).
+    `null` — снять override, вернуться к общему дедлайну задачи."""
+
+    deadline_at: datetime | None

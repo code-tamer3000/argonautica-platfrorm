@@ -245,6 +245,30 @@
 .sectionTitleActive {
   color: var(--color-more-yar);
 }
+/* Ростер видящих общую задачу (ARG-133): все участники, включая ещё не сдавших. */
+.rosterList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.rosterRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--divider);
+  flex-wrap: wrap;
+}
+.rosterName {
+  font-family: var(--font-t2);
+  color: var(--text-primary);
+  margin-right: var(--space-2);
+}
+.rosterDeadline {
+  color: var(--text-muted);
+  font-size: var(--text-small);
+  margin-left: auto;
+}
 /* Заголовок сворачиваемой секции списка задач (индивидуальные, перекрёстные, истёкшие). */
 .sectionToggle {
   display: flex;
@@ -566,4 +590,14 @@
   .page { padding: var(--space-4); }
   .viewer { padding: var(--space-4); }
   .trackChips { margin-left: 0; width: 100%; }
+}
+
+/* Попап-предупреждение при поздней сдаче (ARG-131) — тот же текстовый стиль,
+   что у welcomeText/LimboPopup (features/app/appshell.module.css). */
+.lateWarningText {
+  margin: 0 0 var(--space-4);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  line-height: 1.5;
 }

@@ -1,8 +1,10 @@
 # Междумирье
 
-> Endpoints: `PATCH /api/admin/users/{id}` (trigger, via `plan_id`), `GET/PATCH /api/auth/me`
+> Endpoints: `PATCH /api/admin/users/{id}` (trigger, via `plan_id`), `POST
+> /api/admin/users/{id}/limbo` (explicit manual trigger, ARG-132), `GET/PATCH /api/auth/me`
 > (`limbo_deadline_at`). Tables: `users` (`limbo_previous_plan_id`, `limbo_deadline_at`,
-> `limbo_makeup_task_id`), `tasks`/`task_assignments` (the auto-created makeup task).
+> `limbo_makeup_task_id`, `discipline_reset_at`), `tasks`/`task_assignments` (the auto-created
+> makeup task), `plans.discipline_tracked` (which tariffs get discipline tracking at all).
 > See [ROOMS.md](ROOMS.md) "Tariff change cleanup" and [TASKS.md](TASKS.md) "Isolation by
 > intake and plan" for the plan-downgrade machinery this sits on top of.
 
@@ -29,6 +31,24 @@ If the participant is **already** in Междумирье when a new `plan_id` P
 target), the existing grace period is abandoned first — an admin acting again mid-window is
 treated as a manual decision, not something to wait out. Междумирье is then re-entered fresh
 only if that same PATCH also satisfies the trigger condition above.
+
+### Explicit manual trigger (ARG-132)
+
+`POST /api/admin/users/{id}/limbo` — a dedicated entry point, not just a side effect of
+editing the tariff field. Resolves the cheap plan by name, 400s if the participant is already
+on it (or has no plan at all — nothing to downgrade from), otherwise sets `plan_id` to it and
+runs the exact same `apply_plan_change` + `resync_dm_memberships_after_plan_change` pair that
+`PATCH /users/{id}` runs on a qualifying plan change. It also stamps `users.discipline_reset_at
+= now()` so the "late submissions" counter (see [TASKS.md](TASKS.md) "Просрочка задачи как
+метрика") starts a fresh cycle once the tariff is restored.
+
+Surfaced in the admin Dynamics screen (`AdminDynamics.tsx`) as a «Отправить в Междумирье»
+button, behind a confirm popup, shown only when the row's `limbo_eligible` (from
+`GET /api/admin/dynamics`) is true: the participant's tariff has `plans.discipline_tracked =
+true` **and** (≥3 overdue tasks **or** ≥5 missed diary days — `LIMBO_ELIGIBLE_OVERDUE_TASKS` /
+`LIMBO_ELIGIBLE_OVERDUE_DIARY_DAYS` in `api/dynamics.py`). The threshold only gates the button's
+visibility, not the endpoint itself — an admin can still call it on anyone eligible by the
+underlying downgrade rule above; there's no server-side re-check of the diary/task counts.
 
 ## What changes while in it
 

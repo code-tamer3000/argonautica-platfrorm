@@ -5,12 +5,15 @@ import DOMPurify from 'dompurify'
 import { format } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import {
+  useAdminAssignments,
   useCreateSubmissionComment,
   useDeleteTaskComment,
   useReview,
   useSubmissionComments,
   useTask,
   useTaskSubmissions,
+  useUpdateAssignmentDeadline,
+  type AdminAssignmentOut,
   type SubmissionOut,
   type TaskTrackOut,
   type TaskType,
@@ -30,7 +33,103 @@ import { Attachment } from '../chat/Attachment'
 import { PairPanel } from './PairPanel'
 import { StreamPanel } from './stream/StreamPanel'
 import { TaskComposer } from './TaskComposer'
+import { isoToLocalInput, localInputToIso } from './TaskForm'
 import styles from './tasks.module.css'
+
+const ROSTER_STATUS_LABEL: Record<string, string> = {
+  assigned: 'Назначена',
+  submitted: 'На проверке',
+  returned: 'Возвращена',
+  accepted: 'Принята',
+}
+
+// Полный ростер видящих общую задачу (не только тех, у кого уже есть строка
+// назначения) + продление срока одному конкретному участнику (ARG-133).
+function RosterSection({ taskId }: { taskId: number }) {
+  const { data: rows = [], isLoading } = useAdminAssignments(taskId)
+  const updateDeadline = useUpdateAssignmentDeadline(taskId)
+  const [editingUserId, setEditingUserId] = useState<number | null>(null)
+  const [draft, setDraft] = useState('')
+
+  if (isLoading) return null
+  if (rows.length === 0) return null
+
+  function startEdit(row: AdminAssignmentOut) {
+    setEditingUserId(row.user_id)
+    setDraft(isoToLocalInput(row.deadline_at))
+  }
+
+  function save(userId: number) {
+    updateDeadline.mutate(
+      { userId, deadlineAt: localInputToIso(draft) },
+      {
+        onSuccess: () => {
+          toast('Срок обновлён')
+          setEditingUserId(null)
+        },
+        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+      },
+    )
+  }
+
+  function resetToTaskDeadline(userId: number) {
+    updateDeadline.mutate(
+      { userId, deadlineAt: null },
+      {
+        onSuccess: () => toast('Срок сброшен к общему'),
+        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+      },
+    )
+  }
+
+  return (
+    <section className={styles.section}>
+      <h3 className={styles.sectionTitle}>Участники ({rows.length})</h3>
+      <div className={styles.rosterList}>
+        {rows.map((row) => (
+          <div key={row.user_id} className={styles.rosterRow}>
+            <Avatar url={row.avatar_url} name={row.display_name} size={28} />
+            <span className={styles.rosterName}>{row.display_name}</span>
+            <Chip kind={row.status === 'accepted' ? 'accepted' : row.status === 'returned' ? 'returned' : 'neutral'}>
+              {row.status ? ROSTER_STATUS_LABEL[row.status] ?? row.status : 'Не сдавал'}
+            </Chip>
+            {row.late && <Chip kind="late">Сдано позже</Chip>}
+            {editingUserId === row.user_id ? (
+              <>
+                <input
+                  className={styles.composerInput}
+                  type="datetime-local"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                />
+                <Button variant="outline" onClick={() => save(row.user_id)} disabled={updateDeadline.isPending}>
+                  Сохранить
+                </Button>
+                <Button variant="outline" onClick={() => setEditingUserId(null)}>
+                  Отмена
+                </Button>
+              </>
+            ) : (
+              <>
+                <span className={styles.rosterDeadline}>
+                  {row.deadline_at ? dateTimeMsk(row.deadline_at) : 'без срока'}
+                </span>
+                <Button variant="outline" onClick={() => startEdit(row)}>
+                  Продлить срок
+                </Button>
+                {row.deadline_at && (
+                  <Button variant="outline" onClick={() => resetToTaskDeadline(row.user_id)}>
+                    Сбросить
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
 
 const TYPE_LABEL: Record<TaskType, string> = {
   common: 'Общая',
@@ -130,6 +229,10 @@ export function TaskDetail() {
           ))}
         </div>
       )}
+
+      {/* Ростер видящих общую задачу для админа (ARG-133) — кто сдал/не сдал,
+          продление срока одному конкретному участнику. */}
+      {isAdmin && task.type === 'common' && <RosterSection taskId={id} />}
 
       {/* Парное задание: панель пары(-ей) вместо стандартной сдачи/треков.
           Сама сдача/приёмка живёт в перекрёстных задачах (открываются по ссылке). */}
@@ -282,7 +385,9 @@ function TracksSection({
   )
 }
 
-function TrackCard({
+// Экспортирован — переиспользуется в AdminReview.tsx (раздел «Проверка», ARG-134),
+// чтобы не дублировать разметку/логику приёма-возврата сдачи.
+export function TrackCard({
   track,
   taskId,
   isAdmin,
