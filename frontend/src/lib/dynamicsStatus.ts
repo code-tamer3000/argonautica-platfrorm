@@ -19,7 +19,7 @@ export const DAY_STATUS_TEXT: Record<DayStatus, string> = {
   closed: 'Выполнено',
   credited: 'Зачтено',
   missed: 'Пропущено',
-  pardoned: 'Помиловано',
+  pardoned: 'Плавал с китами',
   partial: 'Частично выполнено',
   today_open: 'Сегодня',
   today_closed: 'Сегодня ✓',

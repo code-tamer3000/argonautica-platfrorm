@@ -118,7 +118,7 @@ export function DynamicsCalendar() {
       <div className={styles.calendarLegend}>
         <span><i className={`${styles.legendDot} ${styles.dayCellDone}`} /> Выполнено</span>
         <span><i className={`${styles.legendDot} ${styles.dayCellPartial}`} /> Частично</span>
-        <span><i className={`${styles.legendDot} ${styles.dayCellPardoned}`} /> Помиловано</span>
+        <span><i className={`${styles.legendDot} ${styles.dayCellPardoned}`} /> Плавал с китами</span>
         <span><i className={`${styles.legendDot} ${styles.dayCellMissed}`} /> Пропущено</span>
       </div>
       {openDay && <DayDetails day={openDay} onClose={() => setOpenDay(null)} />}

@@ -131,8 +131,8 @@ export function NotificationsSection() {
   const masterOn = prefs.push_enabled && subscribed
 
   return (
-    <div className={styles.settingCard}>
-      <h2 className={styles.settingTitle}>Уведомления</h2>
+    <div className={styles.settingSubsection}>
+      <h3 className={styles.settingSubTitle}>Уведомления</h3>
 
       {!support.supported ? (
         <div className={styles.notifNote}>
