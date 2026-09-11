@@ -8,7 +8,17 @@
   gap: var(--space-5);
 }
 
-/* ── Шапка профиля ── */
+/* ── О себе: шапка + форма редактирования в одной карточке ── */
+.aboutCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
 .header {
   display: flex;
   align-items: flex-start;
@@ -159,6 +169,27 @@
   font-family: var(--font-t1);
   font-size: 18px;
   color: var(--text-secondary);
+  margin: 0;
+}
+
+.settingSubsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--divider);
+}
+.settingSubsection:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.settingSubTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-label);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--text-ghost);
   margin: 0;
 }
 
@@ -442,12 +473,6 @@
   font-family: var(--font-t4);
   color: var(--text-ghost);
   margin-left: var(--space-1);
-}
-
-.dynPartialNote {
-  margin: 0;
-  font-size: var(--text-label-md);
-  color: #ed8936;
 }
 
 /* ── Мобила ── */
