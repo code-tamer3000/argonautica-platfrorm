@@ -284,13 +284,12 @@
 }
 
 /* Панель возврата на доработку: комментарий проверяющего сверху (самое важное),
-   прошлая сдача — под ним, свёрнута. Полоска нейтральная (--stone), не тревожная —
-   тот же принцип, что у чипа «Возвращена». */
+   прошлая сдача — под ним, свёрнута. Ровная рамка + лёгкая тонировка --stone
+   (не полоса-акцент сбоку) — тот же неброский принцип, что у чипа «Возвращена». */
 .returnedPanel {
   border: 1px solid var(--divider);
-  border-left: 3px solid var(--stone);
   border-radius: var(--radius-card);
-  background: var(--bg-surface);
+  background: color-mix(in srgb, var(--stone) 6%, var(--bg-surface));
   padding: var(--space-4);
   margin-bottom: var(--space-4);
 }
