@@ -206,6 +206,21 @@ Endpoints live under `/api/tasks/{task_id}/pairs/...`.
 WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submission_status`, `task.comment_new` (see the event list in [MESSAGES.md](MESSAGES.md)). Pair mutations (meeting, member replace, pair delete) fan out `task.updated` on the parent pair-task; no dedicated pair/meeting events. Stream mutations (текст, вариант, голос, продавленная фраза, переход стадии) — тоже `task.updated` на родительскую задачу; отдельных stream-событий нет. Плюс `room.created` на членов узла, когда сервер завёл комнату подгруппы, и
 `room.closed` — когда фраза узла утверждена и комната закрылась.
 
+## Dashboard widget
+
+The landing screen (`GET /api/dashboard`, see [EXPEDITION.md](EXPEDITION.md)) shows a
+"Задания экспедиции" card (`frontend/src/features/dashboard/TasksCard.tsx`) right after
+the "Сегодня" card — a progress ring (`tasks_progress`, same numbers as `GET /api/tasks`)
+plus the same up-to-5 `active_tasks` list already used elsewhere, but each row shows a
+relative countdown ("сегодня" / "завтра" / "через N дней" / "без срока") instead of a
+calendar date. Deliberately positive tone: an overdue task reads as "срок прошёл · ещё
+можно сдать" in muted text, never red — the only accent on the card is a thin gold rule
+plus the existing `soon` chip on rows where `deadline_soon` is true. A task the user has
+already submitted (`my_status == 'submitted'`) doesn't appear in the row list (there's
+nothing to *do*) but is counted separately in `tasks_in_review` and surfaced as "На
+проверке: N — ждём ответа" so it doesn't look forgotten. No new tables, no push/scheduler
+— purely a read-side reshuffle of numbers `list_tasks()` already computes.
+
 ## Frontend note
 
 Task create/edit (admin) and participant submission share `components/MediaComposer.tsx` (markdown textarea + upload-with-progress + pending chips). See [FRONTEND.md](FRONTEND.md).

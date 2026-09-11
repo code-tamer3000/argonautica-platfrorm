@@ -12,6 +12,7 @@ import type { Element } from '../../lib/types'
 import { plural } from '../../lib/format'
 import { ExpeditionWheel } from './ExpeditionWheel'
 import { LockDialog } from './LockDialog'
+import { TasksCard } from './TasksCard'
 import { stageName } from './wheelGeometry'
 import styles from './dashboard.module.css'
 
@@ -110,6 +111,14 @@ export function DashboardScreen() {
             </Card>
           )}
 
+          {(!user || user.role !== 'admin') && (
+            <TasksCard
+              activeTasks={data.active_tasks}
+              progress={data.tasks_progress}
+              inReview={data.tasks_in_review}
+            />
+          )}
+
           {data.news_preview && (
             <Card>
               <div className={styles.cardHead}>
@@ -152,37 +161,6 @@ export function DashboardScreen() {
               </div>
             </Card>
           )}
-
-          {!user || user.role !== 'admin' ? (
-            <Card>
-              <div className={styles.cardHead}>
-                <h3>Активные задания</h3>
-                <span className={styles.cardHeadSpacer} />
-                <Link to="/tasks" className={styles.cardMore}>
-                  Все задачи
-                </Link>
-              </div>
-              {data.active_tasks.length === 0 ? (
-                <EmptyState size="inline">Активных заданий нет.</EmptyState>
-              ) : (
-                <div className={styles.list}>
-                  {data.active_tasks.map((t) => (
-                    <Link key={t.id} to={`/tasks/${t.id}`} className={styles.item}>
-                      <span className={styles.itemWhen}>
-                        {t.deadline_at ? fmtShort(t.deadline_at) : 'без срока'}
-                      </span>
-                      <span className={styles.itemBody}>
-                        <span className={styles.itemTitle}>{t.title}</span>
-                        <span className={styles.itemMeta}>
-                          {t.my_status === 'returned' ? 'вернули на доработку' : 'не сдано'}
-                        </span>
-                      </span>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </Card>
-          ) : null}
 
           <Card>
             <div className={styles.cardHead}>
