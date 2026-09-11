@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react'
 import styles from './chip.module.css'
 
-export type ChipKind = 'neutral' | 'accepted' | 'returned' | 'soon' | 'late' | 'unreviewed'
+export type ChipKind = 'neutral' | 'accepted' | 'returned' | 'soon' | 'overdue' | 'late' | 'unreviewed'
 
 interface Props extends HTMLAttributes<HTMLSpanElement> {
   kind?: ChipKind

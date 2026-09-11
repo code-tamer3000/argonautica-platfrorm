@@ -214,12 +214,20 @@ the "Сегодня" card — a progress ring (`tasks_progress`, same numbers as
 plus the same up-to-5 `active_tasks` list already used elsewhere, but each row shows a
 relative countdown ("сегодня" / "завтра" / "через N дней" / "без срока") instead of a
 calendar date. Deliberately positive tone: an overdue task reads as "срок прошёл · ещё
-можно сдать" in muted text, never red — the only accent on the card is a thin gold rule
-plus the existing `soon` chip on rows where `deadline_soon` is true. A task the user has
-already submitted (`my_status == 'submitted'`) doesn't appear in the row list (there's
-nothing to *do*) but is counted separately in `tasks_in_review` and surfaced as "На
-проверке: N — ждём ответа" so it doesn't look forgotten. No new tables, no push/scheduler
-— purely a read-side reshuffle of numbers `list_tasks()` already computes.
+можно сдать" in muted text, never red.
+
+Rows that need attention — returned, overdue, or `deadline_soon` — get a thin gold rule
+(`.itemFlag`) and are sorted to the top of the (already ≤ 5-item) list, in that priority
+order (returned first: it's a direct action from someone, not just a ticking clock);
+within the same priority the original `list_tasks()` order is kept (stable sort). Each
+still gets a chip, but the chip is the only place colour carries meaning: `returned`
+reuses the same blood-toned chip already shown on `/tasks` for that status (consistency,
+not a new alarm colour); `overdue` and `soon` both use the calm teal `--color-more` chip
+— overdue is *not* redder than "подходит срок", on purpose. A task the user has already
+submitted (`my_status == 'submitted'`) doesn't appear in the row list (there's nothing to
+*do*) but is counted separately in `tasks_in_review` and surfaced as "На проверке: N —
+ждём ответа" so it doesn't look forgotten. No new tables, no push/scheduler — purely a
+read-side reshuffle of numbers `list_tasks()` already computes.
 
 ## Frontend note
 

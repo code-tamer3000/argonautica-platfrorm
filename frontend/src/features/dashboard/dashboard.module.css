@@ -425,7 +425,10 @@
   color: var(--text-secondary);
 }
 
-.itemSoon {
+/* Задача требует внимания (возвращена / просрочена / горит срок) — структурный
+   акцент (полоска + порядок в списке), а не цвет тревоги: цвет несёт только чип
+   рядом (Chip kind="returned"/"overdue"/"soon"), сама строка везде на золоте. */
+.itemFlag {
   border-left: 2px solid var(--accent);
   padding-left: var(--space-2);
   margin-left: calc(var(--space-2) * -1);

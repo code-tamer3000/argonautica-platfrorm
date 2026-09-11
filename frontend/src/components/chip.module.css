@@ -31,6 +31,13 @@
   color: var(--color-more-yar);
 }
 
+/* Просрочено, но ещё не сдано — тот же тёплый акцент, что «Подходит срок»
+   (не паникуем цветом на самой просрочке), только для другого триггера. */
+.overdue {
+  border-color: var(--color-more);
+  color: var(--color-more-yar);
+}
+
 .late {
   border-color: var(--divider);
   color: var(--text-muted);
