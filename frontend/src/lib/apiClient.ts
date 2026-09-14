@@ -42,6 +42,12 @@ async function parseBody(res: Response): Promise<unknown> {
   }
 }
 
+// Без этого зависшее (не рвущееся ошибкой) TCP/TLS-соединение — например,
+// при throttling'е внешних хостов на некоторых российских провайдерах —
+// вешает fetch навсегда, и промис не резолвится и не реджектится: спиннер
+// крутится вечно вместо понятной ошибки.
+const REQUEST_TIMEOUT_MS = 15_000
+
 async function rawRequest(path: string, init: RequestInit, auth: boolean): Promise<Response> {
   const headers = new Headers(init.headers)
   if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
@@ -51,12 +57,16 @@ async function rawRequest(path: string, init: RequestInit, auth: boolean): Promi
     const token = getAccessToken()
     if (token) headers.set('Authorization', `Bearer ${token}`)
   }
+  const timeoutController = new AbortController()
+  const timer = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS)
   try {
-    return await fetch(path, { ...init, headers })
+    return await fetch(path, { ...init, headers, signal: timeoutController.signal })
   } catch (err) {
-    // fetch реджектится только когда запрос не долетел (сеть/CORS/abort),
+    // fetch реджектится только когда запрос не долетел (сеть/CORS/abort/таймаут),
     // а не на HTTP-ошибках — это всегда сетевой сбой.
     throw new NetworkError(err)
+  } finally {
+    clearTimeout(timer)
   }
 }
 
