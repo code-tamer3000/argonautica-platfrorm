@@ -105,6 +105,13 @@ class User(Base):
     limbo_makeup_task_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("tasks.id")
     )
+    # Точка отсчёта для счётчика «сдач после дедлайна» (ARG-130/ARG-128):
+    # NULL = считать с начала; выставляется в момент входа/выхода из Междумирье
+    # (services/limbo.py), чтобы предупреждение «ещё N раз — и Междумирье»
+    # каждый раз отсчитывалось заново, а не копило штрафы бесконечно.
+    discipline_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     # Настройки кабинета (тема, предпочтения) — без миграций под новые ключи.
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default="{}"

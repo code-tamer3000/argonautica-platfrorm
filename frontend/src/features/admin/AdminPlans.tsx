@@ -18,6 +18,7 @@ interface PlanFormValues {
   price: string
   description: string
   is_active: boolean
+  discipline_tracked: boolean
 }
 
 interface PlanFormProps {
@@ -30,10 +31,19 @@ function PlanForm({ initial, onSubmit }: PlanFormProps) {
   const [price, setPrice] = useState(initial ? String(initial.price) : '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [isActive, setIsActive] = useState(initial?.is_active ?? true)
+  const [disciplineTracked, setDisciplineTracked] = useState(
+    initial?.discipline_tracked ?? false,
+  )
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    onSubmit({ name, price, description, is_active: isActive })
+    onSubmit({
+      name,
+      price,
+      description,
+      is_active: isActive,
+      discipline_tracked: disciplineTracked,
+    })
   }
 
   return (
@@ -75,6 +85,14 @@ function PlanForm({ initial, onSubmit }: PlanFormProps) {
         />{' '}
         Предлагается в интейк-боте (не влияет на видимость на платформе)
       </label>
+      <label className={styles.label}>
+        <input
+          type="checkbox"
+          checked={disciplineTracked}
+          onChange={(e) => setDisciplineTracked(e.target.checked)}
+        />{' '}
+        Учитывать дисциплину (просрочки задач, пропуски дневника — кандидат в Междумирье)
+      </label>
       <div className={styles.formActions}>
         <Button type="submit">Сохранить</Button>
       </div>
@@ -98,6 +116,7 @@ export function AdminPlans() {
         price: Number(values.price) || 0,
         description: values.description,
         is_active: values.is_active,
+        discipline_tracked: values.discipline_tracked,
       },
       {
         onSuccess: () => {
@@ -119,6 +138,7 @@ export function AdminPlans() {
         price: Number(values.price) || 0,
         description: values.description,
         is_active: values.is_active,
+        discipline_tracked: values.discipline_tracked,
       },
       {
         onSuccess: () => {
@@ -158,6 +178,7 @@ export function AdminPlans() {
                 <span className={styles.listTitle}>
                   {plan.name} — {plan.price.toLocaleString('ru-RU')} ₽
                   {!plan.is_active && ' (не предлагается в боте)'}
+                  {plan.discipline_tracked && ' · дисциплина'}
                 </span>
                 <span className={styles.listMeta}>#{plan.id}</span>
               </div>

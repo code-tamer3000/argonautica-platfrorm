@@ -33,7 +33,7 @@ from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
-from app.models.task import TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
+from app.models.task import Task, TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
 from app.models.user import User
 from app.schemas.expedition import AdminExpeditionLockOut, Element, StageOut, StagesUpdate
 from app.schemas.feedback import (
@@ -62,6 +62,7 @@ from app.schemas.survey import (
     SurveyOverviewOut,
     SurveyRowOut,
 )
+from app.schemas.task import ReviewQueueItemOut
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -70,10 +71,12 @@ from app.schemas.user import (
     UserOut,
 )
 from app.services.limbo import apply_plan_change
+from app.services.media import presign_asset_urls
 from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
 from app.services.survey_form import question_form
+from app.services.users import avatar_url
 from app.services.visibility import CHEAP_TARIFF_NAME
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
@@ -316,6 +319,7 @@ async def create_plan(
         price=body.price,
         description=body.description,
         is_active=body.is_active,
+        discipline_tracked=body.discipline_tracked,
     )
     session.add(plan)
     await session.flush()
@@ -518,6 +522,54 @@ async def update_user(
         # отработку прошлых задач + допзадание, см. docs/LIMBO.md); если юзер уже
         # был в Междумирье, эта же смена его снимает (админ решил вручную).
         await apply_plan_change(session, current_admin, user, old_plan_id)
+    return user
+
+
+@router.post("/users/{user_id}/limbo", response_model=UserOut)
+async def send_to_limbo(
+    user_id: int,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> User:
+    """Явный ручной вход в Междумирье (ARG-132) — из кнопки в AdminDynamics, а
+    не как побочный эффект смены тарифа через PATCH /users/{id}. Переиспользует
+    тот же `apply_plan_change`, что и PATCH: только источник события другой
+    (кнопка «Отправить в Междумирье», а не форма редактирования тарифа).
+
+    Требует, чтобы участник реально понижался (платный тариф → «Наблюдатель») —
+    та же логика, что решает `apply_plan_change`; иначе отказ 400, чтобы админ
+    не думал, что что-то произошло, когда на самом деле ничего не изменилось.
+    """
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+
+    old_plan_id = user.plan_id
+    cheap_plan_id = await session.scalar(
+        select(Plan.id).where(Plan.name == CHEAP_TARIFF_NAME).limit(1)
+    )
+    if cheap_plan_id is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Самый дешёвый тариф не заведён"
+        )
+    already_cheap = old_plan_id is not None and await session.scalar(
+        select(exists().where(Plan.id == old_plan_id, Plan.name == CHEAP_TARIFF_NAME))
+    )
+    if old_plan_id is None or already_cheap:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Участник уже на самом дешёвом тарифе или без тарифа — понижать некуда",
+        )
+
+    user.plan_id = cheap_plan_id
+    user.updated_at = datetime.now(UTC)
+    await session.flush()
+    await resync_dm_memberships_after_plan_change(session, user)
+    await apply_plan_change(session, current_admin, user, old_plan_id)
+    # Новый цикл штрафов «до Междумирья» отсчитывается заново (см.
+    # late_submissions_count в services/tasks.py) — прошлые поздние сдачи не
+    # должны тянуться в следующий заход на восстановленном тарифе.
+    user.discipline_reset_at = datetime.now(UTC)
     return user
 
 
@@ -747,6 +799,57 @@ async def admin_dynamics(
     выборке, что и список: фильтр меняет и её.
     """
     return await get_all_dynamics(session, intake_id, plan_id)
+
+
+@router.get("/review-queue", response_model=list[ReviewQueueItemOut])
+async def review_queue(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[ReviewQueueItemOut]:
+    """Все сдачи в статусе 'submitted' по ВСЕМ задачам сразу (ARG-134) — один
+    экран вместо обхода карточек задач по очереди. `submitted_at` — момент
+    последней сдачи трека (той, что и поставила статус 'submitted'), сортировка
+    по нему по возрастанию (старые ожидающие — первыми).
+    """
+    latest_submission_at = (
+        select(func.max(TaskSubmission.created_at))
+        .where(TaskSubmission.assignment_id == TaskAssignment.id)
+        .correlate(TaskAssignment)
+        .scalar_subquery()
+    )
+    rows = (
+        await session.execute(
+            select(
+                TaskAssignment,
+                Task.id,
+                Task.title,
+                Task.type,
+                User,
+                latest_submission_at.label("submitted_at"),
+            )
+            .join(Task, Task.id == TaskAssignment.task_id)
+            .join(User, User.id == TaskAssignment.user_id)
+            .where(TaskAssignment.status == "submitted", Task.deleted_at.is_(None))
+            .order_by(latest_submission_at.asc())
+        )
+    ).all()
+
+    signed = await presign_asset_urls(
+        session, {u.avatar_media_id for _a, _tid, _tt, _ty, u, _s in rows if u.avatar_media_id}
+    )
+    return [
+        ReviewQueueItemOut(
+            assignment_id=a.id,
+            task_id=task_id,
+            task_title=task_title,
+            task_type=task_type,
+            user_id=u.id,
+            display_name=u.display_name,
+            avatar_url=avatar_url(u, signed),
+            submitted_at=submitted_at,
+            late=a.late,
+        )
+        for a, task_id, task_title, task_type, u, submitted_at in rows
+    ]
 
 
 @router.get("/dynamics/{user_id}/days", response_model=list[RecentDay])

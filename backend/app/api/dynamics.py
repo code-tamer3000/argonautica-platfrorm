@@ -29,11 +29,13 @@ from app.schemas.journal import (
     JournalSectionOut,
     JournalStructureOut,
     MyDynamicsOut,
+    OverdueTaskOut,
     PardonRequest,
     RecentDay,
     UserDynamicsOut,
 )
 from app.services.media import presign_asset_urls
+from app.services.tasks import late_submissions_count, overdue_tasks_for
 from app.services.users import avatar_url
 
 
@@ -56,6 +58,14 @@ router = APIRouter(
 )
 
 MAX_PARDONS = 3
+
+# Пороги подсветки кандидата в Междумирье для админа (ARG-132/ARG-128
+# «Готово, когда»): ЛЮБОЕ из двух условий (ИЛИ), только на discipline_tracked
+# тарифе. Тот же порог задач синхронен с LATE_SUBMISSIONS_LIMIT на фронте
+# (TaskComposer.tsx) — это разные метрики (просрочка vs поздняя сдача), но оба
+# отсчитывают «до Междумирья», держим числа согласованными намеренно.
+LIMBO_ELIGIBLE_OVERDUE_TASKS = 3
+LIMBO_ELIGIBLE_OVERDUE_DIARY_DAYS = 5
 PROGRAM_DAYS = 28
 # Окно вокруг сегодня: 5 прошлых + сегодня + 3 будущих = 9 ячеек.
 WINDOW_PAST = 5
@@ -455,6 +465,8 @@ async def get_my_stats(
         per_day, pardons, program_start, timeline, credits, today=window_closed_on
     )
     program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    overdue_tasks = await overdue_tasks_for(session, current_user)
+    late_count = await late_submissions_count(session, current_user)
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -466,6 +478,11 @@ async def get_my_stats(
         window_closed=window_closed_on is not None,
         partial_count=len(stats["partial_dates"]),
         closed_count=sum(1 for d in stats["closed_days"] if program_start <= d <= program_end),
+        overdue_tasks=[
+            OverdueTaskOut(task_id=tid, title=title, deadline_at=deadline)
+            for tid, title, deadline in overdue_tasks
+        ],
+        late_submissions_count=late_count,
     )
 
 
@@ -778,7 +795,7 @@ async def get_all_dynamics(
     intake_ends = await load_intake_ends(session)
 
     stmt = (
-        select(User, Plan.name)
+        select(User, Plan.name, Plan.discipline_tracked)
         .outerjoin(Plan, Plan.id == User.plan_id)
         .where(User.role == "participant")
     )
@@ -789,6 +806,11 @@ async def get_all_dynamics(
     rows = (await session.execute(stmt.order_by(User.display_name))).all()
     participants = [row[0] for row in rows]
     plan_name_by_user: dict[int, str | None] = {row[0].id: row[1] for row in rows}
+    # Тариф отмечен как «учитывать дисциплину» (ARG-129) — только на нём кандидат
+    # может быть подсвечен для ручного перевода в Междумирье (ARG-132).
+    discipline_tracked_by_user: dict[int, bool] = {
+        row[0].id: bool(row[2]) for row in rows
+    }
 
     if not participants:
         return AdminDynamicsOut(
@@ -899,6 +921,12 @@ async def get_all_dynamics(
             partial=set(stats["partial_dates"]),
         )
         journal_today = graduated_on is None and today in stats["closed_days"]
+        overdue_tasks = await overdue_tasks_for(session, user)
+        late_count = await late_submissions_count(session, user)
+        limbo_eligible = discipline_tracked_by_user.get(user.id, False) and (
+            len(overdue_tasks) >= LIMBO_ELIGIBLE_OVERDUE_TASKS
+            or len(stats["overdue_dates"]) >= LIMBO_ELIGIBLE_OVERDUE_DIARY_DAYS
+        )
         users_out.append(
             UserDynamicsOut(
                 user_id=user.id,
@@ -916,6 +944,9 @@ async def get_all_dynamics(
                 intake_id=user.intake_id,
                 plan_id=user.plan_id,
                 plan_name=plan_name_by_user.get(user.id),
+                overdue_tasks_count=len(overdue_tasks),
+                late_submissions_count=late_count,
+                limbo_eligible=limbo_eligible,
             )
         )
 

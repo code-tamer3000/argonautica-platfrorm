@@ -292,3 +292,65 @@ async def test_limbo_popup_dismiss_resets_on_next_entry(
     me = (await client.get("/api/auth/me", headers=user_h)).json()
     assert me["limbo_deadline_at"] is not None
     assert me["settings"].get("limbo_popup_dismissed") is False
+
+
+# --- ручной вход через POST /users/{id}/limbo (ARG-132) ----------------------
+
+
+async def test_manual_limbo_endpoint_downgrades_and_starts_grace_period(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    _admin, admin_h, user, _plan_paid, _plan_cheap, _ = await _setup(client, make_user)
+
+    resp = await client.post(f"/api/admin/users/{user.id}/limbo", headers=admin_h)
+    assert resp.status_code == 200, resp.text
+
+    user_h = await _headers(client, user)
+    me = (await client.get("/api/auth/me", headers=user_h)).json()
+    assert me["limbo_deadline_at"] is not None
+
+    # Сравниваем по ИМЕНИ тарифа, не по id: `plans.name` не уникален (каждый
+    # тестовый файл заводит свой одноимённый «Наблюдатель», см. предостережение
+    # в _plan_is_cheap/services/limbo.py) — эндпоинт резолвит "какой-то" тариф
+    # с этим именем, не обязательно именно тот, что создал этот тест.
+    admin_users = (await client.get("/api/admin/users", headers=admin_h)).json()
+    row = next(u for u in admin_users if u["id"] == user.id)
+    assert row["plan_name"] == "Наблюдатель"
+
+    tasks = (await client.get("/api/tasks", headers=user_h)).json()["items"]
+    makeup = next((t for t in tasks if t["title"] == MAKEUP_TASK_TITLE), None)
+    assert makeup is not None
+
+
+async def test_manual_limbo_rejected_if_already_cheapest(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin, admin_h, user, _plan_paid, plan_cheap, _ = await _setup(client, make_user)
+    await client.patch(
+        f"/api/admin/users/{user.id}", headers=admin_h, json={"plan_id": plan_cheap}
+    )
+
+    resp = await client.post(f"/api/admin/users/{user.id}/limbo", headers=admin_h)
+    assert resp.status_code == 400
+
+
+async def test_manual_limbo_rejected_without_plan(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin, admin_h, user, _plan_paid, _plan_cheap, _ = await _setup(client, make_user)
+    await client.patch(
+        f"/api/admin/users/{user.id}", headers=admin_h, json={"plan_id": None}
+    )
+
+    resp = await client.post(f"/api/admin/users/{user.id}/limbo", headers=admin_h)
+    assert resp.status_code == 400
+
+
+async def test_manual_limbo_requires_admin(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin, admin_h, user, *_ = await _setup(client, make_user)
+    user_h = await _headers(client, user)
+
+    resp = await client.post(f"/api/admin/users/{admin.id}/limbo", headers=user_h)
+    assert resp.status_code == 403

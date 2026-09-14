@@ -8,7 +8,7 @@
 """
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import ColumnElement, func, or_, select
@@ -24,6 +24,7 @@ from app.models.task import (
     TaskPairMember,
     TaskPlan,
     TaskStreamNodeMember,
+    TaskSubmission,
 )
 from app.models.user import User
 from app.services import stream as stream_service
@@ -304,11 +305,20 @@ async def get_or_create_assignment(
     return assignment
 
 
-def deadline_soon(task: Task, now: datetime, days: int) -> bool:
+def deadline_soon(deadline_at: datetime | None, now: datetime, days: int) -> bool:
     """«Горит» ли дедлайн: задан и наступает в пределах `days` (и ещё не прошёл)."""
-    if task.deadline_at is None:
+    if deadline_at is None:
         return False
-    return now <= task.deadline_at <= now + timedelta(days=days)
+    return now <= deadline_at <= now + timedelta(days=days)
+
+
+def effective_deadline(task: Task, assignment: TaskAssignment | None) -> datetime | None:
+    """Дедлайн для конкретного назначения: персональный override
+    (`task_assignments.deadline_at`, только у common — ARG-133), иначе дедлайн
+    самой задачи как есть."""
+    if assignment is not None and assignment.deadline_at is not None:
+        return assignment.deadline_at
+    return task.deadline_at
 
 
 # --- синхронизация дедлайн-события календаря --------------------------------
@@ -565,3 +575,111 @@ async def attention_count(session: AsyncSession, user: User) -> int:
     ) or 0
 
     return active_assignments + new_common
+
+
+# --- дисциплина: просрочки задач (ARG-130/ARG-128) ---------------------------
+
+# Дедлайны раньше этой даты не считаются просрочкой ни для кого — иначе выкат
+# фичи разом подсветил бы всю историю задач с уже прошедшим сроком. Значение —
+# дата выката; в отличие от `journal_program_start` (Динамика, per-intake) эта
+# константа глобальна: просрочка задачи не привязана к дате старта набора.
+OVERDUE_TASKS_SINCE = datetime(2026, 9, 11, tzinfo=UTC)
+
+# Статусы назначения, которые всё ещё считаются просрочкой при прошедшем
+# дедлайне — 'submitted'/'accepted' уже не просрочка (что-то сдано и рассмотрено
+# независимо от исхода 'submitted'; принято — тем более).
+_OVERDUE_ASSIGNMENT_STATUSES = ("assigned", "returned")
+
+
+async def overdue_tasks_for(
+    session: AsyncSession, user: User, now: datetime | None = None
+) -> list[tuple[int, str, datetime]]:
+    """Задачи юзера с прошедшим (эффективным) дедлайном, ещё не сданные/не принятые.
+
+    common (через `_visible_common_where`, включая те, где строки назначения ещё
+    нет вообще — implicit-доступ, не открыл к сроку тоже просрочка; учитывает
+    персональный override `task_assignments.deadline_at`, ARG-133) +
+    individual/pair/stream (через явное назначение, дедлайн только задачный —
+    override для них не заводится). Дедлайны раньше `OVERDUE_TASKS_SINCE` не
+    учитываются. Возвращает (task_id, title, effective_deadline_at),
+    отсортировано по дедлайну (старые сначала).
+    """
+    now = now or datetime.now(UTC)
+    if is_graduated(user):
+        return []  # экспедиция пройдена — новых просрочек для выпускника не считаем
+
+    common_task_rows = (
+        await session.execute(
+            select(Task)
+            .where(
+                *_visible_common_where(user),
+                Task.deleted_at.is_(None),
+                Task.deadline_at.is_not(None),
+            )
+        )
+    ).scalars().all()
+    common_assignments: dict[int, TaskAssignment] = {}
+    if common_task_rows:
+        rows = await session.execute(
+            select(TaskAssignment).where(
+                TaskAssignment.task_id.in_([t.id for t in common_task_rows]),
+                TaskAssignment.user_id == user.id,
+            )
+        )
+        common_assignments = {a.task_id: a for a in rows.scalars().all()}
+
+    result: list[tuple[int, str, datetime]] = []
+    for t in common_task_rows:
+        a = common_assignments.get(t.id)
+        if a is not None and a.status not in _OVERDUE_ASSIGNMENT_STATUSES:
+            continue  # сдано/принято — не просрочка
+        deadline = effective_deadline(t, a)
+        if deadline is not None and OVERDUE_TASKS_SINCE <= deadline < now:
+            result.append((t.id, t.title, deadline))
+
+    individual_rows = await session.execute(
+        select(Task.id, Task.title, Task.deadline_at)
+        .join(TaskAssignment, TaskAssignment.task_id == Task.id)
+        .where(
+            Task.type.in_(("individual", "pair", "stream")),
+            Task.deleted_at.is_(None),
+            Task.deadline_at.is_not(None),
+            Task.deadline_at >= OVERDUE_TASKS_SINCE,
+            Task.deadline_at < now,
+            TaskAssignment.user_id == user.id,
+            TaskAssignment.status.in_(_OVERDUE_ASSIGNMENT_STATUSES),
+        )
+    )
+    for task_id, title, deadline_at in individual_rows.all():
+        # Отфильтровано в SQL (Task.deadline_at.is_not(None)) — сужаем тип для mypy.
+        assert deadline_at is not None
+        result.append((task_id, title, deadline_at))
+    result.sort(key=lambda row: row[2])
+    return result
+
+
+async def late_submissions_count(session: AsyncSession, user: User) -> int:
+    """Сколько раз юзер сдавал задачу после дедлайна (`task_assignments.late`),
+    считая с `users.discipline_reset_at` (NULL — с начала). Считаем по времени
+    ПЕРВОЙ сдачи трека (та, что и ставит `late=True` при создании — см.
+    `create_submission`), а не по `task_assignments.created_at`: для
+    individual/pair/stream строка назначения создаётся при выдаче задачи, а не
+    в момент сдачи, и её `created_at` не совпадает с моментом просрочки.
+    """
+    first_submission_at = (
+        select(func.min(TaskSubmission.created_at))
+        .where(TaskSubmission.assignment_id == TaskAssignment.id)
+        .correlate(TaskAssignment)
+        .scalar_subquery()
+    )
+    filters: list[ColumnElement[bool]] = [
+        TaskAssignment.user_id == user.id,
+        TaskAssignment.late.is_(True),
+    ]
+    if user.discipline_reset_at is not None:
+        filters.append(first_submission_at >= user.discipline_reset_at)
+    return (
+        await session.scalar(
+            select(func.count()).select_from(TaskAssignment).where(*filters)
+        )
+    ) or 0

@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { useAdminIntakes } from '../../api/admin'
+import { useAdminIntakes, useSendToLimbo } from '../../api/admin'
 import { useAdminCreditDay, useAdminDynamics, useAdminUserDays } from '../../api/dynamics'
 import { useAdminPlans } from '../../api/plans'
 import { Avatar } from '../../components/Avatar'
+import { Button } from '../../components/Button'
 import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
+import { Modal } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { toast } from '../../stores/toast'
 import { DAY_STATUS_ICON, DAY_STATUS_TEXT } from '../../lib/dynamicsStatus'
 import { groupByPlan } from '../../lib/planGroups'
 import type {
@@ -153,6 +156,19 @@ function UserCard({
   const { data: fullDays, isLoading: fullLoading } = useAdminUserDays(expanded ? u.user_id : null)
   const days = expanded && fullDays ? fullDays : u.recent_days
 
+  const sendToLimbo = useSendToLimbo()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
+  function handleConfirmLimbo() {
+    sendToLimbo.mutate(u.user_id, {
+      onSuccess: () => {
+        toast(`${u.display_name} отправлен(а) в Междумирье`)
+        setConfirmOpen(false)
+      },
+      onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+    })
+  }
+
   return (
     <div
       className={`${dynStyles.card} ${u.active_today ? dynStyles.cardActive : ''} ${
@@ -185,8 +201,13 @@ function UserCard({
             </span>
           )}
           {u.overdue_count > 0 && (
-            <span className={dynStyles.overdueBadge}>
+            <span className={dynStyles.overdueBadge} title="Пропущено дней дневника">
               <IconAlert size={12} /> {u.overdue_count}
+            </span>
+          )}
+          {u.overdue_tasks_count > 0 && (
+            <span className={dynStyles.overdueBadge} title="Просроченных задач">
+              <IconAlert size={12} /> {u.overdue_tasks_count} задач
             </span>
           )}
           {u.pardons_used > 0 && (
@@ -220,6 +241,30 @@ function UserCard({
       <button type="button" className={dynStyles.expandBtn} onClick={onToggleExpand}>
         {expanded ? 'Свернуть' : 'Весь период (28 дней)'}
       </button>
+
+      {/* Кандидат на ручной перевод в Междумирье (ARG-132): тариф с учётом
+          дисциплины И накопленные просрочки задач/дневника сверх порога. */}
+      {u.limbo_eligible && (
+        <Button variant="outline" onClick={() => setConfirmOpen(true)} style={{ marginTop: 'var(--space-2)' }}>
+          Отправить в Междумирье
+        </Button>
+      )}
+
+      {confirmOpen && (
+        <Modal title="Отправить в Междумирье?" onClose={() => setConfirmOpen(false)} closeOnBackdrop={false}>
+          <p style={{ marginBottom: 'var(--space-4)' }}>
+            {u.display_name} перейдёт на самый дешёвый тариф, получит допзадание
+            и 5 дней на восстановление (закрыть висящие задачи прошлого тарифа
+            и допзадание). Действие можно отменить вручную сменой тарифа обратно.
+          </p>
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button variant="gold" onClick={handleConfirmLimbo} disabled={sendToLimbo.isPending}>
+              {sendToLimbo.isPending ? 'Отправка…' : 'Подтвердить'}
+            </Button>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>Отмена</Button>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

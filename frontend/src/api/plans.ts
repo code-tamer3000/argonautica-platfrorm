@@ -17,6 +17,7 @@ export interface PlanCreateBody {
   price: number
   description?: string
   is_active?: boolean
+  discipline_tracked?: boolean
 }
 
 export interface PlanUpdateBody {
@@ -24,6 +25,7 @@ export interface PlanUpdateBody {
   price?: number
   description?: string
   is_active?: boolean
+  discipline_tracked?: boolean
 }
 
 export function useCreatePlan() {

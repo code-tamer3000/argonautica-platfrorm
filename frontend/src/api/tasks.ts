@@ -131,6 +131,10 @@ export interface SubmissionOut {
   body: string | null
   created_at: string
   attachments: AttachmentOut[]
+  /** Сдано после дедлайна — вместе со счётчиком поздних сдач ПОСЛЕ этой (для
+   * попапа-предупреждения «ещё N раз — и Междумирье», ARG-131). */
+  late: boolean
+  late_submissions_count: number
 }
 
 export interface TaskTrackOut {
@@ -151,12 +155,27 @@ export interface TaskCommentOut {
 }
 
 export interface AdminAssignmentOut {
-  assignment_id: number
+  assignment_id: number | null
   user_id: number
-  status: string
+  display_name: string
+  avatar_url: string | null
+  status: MyTaskStatus
   late: boolean
   reviewed_at: string | null
   submission_count: number
+  deadline_at: string | null
+}
+
+export interface ReviewQueueItemOut {
+  assignment_id: number
+  task_id: number
+  task_title: string
+  task_type: TaskType
+  user_id: number
+  display_name: string
+  avatar_url: string | null
+  submitted_at: string
+  late: boolean
 }
 
 // --- Query keys ---
@@ -294,6 +313,7 @@ export function useReview() {
       qc.invalidateQueries({ queryKey: adminAssignmentsKey(taskId) })
       qc.invalidateQueries({ queryKey: taskKey(taskId) })
       qc.invalidateQueries({ queryKey: tasksKey })
+      qc.invalidateQueries({ queryKey: reviewQueueKey })
     },
   })
 }
@@ -328,11 +348,36 @@ export function useDeleteTaskComment(submissionId: number) {
 
 // --- Admin: назначения по задаче ---
 
+export const reviewQueueKey = ['admin', 'review-queue'] as const
+
+/** Все сдачи в статусе «на проверке» по всем задачам сразу (ARG-134) — раздел
+ * «Проверка» в админке, вместо обхода карточек задач по очереди. */
+export function useReviewQueue() {
+  return useQuery({
+    queryKey: reviewQueueKey,
+    queryFn: () => http.get<ReviewQueueItemOut[]>('/api/admin/review-queue'),
+  })
+}
+
 export function useAdminAssignments(id: number) {
   return useQuery({
     queryKey: adminAssignmentsKey(id),
     queryFn: () => http.get<AdminAssignmentOut[]>(`/api/tasks/${id}/assignments`),
     enabled: id > 0,
+  })
+}
+
+/** Персональный override дедлайна одному участнику общей задачи (ARG-133).
+ * `deadlineAt: null` снимает override — участник возвращается к общему дедлайну. */
+export function useUpdateAssignmentDeadline(taskId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ userId, deadlineAt }: { userId: number; deadlineAt: string | null }) =>
+      http.patch<AdminAssignmentOut>(
+        `/api/tasks/${taskId}/assignments/${userId}/deadline`,
+        { deadline_at: deadlineAt },
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: adminAssignmentsKey(taskId) }),
   })
 }
 

@@ -13,6 +13,7 @@ class PlanCreateRequest(BaseModel):
     price: int = Field(ge=0)
     description: str = Field(default="", max_length=4000)
     is_active: bool = True
+    discipline_tracked: bool = False
 
 
 class PlanUpdateRequest(BaseModel):
@@ -24,6 +25,7 @@ class PlanUpdateRequest(BaseModel):
     price: int | None = Field(default=None, ge=0)
     description: str | None = Field(default=None, max_length=4000)
     is_active: bool | None = None
+    discipline_tracked: bool | None = None
 
 
 class PlanOut(BaseModel):
@@ -34,6 +36,9 @@ class PlanOut(BaseModel):
     price: int
     description: str
     is_active: bool
+    # Тариф входит в контур учёта дисциплины (просрочки задач, пропуски
+    # дневника, кандидат в Междумирье) — см. docs/LIMBO.md.
+    discipline_tracked: bool
     created_at: datetime
     updated_at: datetime
     # Самый дешёвый тариф (`CHEAP_TARIFF_NAME`, см. app.services.visibility) —

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMyDynamics, usePardon } from '../../api/dynamics'
 import { usePatchMe } from '../../api/profile'
 import { Avatar } from '../../components/Avatar'
@@ -99,6 +100,29 @@ function DynamicsSection() {
                   <span className={styles.dynNoPardons}>помилований не осталось</span>
                 )}
               </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Просроченные задачи (ARG-131/ARG-130) — рядом с пропусками дневника,
+          одним блоком Динамики. Пусто — секция не рендерится вовсе. */}
+      {dyn.overdue_tasks.length > 0 && (
+        <div className={styles.dynOverdueWrap}>
+          <div className={styles.dynStatus + ' ' + styles.dynStatusBad}>
+            <IconAlert size={18} />
+            <span>
+              {dyn.overdue_tasks.length === 1
+                ? 'Есть просроченная задача'
+                : `Просрочено задач: ${dyn.overdue_tasks.length}`}
+            </span>
+          </div>
+          <div className={styles.dynOverdueList}>
+            {dyn.overdue_tasks.map((t) => (
+              <Link key={t.task_id} to={`/tasks/${t.task_id}`} className={styles.dynOverdueItem}>
+                <span className={styles.dynOverdueDate}>{t.title}</span>
+                <span className={styles.dynNoPardons}>до {formatDate(t.deadline_at.slice(0, 10))}</span>
+              </Link>
             ))}
           </div>
         </div>

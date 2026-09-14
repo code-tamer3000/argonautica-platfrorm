@@ -188,6 +188,22 @@ export function usePatchAdminUser() {
   })
 }
 
+/** Ручной вход в Междумирье (ARG-132) — из кнопки в AdminDynamics, не через
+ * форму редактирования тарифа. Инвалидирует и обзор Динамики: там же живёт
+ * кнопка и оттуда видно, что участник уже переведён. */
+export function useSendToLimbo() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (userId: number) =>
+      http.post<UserOut>(`/api/admin/users/${userId}/limbo`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: usersKey })
+      qc.invalidateQueries({ queryKey: adminUsersKey })
+      qc.invalidateQueries({ queryKey: ['dynamics', 'admin'] })
+    },
+  })
+}
+
 export function useDeleteUser() {
   const qc = useQueryClient()
   return useMutation({
