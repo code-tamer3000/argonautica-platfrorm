@@ -230,8 +230,11 @@ export function TasksList() {
     ? allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
     : allItems
 
-  // Участник — по своему статусу: активные vs выполненные (принятые).
-  const mine = items.filter((t) => t.my_status !== 'accepted')
+  // Участник — по своему статусу: активные / истёк срок (обе — не принятые,
+  // делит дедлайн) / выполненные (принятые, дедлайн уже не важен).
+  const mineNotDone = items.filter((t) => t.my_status !== 'accepted')
+  const mine = mineNotDone.filter((t) => !isOverdue(t))
+  const mineOverdue = mineNotDone.filter((t) => isOverdue(t))
   const mineDone = items.filter((t) => t.my_status === 'accepted')
 
   // Админ: верхний уровень — вкладки Активные/Истёк срок; внутри — заголовки секций
@@ -442,6 +445,16 @@ export function TasksList() {
               <h2 className={`${styles.sectionTitle} ${styles.sectionTitleActive}`}>Активные</h2>
               <div className={styles.grid}>
                 {mine.map((task) => (
+                  <TaskCard key={task.id} task={task} isAdmin={false} />
+                ))}
+              </div>
+            </section>
+          )}
+          {mineOverdue.length > 0 && (
+            <section className={styles.section}>
+              <h2 className={styles.sectionTitle}>Истёк срок</h2>
+              <div className={styles.grid}>
+                {mineOverdue.map((task) => (
                   <TaskCard key={task.id} task={task} isAdmin={false} />
                 ))}
               </div>
