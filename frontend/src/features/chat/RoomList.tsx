@@ -142,7 +142,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       dms,
       groups,
       pinnedChannels: pinned,
-      diaryGroups: groupDiariesByPlan(otherPersonal, plans),
+      diaryGroups: groupDiariesByPlan(otherPersonal, plans, isAdmin),
       otherChannels: otherRegular,
     }
   }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers, plans])

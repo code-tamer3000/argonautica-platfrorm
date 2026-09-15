@@ -20,6 +20,21 @@
   .headerActions { width: 100%; justify-content: flex-end; margin-bottom: var(--space-4); }
 }
 
+/* Кнопка-переход к «Проверке» (/admin/review) — заметно среди «Создать»/вкладок,
+   тот же зелёный (морская ярь), которым в проекте уже отмечают «живое, требующее
+   внимания» (см. .sectionTitleActive). Селектор `a.reviewLink` — не просто
+   `.reviewLink` — специфичнее глобального `.btn { border: none }» (tokens.css),
+   иначе чья рамка победит зависело бы от порядка подключения бандлов. */
+a.reviewLink {
+  background: transparent;
+  color: var(--color-more-yar);
+  border: 1px solid var(--color-more);
+}
+a.reviewLink:hover {
+  background: var(--color-more);
+  color: var(--color-kost-yar);
+}
+
 /* Прогресс «Выполнено X из Y». */
 .progressBar {
   display: flex;
