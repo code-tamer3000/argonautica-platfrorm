@@ -365,7 +365,11 @@ class ReviewQueueItemOut(BaseModel):
     """Строка админского раздела «Проверка» (ARG-134) — все сдачи в статусе
     'submitted' по всем задачам сразу, отсортированные по дате сдачи (старые
     первыми). Развернуть в трек со сдачами — отдельным запросом
-    GET /api/tasks/{task_id}/submissions (уже существующий, TaskTrackOut)."""
+    GET /api/tasks/{task_id}/submissions (уже существующий, TaskTrackOut).
+
+    `plan_id`/`plan_name` — тариф сдавшего на МОМЕНТ ПРОСМОТРА (истории смены
+    тарифа у пользователя нет), только для группировки очереди на фронте; null —
+    тариф не назначен (`users.plan_id` nullable)."""
 
     assignment_id: int
     task_id: int
@@ -376,6 +380,8 @@ class ReviewQueueItemOut(BaseModel):
     avatar_url: str | None = None
     submitted_at: datetime
     late: bool
+    plan_id: int | None = None
+    plan_name: str | None = None
 
 
 class AssignmentDeadlineUpdate(BaseModel):

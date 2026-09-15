@@ -176,6 +176,10 @@ export interface ReviewQueueItemOut {
   avatar_url: string | null
   submitted_at: string
   late: boolean
+  // Тариф сдавшего на момент просмотра — группировка очереди по тарифам на фронте.
+  // null — тарифа нет (напр. ещё не привязан).
+  plan_id: number | null
+  plan_name: string | null
 }
 
 // --- Query keys ---
