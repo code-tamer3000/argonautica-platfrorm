@@ -267,7 +267,25 @@
 .rosterDeadline {
   color: var(--text-muted);
   font-size: var(--text-small);
+}
+/* Хвост строки (личный срок + кнопки) — деадлайн виден не у всех (только там,
+   где отличается от общего), поэтому auto-margin вешаем на весь хвост, а не на
+   сам rosterDeadline: иначе без него кнопки прилипали бы к чипам статуса. */
+.rosterActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
+}
+/* Подзаголовок группы внутри ростера («Не сдали» / «Сдали»). */
+.rosterGroupTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  margin: var(--space-3) 0 var(--space-1);
+}
+.rosterGroupTitle:first-child {
+  margin-top: 0;
 }
 /* Заголовок сворачиваемой секции списка задач (индивидуальные, перекрёстные, истёкшие). */
 .sectionToggle {
@@ -341,6 +359,82 @@
 
 .returnedPrev[open] .returnedPrevSummary {
   margin-bottom: var(--space-3);
+}
+
+/* ───── Очередь проверки (ARG-134): /admin/review и общий контент из
+   ReviewQueuePanel.tsx, переиспользуемый шорткатом на /tasks ───── */
+.queueEmpty {
+  font-size: var(--text-ui);
+  color: var(--text-ghost);
+}
+
+.queueGroups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.queueGroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.queueGroupTitle {
+  font-family: var(--font-t2);
+  font-size: var(--text-h3);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.queueGroupCount {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.queueList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.queueItem {
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--divider);
+}
+
+.queueItemMain {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.queueItemTitle {
+  font-family: var(--font-t4);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  flex: 1;
+  min-width: 0;
+}
+
+.queueItemMeta {
+  font-size: var(--text-label);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.queueItemBody {
+  margin-top: var(--space-2);
 }
 
 /* Трек: сдачи одного участника. */

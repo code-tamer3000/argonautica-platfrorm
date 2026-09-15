@@ -43,13 +43,29 @@ const ROSTER_STATUS_LABEL: Record<string, string> = {
   accepted: 'Принята',
 }
 
+// Эффективный дедлайн строки (override ?? дедлайн задачи, см. AdminAssignmentOut)
+// совпадает с дедлайном самой задачи, если override не задан — сравниваем по
+// значению, а не по наличию override-флага (его отдельно бэкенд и не отдаёт).
+function hasDeadlineOverride(rowDeadlineAt: string | null, taskDeadlineAt: string | null): boolean {
+  if (rowDeadlineAt == null && taskDeadlineAt == null) return false
+  if (rowDeadlineAt == null || taskDeadlineAt == null) return true
+  return new Date(rowDeadlineAt).getTime() !== new Date(taskDeadlineAt).getTime()
+}
+
 // Полный ростер видящих общую задачу (не только тех, у кого уже есть строка
 // назначения) + продление срока одному конкретному участнику (ARG-133).
-function RosterSection({ taskId }: { taskId: number }) {
+// Свёрнут по умолчанию (список часто длиннее самого задания) и разбит на
+// сдавших/не сдавших — иначе те, кого ещё нужно поторопить, тонут в общем
+// списке. Личный срок показываем только там, где он реально отличается от
+// общего (иначе дедлайн задачи дублировался бы в каждой строке без пользы);
+// «Продлить срок» — только не сдавшим (сданное продление не меняет), «Сбросить» —
+// только там, где отличие и правда есть (что и сбрасывать иначе).
+function RosterSection({ taskId, taskDeadlineAt }: { taskId: number; taskDeadlineAt: string | null }) {
   const { data: rows = [], isLoading } = useAdminAssignments(taskId)
   const updateDeadline = useUpdateAssignmentDeadline(taskId)
   const [editingUserId, setEditingUserId] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
+  const [open, setOpen] = useState(false)
 
   if (isLoading) return null
   if (rows.length === 0) return null
@@ -82,51 +98,82 @@ function RosterSection({ taskId }: { taskId: number }) {
     )
   }
 
-  return (
-    <section className={styles.section}>
-      <h3 className={styles.sectionTitle}>Участники ({rows.length})</h3>
-      <div className={styles.rosterList}>
-        {rows.map((row) => (
-          <div key={row.user_id} className={styles.rosterRow}>
-            <Avatar url={row.avatar_url} name={row.display_name} size={28} />
-            <span className={styles.rosterName}>{row.display_name}</span>
-            <Chip kind={row.status === 'accepted' ? 'accepted' : row.status === 'returned' ? 'returned' : 'neutral'}>
-              {row.status ? ROSTER_STATUS_LABEL[row.status] ?? row.status : 'Не сдавал'}
-            </Chip>
-            {row.late && <Chip kind="late">Сдано позже</Chip>}
-            {editingUserId === row.user_id ? (
-              <>
-                <input
-                  className={styles.composerInput}
-                  type="datetime-local"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                />
-                <Button variant="outline" onClick={() => save(row.user_id)} disabled={updateDeadline.isPending}>
-                  Сохранить
-                </Button>
-                <Button variant="outline" onClick={() => setEditingUserId(null)}>
-                  Отмена
-                </Button>
-              </>
-            ) : (
-              <>
-                <span className={styles.rosterDeadline}>
-                  {row.deadline_at ? dateTimeMsk(row.deadline_at) : 'без срока'}
-                </span>
-                <Button variant="outline" onClick={() => startEdit(row)}>
-                  Продлить срок
-                </Button>
-                {row.deadline_at && (
-                  <Button variant="outline" onClick={() => resetToTaskDeadline(row.user_id)}>
-                    Сбросить
-                  </Button>
-                )}
-              </>
+  function renderRow(row: AdminAssignmentOut) {
+    const overridden = hasDeadlineOverride(row.deadline_at, taskDeadlineAt)
+    return (
+      <div key={row.user_id} className={styles.rosterRow}>
+        <Avatar url={row.avatar_url} name={row.display_name} size={28} />
+        <span className={styles.rosterName}>{row.display_name}</span>
+        <Chip kind={row.status === 'accepted' ? 'accepted' : row.status === 'returned' ? 'returned' : 'neutral'}>
+          {row.status ? ROSTER_STATUS_LABEL[row.status] ?? row.status : 'Не сдавал'}
+        </Chip>
+        {row.late && <Chip kind="late">Сдано позже</Chip>}
+        {editingUserId === row.user_id ? (
+          <>
+            <input
+              className={styles.composerInput}
+              type="datetime-local"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+            />
+            <Button variant="outline" onClick={() => save(row.user_id)} disabled={updateDeadline.isPending}>
+              Сохранить
+            </Button>
+            <Button variant="outline" onClick={() => setEditingUserId(null)}>
+              Отмена
+            </Button>
+          </>
+        ) : (
+          <div className={styles.rosterActions}>
+            {overridden && row.deadline_at && (
+              <span className={styles.rosterDeadline}>{dateTimeMsk(row.deadline_at)}</span>
+            )}
+            {row.status == null && (
+              <Button variant="outline" onClick={() => startEdit(row)}>
+                Продлить срок
+              </Button>
+            )}
+            {overridden && (
+              <Button variant="outline" onClick={() => resetToTaskDeadline(row.user_id)}>
+                Сбросить
+              </Button>
             )}
           </div>
-        ))}
+        )}
       </div>
+    )
+  }
+
+  const notSubmitted = rows.filter((r) => r.status == null)
+  const submitted = rows.filter((r) => r.status != null)
+
+  return (
+    <section className={styles.section}>
+      <button
+        type="button"
+        className={styles.sectionToggle}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} Участники
+        <span className={styles.sectionCount}>{rows.length}</span>
+      </button>
+      {open && (
+        <div className={styles.rosterList}>
+          {notSubmitted.length > 0 && (
+            <>
+              <h4 className={styles.rosterGroupTitle}>Не сдали ({notSubmitted.length})</h4>
+              {notSubmitted.map(renderRow)}
+            </>
+          )}
+          {submitted.length > 0 && (
+            <>
+              <h4 className={styles.rosterGroupTitle}>Сдали ({submitted.length})</h4>
+              {submitted.map(renderRow)}
+            </>
+          )}
+        </div>
+      )}
     </section>
   )
 }
@@ -232,7 +279,9 @@ export function TaskDetail() {
 
       {/* Ростер видящих общую задачу для админа (ARG-133) — кто сдал/не сдал,
           продление срока одному конкретному участнику. */}
-      {isAdmin && task.type === 'common' && <RosterSection taskId={id} />}
+      {isAdmin && task.type === 'common' && (
+        <RosterSection taskId={id} taskDeadlineAt={task.deadline_at} />
+      )}
 
       {/* Парное задание: панель пары(-ей) вместо стандартной сдачи/треков.
           Сама сдача/приёмка живёт в перекрёстных задачах (открываются по ссылке). */}
@@ -385,8 +434,8 @@ function TracksSection({
   )
 }
 
-// Экспортирован — переиспользуется в AdminReview.tsx (раздел «Проверка», ARG-134),
-// чтобы не дублировать разметку/логику приёма-возврата сдачи.
+// Экспортирован — переиспользуется в ReviewQueuePanel.tsx (раздел «Проверка»,
+// ARG-134), чтобы не дублировать разметку/логику приёма-возврата сдачи.
 export function TrackCard({
   track,
   taskId,

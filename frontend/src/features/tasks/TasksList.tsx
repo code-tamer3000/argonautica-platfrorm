@@ -4,6 +4,7 @@ import {
   useAdminAssignments,
   useCreateTask,
   useDeleteTask,
+  useReviewQueue,
   useTasks,
   useUpdateTask,
   type MyTaskStatus,
@@ -282,6 +283,9 @@ export function TasksList() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTask, setEditTask] = useState<TaskWithStatusOut | null>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<number | null>(null)
+  // Шорткат на «Проверку» (/admin/review, ARG-134) прямо со страницы, где админ
+  // и так работает каждый день — сам экран остаётся в админке, это просто ссылка.
+  const { data: reviewQueue = [] } = useReviewQueue()
 
   function handleCreate(values: TaskFormValues) {
     if (values.type === 'pair' && values.pairs.length === 0) {
@@ -362,6 +366,9 @@ export function TasksList() {
         </div>
         {isAdmin && (
           <div className={`${ph.pageHeaderActions} ${styles.headerActions}`}>
+            <Link to="/admin/review" className="btn btn-outline">
+              Проверка{reviewQueue.length > 0 && ` · ${reviewQueue.length}`}
+            </Link>
             <Button onClick={() => setCreateOpen(true)}>Создать</Button>
           </div>
         )}
