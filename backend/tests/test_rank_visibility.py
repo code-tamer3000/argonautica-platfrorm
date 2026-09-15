@@ -249,23 +249,59 @@ async def test_dm_admin_write_asymmetry(
     assert created.status_code == 201
     room_id = created.json()["id"]
 
-    # Админ пишет свободно.
+    # До первого сообщения админа игрок (не топ-2) ответить не может — сервер
+    # 403-ит, не только фронт прячет.
+    denied = await client.post(
+        f"/api/rooms/{room_id}/messages", headers=player_h, json={"content": "hi back"}
+    )
+    assert denied.status_code == 403
+    player_view = await client.get(f"/api/rooms/{room_id}", headers=player_h)
+    assert player_view.json()["dm_write_locked"] is True
+
+
+async def test_dm_admin_outreach_unlocks_write_permanently(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Не-навигатор-админ пишет первым низкотарифному игроку — асимметрия для
+    этого dm снимается навсегда, даже когда тариф игрока не менялся и остаётся
+    вне топ-2."""
+    _, users = await _three_tier_cohort(client, make_user)
+    admin_h = await _headers(client, users["admin"])
+    player_h = await _headers(client, users["player"])
+
+    created = await client.post(
+        "/api/rooms", headers=admin_h, json={"type": "dm", "peer_id": users["player"].id}
+    )
+    assert created.status_code == 201
+    room_id = created.json()["id"]
+
+    # Админ пишет свободно — и этим открывает игроку ответ.
     sent = await client.post(
         f"/api/rooms/{room_id}/messages", headers=admin_h, json={"content": "hi"}
     )
     assert sent.status_code == 201
 
-    # Игрок (не топ-2) ответить не может — сервер 403-ит, не только фронт прячет.
-    denied = await client.post(
+    reply = await client.post(
         f"/api/rooms/{room_id}/messages", headers=player_h, json={"content": "hi back"}
     )
-    assert denied.status_code == 403
+    assert reply.status_code == 201
 
-    # RoomOut отражает блокировку для игрока и НЕ отражает для админа.
+    # RoomOut больше не отражает блокировку ни для кого — ни на GET /{id}, ни
+    # в списке (list_rooms считает dm_write_locked отдельным batch-запросом).
     player_view = await client.get(f"/api/rooms/{room_id}", headers=player_h)
-    assert player_view.json()["dm_write_locked"] is True
+    assert player_view.json()["dm_write_locked"] is False
     admin_view = await client.get(f"/api/rooms/{room_id}", headers=admin_h)
     assert admin_view.json()["dm_write_locked"] is False
+    player_list = await client.get("/api/rooms", headers=player_h)
+    listed = next(r for r in player_list.json() if r["id"] == room_id)
+    assert listed["dm_write_locked"] is False
+
+    # Разблокировка не откатывается на следующий запрос (постоянная, не
+    # разовая — перечитываем комнату и пишем ещё раз).
+    again = await client.post(
+        f"/api/rooms/{room_id}/messages", headers=player_h, json={"content": "still open"}
+    )
+    assert again.status_code == 201
 
 
 async def test_dm_admin_write_allowed_for_top_tier(

@@ -90,6 +90,14 @@ used across 15+ frontend files), never sliced by visibility. The roster for
   computed per-viewer in `list_rooms`/`get_room`) so the frontend can hide the
   composer instead of letting the participant hit a dead-end send button. A
   navigator has no such asymmetry — a normal two-way dm.
+- **Unlocking on admin outreach** — the moment the non-navigator admin themselves
+  sends (or forwards) a message into the dm, `rooms.dm_unlocked_by_admin` flips to
+  `true` and the asymmetry is gone for that dm **permanently** (`dm_write_allowed`
+  short-circuits to allowed; there is currently no way to re-lock it). Set in
+  `unlock_dm_by_admin_message`, called from `assert_can_post` right after the write
+  check on every post/forward — so admin outreach to a low-rank participant is
+  exactly what opens the door, matching the intent of the rank gate (keep
+  unsolicited low-tariff → admin contact capped, not admin → participant replies).
 - **`RoomOut.peer_intake_id`** (dm-only, batch-computed alongside `dm_peer_map` in
   `list_rooms`/`get_room`) denormalizes the dm peer's ACTIVE `intake_id` — dm room
   access is purely membership-based, not intake-scoped (unlike channels), so an admin
