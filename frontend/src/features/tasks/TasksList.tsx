@@ -24,11 +24,10 @@ import { cardClass } from '../../components/Card'
 import { Segmented } from '../../components/Segmented'
 import { KebabMenu } from '../../components/KebabMenu'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
-import { Drawer, Modal } from '../../components/Overlay'
+import { Modal } from '../../components/Overlay'
 import { toast } from '../../stores/toast'
 import { dayLabel } from '../../lib/format'
 import { useUiStore } from '../../stores/ui'
-import { ReviewQueuePanel } from './ReviewQueuePanel'
 import { TaskForm, TYPE_LABEL, type TaskFormValues } from './TaskForm'
 import styles from './tasks.module.css'
 
@@ -284,10 +283,8 @@ export function TasksList() {
   const [createOpen, setCreateOpen] = useState(false)
   const [editTask, setEditTask] = useState<TaskWithStatusOut | null>(null)
   const [deleteTaskId, setDeleteTaskId] = useState<number | null>(null)
-  const [reviewOpen, setReviewOpen] = useState(false)
-  // Раньше отдельный раздел «Проверка» в админке (/admin/review) — переехал
-  // сюда кнопкой в шапке: то же самое, что видит админ каждый день, не нужно
-  // искать в другом меню (ARG-134).
+  // Шорткат на «Проверку» (/admin/review, ARG-134) прямо со страницы, где админ
+  // и так работает каждый день — сам экран остаётся в админке, это просто ссылка.
   const { data: reviewQueue = [] } = useReviewQueue()
 
   function handleCreate(values: TaskFormValues) {
@@ -369,9 +366,9 @@ export function TasksList() {
         </div>
         {isAdmin && (
           <div className={`${ph.pageHeaderActions} ${styles.headerActions}`}>
-            <Button variant="outline" onClick={() => setReviewOpen(true)}>
+            <Link to="/admin/review" className="btn btn-outline">
               Проверка{reviewQueue.length > 0 && ` · ${reviewQueue.length}`}
-            </Button>
+            </Link>
             <Button onClick={() => setCreateOpen(true)}>Создать</Button>
           </div>
         )}
@@ -502,12 +499,6 @@ export function TasksList() {
           onConfirm={handleDelete}
           onClose={() => setDeleteTaskId(null)}
         />
-      )}
-
-      {reviewOpen && (
-        <Drawer title="Проверка" onClose={() => setReviewOpen(false)} className={styles.reviewDrawer}>
-          <ReviewQueuePanel />
-        </Drawer>
       )}
     </div>
   )

@@ -8,6 +8,7 @@ import { AdminFaq } from './AdminFaq'
 import { AdminFeedback } from './AdminFeedback'
 import { AdminFunnel } from './AdminFunnel'
 import { AdminJournal } from './AdminJournal'
+import { AdminReview } from './AdminReview'
 import { AdminStickers } from './AdminStickers'
 import { AdminSurvey } from './AdminSurvey'
 import { AdminUsers } from './AdminUsers'
@@ -36,6 +37,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { path: 'survey', label: 'Анкета', group: 'intake', Component: AdminSurvey },
   { path: 'users', label: 'Пользователи', group: 'intake', Component: AdminUsers },
   { path: 'dynamics', label: 'Динамика', group: 'progress', Component: AdminDynamics },
+  { path: 'review', label: 'Проверка', group: 'progress', Component: AdminReview },
   { path: 'journal', label: 'Дневник', group: 'progress', Component: AdminJournal },
   { path: 'calendar', label: 'Календарь', group: 'progress', Component: AdminCalendar },
   { path: 'cabin', label: 'Каюта', group: 'progress', Component: AdminCabin },
