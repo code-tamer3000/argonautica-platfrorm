@@ -366,7 +366,7 @@ export function TasksList() {
         </div>
         {isAdmin && (
           <div className={`${ph.pageHeaderActions} ${styles.headerActions}`}>
-            <Link to="/admin/review" className="btn btn-outline">
+            <Link to="/admin/review" className={`btn ${styles.reviewLink}`}>
               Проверка{reviewQueue.length > 0 && ` · ${reviewQueue.length}`}
             </Link>
             <Button onClick={() => setCreateOpen(true)}>Создать</Button>
@@ -400,9 +400,7 @@ export function TasksList() {
             {commonItems.length > 0 && (
               <section className={styles.section}>
                 <div className={styles.sectionHeadRow}>
-                  <h2 className={`${styles.sectionTitle} ${deadlineTab === 'active' ? styles.sectionTitleActive : ''}`}>
-                    Общие
-                  </h2>
+                  <h2 className={styles.sectionTitle}>Общие</h2>
                   {plans.length > 0 && selectedPlanIds != null && (
                     <PlanFilter plans={plans} selected={selectedPlanIds} onToggle={togglePlanFilter} />
                   )}
