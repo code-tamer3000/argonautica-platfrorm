@@ -51,6 +51,7 @@ from app.services.rooms import (
     ensure_news_channel,
     get_or_create_channel_membership,
     load_room,
+    unlock_dm_by_admin_message,
 )
 from app.services.visibility import is_cheap_tariff
 from app.ws import schemas as ws_schemas
@@ -69,6 +70,9 @@ async def assert_can_post(
     await assert_room_access(session, room, user)
     # Наблюдатель не пишет никуда (в т.ч. в новости).
     await assert_can_write(session, room, user)
+    # Не-навигатор-админ, пишущий первым, снимает одностороннее dm-ограничение
+    # собеседнику навсегда (см. unlock_dm_by_admin_message).
+    unlock_dm_by_admin_message(room, user)
 
     # Личный канал: верхнеуровневые сообщения только от владельца.
     # Thread-ответы (is_reply) разрешены всем — это «комментарии».
