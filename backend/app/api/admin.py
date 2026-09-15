@@ -824,17 +824,21 @@ async def review_queue(
                 Task.title,
                 Task.type,
                 User,
+                Plan.id,
+                Plan.name,
                 latest_submission_at.label("submitted_at"),
             )
             .join(Task, Task.id == TaskAssignment.task_id)
             .join(User, User.id == TaskAssignment.user_id)
+            .outerjoin(Plan, Plan.id == User.plan_id)
             .where(TaskAssignment.status == "submitted", Task.deleted_at.is_(None))
             .order_by(latest_submission_at.asc())
         )
     ).all()
 
     signed = await presign_asset_urls(
-        session, {u.avatar_media_id for _a, _tid, _tt, _ty, u, _s in rows if u.avatar_media_id}
+        session,
+        {u.avatar_media_id for _a, _tid, _tt, _ty, u, _pid, _pn, _s in rows if u.avatar_media_id},
     )
     return [
         ReviewQueueItemOut(
@@ -847,8 +851,10 @@ async def review_queue(
             avatar_url=avatar_url(u, signed),
             submitted_at=submitted_at,
             late=a.late,
+            plan_id=plan_id,
+            plan_name=plan_name,
         )
-        for a, task_id, task_title, task_type, u, submitted_at in rows
+        for a, task_id, task_title, task_type, u, plan_id, plan_name, submitted_at in rows
     ]
 
 

@@ -38,11 +38,23 @@ export function Modal({
   )
 }
 
-export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Drawer({
+  title,
+  onClose,
+  children,
+  className,
+}: {
+  title: string
+  onClose: () => void
+  children: ReactNode
+  // Для содержимого шире обычного списка (напр. полный TrackCard с медиа и
+  // комментариями в ReviewQueuePanel) — расширяет .drawer, не переопределяя его целиком.
+  className?: string
+}) {
   useEscape(onClose)
   return (
     <div className={styles.backdrop} onClick={onClose}>
-      <div className={styles.drawer} onClick={(e) => e.stopPropagation()}>
+      <div className={className ? `${styles.drawer} ${className}` : styles.drawer} onClick={(e) => e.stopPropagation()}>
         <div className={styles.head}>
           <span className={styles.title}>{title}</span>
           <button className={styles.x} onClick={onClose} aria-label="Закрыть">✕</button>

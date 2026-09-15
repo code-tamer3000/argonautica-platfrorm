@@ -465,9 +465,16 @@ async def test_review_queue_lists_pending_submissions_across_tasks(
     client: AsyncClient, make_user: MakeUser
 ) -> None:
     admin = await make_user(role="admin")
-    a = await make_user(display_name="Первый")
-    b = await make_user(display_name="Второй")
     admin_h = await _headers(client, admin)
+    plan = (
+        await client.post(
+            "/api/admin/plans",
+            headers=admin_h,
+            json={"name": "Огонь", "price": 9000, "description": ""},
+        )
+    ).json()
+    a = await make_user(display_name="Первый", plan_id=plan["id"])
+    b = await make_user(display_name="Второй")  # без тарифа
     a_h = await _headers(client, a)
     b_h = await _headers(client, b)
 
@@ -483,6 +490,14 @@ async def test_review_queue_lists_pending_submissions_across_tasks(
     ids = {(q["task_id"], q["user_id"]) for q in queue}
     assert (task1["id"], a.id) in ids
     assert (task2["id"], b.id) in ids
+
+    # Тариф сдавшего — для группировки очереди на фронте; без тарифа — null.
+    row_a = next(q for q in queue if q["user_id"] == a.id)
+    row_b = next(q for q in queue if q["user_id"] == b.id)
+    assert row_a["plan_id"] == plan["id"]
+    assert row_a["plan_name"] == "Огонь"
+    assert row_b["plan_id"] is None
+    assert row_b["plan_name"] is None
 
     # Приняли одну — из очереди она пропадает.
     row = next(q for q in queue if q["task_id"] == task1["id"])
