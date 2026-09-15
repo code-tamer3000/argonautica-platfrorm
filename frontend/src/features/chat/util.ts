@@ -1,4 +1,4 @@
-import { groupByPlan } from '../../lib/planGroups'
+import { groupByPlan, NO_PLAN_KEY } from '../../lib/planGroups'
 import type { PlanPublicOut, PublicUserOut, RoomOut, UserOut } from '../../lib/types'
 
 export function roomTitle(
@@ -65,7 +65,11 @@ const ADMIN_OWNER_PLAN_KEY = '-1'
  * «Админ» (sentinel-id) выносим первой: дневники видны только тем, кому явно
  * открыт `diary_public`, и в этом случае они должны бросаться в глаза сразу.
  */
-export function groupDiariesByPlan(rooms: RoomOut[], plans: PlanPublicOut[]): DiaryPlanGroup[] {
+export function groupDiariesByPlan(
+  rooms: RoomOut[],
+  plans: PlanPublicOut[],
+  isAdmin: boolean,
+): DiaryPlanGroup[] {
   const groups = groupByPlan(rooms, plans, (room) => ({
     id: room.owner_plan_id ?? null,
     name: room.owner_plan_name ?? null,
@@ -74,6 +78,26 @@ export function groupDiariesByPlan(rooms: RoomOut[], plans: PlanPublicOut[]): Di
   if (adminIdx > 0) {
     const [admin] = groups.splice(adminIdx, 1)
     groups.unshift(admin)
+  }
+  // По просьбе заказчика, только в АДМИНСКОМ виде (у обычного участника самый
+  // дешёвый тариф и так не встречается в этом списке — ARG-117, docs/ROOMS.md —
+  // так что применять свап для него не к чему, а «первым тарифом в списке» у
+  // него уже иногда легитимно оказывается сам «Спецотряд»): самый дешёвый тариф —
+  // наименее приоритетные дневники — уходит в самый низ списка, а «Спецотряд»
+  // занимает освободившееся первое место среди тарифных секций (сразу после
+  // «Админа»).
+  if (isAdmin) {
+    const cheapIdx = groups.findIndex((g) => g.key !== ADMIN_OWNER_PLAN_KEY && g.key !== NO_PLAN_KEY)
+    if (cheapIdx !== -1) {
+      const specIdx = groups.findIndex((g) => g.label === 'Спецотряд')
+      const [cheap] = groups.splice(cheapIdx, 1)
+      if (specIdx !== -1 && specIdx !== cheapIdx) {
+        const adjustedSpecIdx = specIdx > cheapIdx ? specIdx - 1 : specIdx
+        const [spec] = groups.splice(adjustedSpecIdx, 1)
+        groups.splice(cheapIdx, 0, spec)
+      }
+      groups.push(cheap)
+    }
   }
   return groups
 }
