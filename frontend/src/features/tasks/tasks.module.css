@@ -267,7 +267,25 @@
 .rosterDeadline {
   color: var(--text-muted);
   font-size: var(--text-small);
+}
+/* Хвост строки (личный срок + кнопки) — деадлайн виден не у всех (только там,
+   где отличается от общего), поэтому auto-margin вешаем на весь хвост, а не на
+   сам rosterDeadline: иначе без него кнопки прилипали бы к чипам статуса. */
+.rosterActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   margin-left: auto;
+}
+/* Подзаголовок группы внутри ростера («Не сдали» / «Сдали»). */
+.rosterGroupTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  margin: var(--space-3) 0 var(--space-1);
+}
+.rosterGroupTitle:first-child {
+  margin-top: 0;
 }
 /* Заголовок сворачиваемой секции списка задач (индивидуальные, перекрёстные, истёкшие). */
 .sectionToggle {
