@@ -424,7 +424,9 @@ async def list_rooms(
 
     # Одностороннее ограничение записи в dm с админом (ARG-110, часть B): пир —
     # НЕ-навигатор-админ и у смотрящего нет рангового права ему писать. Админ
-    # сам никогда не блокируется (dm_peer_map тут ни при чём для него).
+    # сам никогда не блокируется (dm_peer_map тут ни при чём для него). Снимается
+    # навсегда, если этот админ уже написал сюда первым (`dm_unlocked_by_admin`,
+    # см. services/rooms.py `unlock_dm_by_admin_message`).
     dm_write_locked: dict[int, bool] = {}
     if current_user.role != "admin" and dm_peer_map:
         peer_admins = (
@@ -435,9 +437,10 @@ async def list_rooms(
             )
         ).all()
         admin_navigator_map = {uid: nav for uid, nav in peer_admins}
+        room_by_id = {room.id: room for room in rooms}
         for room_id, peer_id in dm_peer_map.items():
             is_navigator = admin_navigator_map.get(peer_id)
-            if is_navigator is False:
+            if is_navigator is False and not room_by_id[room_id].dm_unlocked_by_admin:
                 dm_write_locked[room_id] = not can_message_admin(
                     user_rank(current_user, ranks), ranks
                 )

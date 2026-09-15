@@ -133,14 +133,33 @@ async def dm_write_allowed(session: AsyncSession, room: Room, user: User) -> boo
     """Односторонний DM админ→игрок (ARG-110, часть B): в dm с НЕ-навигатор-админом
     писать может только участник с рангом тарифа в топ-2 потока (см. visibility.py
     `can_message_admin`) — иначе принять сообщение можно, ответить нельзя. Админ
-    (в т.ч. навигатор) и любой dm без админа-собеседника не ограничены."""
-    if room.type != "dm" or user.role == "admin":
+    (в т.ч. навигатор) и любой dm без админа-собеседника не ограничены.
+
+    `dm_unlocked_by_admin` снимает это ограничение навсегда, если сам админ уже
+    написал сюда первым (см. `unlock_dm_by_admin_message`) — независимо от ранга."""
+    if room.type != "dm" or user.role == "admin" or room.dm_unlocked_by_admin:
         return True
     peer = await _dm_peer(session, room, user)
     if peer is None or peer.role != "admin" or peer.is_navigator:
         return True
     ranks = await cohort_plan_ranks(session, user.intake_id)
     return can_message_admin(user_rank(user, ranks), ranks)
+
+
+def unlock_dm_by_admin_message(room: Room, user: User) -> None:
+    """Вызывать при отправке (и пересылке) сообщения — до `session.flush()`.
+
+    Не-навигатор-админ, написавший в dm первым, снимает одностороннее
+    ограничение для собеседника навсегда (пока не появится обратный механизм
+    «заблокировать снова» — сейчас его нет). Идемпотентно: повторные вызовы на
+    уже разблокированной комнате не делают лишнего UPDATE."""
+    if (
+        room.type == "dm"
+        and user.role == "admin"
+        and not user.is_navigator
+        and not room.dm_unlocked_by_admin
+    ):
+        room.dm_unlocked_by_admin = True
 
 
 async def resync_dm_memberships_after_plan_change(session: AsyncSession, user: User) -> None:

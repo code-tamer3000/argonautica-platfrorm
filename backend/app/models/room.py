@@ -55,6 +55,13 @@ class Room(Base):
     intake_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("intakes.id")
     )
+    # Одностороннее ограничение записи в dm с НЕ-навигатор-админом (ARG-110, часть B,
+    # см. services/rooms.py `dm_write_allowed`) снимается навсегда, как только этот
+    # админ сам пишет в dm первым — независимо от ранга тарифа собеседника. Только
+    # для type='dm'; для остальных типов комнат поле не используется.
+    dm_unlocked_by_admin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class RoomPlan(Base):
