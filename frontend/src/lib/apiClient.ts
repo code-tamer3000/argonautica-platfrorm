@@ -82,6 +82,12 @@ async function doRefresh(): Promise<boolean> {
     { method: 'POST', body: JSON.stringify({ refresh_token: rt }) },
     false,
   )
+  if (res.status >= 500) {
+    // 502/503/504 и т.п. — сбой прокси/шлюза между клиентом и бэкендом
+    // (частый спутник плохой связи), а не решение сервера про сам токен.
+    // Приравнивать это к «токен мёртв» значит разлогинивать на ровном месте.
+    throw new NetworkError(new Error(`refresh gateway error: ${res.status}`))
+  }
   if (!res.ok) return false
   const pair = (await res.json()) as TokenPair
   setTokens(pair)
