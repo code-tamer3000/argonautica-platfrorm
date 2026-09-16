@@ -24,7 +24,7 @@ from app.schemas.calendar import (
     CalendarEventOut,
     CalendarEventUpdate,
 )
-from app.services.tasks import participant_count
+from app.services.tasks import participant_count, published_where
 from app.services.visibility import intake_visible, plan_visibility_clause, plan_visible
 
 # Календарь — часть активной работы участника; наблюдателю закрыт.
@@ -222,8 +222,11 @@ async def list_events(
         my_individual_tasks = select(TaskAssignment.task_id).where(
             TaskAssignment.user_id == current_user.id
         )
+        # Отложенная публикация (база заданий): дедлайн запланированной задачи
+        # не торчит в календаре не-админа раньше, чем задача сама станет видна.
         visible_task_ids = select(Task.id).where(
-            or_(Task.type == "common", Task.id.in_(my_individual_tasks))
+            or_(Task.type == "common", Task.id.in_(my_individual_tasks)),
+            published_where(),
         )
         stmt = stmt.where(
             or_(

@@ -9,8 +9,10 @@
 > [FILES.md](FILES.md), [KB.md](KB.md), [TASKS.md](TASKS.md), [DYNAMICS.md](DYNAMICS.md),
 > [NOTIFICATIONS.md](NOTIFICATIONS.md), [CABIN.md](CABIN.md), [SURVEY.md](SURVEY.md),
 > [SUPPORT.md](SUPPORT.md), [CALENDAR.md](CALENDAR.md), [DEPLOY.md](DEPLOY.md),
-> [TELEGRAM_BOT.md](TELEGRAM_BOT.md)). Здесь — только PK/FK и смыслообразующие поля,
-> чтобы схема читалась.
+> [TELEGRAM_BOT.md](TELEGRAM_BOT.md), [INTAKE_BOT.md](INTAKE_BOT.md),
+> [ARGONAUTS.md](ARGONAUTS.md), [EXPEDITION.md](EXPEDITION.md),
+> [GENE_KEYS.md](GENE_KEYS.md)). Здесь — только PK/FK и смыслообразующие поля, чтобы
+> схема читалась.
 >
 > Схемы — текст (Mermaid) рядом с кодом: они живут в git, ревьюятся диффом и правятся
 > в той же задаче, что и код. См. «[Как это поддерживать](#как-это-поддерживать)».
@@ -21,7 +23,9 @@
 
 Наружу торчит **только nginx**. Postgres / Redis / MinIO host-портов не имеют и общие
 для обоих цветов blue-green. Байты медиа **не проходят через FastAPI**: клиент ходит в
-MinIO по presigned-URL, nginx лишь проксирует.
+MinIO по presigned-URL, nginx лишь проксирует (кроме офлайн-бэкфилла старых видео —
+`generate_video_poster` в `app/services/media.py` тянет оригинал на backend, это
+осознанное нарушение принципа для разового прогона на старых записях, не хот-пас).
 
 ```mermaid
 flowchart TB
@@ -38,7 +42,13 @@ flowchart TB
         BB["backend-blue<br/>FastAPI + uvicorn"]
         BG["backend-green<br/>FastAPI + uvicorn"]
         TW["transcode-worker<br/>ffmpeg, singleton"]
-        BOT["bot<br/>telegram long-polling, singleton"]
+        BOT["bot<br/>доступ и поддержка, long-polling, singleton"]
+        IBOT["intake-bot<br/>воронка приёма и оплаты,<br/>свой токен, long-polling, singleton"]
+    end
+
+    subgraph side["Рядом"]
+        SITE["argonautica-site<br/>визитка на apex-домене, отдельный compose-проект"]
+        OBS["victoriametrics + grafana<br/>метрики и RUM, доп. compose-файл того же проекта"]
     end
 
     subgraph stor["Состояние"]
@@ -56,6 +66,8 @@ flowchart TB
     NG -->|"/api/, /ws → активный цвет"| BB
     NG -.->|"неактивный цвет"| BG
     NG -->|"/chat-media/, /kb-media/"| MO
+    NG -->|"apex-домен, через сеть gateway"| SITE
+    NG -->|"METRICS_DOMAIN, через сеть gateway"| OBS
 
     BB --> PG
     BB --> RD
@@ -73,18 +85,32 @@ flowchart TB
     BOT --> PG
     BOT -->|"bot:* состояние диалога"| RD
     BOT <--> TG
+
+    IBOT -->|"заявки, тарифы, создание аккаунта"| PG
+    IBOT -->|"intakebot:* ожидание ответа"| RD
+    IBOT <-->|"свой TELEGRAM_INTAKE_BOT_TOKEN"| TG
 ```
 
 Что где лежит:
 
 | Хранилище | Что | Долговечность |
-|---|---|---|
-| PostgreSQL | пользователи, комнаты, сообщения, КБ, задачи, динамика, уведомления, каюта, анкета, календарь, метаданные медиа | навсегда (мягкое удаление) |
-| MinIO | сами байты: оригиналы, миниатюры, превью, 720p-варианты видео; приватные бакеты `chat-media` / `kb-media` | навсегда, объекты неизменяемы (ключ = uuid) |
-| Redis | pub/sub-шина реалтайма + всё эфемерное: whitelist refresh-токенов, typing, presence, rate-limit, намерение загрузки, очередь транскода, состояние бота | теряется без последствий |
+| -- | -- | -- |
+| PostgreSQL | пользователи, потоки и тарифы, комнаты, сообщения, КБ, задачи, динамика, уведомления, каюта, анкета, календарь, этапы и замки Экспедиции, заявки бота-воронки, метаданные медиа | навсегда (мягкое удаление) |
+| MinIO | сами байты: оригиналы, миниатюры, превью, 720p-варианты видео, аудио-варианты; приватные бакеты `chat-media` / `kb-media` | навсегда, объекты неизменяемы (ключ = uuid) |
+| Redis | pub/sub-шина реалтайма + всё эфемерное: whitelist refresh-токенов, typing, presence, rate-limit, намерение загрузки, очередь транскода, диалоговое состояние обоих ботов | теряется без последствий |
 
-`transcode-worker` и `bot` — singleton'ы: они **вне** blue-green (у одного long-polling
-на общем токене не должно быть второго экземпляра, у другого — очередь и ffmpeg).
+`transcode-worker`, `bot` и `intake-bot` — singleton'ы: они **вне** blue-green (у ботов
+long-polling — второй экземпляр на том же токене подрался бы за `getUpdates`, у воркера
+очередь и ffmpeg). Боты разведены по разным токенам и не конфликтуют друг с другом
+(ADR-029).
+
+Визитка (`argonautica-site`) живёт отдельным compose-проектом и на выкат платформы не
+реагирует. Наблюдаемость — **не** отдельный проект: `docker-compose.observability.yml`
+поднимается дополнительным `-f` над тем же compose-проектом `docker`, что и прод —
+см. раздел 4.
+
+Долговечная воронка приёма (`intake_applications`) лежит в Postgres, а не в Redis:
+она обязана пережить рестарт контейнера, в отличие от typing/presence.
 
 ---
 
@@ -93,10 +119,23 @@ flowchart TB
 Полный список колонок — в [DATA_MODEL.md](DATA_MODEL.md). Ниже — только каркас.
 Пунктирная связь = ссылка наружу своей области.
 
-### 2.1. Люди и доступ
+### 2.1. Люди, потоки и тарифы
 
 Логин — `username` (телеграм-хэндл), самостоятельной регистрации нет. Роли две
 (`participant` / `admin`), остальное — флаги-гранты. См. [AUTH.md](AUTH.md).
+
+Поверх ролей лежат **две оси видимости**: поток (`users.intake_id` — когорта с общей
+датой старта) и тариф (`users.plan_id`). Обе применяются только к контенту с *неявной*
+видимостью — каналам, common-задачам, материалам КБ, событиям календаря; групповые/dm
+комнаты и назначенные задачи гейтятся членством и назначением, оно сильнее. `NULL
+intake_id` и пустой набор строк в `<сущность>_plans` одинаково означают «доступно
+всем» — безопасный дефолт бэкфилла. Логика собрана в `app/services/visibility.py`,
+см. [ROOMS.md](ROOMS.md).
+
+Смена тарифа участником (в т.ч. разовый переход на дешёвый после неоплаты) и
+пятидневный грейс-период после downgrade — отдельная механика (`Междумирье`), она не
+завязана на эту пару полей напрямую и в этой схеме не разворачивается — см.
+[LIMBO.md](LIMBO.md).
 
 ```mermaid
 erDiagram
@@ -109,24 +148,63 @@ erDiagram
         boolean can_create_groups "грант"
         boolean can_access_cabin "грант, см. CABIN"
         boolean is_observer "режим наблюдателя"
+        boolean is_navigator "обход рангового ограничения записи админу"
+        boolean diary_public "ручной opt-in: дневник виден своему потоку"
         boolean survey_required "гейт всей платформы"
         timestamptz graduated_at "экспедиция пройдена"
+        bigint intake_id FK "поток участника"
+        bigint plan_id FK "оплаченный тариф"
         bigint avatar_media_id FK
         bigint survey_gift_asset_id FK "PDF-подарок после анкеты"
         jsonb settings "UI-префы и настройки пушей"
     }
+    intakes {
+        bigint id PK
+        date starts_on UK "точка отсчёта окна Динамики"
+        date ends_on "после — Динамика только на чтение"
+        text welcome_message "поп-ап при первом входе, NULL = нет"
+    }
+    plans {
+        bigint id PK
+        text name "цена задаёт ранг внутри потока"
+        int price "рубли, целое"
+        boolean is_active "предлагается ли ботом-воронкой"
+        boolean discipline_tracked "входит ли тариф в учёт дисциплины, см. LIMBO"
+    }
     media_assets {
         bigint id PK
     }
+
+    intakes ||--o{ users : "состав потока"
+    plans ||--o{ users : "тариф участника"
     users ||..o| media_assets : "аватар и подарок"
 ```
+
+Ранг тарифа считается **по факту, а не по колонке**: `plans` не привязана к `intakes`
+FK, «тарифы потока» — это тарифы, которые реально держит хоть кто-то из потока;
+ранг 1..N по возрастанию цены, «без тарифа» — ранг 0. Участник ранга R видит контакты
+рангом ≤ R своего потока; писать админу могут два самых дорогих тарифа, `is_navigator`
+это ограничение снимает точечно. Деактивация тарифа рангов не сбрасывает — `is_active`
+управляет только тем, предлагает ли его бот-воронка.
+
+`discipline_tracked` — независимый явный флаг, не выводится из цены/ранга (ранг внутри
+потока плавающий): держатели такого тарифа попадают в учёт просрочек Динамики и могут
+уйти в Междумирье, см. LIMBO.md.
+
+Истории «был участником прошлого потока» на уровне отдельной таблицы **нет** — доступ
+к чужому потоку не архивируется, `intake_id` у пользователя один и живой.
 
 ### 2.2. Комнаты и сообщения
 
 Одна таблица `rooms` на три типа пространств; различия — в поведении, не в структуре.
 У каналов строк `room_members` для обычных участников **нет** (доступ неявный, строка
 создаётся лениво ради курсора прочитанного). Треды плоские: ответ всегда указывает на
-корень. См. [ROOMS.md](ROOMS.md), [MESSAGES.md](MESSAGES.md).
+корень. Неявная видимость канала фильтруется парой «поток + тариф» (`rooms.intake_id`
+и `room_plans`, см. 2.1); новостной канал с ARG-104 тоже привязан к потоку — по одному
+на поток, а не один на платформу (`uq_rooms_news_per_intake`). Личный дневник — особый
+случай: у самой комнаты `intake_id` не проставляется, сравниваются потоки владельца и
+смотрящего. `dm_unlocked_by_admin` снимает разовое ограничение «нельзя писать админу
+первым» для ЛС. См. [ROOMS.md](ROOMS.md), [MESSAGES.md](MESSAGES.md).
 
 ```mermaid
 erDiagram
@@ -135,8 +213,15 @@ erDiagram
         text type "dm, group, channel"
         text dm_key UK "minId:maxId, защита от дублей ЛС"
         boolean is_personal "личный дневник, см. DYNAMICS"
-        boolean is_news "новостной канал, синглтон"
+        boolean is_news "новостной канал, по одному на поток"
+        boolean dm_unlocked_by_admin "разовое снятие запрета писать админу первым"
+        bigint intake_id FK "изоляция канала по потоку, NULL = всем"
+        bigint avatar_media_id FK "обложка комнаты и дневника"
         bigint created_by FK
+    }
+    room_plans {
+        bigint room_id PK
+        bigint plan_id PK
     }
     room_members {
         bigint room_id PK
@@ -162,6 +247,10 @@ erDiagram
         bigint message_id PK
         bigint media_asset_id PK
     }
+    message_reactions {
+        bigint message_id PK
+        bigint user_id PK
+    }
     pinned_messages {
         bigint room_id PK
         bigint message_id PK
@@ -185,10 +274,12 @@ erDiagram
     }
 
     rooms ||--o{ room_members : "членство и прочитанное"
+    rooms ||--o{ room_plans : "каким тарифам открыт канал"
     rooms ||--o{ messages : "лента"
     rooms ||--o{ pinned_messages : "закреплённые"
     messages ||--o{ messages : "ответы на корень"
-    messages ||--o{ message_attachments : "вложения"
+    messages ||--o{ message_attachments : "вложения, до шести в альбоме"
+    messages ||--o{ message_reactions : "одна реакция на юзера"
     messages }o--o| stickers : "сообщение-стикер"
     stickerpacks ||--o{ stickers : "паки"
     pinned_messages }o--|| messages : "что закреплено"
@@ -202,7 +293,8 @@ erDiagram
 
 `media_assets` — общий узел: одна таблица метаданных на чат, КБ, задачи, аватары и
 стикеры. Байты в MinIO, публичный URL не хранится — он подписывается на каждое чтение
-после проверки прав. См. [FILES.md](FILES.md).
+после проверки прав. Видео и аудио проходят один и тот же конвейер транскода (только
+без миниатюры у аудио). См. [FILES.md](FILES.md).
 
 ```mermaid
 erDiagram
@@ -214,7 +306,7 @@ erDiagram
         text preview_key "дериват для лайтбокса, только картинки"
         text kind "image, video, file, audio"
         text transcode_status "processing, done, failed"
-        text variant_key "H.264 720p, video/720/uuid.mp4"
+        text variant_key "H.264 720p либо AAC, video/720 или audio/…/uuid"
         bigint created_by FK
     }
     message_attachments {
@@ -247,6 +339,9 @@ erDiagram
 ### 2.4. База знаний
 
 См. [KB.md](KB.md). `kb_categories` — структура «на вырост», в MVP список плоский.
+Видимость материала — та же пара «поток + тариф», что у каналов (`kb_items.intake_id`
+и `kb_item_plans`, см. 2.1). Позиция просмотра видео хранится по тройке «материал +
+файл + пользователь», чтобы длинный эфир можно было досмотреть с другого устройства.
 
 ```mermaid
 erDiagram
@@ -261,7 +356,18 @@ erDiagram
         text title
         text body "markdown"
         boolean published "черновик или опубликовано"
+        bigint intake_id FK "поток, NULL = всем"
         bigint created_by FK
+    }
+    kb_item_plans {
+        bigint kb_item_id PK
+        bigint plan_id PK
+    }
+    kb_video_progress {
+        bigint kb_item_id PK
+        bigint media_asset_id PK
+        bigint user_id PK
+        int position_seconds "докуда досмотрено"
     }
     kb_item_media {
         bigint kb_item_id PK
@@ -282,7 +388,9 @@ erDiagram
     }
 
     kb_categories ||--o{ kb_items : "рубрикация"
+    kb_items ||--o{ kb_item_plans : "каким тарифам открыт материал"
     kb_items ||--o{ kb_item_media : "вложения"
+    kb_items ||--o{ kb_video_progress : "позиция просмотра видео"
     kb_items ||--o{ kb_comments : "обсуждение"
     kb_item_media }o..|| media_assets : "внешняя"
     kb_comments }o..|| users : "автор"
@@ -291,7 +399,11 @@ erDiagram
 ### 2.5. Задачи — выдача и сдача
 
 Четыре типа (`common`, `individual`, `pair`, `stream`). Общая часть — назначение,
-сдача (история версий), ревью. Дедлайн синхронизируется в календарь. См. [TASKS.md](TASKS.md).
+сдача (история версий), ревью. Дедлайн синхронизируется в календарь, у отдельного
+назначения может быть свой `deadline_at`, переопределяющий дедлайн задачи. У
+`common`-задачи видимость неявная, поэтому она фильтруется потоком и тарифом
+(`tasks.intake_id`, `task_plans`) — на остальные типы фильтр не влияет, назначение
+сильнее. См. [TASKS.md](TASKS.md).
 
 ```mermaid
 erDiagram
@@ -301,9 +413,15 @@ erDiagram
         text title
         bigint kb_item_id FK "необязательная привязка к материалу"
         bigint pair_id FK "только у перекрёстной задачи пары"
+        bigint intake_id FK "поток, NULL = всем"
+        boolean sets_display_name "ответ становится подписью в ростере"
         timestamptz deadline_at "уезжает в календарь"
         bigint created_by FK
         timestamptz deleted_at
+    }
+    task_plans {
+        bigint task_id PK
+        bigint plan_id PK
     }
     task_media {
         bigint task_id PK
@@ -315,6 +433,8 @@ erDiagram
         bigint user_id FK
         text status "assigned, submitted, returned, accepted"
         boolean late "сдал после дедлайна"
+        timestamptz deadline_at "переопределение дедлайна задачи для конкретного участника"
+        timestamptz reviewed_at
     }
     task_submissions {
         bigint id PK
@@ -351,6 +471,7 @@ erDiagram
         bigint id PK
     }
 
+    tasks ||--o{ task_plans : "каким тарифам выдана common-задача"
     tasks ||--o{ task_media : "условие"
     tasks ||--o{ task_assignments : "кому выдано"
     task_assignments ||--o{ task_submissions : "сдачи"
@@ -368,7 +489,8 @@ erDiagram
 
 `stream`-задача: участники пишут личный текст, объединяются в подгруппы по раундам,
 согласовывают одну фразу голосованием и поднимают её вверх по дереву. Прогресс не
-хранится — он выводится из данных. См. [TASKS.md](TASKS.md).
+хранится — он выводится из данных. `phrase_option_id` на узле — ссылка на победивший
+вариант, `position` — только раскладка сетки на экране. См. [TASKS.md](TASKS.md).
 
 ```mermaid
 erDiagram
@@ -382,10 +504,12 @@ erDiagram
         bigint id PK
         bigint task_id FK
         int round "1 = пары, depth = корень"
+        int position "раскладка узла в сетке"
         bigint parent_id FK "NULL у корня"
         text side "left или right, только раскладка"
         bigint room_id FK "комната обсуждения подгруппы"
         text phrase "согласованная фраза, NULL пока нет"
+        bigint phrase_option_id FK "какой вариант победил"
         timestamptz approved_at
         bigint approved_by FK "NULL = единогласно"
     }
@@ -441,7 +565,9 @@ erDiagram
 
 Записей журнала как таблицы **нет**: запись дня — это `messages` в личной комнате
 (`rooms.is_personal`). В базе живут только версионируемая **структура** задания,
-самопрощения и админские зачёты. См. [DYNAMICS.md](DYNAMICS.md).
+самопрощения и админские зачёты. Окно 28 дней отсчитывается от `intakes.starts_on`
+потока участника (см. 2.1), а после `intakes.ends_on` Динамика закрытого потока
+доступна только на чтение. См. [DYNAMICS.md](DYNAMICS.md).
 
 ```mermaid
 erDiagram
@@ -490,18 +616,22 @@ erDiagram
 
 Одна точка генерации, два транспорта: строка в Postgres для ленты колокольчика и
 WS-событие в личный канал `user:{id}`, плюс, если разрешено настройками, нативный
-Web Push. См. [NOTIFICATIONS.md](NOTIFICATIONS.md).
+Web Push. Строки не удаляются, но лента показывает прочитанное не старше 48 часов —
+ретенция на чтении (`READ_FEED_RETENTION`), а не в базе. `journal_missed` больше не
+генерируется новым кодом, но значение остаётся в CHECK-констрейнте ради старых строк.
+См. [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 ```mermaid
 erDiagram
     notifications {
         bigint id PK
         bigint user_id FK "получатель"
-        text kind "dm, reply, news, mention, cabin_granted, admin"
+        text kind "dm, reply, news, mention, journal_missed, cabin_granted, admin"
         bigint room_id FK "NULL у системных"
         bigint message_id FK "NULL у системных"
         bigint actor_id FK "кто вызвал"
         text title "заголовок админской рассылки"
+        text body "текст админской рассылки"
         timestamptz read_at "NULL = непрочитано"
     }
     push_subscriptions {
@@ -532,9 +662,11 @@ erDiagram
 ### 2.9. Каюта, анкета, поддержка, календарь
 
 Четыре небольших независимых области. У каюты и анкеты форма живёт в коде, ответы —
-в JSONB. Каюта — единственное место с **жёстким** удалением.
-См. [CABIN.md](CABIN.md), [SURVEY.md](SURVEY.md), [SUPPORT.md](SUPPORT.md),
-[CALENDAR.md](CALENDAR.md).
+в JSONB. Каюта — единственное место с **жёстким** удалением. Событие календаря
+изолируется потоком и тарифом (`intake_id` + `calendar_event_plans`), а не привязкой к
+комнате: прежняя колонка `room_id` из модели убрана (в базе она ещё жива по правилу
+expand/contract, дропать её отдельным релизом). См. [CABIN.md](CABIN.md),
+[SURVEY.md](SURVEY.md), [SUPPORT.md](SUPPORT.md), [CALENDAR.md](CALENDAR.md).
 
 ```mermaid
 erDiagram
@@ -567,16 +699,19 @@ erDiagram
     calendar_events {
         bigint id PK
         text title
+        text description
         timestamptz starts_at
+        timestamptz ends_at
         boolean all_day
-        bigint room_id FK "NULL = событие всего проекта"
+        bigint intake_id FK "поток, NULL = всем"
         bigint task_id FK "автопривязка к дедлайну задачи"
         bigint created_by FK
     }
-    users {
-        bigint id PK
+    calendar_event_plans {
+        bigint calendar_event_id PK
+        bigint plan_id PK
     }
-    rooms {
+    users {
         bigint id PK
     }
     tasks {
@@ -586,8 +721,83 @@ erDiagram
     users ||--o{ cabin_entries : "приватный дневник"
     users ||--o| survey_responses : "выпускная анкета"
     users ||--o{ feedback : "обращения"
-    calendar_events }o..o| rooms : "событие комнаты"
+    calendar_events ||--o{ calendar_event_plans : "каким тарифам видно"
     calendar_events }o..o| tasks : "дедлайн задачи"
+```
+
+### 2.10. Круг Экспедиции
+
+Расписание потока: шесть этапов (Точка Баланса → Воздух → Огонь → Вода → Земля →
+Финал), каждый открывается эфиром. Длина этапа не хранится — считается из дат соседей.
+Четыре стихии несут по «замку»: слот, куда участник вводит выпавшую ему гексаграмму, а
+раскрывает его сдача привязанного к этапу задания. Контент Генных Ключей —
+не в базе, он поставляется с фронтендом. См. [EXPEDITION.md](EXPEDITION.md),
+[GENE_KEYS.md](GENE_KEYS.md).
+
+```mermaid
+erDiagram
+    intake_stages {
+        bigint id PK
+        bigint intake_id FK
+        text kind "balance, air, fire, water, earth, final"
+        date air_date "эфир, который ОТКРЫВАЕТ этап"
+        time air_time "МСК, NULL = начало дня"
+        bigint task_id FK "чья сдача раскрывает замок"
+    }
+    expedition_locks {
+        bigint id PK
+        bigint user_id FK
+        text element "air, fire, water, earth"
+        int key_number "1..64, Кинг Вэнь"
+        text hexagram "денормализовано от key_number на сервере"
+    }
+    intakes {
+        bigint id PK
+    }
+    tasks {
+        bigint id PK
+    }
+    users {
+        bigint id PK
+    }
+
+    intakes ||--o{ intake_stages : "расписание потока, UNIQUE по kind"
+    intake_stages }o..o| tasks : "задание этапа"
+    users ||--o{ expedition_locks : "ровно четыре слота, UNIQUE user+element"
+```
+
+### 2.11. Приём: воронка бота
+
+Состояние воронки — в Postgres, одна строка на Telegram-чат: она обязана пережить
+рестарт контейнера. Статусы идут строго по порядку; «Задать вопрос» статус не меняет.
+Часы брони тикают только на шагах выбора тарифа / оферты / чека — на `payment_review`
+ход админа, и заявка там не сгорает. Цена фиксируется снимком в момент «Принять»:
+до этого бот читал `plans.price` вживую, и админская правка тарифа молча долетала до
+уже забронировавшего человека. См. [INTAKE_BOT.md](INTAKE_BOT.md).
+
+```mermaid
+erDiagram
+    intake_applications {
+        bigint id PK
+        bigint tg_id UK "один чат = одна заявка"
+        text status "awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_receipt → payment_review → confirmed, либо expired"
+        text about "ответ анкеты"
+        bigint plan_id FK "выбранный тариф"
+        text receipt_file_id "чек живёт в Telegram, у нас только id"
+        timestamptz offer_accepted_at "согласие с офертой"
+        timestamptz payment_deadline_at "бронь места, 24 часа"
+        jsonb price_snapshot "цены активных тарифов на момент «Принять»"
+        bigint user_id FK "появляется на confirmed"
+    }
+    plans {
+        bigint id PK
+    }
+    users {
+        bigint id PK
+    }
+
+    plans ||--o{ intake_applications : "выбранный тариф"
+    intake_applications |o--o| users : "созданный аккаунт"
 ```
 
 ---
@@ -620,7 +830,7 @@ sequenceDiagram
 
     C->>A: любой запрос с Authorization Bearer access
     A->>A: decode_token, затем get_current_active_user
-    Note over A: гейты платформы: must_change_password и survey_required<br/>отбиваются здесь же, до бизнес-логики
+    Note over A: гейты платформы, по очереди: must_change_password,<br/>survey_required, затем resolve_limbo (Междумирье)
     A-->>C: 200
 
     C->>A: 401 истёк access → POST /api/auth/refresh
@@ -650,13 +860,15 @@ sequenceDiagram
     participant W as Push-сервис
 
     C->>A: POST /api/rooms/{id}/messages
+    A->>R: INCR rl:send:{user_id} — лимит отправки
     A->>A: get_current_active_user, assert_room_access, assert_can_write
     Note over A: авторизация на каждом запросе:<br/>членство и роль проверяются на сервере
     A->>P: INSERT messages
     A->>P: INSERT message_attachments (только свои ассеты)
     A->>P: UPDATE корня треда — reply_count, last_reply_at
+    A->>A: after_commit(...) — публикация в комнату отложена
     A->>P: INSERT notifications получателям (dm, reply, news, mention)
-    A->>A: after_commit(...) — сайд-эффекты отложены
+    A->>A: after_commit(...) — уведомление и push на получателя отложены
     A->>P: COMMIT
 
     Note over A: дальше — только после успешного commit,<br/>это делает зависимость get_session
@@ -672,7 +884,8 @@ sequenceDiagram
 
 Три шага, байты идут мимо FastAPI. Между шагами живёт **намерение загрузки** в Redis
 (TTL = `PRESIGN_EXPIRES`, 1 час) — им же сервер проверяет, что подтверждают именно то,
-что разрешили. Размер берётся из MinIO, клиенту не верим. См. [FILES.md](FILES.md).
+что разрешили. Размер берётся из MinIO, клиенту не верим. Видео и аудио уходят в один и
+тот же фоновый транскод. См. [FILES.md](FILES.md).
 
 ```mermaid
 sequenceDiagram
@@ -684,7 +897,7 @@ sequenceDiagram
     participant M as MinIO
     participant P as Postgres
 
-    Note over C: картинки больше 1 МБ клиент ужимает сам (best-effort),<br/>видео НЕ жмёт — его транскодирует сервер
+    Note over C: картинки больше 1 МБ клиент ужимает сам (best-effort),<br/>видео/аудио НЕ жмёт — их транскодирует сервер
 
     C->>A: POST /api/media/uploads (kind, content_type, size)
     A->>R: INCR rl:upload:{user_id}
@@ -703,11 +916,11 @@ sequenceDiagram
     A->>P: INSERT media_assets
     alt картинка
         A->>M: скачать оригинал, собрать thumb (1024px) и preview (1600px), залить
-        Note over A,M: единственное место, где байты проходят через backend
-    else видео
+        Note over A,M: единственное место в хот-пасе, где байты проходят через backend
+    else видео или аудио
         A->>P: transcode_status = processing
         A->>R: после commit — RPUSH transcode:pending
-        Note over A: постер клиент снял сам и передал ключом — мгновенное превью
+        Note over A: постер видео клиент снял сам и передал ключом — мгновенное превью
     end
     A->>R: DEL media:upload:{key}
     A-->>C: 201 media_assets
@@ -720,7 +933,9 @@ sequenceDiagram
 ### 3.4. Доставка событий реального времени
 
 WS-соединение аутентифицируется в рукопожатии (токен в query — браузер не шлёт
-заголовки на WS), подписка на комнату проверяется отдельно. Между процессами и цветами
+заголовки на WS), подписка на комнату проверяется отдельно. При коннекте фиксируется
+статус «дешёвый тариф» участника — от него зависит, какой вариант контента сообщения
+уйдёт именно этому соединению (редакция контента, ARG-115). Между процессами и цветами
 события ходят через Redis pub/sub, поэтому «кто опубликовал» и «у кого сокет» могут
 быть разными процессами. См. [MESSAGES.md](MESSAGES.md).
 
@@ -734,8 +949,8 @@ sequenceDiagram
     participant BG as backend-green
 
     C2->>BB: WS /ws?token=access
-    BB->>BB: decode_token, проверка must_change_password и survey_required
-    BB->>R: INCR presence:count:{uid}, при первом — PUBLISH presence online
+    BB->>BB: decode_token, проверка гейтов, снятие статуса «дешёвый тариф»
+    BB->>R: INCR presence:count:{uid} + SADD presence:online, при первом — PUBLISH presence online
     C2->>BB: subscribe room_id
     BB->>BB: load_room + assert_room_access, затем manager.subscribe
     BB-->>C2: subscribed
@@ -745,7 +960,7 @@ sequenceDiagram
     C1->>BG: POST сообщения (обслуживает другой процесс или цвет)
     BG->>R: PUBLISH room:{id} message.new
     R-->>BB: pmessage
-    BB->>BB: manager.fanout_room — раздать локальным сокетам
+    BB->>BB: manager.fanout_room — раздать локальным сокетам,<br/>содержимое режется по «дешёвому тарифу» на соединение
     BB-->>C2: message.new
 
     C2->>BB: typing room_id
@@ -753,18 +968,20 @@ sequenceDiagram
     Note over BB: наблюдатель и выпускник «печатает…» не шлют
 
     Note over C2,BB: при blue-green переключении сокеты старого цвета рвутся —<br/>клиент ОБЯЗАН переподключиться и переподписаться
-    BB->>R: при отключении DECR presence:count, при нуле — PUBLISH presence offline
+    BB->>R: при отключении DECR presence:count + SREM presence:online, при нуле — PUBLISH presence offline
 ```
 
 Каналы шины: `room:{id}` (события комнаты), `user:{id}` (персональные уведомления),
 `presence` (широковещательно). Ошибка публикации проглатывается — REST-ответ из-за
 недоступного Redis не падает.
 
-### 3.5. Обработка видео
+### 3.5. Обработка видео и аудио
 
 Очередь — простой list в Redis с claim/ack и реклеймом по таймауту. Долговечное
 состояние отдачи (`processing` / `done` / `failed`) живёт в Postgres, механика
-(pending / inflight / attempts) — только в Redis. См. [FILES.md](FILES.md).
+(pending / inflight / attempts) — только в Redis. Один и тот же цикл воркера
+обслуживает оба типа — выбор функции транскода зависит от `media_assets.kind`.
+См. [FILES.md](FILES.md).
 
 ```mermaid
 sequenceDiagram
@@ -786,15 +1003,20 @@ sequenceDiagram
         T->>P: прочитать media_assets
         T->>R: HINCRBY attempts
         T->>M: скачать оригинал
-        T->>T: ffprobe, затем ffmpeg H.264 720p, AAC 128k, faststart
-        Note over T: быстрый путь: уже H.264 + AAC + faststart + высота ≤720 →<br/>вариант = оригинал, делается только постер
+        alt kind = video
+            T->>T: ffprobe, затем ffmpeg H.264 720p, AAC 128k, faststart
+            Note over T: быстрый путь: уже H.264 + AAC + faststart + высота ≤720 →<br/>вариант = оригинал, делается только постер
+        else kind = audio
+            T->>T: ffprobe, затем ffmpeg → AAC/M4A, без миниатюры
+        end
         alt успех
-            T->>M: залить вариант в video/720/ и постер
+            T->>M: залить вариант (и постер у видео)
             T->>P: variant_key, variant_mime, thumb_key, status = done
             T->>R: ack — снять из inflight и attempts
         else сбой, попытки остались
-            T->>R: requeue с экспоненциальным бэкоффом
-        else терминальный сбой или отказ по гардрейлу
+            T->>T: sleep(min(2^attempt, 30)) — воркер стоит на месте на время бэкоффа
+            T->>R: requeue
+        else терминальный сбой или отказ по гардрейлу (TranscodeRejected)
             T->>P: status = failed
             Note over T,P: оригинал остаётся скачиваемым, файл не теряется
             T->>R: ack
@@ -808,8 +1030,45 @@ sequenceDiagram
 `TRANSCODE_MAX_DURATION_SECONDS` (3 часа) должны укладываться в
 `TRANSCODE_FFMPEG_TIMEOUT_SECONDS` (90 минут), а `TRANSCODE_CLAIM_TIMEOUT_SECONDS`
 (2 часа) обязан быть **выше** таймаута ffmpeg — иначе живую джобу отберут у работающего
-воркера и работа продублируется. Событие `attachment.updated` летит только в чат: у
-задач и КБ нет room-канала, там вариант подхватится при следующем чтении.
+воркера и работа продублируется. Backoff между попытками синхронный (воркер спит внутри
+цикла, а не откладывает джобу в очереди) — при долгом бэкоффе весь воркер простаивает,
+т.к. он один. Событие `attachment.updated` летит только в чат: у задач и КБ нет
+room-канала, там вариант подхватится при следующем чтении.
+
+### 3.6. Приём в поток (бот-воронка)
+
+Единственный путь на платформу: аккаунтов с самостоятельной регистрацией нет, участника
+заводит бот в момент подтверждения оплаты. Два ручных шага админа («Принять» и
+«Подтвердить оплату») специально не автоматизированы — платёжный провайдер не
+подключён, чек человек присылает картинкой. См. [INTAKE_BOT.md](INTAKE_BOT.md).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as Заявитель в Telegram
+    participant IB as intake-bot
+    participant P as Postgres
+    participant AD as Админ-чат
+
+    U->>IB: /start, рассказ о себе
+    IB->>P: INSERT intake_applications, status = submitted
+    IB->>AD: анкета с кнопками «Принять» / «Отклонить»
+
+    AD->>IB: «Принять»
+    IB->>P: снимок цен активных тарифов в price_snapshot,<br/>payment_deadline_at = сейчас + 24 часа
+    Note over IB,P: дальше вся воронка читает цену ИЗ СНИМКА, не из plans —<br/>правка тарифа не догоняет уже забронировавшего
+    IB->>U: список тарифов → карточка → оферта → реквизиты
+    U->>IB: чек фотографией или PDF
+    IB->>P: receipt_file_id, status = payment_review
+    Note over IB,P: часы брони на этом шаге ОСТАНОВЛЕНЫ — ход админа
+
+    AD->>IB: «Подтвердить оплату»
+    IB->>P: create_user: intake_id текущего набора, plan_id из заявки,<br/>одноразовый пароль и must_change_password
+    IB->>P: назначить individual-задания-приветствия набора
+    IB->>U: логин и одноразовый пароль, заявка в сервисном режиме
+
+    Note over IB,P: фоновый sweep гасит просроченную бронь:<br/>status = expired, место освобождается
+```
 
 ---
 
@@ -818,37 +1077,45 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph dev["Локально (make local-up)"]
-        DC["docker/docker-compose.prod.yml, проект platform-local<br/>DOMAIN=localhost/MEDIA_DOMAIN=media.localhost<br/>собранный SPA + nginx + MinIO, один backend, bot выключен"]
+        DC["docker/docker-compose.prod.yml, проект platform-local<br/>DOMAIN=localhost/MEDIA_DOMAIN=media.localhost<br/>собранный SPA + nginx + MinIO, один backend, боты выключены"]
     end
 
     subgraph tst["Тесты (make)"]
         TC["docker/docker-compose.test.yaml, проект argonautica-test<br/>образы версий прода, состояние в tmpfs<br/>api-контейнер из прод-Dockerfile, запуск one-off"]
     end
 
-    subgraph srv["Один сервер 45.151.102.255"]
-        subgraph stg["staging — /opt/platform-staging"]
-            SN["nginx :8443 TCP и UDP"]
-            SB["backend (один, без blue-green)"]
-            SW["transcode-worker"]
-            SS["свои postgres / redis / minio / .env / JWT_SECRET"]
-        end
+    subgraph srv["Один сервер 45.151.102.255, общий шлюз на :443"]
         subgraph prd["production — /opt/platform"]
-            PN["nginx :80, :443 TCP и UDP"]
+            PN["nginx :80, :443 TCP и UDP<br/>терминирует TLS и для прода, и для staging,<br/>визитки и метрик — маршрут по SNI/Host, не по порту"]
             PB["backend-blue и backend-green"]
             PW["transcode-worker"]
-            PBot["bot"]
+            PBot["bot + intake-bot"]
             PS["общие postgres / redis / minio"]
+        end
+        subgraph stg["staging — /opt/platform-staging"]
+            SN["nginx, без host-портов<br/>внутренний HTTP-реверс-прокси, TLS нет"]
+            SB["backend (один, без blue-green)"]
+            SW["transcode-worker + intake-bot"]
+            SS["свои postgres / redis / minio / .env / JWT_SECRET"]
+        end
+        subgraph aside["отдельные compose-проекты и оверлеи"]
+            ST["argonautica-site — визитка на apex,<br/>контент вне репозитория, монтируется ro"]
+            OB["docker-compose.observability.yml —<br/>доп. -f над прод-проектом, victoriametrics + grafana на METRICS_DOMAIN"]
         end
     end
 
+    PN -->|"docker-сеть gateway,<br/>resolver 127.0.0.11 (lazy)"| SN
+    PN -->|"та же сеть gateway"| ST
+    PN --> OB
+
     PR["Pull Request"] -->|"ci.yml: make lint + make test"| CI["GitHub Actions"]
     DEV["ветка develop"] -->|"deploy-staging.yml: rsync + deploy-staging.sh"| stg
-    MAIN["ветка main"] -->|"deploy-prod.yml: rsync + deploy.sh"| prd
+    MAIN["ветка main"] -->|"deploy-prod.yml: rsync + deploy.sh +<br/>restart transcode-worker + recreate nginx + smoke-check"| prd
     PR --> DEV
     DEV -->|"мёрж вручную"| MAIN
 ```
 
-**Blue-green (`docker/deploy.sh`)** — по шагам:
+**Blue-green (**`docker/deploy.sh`**)** — по шагам:
 
 ```mermaid
 sequenceDiagram
@@ -875,36 +1142,41 @@ sequenceDiagram
     Note over O: сокеты рвутся — клиент переподключается сам
 ```
 
-**Чего деплой НЕ делает** (реальные грабли, проверено по `deploy.sh` и compose):
+**Чего сам** `deploy.sh` **НЕ делает** — и кто это закрывает на проде:
 
-| Не делается | Почему | Что делать руками |
-|---|---|---|
-| Не перезапускает `transcode-worker` | singleton вне blue-green, `deploy.sh` его не трогает | `up -d --no-deps transcode-worker` — иначе воркер крутит старый образ; без воркера видео копятся в очереди **молча**, отдаётся оригинал |
-| Не применяет правки nginx | `nginx -s reload` перечитывает уже отрендеренный `conf.d/`, а `envsubst` отрабатывает только на старте контейнера | `up -d --no-deps --force-recreate nginx`, предварительно проверив кандидат через `nginx -t` в одноразовом контейнере |
-| Не меняет опубликованные порты | смена портов требует пересоздания контейнера | то же пересоздание nginx |
-| Не трогает `bot` | singleton, long-polling; второй поллер на том же токене подрался бы за `getUpdates` | перезапускать осознанно; на staging бота нет вовсе |
+| Не делается | Почему | Кто закрывает |
+| -- | -- | -- |
+| Не перезапускает `transcode-worker` | singleton вне blue-green, скрипт его не трогает — без этого воркер крутит старый образ, а видео/аудио **молча** копятся в очереди и отдаётся оригинал | `deploy-prod.yml`, отдельным шагом сразу после скрипта; шаг роняет деплой, если контейнер не поднялся |
+| Не пересоздаёт nginx | `nginx -s reload` не только не перечитывает шаблон (`envsubst` рендерит его лишь при старте контейнера) — он ещё и не обновляет закэшированные IP апстримов. Новый цвет поднимается с новым IP, и nginx после переключения продолжает стучаться в мёртвый контейнер: 502 на весь `/api/` и `/ws` при КАЖДОМ выкате | `deploy-prod.yml`, `--force-recreate nginx` + smoke-check через периметр, тем же шагом |
+| Не трогает `bot` и `intake-bot` | singleton'ы на long-polling; второй поллер на том же токене подрался бы за `getUpdates` | никто — перезапуск всегда осознанный вручную |
+| Не поднимает визитку и наблюдаемость | это чужие по жизненному циклу compose-сущности (`-p argonautica-site` — отдельный проект; observability — доп. `-f` над прод-проектом), выкат платформы их намеренно не касается | `deploy-prod.yml` отдельным шагом проверяет, что визитка поднята; метрики — вручную |
+
+На staging проще: `deploy-staging.sh` делает `up -d` всему проекту сразу (поэтому
+`transcode-worker` и `intake-bot` там обновляются сами) и `--force-recreate nginx`;
+бота доступа/поддержки на стенде нет вовсе.
 
 Прочее по окружениям: `MINIO_ENDPOINT` (внутренний) и `MINIO_PUBLIC_ENDPOINT`
-(которым подписываются presigned-URL) в проде — **разные** адреса; на staging второй
-обязан нести порт `:8443`, иначе SigV4 не сходится и падают все загрузки. Подробности,
-сертификаты, HTTP/3 и бэкапы — в [DEPLOY.md](DEPLOY.md).
+(которым подписываются presigned-URL) в проде — **разные** адреса; staging сидит за тем
+же шлюзом на стандартном `:443` (не на отдельном порту), поэтому его
+`MINIO_PUBLIC_ENDPOINT` порт не несёт. Подробности, сертификаты, HTTP/3, метрики и
+бэкапы — в [DEPLOY.md](DEPLOY.md).
 
 ---
 
 ## Как это поддерживать
 
-- Схема правится **в той же задаче, что и код**. Это уже действующее правило CLAUDE.md:
+* Схема правится **в той же задаче, что и код**. Это уже действующее правило CLAUDE.md:
   изменение, меняющее описанное в `docs/`, обязано обновить соответствующий файл в том же
   изменении — этот файл входит в `docs/`.
-- Что именно требует правки здесь:
-  - новая таблица или новая связь → соответствующий `erDiagram` в разделе 2;
-  - новый сервис или новая интеграция → флоучарт стека в разделе 1;
-  - изменение порядка шагов в потоке (особенно вокруг `after_commit`, presigned-URL,
+* Что именно требует правки здесь:
+  * новая таблица или новая связь → соответствующий `erDiagram` в разделе 2;
+  * новый сервис или новая интеграция → флоучарт стека в разделе 1;
+  * изменение порядка шагов в потоке (особенно вокруг `after_commit`, presigned-URL,
     pub/sub или очереди) → соответствующий `sequenceDiagram` в разделе 3;
-  - изменение `docker/deploy.sh`, compose-файлов или того, что деплой не делает
+  * изменение `docker/deploy.sh`, compose-файлов или того, что деплой не делает
     автоматически → раздел 4.
-- Колонки сюда **не переносятся**. Если тянет уточнить тип или ограничение — место для
+* Колонки сюда **не переносятся**. Если тянет уточнить тип или ограничение — место для
   этого [DATA_MODEL.md](DATA_MODEL.md), иначе через месяц здесь будет вторая, расходящаяся
   правда.
-- Схемы — Mermaid в тексте: рендерятся в GitHub и Linear, диффятся построчно, не устаревают
+* Схемы — Mermaid в тексте: рендерятся в GitHub и Linear, диффятся построчно, не устаревают
   как экспортированные картинки.

@@ -20,6 +20,7 @@ from app.models.calendar import CalendarEvent, CalendarEventPlan
 from app.models.task import (
     Task,
     TaskAssignment,
+    TaskMedia,
     TaskPair,
     TaskPairMember,
     TaskPlan,
@@ -51,11 +52,33 @@ def _effective_plan_id(user: User) -> int | None:
     return user.plan_id
 
 
+def published_where(now: datetime | None = None) -> ColumnElement[bool]:
+    """WHERE «задача уже опубликована» (база заданий, отложенная публикация).
+
+    NULL `publish_at` — опубликована сразу (все исторические строки). Иначе
+    видна не-админу только когда `now() >= publish_at` — считается лениво на
+    каждом чтении, без планировщика (в проекте его нет принципиально, см.
+    services/limbo.py). Не применяется к админу — тот видит запланированные
+    задачи всегда, с отдельной пометкой в хабе.
+    """
+    now = now or datetime.now(UTC)
+    return or_(Task.publish_at.is_(None), Task.publish_at <= now)
+
+
+def is_published(task: Task, now: datetime | None = None) -> bool:
+    """Скалярный эквивалент published_where для уже загруженного объекта Task."""
+    if task.publish_at is None:
+        return True
+    return task.publish_at <= (now or datetime.now(UTC))
+
+
 def _visible_common_where(user: User) -> tuple[ColumnElement[bool], ...]:
     """Условия WHERE «common-задача видна юзеру по потоку+тарифу» (ARG-96).
 
     Общий кусок для compute_progress/attention_count — считать личный прогресс и
     бейдж по задачам чужого потока/тарифа было бы неверно (участник их не видит).
+    Плюс отложенная публикация: запланированная задача не считается видимой,
+    пока не наступил её publish_at.
     """
     return (
         Task.type == "common",
@@ -63,6 +86,7 @@ def _visible_common_where(user: User) -> tuple[ColumnElement[bool], ...]:
         plan_visibility_clause(
             TaskPlan.plan_id, TaskPlan.task_id, Task.id, _effective_plan_id(user)
         ),
+        published_where(),
     )
 
 
@@ -103,6 +127,11 @@ async def assert_task_visible(
         if submitted is None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
+    # Отложенная публикация (база заданий): запланированная задача не существует
+    # для не-админа, пока не наступил publish_at — 404, а не 403, той же логикой,
+    # что и остальные "скрытые до срока" сущности (не "нет прав", а "ещё нет").
+    if not is_published(task):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
     if task.type == "common":
         # Уже сдал/приняли, пока держал нужный тариф — доступ остаётся, даже если
         # тариф потом сменили (назначение сильнее тарифа — тот же принцип, что и
@@ -367,6 +396,100 @@ async def sync_task_calendar_event(session: AsyncSession, task: Task) -> None:
         event.title = title
         event.starts_at = task.deadline_at
     await session.flush()
+
+
+# --- база заданий: переиздание (клон) ----------------------------------------
+
+
+async def clone_task(
+    session: AsyncSession,
+    source: Task,
+    *,
+    intake_id: int,
+    created_by: int,
+    deadline_at: datetime | None,
+    publish_at: datetime | None,
+    plan_ids: list[int] | None,
+) -> Task:
+    """Клонировать задачу для другого потока («База заданий», переиздание).
+
+    Всегда создаёт `common`-задачу (адресатов прошлого потока не переносим —
+    у common-типа их и не было явно, а individual/pair/stream переиздаются
+    только вручную через «Создать на основе», см. docs/TASKS.md — их сетка/пары
+    строятся от конкретных выбранных участников). Копирует текст, привязку к
+    KB, флаг sets_display_name и медиа условия (те же media_asset_id — доступ к
+    медиа гейтится по задаче, а не по владельцу ассета, переливать файлы не
+    нужно). НЕ копирует task_assignments/submissions/comments — ради этого клон
+    и существует: у нового потока, включая тех, кто уже сдавал оригинал в
+    прошлом потоке, чистый старт (нет строки назначения — нечему мешать).
+
+    `source_task_id` нового клона указывает на корень «семейства» переизданий
+    (сам `source`, если он оригинал, иначе — уже проставленный у него
+    `source_task_id`) — так список базы заданий может показать, на какие
+    потоки семейство уже переиздано, не обходя цепочку клонов.
+    """
+    root_id = source.source_task_id or source.id
+    clone = Task(
+        type="common",
+        title=source.title,
+        body=source.body,
+        kb_item_id=source.kb_item_id,
+        deadline_at=deadline_at,
+        publish_at=publish_at,
+        created_by=created_by,
+        intake_id=intake_id,
+        sets_display_name=source.sets_display_name,
+        source_task_id=root_id,
+    )
+    session.add(clone)
+    await session.flush()
+
+    if plan_ids is None:
+        plan_ids = list(
+            (
+                await session.scalars(
+                    select(TaskPlan.plan_id).where(TaskPlan.task_id == source.id)
+                )
+            ).all()
+        )
+    for plan_id in dict.fromkeys(plan_ids):
+        session.add(TaskPlan(task_id=clone.id, plan_id=plan_id))
+
+    media_asset_ids = (
+        await session.scalars(
+            select(TaskMedia.media_asset_id).where(TaskMedia.task_id == source.id)
+        )
+    ).all()
+    for media_asset_id in media_asset_ids:
+        session.add(TaskMedia(task_id=clone.id, media_asset_id=media_asset_id))
+
+    await session.flush()
+    return clone
+
+
+async def family_published_intake_ids(
+    session: AsyncSession, root_ids: Sequence[int]
+) -> dict[int, list[int]]:
+    """Для каждого корня «семейства» переизданий — потоки, куда оно уже
+    переиздано (сам корень + все его клоны, кроме мягко удалённых, с
+    непустым `intake_id`). База заданий использует это, чтобы не дать
+    переиздать семейство дважды на один и тот же поток.
+    """
+    if not root_ids:
+        return {}
+    rows = await session.execute(
+        select(Task.id, Task.source_task_id, Task.intake_id, Task.deleted_at).where(
+            or_(Task.id.in_(root_ids), Task.source_task_id.in_(root_ids))
+        )
+    )
+    result: dict[int, list[int]] = {rid: [] for rid in root_ids}
+    for task_id, source_task_id, intake_id, deleted_at in rows.all():
+        if deleted_at is not None or intake_id is None:
+            continue
+        root = source_task_id or task_id
+        if root in result:
+            result[root].append(intake_id)
+    return result
 
 
 # --- фан-аут WS --------------------------------------------------------------

@@ -587,6 +587,8 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
 | intake_id | BIGINT | FK intakes, NULL | isolation by intake (ARG-96) — read only for `type='common'`; individual/pair/stream ignore it (assignment is stronger). On an `individual` task it may still be set — a provisioning tag ("this is intake X's welcome task"), read by `intake_bot.py`'s post-signup auto-assignment, not by visibility |
 | sets_display_name | BOOLEAN | NOT NULL, default false | submitting this task overwrites `users.display_name` with the submission's trimmed text (see `create_submission`); no hardcoded task id/title, only this flag |
+| publish_at | TIMESTAMPTZ | NULL | scheduled publication (admin hub «База заданий»). NULL = published immediately (all historical rows). Otherwise hidden from non-admins until `now() >= publish_at` — evaluated lazily on every read (`published_where`/`is_published`, services/tasks.py), no scheduler exists (same lazy pattern as Limbo, [LIMBO.md](LIMBO.md)) |
+| source_task_id | BIGINT | FK tasks, NULL | self-reference to the task this one was cloned from when republished for another intake (`clone_task`, «База заданий»). NULL = not a clone |
 
 **task_media** — task-prompt media (admin), mirror of task_submission_media. PK (`task_id`, `media_asset_id`).
 

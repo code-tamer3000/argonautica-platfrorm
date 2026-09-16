@@ -36,6 +36,9 @@ class TaskCreate(BaseModel):
     body: str | None = None  # markdown
     kb_item_id: int | None = None
     deadline_at: datetime | None = None
+    # NULL — опубликована сразу. Иначе скрыта от не-админов до этого момента
+    # (лениво, без планировщика — см. services/tasks.py::published_where).
+    publish_at: datetime | None = None
     assignee_ids: list[int] = []
     # Пары для type='pair'. Организатор встречи выбирается сервером случайно.
     pairs: list[PairInput] = []
@@ -59,6 +62,7 @@ class TaskUpdate(BaseModel):
     body: str | None = None
     deadline_at: datetime | None = None
     kb_item_id: int | None = None
+    publish_at: datetime | None = None
     # None — не трогаем набор медиа; список — ЗАМЕНЯЕТ весь набор целиком.
     media_asset_ids: list[int] | None = None
     intake_id: int | None = None
@@ -75,11 +79,13 @@ class TaskOut(BaseModel):
     kb_item_id: int | None
     pair_id: int | None = None  # set only on a cross-task (peer-learning)
     deadline_at: datetime | None
+    publish_at: datetime | None = None
     created_by: int
     created_at: datetime
     attachments: list[AttachmentOut] = []
     intake_id: int | None = None
     plan_ids: list[int] = []
+    source_task_id: int | None = None
 
 
 class PairMemberOut(BaseModel):
@@ -389,3 +395,51 @@ class AssignmentDeadlineUpdate(BaseModel):
     `null` — снять override, вернуться к общему дедлайну задачи."""
 
     deadline_at: datetime | None
+
+
+class TaskLibraryItemOut(BaseModel):
+    """Строка админского хаба «База заданий»: одна задача любого потока, кроме
+    перекрёстных задач парного обучения (`pair_id IS NOT NULL` — те участники
+    выдают друг другу, в общую базу им не место)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    title: str
+    body: str | None
+    kb_item_id: int | None = None
+    attachments: list[AttachmentOut] = []
+    intake_id: int | None
+    plan_ids: list[int] = []
+    deadline_at: datetime | None
+    publish_at: datetime | None
+    created_at: datetime
+    created_by: int
+    submitted_count: int
+    total_recipients: int
+    # Корень «семейства» переизданий (сама задача, если это оригинал; иначе —
+    # задача, с которой её склонировали).
+    source_task_id: int | None
+    # Потоки, на которые семейство этой задачи (корень + все клоны) уже
+    # переиздано — чтобы UI не давал переиздать дважды на один поток.
+    published_intake_ids: list[int] = []
+
+
+class TaskLibraryListOut(BaseModel):
+    items: list[TaskLibraryItemOut]
+
+
+class RepublishRequest(BaseModel):
+    """Переиздать задачу для другого потока: клон без сдач (ARG-хаб «База
+    заданий»). Всегда создаёт общую (`common`) задачу, независимо от типа
+    источника — переиздание не переносит конкретных адресатов прошлого потока.
+    `plan_ids: None` — скопировать тарифы источника как есть; `[]` — снять
+    тарифное ограничение (доступно всем тарифам потока)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    intake_id: int
+    deadline_at: datetime | None = None
+    publish_at: datetime | None = None
+    plan_ids: list[int] | None = None

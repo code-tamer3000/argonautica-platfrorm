@@ -15,12 +15,18 @@ export interface TaskOut {
   kb_item_id: number | null
   pair_id: number | null // задан только у перекрёстной задачи (взаимное обучение)
   deadline_at: string | null
+  // NULL — опубликована сразу. Иначе скрыта от не-админов до этого момента
+  // (лениво, без планировщика — см. docs/TASKS.md «Отложенная публикация»).
+  publish_at: string | null
   created_by: number
   created_at: string
   attachments: AttachmentOut[]
   // Изоляция по потоку/тарифу (ARG-96) — читается только для type='common'.
   intake_id: number | null
   plan_ids: number[]
+  // Корень «семейства» переизданий (сама задача, если оригинал; иначе — задача,
+  // с которой её склонировали через «База заданий»). null — обычная задача.
+  source_task_id: number | null
 }
 
 // Один участник пары в глазах смотрящего + выданная им перекрёстная задача.
@@ -222,6 +228,8 @@ export interface TaskCreateBody {
   body?: string | null
   kb_item_id?: number | null
   deadline_at?: string | null
+  // NULL/не передано — опубликована сразу.
+  publish_at?: string | null
   assignee_ids?: number[]
   pairs?: PairInput[]
   // Только для type='stream': участники сетки (её строит сервер).
@@ -237,16 +245,24 @@ export interface TaskUpdateBody {
   body?: string | null
   deadline_at?: string | null
   kb_item_id?: number | null
+  publish_at?: string | null
   media_asset_ids?: number[]
   intake_id?: number | null
   plan_ids?: number[]
 }
 
+// Префикс ключа базы заданий (features/admin/AdminTasks) — эти хуки общие с
+// обычным /tasks, поэтому после любой правки задачи инвалидируем оба экрана.
+const ADMIN_TASK_LIBRARY_PREFIX = ['admin', 'tasks'] as const
+
 export function useCreateTask() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: TaskCreateBody) => http.post<TaskOut>('/api/tasks', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: tasksKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tasksKey })
+      qc.invalidateQueries({ queryKey: ADMIN_TASK_LIBRARY_PREFIX })
+    },
   })
 }
 
@@ -258,6 +274,7 @@ export function useUpdateTask() {
     onSuccess: (task) => {
       qc.invalidateQueries({ queryKey: tasksKey })
       qc.invalidateQueries({ queryKey: taskKey(task.id) })
+      qc.invalidateQueries({ queryKey: ADMIN_TASK_LIBRARY_PREFIX })
     },
   })
 }
@@ -266,7 +283,10 @@ export function useDeleteTask() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => http.del<null>(`/api/tasks/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: tasksKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tasksKey })
+      qc.invalidateQueries({ queryKey: ADMIN_TASK_LIBRARY_PREFIX })
+    },
   })
 }
 
@@ -559,5 +579,78 @@ export function useDeletePair(taskId: number) {
     mutationFn: (pairId: number) =>
       http.del<null>(`/api/tasks/${taskId}/pairs/${pairId}`),
     onSuccess: () => invalidateTask(qc, taskId),
+  })
+}
+
+// --- База заданий (админский хаб /admin/tasks) ---
+
+export interface TaskLibraryItemOut {
+  id: number
+  type: TaskType
+  title: string
+  body: string | null
+  kb_item_id: number | null
+  attachments: AttachmentOut[]
+  intake_id: number | null
+  plan_ids: number[]
+  deadline_at: string | null
+  publish_at: string | null
+  created_at: string
+  created_by: number
+  submitted_count: number
+  total_recipients: number
+  source_task_id: number | null
+  // Потоки, на которые семейство этой задачи уже переиздано — не даём выбрать
+  // их повторно в модалке переиздания.
+  published_intake_ids: number[]
+}
+
+export interface TaskLibraryListOut {
+  items: TaskLibraryItemOut[]
+}
+
+export interface TaskLibraryFilters {
+  intakeId?: number | 'null' | null // 'null' — только кросс-потоковые
+  type?: TaskType
+  q?: string
+  state?: 'published' | 'scheduled' | 'all'
+}
+
+export const taskLibraryKey = (filters?: TaskLibraryFilters) =>
+  ['admin', 'tasks', filters ?? {}] as const
+
+export function useAdminTaskLibrary(filters?: TaskLibraryFilters) {
+  return useQuery({
+    queryKey: taskLibraryKey(filters),
+    queryFn: () => {
+      const params = new URLSearchParams()
+      if (filters?.intakeId != null) params.set('intake_id', String(filters.intakeId))
+      if (filters?.type) params.set('type', filters.type)
+      if (filters?.q) params.set('q', filters.q)
+      if (filters?.state) params.set('state', filters.state)
+      const qs = params.toString()
+      return http.get<TaskLibraryListOut>(`/api/admin/tasks${qs ? `?${qs}` : ''}`)
+    },
+  })
+}
+
+export interface RepublishBody {
+  intake_id: number
+  deadline_at?: string | null
+  publish_at?: string | null
+  // undefined/не передано — скопировать тарифы источника; [] — снять ограничение.
+  plan_ids?: number[]
+}
+
+// Переиздать задачу (клон без сдач) для другого потока — «База заданий».
+export function useRepublishTask() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ taskId, ...body }: { taskId: number } & RepublishBody) =>
+      http.post<TaskOut>(`/api/admin/tasks/${taskId}/republish`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tasksKey })
+      qc.invalidateQueries({ queryKey: ADMIN_TASK_LIBRARY_PREFIX })
+    },
   })
 }

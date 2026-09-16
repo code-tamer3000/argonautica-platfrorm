@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useKbItems } from '../../api/kb'
 import { useAdminIntakes, useAdminUsers, useAdminUsersMap } from '../../api/admin'
 import { useAdminPlans } from '../../api/plans'
-import type { TaskType, TaskWithStatusOut } from '../../api/tasks'
+import type { TaskOut, TaskType } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { useUiStore } from '../../stores/ui'
@@ -32,6 +32,9 @@ export interface TaskFormValues {
   title: string
   body: string
   deadline_at: string | null
+  // NULL — опубликована сразу. Иначе задача скрыта от не-админов до этого
+  // момента (лениво, без планировщика — см. docs/TASKS.md).
+  publish_at: string | null
   kb_item_id: number | null
   assignee_ids: number[]
   // Пары для type='pair': каждая — [userA, userB]. Организатор встречи выбирается сервером.
@@ -57,17 +60,30 @@ export function localInputToIso(value: string): string | null {
   return new Date(value).toISOString()
 }
 
+// Поля, которые форма реально читает из `initial` — минимальный срез, которому
+// удовлетворяют и TaskWithStatusOut (редактирование существующей задачи), и
+// TaskLibraryItemOut (переиздание/«Создать на основе» из базы заданий).
+export type TaskFormInitial = Pick<
+  TaskOut,
+  'type' | 'title' | 'body' | 'deadline_at' | 'publish_at' | 'kb_item_id' | 'attachments' | 'intake_id' | 'plan_ids'
+>
+
 interface TaskFormProps {
-  initial?: TaskWithStatusOut
+  initial?: TaskFormInitial
+  /** true — «Создать на основе»: `initial` предзаполняет текст/медиа/дедлайн,
+   * но тип и адресаты выбираются заново (форма ведёт себя как при создании,
+   * а не как при редактировании существующей задачи). */
+  createFromInitial?: boolean
   onSubmit: (values: TaskFormValues) => void
 }
 
-export function TaskForm({ initial, onSubmit }: TaskFormProps) {
-  const editing = !!initial
+export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskFormProps) {
+  const editing = !!initial && !createFromInitial
   const [type, setType] = useState<TaskType>(initial?.type ?? 'common')
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
   const [deadline, setDeadline] = useState(isoToLocalInput(initial?.deadline_at ?? null))
+  const [publishAt, setPublishAt] = useState(isoToLocalInput(initial?.publish_at ?? null))
   const [kbItemId, setKbItemId] = useState<number | null>(initial?.kb_item_id ?? null)
   const [assignees, setAssignees] = useState<number[]>([])
   // Пары для парного задания. Черновик текущей собираемой пары — [a, b].
@@ -177,6 +193,7 @@ export function TaskForm({ initial, onSubmit }: TaskFormProps) {
       title,
       body,
       deadline_at: localInputToIso(deadline),
+      publish_at: localInputToIso(publishAt),
       kb_item_id: kbItemId,
       assignee_ids: assignees,
       pairs,
@@ -264,6 +281,19 @@ export function TaskForm({ initial, onSubmit }: TaskFormProps) {
           onChange={(e) => setDeadline(e.target.value)}
         />
       </label>
+
+      <label className={styles.label}>
+        Публикация (необязательно)
+        <input
+          className={styles.input}
+          type="datetime-local"
+          value={publishAt}
+          onChange={(e) => setPublishAt(e.target.value)}
+        />
+      </label>
+      <p className={styles.mediaEmpty}>
+        Не заполнено — опубликована сразу. Иначе скрыта от участников до этого момента.
+      </p>
 
       <label className={styles.label}>
         Материал в базе знаний (необязательно)
