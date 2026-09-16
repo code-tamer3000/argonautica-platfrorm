@@ -81,6 +81,18 @@ class Task(Base):
     sets_display_name: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Отложенная публикация (база заданий, админский хаб): NULL — опубликована
+    # сразу (все исторические строки); иначе задача скрыта от не-админов, пока
+    # not now() >= publish_at — проверяется лениво на каждом чтении, тем же
+    # принципом, что и Междумирье (нет планировщика в проекте, см.
+    # services/limbo.py). См. services/tasks.py::published_where/is_published.
+    publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Самоссылка на задачу-источник, из которой эта клонирована переизданием на
+    # другой поток (services/tasks.py::clone_task, «База заданий»). NULL —
+    # создана обычным способом, не клон.
+    source_task_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("tasks.id")
+    )
 
 
 class TaskPlan(Base):

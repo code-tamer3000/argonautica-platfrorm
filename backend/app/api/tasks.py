@@ -82,12 +82,14 @@ from app.services.tasks import (
     effective_deadline,
     fan_out_task_event,
     get_or_create_assignment,
+    is_published,
     late_submissions_count,
     load_pair,
     load_task,
     pair_member_ids,
     participant_count,
     partner_id,
+    published_where,
     recompute_pair_completion,
     sync_task_calendar_event,
 )
@@ -102,7 +104,7 @@ router = APIRouter(
 )
 
 # Поля, которые admin вправе править через PATCH.
-_PATCHABLE_FIELDS = {"title", "body", "deadline_at", "kb_item_id", "intake_id"}
+_PATCHABLE_FIELDS = {"title", "body", "deadline_at", "kb_item_id", "intake_id", "publish_at"}
 
 
 async def _assert_kb_item_exists(session: AsyncSession, kb_item_id: int | None) -> None:
@@ -205,6 +207,7 @@ async def create_task(
         body=body.body,
         kb_item_id=body.kb_item_id,
         deadline_at=body.deadline_at,
+        publish_at=body.publish_at,
         created_by=current_admin.id,
         intake_id=body.intake_id,
     )
@@ -282,9 +285,13 @@ async def create_task(
         await sync_task_calendar_event(session, task)
 
     await session.refresh(task)
-    await fan_out_task_event(
-        session, task, ws_schemas.task_created_event(task.id, task.type, task.title)
-    )
+    # Запланированная (publish_at в будущем) задача пока скрыта от всех, кроме
+    # админа — фан-аут task.created прошёл бы мимо смысла: получатели ещё не
+    # видят задачу ни в списке, ни по прямому запросу (assert_task_visible).
+    if is_published(task):
+        await fan_out_task_event(
+            session, task, ws_schemas.task_created_event(task.id, task.type, task.title)
+        )
     attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
     return TaskOut(
         id=task.id,
@@ -294,11 +301,13 @@ async def create_task(
         kb_item_id=task.kb_item_id,
         pair_id=task.pair_id,
         deadline_at=task.deadline_at,
+        publish_at=task.publish_at,
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
+        source_task_id=task.source_task_id,
     )
 
 
@@ -344,7 +353,8 @@ async def update_task(
 
     await sync_task_calendar_event(session, task)
     await session.refresh(task)
-    await fan_out_task_event(session, task, ws_schemas.task_updated_event(task.id))
+    if is_published(task):
+        await fan_out_task_event(session, task, ws_schemas.task_updated_event(task.id))
     attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
     return TaskOut(
         id=task.id,
@@ -354,11 +364,13 @@ async def update_task(
         kb_item_id=task.kb_item_id,
         pair_id=task.pair_id,
         deadline_at=task.deadline_at,
+        publish_at=task.publish_at,
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
+        source_task_id=task.source_task_id,
     )
 
 
@@ -910,6 +922,10 @@ async def list_tasks(
             # индивидуальное назначение видно независимо от него.
             visible_common = and_(*_visible_common_where(current_user))
             where.append(visible_common | (Task.id.in_(my_individual)))
+            # Отложенная публикация (база заданий): запланированная задача не
+            # видна не-админу, включая свою individual/pair/stream — common уже
+            # закрыт внутри _visible_common_where, здесь добиваем остальные типы.
+            where.append(published_where())
     stmt = (
         select(Task)
         .where(*where)
@@ -997,6 +1013,7 @@ async def list_tasks(
             kb_item_id=t.kb_item_id,
             pair_id=t.pair_id,
             deadline_at=t.deadline_at,
+            publish_at=t.publish_at,
             created_by=t.created_by,
             created_at=t.created_at,
             attachments=task_attachments.get(t.id, []),
@@ -1021,6 +1038,7 @@ async def list_tasks(
             ),
             intake_id=t.intake_id,
             plan_ids=task_plans.get(t.id, []),
+            source_task_id=t.source_task_id,
         )
         for t in tasks
     ]
@@ -1073,6 +1091,7 @@ async def get_task(
         kb_item_id=task.kb_item_id,
         pair_id=task.pair_id,
         deadline_at=task.deadline_at,
+        publish_at=task.publish_at,
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=task_attachments,
@@ -1094,6 +1113,7 @@ async def get_task(
         ),
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
+        source_task_id=task.source_task_id,
     )
 
 

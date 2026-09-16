@@ -11,6 +11,7 @@ import { AdminJournal } from './AdminJournal'
 import { AdminReview } from './AdminReview'
 import { AdminStickers } from './AdminStickers'
 import { AdminSurvey } from './AdminSurvey'
+import { AdminTasks } from './AdminTasks'
 import { AdminUsers } from './AdminUsers'
 
 export type AdminGroupKey = 'intake' | 'progress' | 'support'
@@ -37,6 +38,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { path: 'survey', label: 'Анкета', group: 'intake', Component: AdminSurvey },
   { path: 'users', label: 'Пользователи', group: 'intake', Component: AdminUsers },
   { path: 'dynamics', label: 'Динамика', group: 'progress', Component: AdminDynamics },
+  { path: 'tasks', label: 'Задания', group: 'progress', Component: AdminTasks },
   { path: 'review', label: 'Проверка', group: 'progress', Component: AdminReview },
   { path: 'journal', label: 'Дневник', group: 'progress', Component: AdminJournal },
   { path: 'calendar', label: 'Календарь', group: 'progress', Component: AdminCalendar },
