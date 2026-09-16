@@ -61,9 +61,12 @@ used across 15+ frontend files), never sliced by visibility. The roster for
   `plan_id` change between consecutive items, without recomputing ranks itself —
   `role == "admin"` sorts as its own trailing block ahead of rank, so a tariff-less
   admin doesn't interleave alphabetically with tariff-less participants (both rank
-  0). The frontend labels that trailing block «Админ» rather than «Без тарифа»
-  (`contactPlanKey` in `frontend/src/lib/planGroups.ts`, used by `NewChatModal`/
-  `NewGroupModal`) — a role marker, not a real tariff.
+  0). Holders of the cheapest tariff (`CHEAP_TARIFF_NAME`, "Наблюдатель") sort as
+  their own block right before admins, regardless of rank — same tail-block
+  treatment as the Argonauts roster (`_roster` in `app/api/argonauts.py`,
+  "observers last"). The frontend labels the admin trailing block «Админ» rather
+  than «Без тарифа» (`contactPlanKey` in `frontend/src/lib/planGroups.ts`, used by
+  `NewChatModal`/`NewGroupModal`) — a role marker, not a real tariff.
 - **Rank** (`services/visibility.py` `cohort_plan_ranks`) — tariffs (`plans`) have
   no FK to `intakes`; "the tariffs of a stream" is derived at query time as the
   distinct `is_active` plans actually held by that intake's users, sorted by

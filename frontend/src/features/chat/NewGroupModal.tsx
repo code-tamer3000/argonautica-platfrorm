@@ -68,6 +68,19 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
     })
   }
 
+  function toggleGroup(items: { id: number }[]) {
+    const allOn = items.every((u) => selected.has(u.id))
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allOn) {
+        for (const u of items) next.delete(u.id)
+      } else {
+        for (const u of items) next.add(u.id)
+      }
+      return next
+    })
+  }
+
   async function handleCreate() {
     const trimmed = name.trim()
     if (!trimmed) {
@@ -136,7 +149,18 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
         {groups.map((group) => (
           <div key={group.key}>
             {groups.length > 1 && (
-              <div className={styles.userSectionTitle}>{group.label}</div>
+              <div className={styles.userSectionHead}>
+                <span className={styles.userSectionTitle}>{group.label}</span>
+                <button
+                  type="button"
+                  className={styles.selectGroupBtn}
+                  onClick={() => toggleGroup(group.items)}
+                >
+                  {group.items.every((u) => selected.has(u.id))
+                    ? 'Снять выбор'
+                    : 'Выбрать всех в тарифе'}
+                </button>
+              </div>
             )}
             {group.items.map((u) => {
               const on = selected.has(u.id)
