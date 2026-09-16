@@ -5,7 +5,7 @@
 раньше. Group.type='group' валидируется в коде (dynamics._validate_chat_room),
 не в CHECK — тип комнаты не денормализован сюда. Expand-only.
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: 1f8cb568e2c4
 Revises: 9f3b2c1a7d4e
 Create Date: 2026-09-16 17:30:00.000000
 
@@ -17,7 +17,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1b2c3d4e5f6'
+revision: str = '1f8cb568e2c4'
 down_revision: str | None = '9f3b2c1a7d4e'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
