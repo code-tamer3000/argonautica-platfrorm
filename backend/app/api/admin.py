@@ -1,9 +1,9 @@
 """Админские эндпоинты. Платформа закрытая — пользователей заводит только админ."""
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import delete, exists, func, or_, select, union, update
+from sqlalchemy import ColumnElement, delete, exists, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
@@ -33,7 +33,14 @@ from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember
 from app.models.sticker import Sticker, Stickerpack
 from app.models.survey import SurveyResponse
-from app.models.task import Task, TaskAssignment, TaskComment, TaskSubmission, TaskSubmissionMedia
+from app.models.task import (
+    Task,
+    TaskAssignment,
+    TaskComment,
+    TaskPlan,
+    TaskSubmission,
+    TaskSubmissionMedia,
+)
 from app.models.user import User
 from app.schemas.expedition import AdminExpeditionLockOut, Element, StageOut, StagesUpdate
 from app.schemas.feedback import (
@@ -62,7 +69,13 @@ from app.schemas.survey import (
     SurveyOverviewOut,
     SurveyRowOut,
 )
-from app.schemas.task import ReviewQueueItemOut
+from app.schemas.task import (
+    RepublishRequest,
+    ReviewQueueItemOut,
+    TaskLibraryItemOut,
+    TaskLibraryListOut,
+    TaskOut,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -71,13 +84,24 @@ from app.schemas.user import (
     UserOut,
 )
 from app.services.limbo import apply_plan_change
-from app.services.media import presign_asset_urls
+from app.services.media import presign_asset_urls, resolve_task_attachments
 from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
 from app.services.survey_form import question_form
+from app.services.tasks import (
+    clone_task,
+    family_published_intake_ids,
+    fan_out_task_event,
+    is_published,
+    load_task,
+    participant_count,
+    published_where,
+    sync_task_calendar_event,
+)
 from app.services.users import avatar_url
 from app.services.visibility import CHEAP_TARIFF_NAME
+from app.ws import schemas as ws_schemas
 
 # Поля, которые админу разрешено править через PATCH. Расширяется добавлением имени
 # сюда и поля в AdminUpdateUserRequest (напр. будущие role/is_banned).
@@ -856,6 +880,191 @@ async def review_queue(
         )
         for a, task_id, task_title, task_type, u, plan_id, plan_name, submitted_at in rows
     ]
+
+
+@router.get("/tasks", response_model=TaskLibraryListOut)
+async def list_task_library(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[
+        str | None,
+        Query(description="ID потока, 'null' — только кросс-потоковые, не передан — все"),
+    ] = None,
+    type: Annotated[str | None, Query()] = None,
+    q: Annotated[str | None, Query()] = None,
+    state: Annotated[Literal["published", "scheduled", "all"], Query()] = "all",
+) -> TaskLibraryListOut:
+    """База заданий (админский хаб): все неудалённые задачи всех потоков, кроме
+    перекрёстных задач парного обучения (`pair_id IS NOT NULL` — те участники
+    выдают друг другу, в общую базу им не место). Отсюда задачу «переиздают»
+    (клонируют) на другой поток — POST /api/admin/tasks/{id}/republish.
+    """
+    where: list[ColumnElement[bool]] = [Task.deleted_at.is_(None), Task.pair_id.is_(None)]
+    if intake_id == "null":
+        where.append(Task.intake_id.is_(None))
+    elif intake_id is not None:
+        where.append(Task.intake_id == int(intake_id))
+    if type is not None:
+        where.append(Task.type == type)
+    if q:
+        where.append(Task.title.ilike(f"%{q}%"))
+    if state == "published":
+        where.append(published_where())
+    elif state == "scheduled":
+        where.append(~published_where())
+
+    tasks = list(
+        (
+            await session.execute(
+                select(Task).where(*where).order_by(Task.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    task_ids = [t.id for t in tasks]
+
+    task_plans: dict[int, list[int]] = {}
+    if task_ids:
+        plan_rows = await session.execute(
+            select(TaskPlan.task_id, TaskPlan.plan_id)
+            .where(TaskPlan.task_id.in_(task_ids))
+            .order_by(TaskPlan.plan_id)
+        )
+        for tid, pid in plan_rows.all():
+            task_plans.setdefault(tid, []).append(pid)
+
+    assignee_counts: dict[int, int] = {}
+    submitted_counts: dict[int, int] = {}
+    if task_ids:
+        agg = await session.execute(
+            select(
+                TaskAssignment.task_id,
+                func.count(),
+                func.count().filter(
+                    TaskAssignment.status.in_(("submitted", "returned", "accepted"))
+                ),
+            )
+            .where(TaskAssignment.task_id.in_(task_ids))
+            .group_by(TaskAssignment.task_id)
+        )
+        for tid, total, submitted in agg.all():
+            assignee_counts[tid] = total
+            submitted_counts[tid] = submitted
+
+    root_ids = {t.source_task_id or t.id for t in tasks}
+    published_intakes = await family_published_intake_ids(session, list(root_ids))
+    task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
+
+    items = []
+    for t in tasks:
+        total_recipients = (
+            assignee_counts.get(t.id, 0)
+            if t.type in ("individual", "pair", "stream")
+            else await participant_count(session, t, plan_ids=task_plans.get(t.id, []))
+        )
+        root = t.source_task_id or t.id
+        items.append(
+            TaskLibraryItemOut(
+                id=t.id,
+                type=t.type,
+                title=t.title,
+                body=t.body,
+                kb_item_id=t.kb_item_id,
+                attachments=task_attachments.get(t.id, []),
+                intake_id=t.intake_id,
+                plan_ids=task_plans.get(t.id, []),
+                deadline_at=t.deadline_at,
+                publish_at=t.publish_at,
+                created_at=t.created_at,
+                created_by=t.created_by,
+                submitted_count=submitted_counts.get(t.id, 0),
+                total_recipients=total_recipients,
+                source_task_id=t.source_task_id,
+                published_intake_ids=published_intakes.get(root, []),
+            )
+        )
+    return TaskLibraryListOut(items=items)
+
+
+@router.post("/tasks/{task_id}/republish", response_model=TaskOut, status_code=201)
+async def republish_task(
+    task_id: int,
+    body: RepublishRequest,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TaskOut:
+    """Переиздать задачу («База заданий»): клон без сдач для другого потока.
+
+    Всегда создаёт `common`-задачу — переиздание не переносит конкретных
+    адресатов прошлого потока (individual/pair/stream переиздаются только
+    вручную через обычное «Создать», подбором новых участников). Источник —
+    `pair`/`stream`, либо перекрёстная задача (`pair_id` не NULL) — 400: их
+    сетка/пары строятся от конкретных выбранных людей, клонировать нечего.
+    409, если семейство этой задачи уже переиздано на целевой поток.
+    """
+    source = await load_task(session, task_id)
+    if source.type in ("pair", "stream") or source.pair_id is not None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Pair/stream tasks and cross-tasks cannot be republished; use «Создать на основе»",
+        )
+    if await session.get(Intake, body.intake_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Intake not found")
+    if body.plan_ids:
+        found = await session.execute(select(Plan.id).where(Plan.id.in_(body.plan_ids)))
+        if set(found.scalars().all()) != set(body.plan_ids):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Plan not found")
+
+    root_id = source.source_task_id or source.id
+    already = await family_published_intake_ids(session, [root_id])
+    if body.intake_id in already.get(root_id, []):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This task family is already republished for this intake",
+        )
+
+    clone = await clone_task(
+        session,
+        source,
+        intake_id=body.intake_id,
+        created_by=current_admin.id,
+        deadline_at=body.deadline_at,
+        publish_at=body.publish_at,
+        plan_ids=body.plan_ids,
+    )
+    if clone.deadline_at is not None:
+        await sync_task_calendar_event(session, clone)
+    await session.refresh(clone)
+    if is_published(clone):
+        await fan_out_task_event(
+            session,
+            clone,
+            ws_schemas.task_created_event(clone.id, clone.type, clone.title),
+        )
+    attachments = (await resolve_task_attachments(session, [clone.id])).get(clone.id, [])
+    plan_ids = list(
+        (
+            await session.scalars(
+                select(TaskPlan.plan_id).where(TaskPlan.task_id == clone.id).order_by(TaskPlan.plan_id)
+            )
+        ).all()
+    )
+    return TaskOut(
+        id=clone.id,
+        type=clone.type,
+        title=clone.title,
+        body=clone.body,
+        kb_item_id=clone.kb_item_id,
+        pair_id=clone.pair_id,
+        deadline_at=clone.deadline_at,
+        publish_at=clone.publish_at,
+        created_by=clone.created_by,
+        created_at=clone.created_at,
+        attachments=attachments,
+        intake_id=clone.intake_id,
+        plan_ids=plan_ids,
+        source_task_id=clone.source_task_id,
+    )
 
 
 @router.get("/dynamics/{user_id}/days", response_model=list[RecentDay])

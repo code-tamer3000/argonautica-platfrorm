@@ -51,7 +51,7 @@ and [KB.md](KB.md).
 ## Admin navigation & page headers (ARG-97)
 
 **Admin section config.** `features/admin/sections.ts` is the single source for the
-admin's 12 sections (`ADMIN_SECTIONS`: `path`/`label`/`group`/`Component`) and the 3
+admin's 13 sections (`ADMIN_SECTIONS`: `path`/`label`/`group`/`Component`) and the 3
 groups (`ADMIN_GROUPS`: `intake`=Приём, `progress`=Прохождение, `support`=Поддержка).
 `AdminLayout.tsx` renders the vertical grouped sidebar from `ADMIN_SECTIONS`;
 `AppShell.tsx` generates the `/admin/*` child routes from the same array — removing a
@@ -64,7 +64,7 @@ burger toggle in `AdminLayout` and auto-closes on navigation (`useEffect` on
 **`PageHeader`** (`components/PageHeader.tsx` + `pageHeader.module.css`) is the shared
 screen header: an always-visible back button (`navigate(-1)`, no attempt to detect
 whether there's history to go back to) + `<h1>{title}</h1>` + an optional actions slot
-(`children`, right-aligned). Wired on all 12 admin screens, `TaskDetail`, `KbViewer`,
+(`children`, right-aligned). Wired on all 13 admin screens, `TaskDetail`, `KbViewer`,
 `ProfileScreen` and `SupportScreen`. Menu-item labels and each screen's `<h1>` are kept
 in sync through this: the `title` prop always equals the section's `ADMIN_SECTIONS`
 label.

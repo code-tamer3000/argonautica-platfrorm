@@ -248,19 +248,95 @@ submitted (`my_status == 'submitted'`) doesn't appear in the row list (there's n
 ждём ответа" so it doesn't look forgotten. No new tables, no push/scheduler — purely a
 read-side reshuffle of numbers `list_tasks()` already computes.
 
+## Отложенная публикация (`tasks.publish_at`)
+
+`tasks.publish_at` (nullable `TIMESTAMPTZ`) lets an admin schedule a task to appear on its
+own, at a chosen moment, without sitting there to press a button. NULL — published
+immediately (every historical row, and the default for the old `POST /api/tasks` flow).
+Otherwise hidden from non-admins until `now() >= publish_at` — evaluated **lazily on every
+read**, the same pattern as Междумирье's 5-day grace period ([LIMBO.md](LIMBO.md)): no
+scheduler, no cron, no background tick exists in this project on purpose.
+
+`services/tasks.py::published_where()` (SQL `WHERE`) / `is_published()` (scalar check) are
+the single source of truth, applied everywhere a task's visibility is decided for a
+non-admin: `_visible_common_where` (covers `list_tasks`, `compute_progress`,
+`attention_count`, `overdue_tasks_for`), `assert_task_visible` (covers task detail,
+submissions, review — 404, not 403: an unpublished task reads as "doesn't exist yet", the
+same semantics `load_task` already uses for a deleted one, not "you lack access"), the
+`my_individual` branch of `list_tasks` (individual/pair/stream, which `_visible_common_where`
+doesn't cover), the calendar's `visible_task_ids` filter ([CALENDAR.md](CALENDAR.md) — a
+scheduled task's deadline doesn't leak onto the calendar early), and task-media access
+(`services/media.py::_visible_task` — gates both the task's own condition media and
+submission media by the same rule, so a scheduled task's attachments can't be probed by
+asset id before the task itself is visible). `create_task`/`update_task` also skip the
+`task.created`/`task.updated` WS fan-out while the task is still scheduled — there is no
+one to notify yet.
+
+Admin sees a scheduled task always (list, detail, media), marked in the UI so it reads as
+"будет опубликовано", not as a bug.
+
+## База заданий и переиздание (админский хаб `/admin/tasks`)
+
+**«База заданий»** (`features/admin/AdminTasks.tsx`, `GET /api/admin/tasks`) is a second
+admin entry point into tasks — every non-deleted task across **all** intakes in one list
+(filterable by intake/type/title search), except cross-tasks (`pair_id IS NOT NULL` —
+those are what participants hand each other inside a pair, not admin-authored material).
+Same relationship to `/tasks` as «Проверка» (ARG-134) has to per-task review: a second view
+over the same data, not a replacement. Ordinary task creation still works both here and on
+`/tasks` — the hub adds two things `/tasks` doesn't have: **republishing** a task for
+another intake, and scheduling any task's publication (previous section).
+
+**Переиздание = clone, not move.** `POST /api/admin/tasks/{task_id}/republish`
+(`services/tasks.py::clone_task`) copies title, body, `kb_item_id`, `sets_display_name`,
+`task_media` rows (same `media_asset_id` — no re-upload, media access is gated by the task,
+not by asset ownership) and, unless the caller overrides them, `task_plans`, into a **brand
+new** `tasks` row with the target `intake_id`. It always creates a `common` task, regardless
+of the source's type — a republish doesn't carry over the source's specific recipients (a
+`common` task never had named recipients to carry; `individual`/`pair`/`stream` sources are
+rejected with 400, see below). The clone gets **zero** `task_assignments` /
+`task_submissions` / `task_comments` — that's the entire point: a participant who already
+submitted (and was accepted for) the original task in a past intake gets a completely fresh
+`assigned` status on the clone, because there is no assignment row linking them to it yet.
+The original task, and its full submission history, is untouched — an unrelated archive row
+from that point on.
+
+`source_task_id` (self-FK on `tasks`) marks the clone's root: the original if it's not
+itself a clone, otherwise whatever root it points to. `services/tasks.py::
+family_published_intake_ids` walks a set of roots to the full list of intakes their
+"family" (root + every clone) has already been published to — the hub disables those
+intakes in the republish picker, and `republish` itself 409s on a repeat for the same
+intake, so a task can't accidentally be republished twice onto one cohort.
+
+**Only `common`/`individual` sources may be republished** (400 otherwise). `pair`/`stream`
+tasks build their grid/pairs from a concrete, hand-picked set of participants — there is no
+sensible way to "republish" that onto a different intake's roster automatically. Instead the
+hub offers **«Создать на основе»**: the ordinary create form (`TaskForm`, `createFromInitial`
+prop) pre-filled with the source's title/body/media/deadline/tariffs, but type and
+recipients are picked fresh, same as any new task.
+
+`RepublishRequest` accepts `intake_id` (required), `deadline_at`/`publish_at` (both
+optional — the clone can be scheduled the same way as any task, previous section), and
+`plan_ids` (omit to copy the source's tariffs as-is; `[]` explicitly lifts the tariff
+restriction).
+
 ## Frontend note
 
 Task create/edit (admin) and participant submission share `components/MediaComposer.tsx` (markdown textarea + upload-with-progress + pending chips). See [FRONTEND.md](FRONTEND.md).
 
-There is no separate admin panel screen for tasks anymore — admin actions (create, edit,
-delete) live directly in `features/tasks/TasksList.tsx` (`/tasks`), gated by
-`user?.role === 'admin'`. `features/tasks/TaskForm.tsx` holds the create/edit form (moved
-out of the old `features/admin/AdminTasks.tsx`, which is deleted along with the
-`/admin/tasks` route). Delete is two-step via the shared `components/ConfirmDialog.tsx`
-instead of `window.confirm`; edit/delete are reached through a per-card
-`components/KebabMenu.tsx` (visible to admins only). The old standalone «Прогресс» panel
-(per-assignment status list) was dropped — it duplicated information already visible via
-assignee chips on the card and inside `TaskDetail`.
+Admin task actions live in two places now: quick same-intake create/edit/delete directly on
+`features/tasks/TasksList.tsx` (`/tasks`, gated by `user?.role === 'admin'`), and the
+cross-intake hub `features/admin/AdminTasks.tsx` (`/admin/tasks`, section «Задания», group
+«Прохождение») for browsing every intake's tasks, republishing onto another intake, and
+scheduling `publish_at`. Both share the same `features/tasks/TaskForm.tsx` component (create/
+edit/«Создать на основе») and the same mutation hooks in `api/tasks.ts`
+(`useCreateTask`/`useUpdateTask`/`useDeleteTask` invalidate both screens' query keys).
+`TaskForm`'s `initial` prop takes the minimal `TaskFormInitial` shape (not the full
+`TaskWithStatusOut`) so a `TaskLibraryItemOut` row from the hub satisfies it too. Delete is
+two-step via the shared `components/ConfirmDialog.tsx` instead of `window.confirm`;
+edit/delete/republish are reached through a per-row `components/KebabMenu.tsx` (visible to
+admins only). The old standalone «Прогресс» panel (per-assignment status list) was dropped
+from `/tasks` — it duplicated information already visible via assignee chips on the card and
+inside `TaskDetail`.
 
 The admin list has two nested tab levels built on `components/Segmented.tsx`: **Активные /
 Истёк срок** (by `deadline_at` vs now) at the top, and **Общие / Индивидуальные / Парные и

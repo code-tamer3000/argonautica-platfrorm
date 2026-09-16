@@ -441,16 +441,21 @@ async def assert_media_access(
         TaskSubmission,
         TaskSubmissionMedia,
     )
+    from app.services.tasks import is_published
 
     async def _visible_task(task: Task) -> bool:
         """Видит ли юзер задачу: common → любой (с двойным фильтром поток+тариф,
         ARG-96, тем же, что и assert_task_visible); иначе админ/адресат.
 
         У pair и stream назначение заведено на каждого участника, поэтому проверка
-        по task_assignments покрывает и их — отдельной ветки не нужно.
+        по task_assignments покрывает и их — отдельной ветки не нужно. Отложенная
+        публикация (база заданий) гейтит ВСЕ типы — запланированная задача не
+        отдаёт ни своё медиа условия, ни медиа сдачи раньше publish_at.
         """
         if user.role == "admin":
             return True
+        if not is_published(task):
+            return False
         if task.type == "common":
             if not intake_visible(task.intake_id, user):
                 return False
