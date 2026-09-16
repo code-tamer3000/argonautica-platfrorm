@@ -14,7 +14,7 @@ import { Spinner } from '../../components/Spinner'
 import { plural } from '../../lib/format'
 import { htmlToMarkerText, markerTextToHtml } from '../../lib/inlineMarks'
 import { MAX_ATTACHMENTS, preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
-import { stripInlineMarks } from '../../lib/messageText'
+import { stripInlineMarks, stripJournalMarker } from '../../lib/messageText'
 import type { MessageOut, MessageRefOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
@@ -529,12 +529,12 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const repostAuthor =
     repostAuthorId != null ? users.get(repostAuthorId)?.display_name ?? `Участник #${repostAuthorId}` : ''
   const repostSnippet = repost
-    ? stripInlineMarks(repost.message.content?.replace(/<!--journal:\w+-->/, '').trim() ?? '') ||
+    ? stripInlineMarks(stripJournalMarker(repost.message.content ?? '').trim()) ||
       (repost.message.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
   const threadSnippet = threadRoot
-    ? stripInlineMarks(threadRoot.content?.replace(/<!--journal:\w+-->/, '').trim() ?? '') ||
+    ? stripInlineMarks(stripJournalMarker(threadRoot.content ?? '').trim()) ||
       (threadRoot.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 

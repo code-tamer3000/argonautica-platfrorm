@@ -26,6 +26,24 @@ export { stripInlineMarks } from './inlineMarks'
 // вместо голого пути (не полный markdown — только эта одна конструкция, скобки в
 // обычном тексте никто не набирает). @упоминание: @ + латиница/цифры/_ (как ник в
 // Telegram). Один общий проход, чтобы токены не пересекались.
+// Невидимый маркер раздела Динамики (см. backend `_JOURNAL_MARKER` /
+// `dynamics._journal_category`) — в канале-дневнике (markdown-рендер) он и так
+// не виден, это HTML-комментарий; здесь, в простом рендере, его нужно вырезать
+// явно, иначе он торчит буквальным текстом. Актуально с тех пор, как задание
+// может вести отписки в обычную группу (chat_room_id), а не только в личный
+// дневник — см. docs/DYNAMICS.md «Целевая комната задания».
+const JOURNAL_MARKER_RE = /^<!--journal:[a-z0-9_]+-->\n*/
+// Заголовок записи начинается с `## ` (markdown-заголовок) — в простом рендере
+// markdown не работает, поэтому решётки убираем, а не показываем как есть.
+const JOURNAL_HEADING_RE = /^##\s+/
+
+/** Убирает маркер раздела Динамики (и следующий за ним `## заголовок`) из
+ * превью сообщения — закреп/тред-цитата/пересылка не должны показывать
+ * служебный маркер, даже когда сама запись в комнате с markdown-рендером. */
+export function stripJournalMarker(text: string): string {
+  return text.replace(JOURNAL_MARKER_RE, '').replace(JOURNAL_HEADING_RE, '')
+}
+
 const LINK_TEXT_RE = /\[(?<linkLabel>[^\]\n]+)\]\((?<linkPath>\/[a-zA-Z][\w/-]*)\)/
 const URL_RE = /(?<url>https?:\/\/[^\s]+)/
 const INTERNAL_PATH_RE = /(?<![\w/])(?<path>\/[a-zA-Z][\w/-]*)/
@@ -205,7 +223,7 @@ export function renderMessageText(
   navigate?: (path: string) => void,
   mentionUsers?: Map<string, number>,
 ): ReactNode {
-  const lines = text.split('\n')
+  const lines = stripJournalMarker(text).split('\n')
   return lines.map((line, i) => (
     <Fragment key={i}>
       {i > 0 && <br />}
