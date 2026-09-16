@@ -16,12 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_user
 from app.core.redis import redis_client
 from app.db.session import get_session
+from app.models.plan import Plan
 from app.models.user import User
 from app.schemas.user import PublicUserOut
 from app.services.media import presign_asset_urls
 from app.services.users import avatar_url as _avatar
 from app.services.users import plan_names as _plan_names
-from app.services.visibility import cohort_plan_ranks, contact_visible, user_rank
+from app.services.visibility import (
+    CHEAP_TARIFF_NAME,
+    cohort_plan_ranks,
+    contact_visible,
+    user_rank,
+)
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -73,8 +79,10 @@ async def list_contacts(
     <= своему, плюс навигаторов/топ-2-доступных админов. Admin: полный список
     выбранного `intake_id` (сессионный фильтр `adminCurrentIntakeId` фронта, не
     новое ограничение — админ как и раньше имеет полный доступ); без параметра —
-    вся платформа. Отдаём отсортированными по рангу тарифа (по возрастанию) —
-    фронт группирует секции по соседним элементам, не пересчитывая ранги сам.
+    вся платформа. Отдаём отсортированными по рангу тарифа (по возрастанию), но
+    держатели самого дешёвого тарифа (наблюдатели) — отдельным блоком перед
+    админами, а не по рангу — фронт группирует секции по соседним элементам,
+    не пересчитывая порядок сам.
     """
     if current_user.role == "admin":
         stmt = select(User).where(User.id != current_user.id)
@@ -99,7 +107,22 @@ async def list_contacts(
 
     # Админы — отдельным хвостовым блоком (роль, не ранг тарифа), иначе безтарифный
     # админ и безтарифный участник (оба ранга 0) перемешались бы по алфавиту.
-    candidates.sort(key=lambda u: (u.role == "admin", user_rank(u, ranks), u.display_name))
+    # Держатели самого дешёвого тарифа (наблюдатели) — отдельным блоком перед
+    # админами, тем же приёмом, что и ростер Argonauts (`_roster`).
+    cheap_plan_ids = set(
+        (
+            await session.execute(select(Plan.id).where(Plan.name == CHEAP_TARIFF_NAME))
+        )
+        .scalars()
+        .all()
+    )
+    candidates.sort(
+        key=lambda u: (
+            2 if u.role == "admin" else (1 if u.plan_id in cheap_plan_ids else 0),
+            user_rank(u, ranks),
+            u.display_name,
+        )
+    )
     media_ids = {u.avatar_media_id for u in candidates if u.avatar_media_id is not None}
     signed = await presign_asset_urls(session, media_ids)
     plan_names = await _plan_names(session, candidates)

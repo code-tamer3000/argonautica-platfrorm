@@ -1045,7 +1045,9 @@ async def republish_task(
     plan_ids = list(
         (
             await session.scalars(
-                select(TaskPlan.plan_id).where(TaskPlan.task_id == clone.id).order_by(TaskPlan.plan_id)
+                select(TaskPlan.plan_id)
+                .where(TaskPlan.task_id == clone.id)
+                .order_by(TaskPlan.plan_id)
             )
         ).all()
     )
