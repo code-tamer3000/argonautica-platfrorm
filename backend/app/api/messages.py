@@ -900,10 +900,16 @@ async def get_journal_days(
     )
 
     timeline = await load_timeline(session)
+    # Фильтр по автору = текущий пользователь: в личном дневнике верхнеуровневые
+    # сообщения и так только от владельца (assert_can_post), а в общей группе,
+    # куда может вести отписки задание (chat_room_id), без этого фильтра прогресс
+    # одного участника подмешивался бы в календарь другого — см. docs/DYNAMICS.md
+    # «Целевая комната задания».
     rows = await session.execute(
         select(cast(Message.created_at, SqlDate), Message.content)
         .where(
             Message.room_id == room_id,
+            Message.sender_id == current_user.id,
             Message.deleted_at.is_(None),
             Message.thread_root_id.is_(None),
             Message.created_at >= start,
@@ -945,6 +951,7 @@ async def get_journal_anchor(
         select(Message.id, Message.created_at, Message.content)
         .where(
             Message.room_id == room_id,
+            Message.sender_id == current_user.id,
             Message.deleted_at.is_(None),
             Message.thread_root_id.is_(None),
             Message.content.like("<!--journal:%"),

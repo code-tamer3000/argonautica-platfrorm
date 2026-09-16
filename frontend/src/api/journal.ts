@@ -17,6 +17,7 @@ export interface JournalProgramBody {
   starts_on: string
   title: string | null
   description: string | null
+  chat_room_id: number | null
   sections: JournalSectionInput[]
 }
 
