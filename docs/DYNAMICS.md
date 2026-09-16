@@ -63,6 +63,39 @@ permanent, the window date is not).
 
 Homework entries are ordinary **`messages` in the participant's personal diary room** (`rooms.is_personal`) — there is **no entry table**. Each entry carries an invisible marker `<!--journal:{key}-->` at the start of `content` (`dynamics._journal_category` regex-parses **any** key). Progress (closed days, streak, misses) is computed on the fly from those messages, the задания timeline, plus the two exception tables. See [ROOMS.md](ROOMS.md).
 
+## Целевая комната задания (chat routing)
+
+By default a задание's target room is the participant's own personal diary room, as
+above. A задание can instead carry `chat_room_id` (nullable FK on `journal_programs`,
+set in `AdminJournal` when creating/editing a задание — must reference an existing
+`rooms.type = 'group'`, validated by `dynamics._validate_chat_room`):
+
+- **On the days that задание is active**, the submission widget (`DailyJournalForm`)
+  appears in that group for **every member**, not in the personal diary. Each member's
+  own section messages there — filtered by `sender_id`, since a group has multiple
+  authors, unlike a personal room where root messages are owner-only — count toward
+  **their own** progress/streak exactly as a personal-diary entry would.
+- **In the personal diary**, for the users who are members of that group, the widget is
+  hidden while this задание is active: only a plain free-form message composer is
+  shown (no gating, no marker parsing) — see `ChatPane`'s `isJournalTargetRoom`.
+  Participants who are **not** members of the target group are unaffected: their
+  personal diary keeps working exactly as before.
+- Only **one** chat route is active at a time platform-wide, driven by whichever
+  задание is active today (same `active_version_for` rule as the structure). A future
+  задание can point at a different chat, or back at `chat_room_id = NULL` (personal
+  diary) — each is scored independently per the day it was active, so switching never
+  re-scores past days.
+- Scoring reads messages from the **room that was the target on that specific day**:
+  `dynamics._room_segments` splits the requested date range at every задание boundary
+  (not only chat-routing changes) and resolves each segment's room independently, so a
+  history that mixes personal-diary days and chat-routed days is scored correctly
+  without special-casing.
+- `GET /api/rooms/{id}/journal-days` and `journal-anchor` are scoped to the **current
+  user's own** messages (`sender_id` filter) for this reason — in a personal room that
+  was always implicitly true (root posts are owner-only), but a shared group needs it
+  explicit or one member's submission would show as "done" for everyone viewing that
+  room's calendar.
+
 ## Exceptions
 
 - **journal_pardons** — a participant forgives their own missed day (`MAX_PARDONS = 3`).

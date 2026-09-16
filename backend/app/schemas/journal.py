@@ -133,6 +133,10 @@ class JournalStructureOut(BaseModel):
     starts_on: date | None
     title: str | None
     description: str | None
+    # Целевая комната отписок этого задания: NULL — личный дневник (как раньше),
+    # иначе — id группы, где показывается виджет; личный дневник в этом случае
+    # принимает только свободную запись (см. docs/DYNAMICS.md).
+    chat_room_id: int | None = None
     sections: list[JournalSectionOut]
 
 
@@ -150,6 +154,8 @@ class JournalProgramIn(BaseModel):
     starts_on: date
     title: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=2000)
+    # Группа-получатель отписок этого задания; NULL — личный дневник (см. модель).
+    chat_room_id: int | None = None
     sections: list[JournalSectionIn] = Field(min_length=1)
 
     @model_validator(mode="after")
@@ -165,6 +171,7 @@ class JournalProgramUpdate(BaseModel):
     starts_on: date | None = None
     title: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=2000)
+    chat_room_id: int | None = Field(default=None)
     sections: list[JournalSectionIn] | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
@@ -182,4 +189,5 @@ class JournalProgramOut(BaseModel):
     title: str | None
     description: str | None
     created_by: int | None
+    chat_room_id: int | None = None
     sections: list[JournalSectionOut]
