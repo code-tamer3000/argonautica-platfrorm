@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMyDynamics } from '../../api/dynamics'
+import { useJournalStructure } from '../../api/journal'
 import { useMarkRead, useMessages } from '../../api/messages'
 import { useRoom, useRooms, useSetDiaryAvatar } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
@@ -255,15 +256,24 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     ? messages.find((m) => m.id === threadRootId) ?? null
     : null
 
-  // Свой личный дневник: композер держим скрытым, пока пользователь не выбрал
-  // режим в DailyJournalForm — раздел задания или свободную запись.
+  // Свой личный дневник.
   const isOwnPersonal = !!room.is_personal && room.created_by === user?.id
+  // Целевая комната отписок активного задания: по умолчанию — личный дневник
+  // участника, но задание может указывать группу (chat_room_id) — тогда виджет
+  // отписок (DailyJournalForm) переезжает туда для ВСЕХ её участников, а в личном
+  // дневнике остаётся только свободная запись (см. docs/DYNAMICS.md «Целевая
+  // комната задания»). Композер держим скрытым, пока не выбран режим в
+  // DailyJournalForm, ТОЛЬКО пока дневник и есть эта целевая комната.
+  const { data: structure } = useJournalStructure()
+  const isJournalTargetRoom = structure?.chat_room_id
+    ? room.id === structure.chat_room_id
+    : isOwnPersonal
   // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403).
   const isGraduated = !!user?.graduated_at
   // Окно набора закрыто (ARG-96): дневник — архив только для чтения, форму
-  // отправки прячем (бэкенд 403-ит тот же путь). Запрос только для своего дневника.
-  const { data: myDyn } = useMyDynamics({ enabled: isOwnPersonal })
-  const isWindowClosed = isOwnPersonal && !!myDyn?.window_closed
+  // отправки прячем (бэкенд 403-ит тот же путь). Запрос — для своей целевой комнаты.
+  const { data: myDyn } = useMyDynamics({ enabled: isJournalTargetRoom })
+  const isWindowClosed = isJournalTargetRoom && !!myDyn?.window_closed
   const journalChosen =
     pendingJournal?.roomId === roomId || journalFreeEntry === roomId
 
@@ -433,28 +443,34 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onAtBottomChange={onAtBottomChange}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      {isOwnPersonal && !isGraduated && !isWindowClosed && (
+      {isJournalTargetRoom && !isGraduated && !isWindowClosed && (
         <DailyJournalForm roomId={roomId} />
       )}
       {/* Экспедиция пройдена: вместо любого ввода — плашка. История комнаты
           (личные чаты, дневник, каналы) остаётся доступной на чтение. */}
       {isGraduated && <GraduatedNotice />}
       {/* Окно набора закрыто (ARG-96): дневник — архив, статистика заморожена
-          (см. ProfileScreen), новых записей быть не может. */}
-      {!isGraduated && isWindowClosed && (
+          (см. ProfileScreen), новых записей быть не может. Применимо только к
+          личному дневнику — если задание ведётся в общую группу, окно закрыто
+          лично у ЭТОГО участника, но группа как чат должна остаться живой для
+          остальных: композер там не гасим целиком, прячем только виджет выше. */}
+      {!isGraduated && isOwnPersonal && isWindowClosed && (
         <GraduatedNotice text="Окно набора закрыто — дневник в архиве" />
       )}
       {/* Верхнеуровневый ввод: в чужом личном канале нельзя писать вообще;
           в новостном — только админ. Комментировать можно через треды.
-          В своём личном дневнике композер СКРЫТ, пока пользователь не выбрал режим
-          в DailyJournalForm — раздел задания (pendingJournal) или свободную запись
-          (journalFreeEntry): нельзя написать «просто так», не выбрав ничего.
-          НО когда открыт тред — композер показываем всегда (в режиме ответа): ответить
-          в тред можно везде, даже там, где верхний уровень запрещён (комментарии). */}
-      {!isGraduated && !isWindowClosed && !room.dm_write_locked && (threadRootId != null ||
+          В своём личном дневнике, ПОКА он остаётся целевой комнатой активного
+          задания, композер СКРЫТ, пока пользователь не выбрал режим в
+          DailyJournalForm — раздел задания (pendingJournal) или свободную запись
+          (journalFreeEntry). Если задание ведёт отписки в другую группу — дневник
+          принимает только свободную запись, композер открыт без выбора режима
+          (см. isJournalTargetRoom). НО когда открыт тред — композер показываем
+          всегда (в режиме ответа): ответить в тред можно везде, даже там, где
+          верхний уровень запрещён (комментарии). */}
+      {!isGraduated && !(isOwnPersonal && isWindowClosed) && !room.dm_write_locked && (threadRootId != null ||
         ((!room.is_personal || room.created_by === user?.id) &&
           (!room.is_news || user?.role === 'admin') &&
-          (!isOwnPersonal || journalChosen))) && (
+          (!isOwnPersonal || !isJournalTargetRoom || journalChosen))) && (
         <Composer
           roomId={roomId}
           revealOnMount={isOwnPersonal}

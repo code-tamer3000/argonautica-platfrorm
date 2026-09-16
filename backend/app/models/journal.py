@@ -68,6 +68,15 @@ class JournalProgram(Base):
     created_by: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=True
     )
+    # NULL (по умолчанию) = отписки идут в личный дневник участника, как раньше.
+    # Указан — отписки по этому заданию идут в эту группу вместо личного дневника:
+    # виджет отписок показывается всем её участникам, отписка каждого засчитывается
+    # в его собственный прогресс (dynamics._room_segments по шкале заданий). Личный
+    # дневник участников этой группы на время действия задания принимает только
+    # свободную запись — см. docs/DYNAMICS.md «Целевая комната задания».
+    chat_room_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("rooms.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

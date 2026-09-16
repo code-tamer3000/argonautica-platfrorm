@@ -28,9 +28,20 @@ export function DashboardScreen() {
   const { data: rooms } = useRooms()
   const [activeLock, setActiveLock] = useState<Element | null>(null)
 
+  // Пока активное задание ведёт отписки в группу (journal.chat_room_id),
+  // виджет должен открывать её, а не личный дневник — иначе кнопка «заполнить»
+  // ведёт не в ту комнату, где на самом деле показан виджет отписок (см.
+  // docs/DYNAMICS.md «Целевая комната задания»). Сегмент адреса зависит от
+  // типа комнаты: канал (личный дневник) живёт в /diaries, группа — в /chats
+  // (см. useOpenRoom.ts).
   const myDiaryRoomId = useMemo(
     () => rooms?.find((r) => r.is_personal && r.created_by === user?.id)?.id,
     [rooms, user?.id],
+  )
+  const journalTargetRoomId = data?.journal?.chat_room_id ?? myDiaryRoomId
+  const journalTargetSegment = useMemo(
+    () => (rooms?.find((r) => r.id === journalTargetRoomId)?.type === 'channel' ? 'diaries' : 'chats'),
+    [rooms, journalTargetRoomId],
   )
 
   const beforeStart =
@@ -111,8 +122,8 @@ export function DashboardScreen() {
               {data.journal_locked && (
                 <p className={styles.headSub}>Дневник закрыт вместе с окном набора.</p>
               )}
-              {!data.journal_locked && myDiaryRoomId != null && (
-                <Link to={`/diaries/${myDiaryRoomId}`} className="btn btn-gold">
+              {!data.journal_locked && journalTargetRoomId != null && (
+                <Link to={`/${journalTargetSegment}/${journalTargetRoomId}`} className="btn btn-gold">
                   {data.journal_today_done ? 'День закрыт · открыть дневник' : 'Заполнить дневник за сегодня'}
                 </Link>
               )}

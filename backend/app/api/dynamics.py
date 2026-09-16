@@ -82,6 +82,9 @@ class ProgramVersion:
     starts_on: date
     keys: frozenset[str]
     order: dict[str, int] = field(default_factory=dict)  # key -> position
+    # NULL — отписки идут в личный дневник (как раньше); иначе — id группы,
+    # куда на время действия этого задания переезжают отписки (см. JournalProgram).
+    chat_room_id: int | None = None
 
 
 Timeline = list[ProgramVersion]
@@ -94,15 +97,25 @@ async def load_timeline(session: AsyncSession) -> Timeline:
     день. Активное задание дня D — с максимальным `starts_on <= D`.
     """
     rows = await session.execute(
-        select(JournalProgram.starts_on, JournalSection.key, JournalSection.position)
+        select(
+            JournalProgram.starts_on,
+            JournalProgram.chat_room_id,
+            JournalSection.key,
+            JournalSection.position,
+        )
         .join(JournalSection, JournalSection.program_id == JournalProgram.id)
         .order_by(JournalProgram.starts_on, JournalSection.position)
     )
     by_start: dict[date, dict[str, int]] = {}
-    for starts_on, key, position in rows.all():
+    chat_room_by_start: dict[date, int | None] = {}
+    for starts_on, chat_room_id, key, position in rows.all():
         by_start.setdefault(starts_on, {})[key] = position
+        chat_room_by_start[starts_on] = chat_room_id
     return [
-        ProgramVersion(starts_on=d, keys=frozenset(order), order=order)
+        ProgramVersion(
+            starts_on=d, keys=frozenset(order), order=order,
+            chat_room_id=chat_room_by_start.get(d),
+        )
         for d, order in sorted(by_start.items())
     ]
 
@@ -372,21 +385,85 @@ async def _personal_room_id(session: AsyncSession, user_id: int) -> int | None:
     return row
 
 
-async def _load_journal_messages(
-    session: AsyncSession, room_id: int, since: date
+def _room_segments(
+    timeline: Timeline, since: date, until: date
+) -> list[tuple[date, date, ProgramVersion | None]]:
+    """Разбивает [since, until] на отрезки по границам заданий: внутри отрезка
+    непрерывно действует одна версия (или None — до самого первого задания).
+
+    Нужно, чтобы читать отписки из ПРАВИЛЬНОЙ комнаты за каждый день: у задания
+    может быть указана целевая группа (`chat_room_id`), и она может меняться от
+    задания к заданию — прошлые дни при этом не пересчитываются задним числом
+    (см. docs/DYNAMICS.md «Целевая комната задания»).
+    """
+    if until < since:
+        return []
+    boundaries = sorted(v.starts_on for v in timeline if since < v.starts_on <= until)
+    starts = [since, *boundaries]
+    ends = [b - timedelta(days=1) for b in boundaries] + [until]
+    return [
+        (seg_start, seg_end, active_version_for(seg_start, timeline))
+        for seg_start, seg_end in zip(starts, ends, strict=True)
+    ]
+
+
+async def _load_journal_messages_segment(
+    session: AsyncSession,
+    room_id: int,
+    sender_id: int | None,
+    start: date,
+    end: date,
 ) -> list[tuple[date, str | None]]:
-    # Берём сообщения с запасом в сутки назад: запись в 00:00–02:59 МСK относится
-    # к предыдущему журнальному дню, а created_at у неё уже следующей UTC-даты.
-    since_dt = datetime(since.year, since.month, since.day, tzinfo=UTC) - timedelta(days=1)
-    rows = await session.execute(
-        select(Message.created_at, Message.content).where(
-            Message.room_id == room_id,
-            Message.deleted_at.is_(None),
-            Message.thread_root_id.is_(None),
-            Message.created_at >= since_dt,
+    # Запас в сутки на обе стороны: запись в 00:00–02:59 МСК относится к
+    # предыдущему журнальному дню, а created_at у неё уже следующей UTC-даты.
+    # Отрезаем результат по [start, end] явно (после платформенного сдвига даты),
+    # а не только диапазоном created_at — иначе соседние отрезки с запасом могли
+    # бы задвоить сообщения на стыке дат.
+    since_dt = datetime(start.year, start.month, start.day, tzinfo=UTC) - timedelta(days=1)
+    until_dt = datetime(end.year, end.month, end.day, tzinfo=UTC) + timedelta(days=2)
+    conditions = [
+        Message.room_id == room_id,
+        Message.deleted_at.is_(None),
+        Message.thread_root_id.is_(None),
+        Message.created_at >= since_dt,
+        Message.created_at < until_dt,
+    ]
+    if sender_id is not None:
+        conditions.append(Message.sender_id == sender_id)
+    rows = await session.execute(select(Message.created_at, Message.content).where(*conditions))
+    result = []
+    for r in rows.all():
+        d = _platform_day(r.created_at)
+        if start <= d <= end:
+            result.append((d, r.content))
+    return result
+
+
+async def _load_journal_messages_for_user(
+    session: AsyncSession,
+    user_id: int,
+    personal_room_id: int | None,
+    timeline: Timeline,
+    since: date,
+    until: date,
+) -> list[tuple[date, str | None]]:
+    """Отписки одного пользователя за [since, until] из ПРАВИЛЬНОЙ комнаты на
+    каждый день: личный дневник, либо (если у активного в тот день задания
+    указана `chat_room_id`) — сообщения этого пользователя в целевой группе."""
+    messages: list[tuple[date, str | None]] = []
+    for seg_start, seg_end, version in _room_segments(timeline, since, until):
+        chat_room_id = version.chat_room_id if version else None
+        room_id = chat_room_id or personal_room_id
+        if room_id is None:
+            continue
+        # В личном дневнике верхнеуровневые сообщения и так только от владельца
+        # (см. assert_can_post) — фильтр по автору не нужен. В общей группе он
+        # обязателен: прогресс каждого участника считается по ЕГО отпискам.
+        sender_id = user_id if chat_room_id else None
+        messages.extend(
+            await _load_journal_messages_segment(session, room_id, sender_id, seg_start, seg_end)
         )
-    )
-    return [(_platform_day(r.created_at), r.content) for r in rows.all()]
+    return messages
 
 
 async def _load_pardons(session: AsyncSession, user_id: int) -> list[date]:
@@ -423,7 +500,9 @@ async def get_my_day_statuses(
     window_closed_on = await intake_window_closed(session, current_user.intake_id)
     as_of = frozen_today(current_user, window_closed_on)
     room_id = await _personal_room_id(session, current_user.id)
-    messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
+    messages = await _load_journal_messages_for_user(
+        session, current_user.id, room_id, timeline, program_start, as_of
+    )
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
@@ -457,7 +536,10 @@ async def get_my_stats(
     program_start = await load_program_start(session, current_user, timeline)
     window_closed_on = await intake_window_closed(session, current_user.intake_id)
     room_id = await _personal_room_id(session, current_user.id)
-    messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
+    messages = await _load_journal_messages_for_user(
+        session, current_user.id, room_id, timeline,
+        program_start, window_closed_on or _platform_today(),
+    )
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
@@ -537,7 +619,9 @@ async def use_pardon(
     await session.flush()
 
     room_id = await _personal_room_id(session, current_user.id)
-    messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
+    messages = await _load_journal_messages_for_user(
+        session, current_user.id, room_id, timeline, program_start, today
+    )
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
@@ -597,6 +681,7 @@ def _program_out(p: JournalProgram) -> JournalProgramOut:
         title=p.title,
         description=p.description,
         created_by=p.created_by,
+        chat_room_id=p.chat_room_id,
         sections=[_section_out(s) for s in p.sections],
     )
 
@@ -618,6 +703,7 @@ async def get_structure(
         starts_on=active.starts_on,
         title=active.title,
         description=active.description,
+        chat_room_id=active.chat_room_id,
         sections=[_section_out(s) for s in active.sections],
     )
 
@@ -627,6 +713,20 @@ async def get_structure(
 
 async def list_programs(session: AsyncSession) -> list[JournalProgramOut]:
     return [_program_out(p) for p in await load_programs(session)]
+
+
+async def _validate_chat_room(session: AsyncSession, room_id: int | None) -> None:
+    """Целевая комната задания — только существующая группа (не личный дневник,
+    не канал, не dm): в неё пишут все её участники, а не только владелец."""
+    if room_id is None:
+        return
+    room_type = await session.scalar(select(Room.type).where(Room.id == room_id))
+    if room_type is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Комната не найдена")
+    if room_type != "group":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Целевой комнатой задания может быть только группа"
+        )
 
 
 async def create_program(
@@ -639,10 +739,12 @@ async def create_program(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "Задание с такой датой старта уже есть"
         )
+    await _validate_chat_room(session, body.chat_room_id)
     program = JournalProgram(
         starts_on=body.starts_on,
         title=body.title,
         description=body.description,
+        chat_room_id=body.chat_room_id,
         created_by=created_by,
     )
     program.sections = [
@@ -691,6 +793,9 @@ async def update_program(
         program.title = body.title
     if "description" in fields:
         program.description = body.description
+    if "chat_room_id" in fields:
+        await _validate_chat_room(session, body.chat_room_id)
+        program.chat_room_id = body.chat_room_id
     if body.sections is not None:
         # Полная замена набора разделов (delete-orphan подчистит старые).
         program.sections = [
@@ -844,25 +949,46 @@ async def get_all_dynamics(
         )
     )
     room_by_user: dict[int, int] = {created_by: room_id for created_by, room_id in room_rows.all()}
+    personal_room_ids = list(room_by_user.values())
 
-    # Журнальные сообщения из личных каналов с начала самого раннего из наборов.
-    room_ids = list(room_by_user.values())
-    since_dt = datetime(
-        earliest_start.year, earliest_start.month, earliest_start.day, tzinfo=UTC
-    )
-    msg_rows = await session.execute(
-        select(Room.created_by, Message.created_at, Message.content)
-        .join(Room, Room.id == Message.room_id)
-        .where(
-            Message.room_id.in_(room_ids),
-            Message.deleted_at.is_(None),
-            Message.thread_root_id.is_(None),
-            Message.created_at >= since_dt,
-        )
-    )
+    # Журнальные сообщения с начала самого раннего из наборов, по отрезкам шкалы
+    # заданий: пока у активного в отрезок задания нет chat_room_id — как раньше,
+    # из личных каналов; если есть — сообщения самих участников из этой группы
+    # (см. dynamics._room_segments / docs/DYNAMICS.md «Целевая комната задания»).
     msgs_by_user: dict[int, list[tuple[date, str | None]]] = {}
-    for uid, created_at, content in msg_rows.all():
-        msgs_by_user.setdefault(uid, []).append((created_at.date(), content))
+    for seg_start, seg_end, version in _room_segments(timeline, earliest_start, today):
+        seg_since_dt = datetime(seg_start.year, seg_start.month, seg_start.day, tzinfo=UTC)
+        seg_until_dt = datetime(seg_end.year, seg_end.month, seg_end.day, tzinfo=UTC) + timedelta(
+            days=1
+        )
+        chat_room_id = version.chat_room_id if version else None
+        if chat_room_id:
+            rows = await session.execute(
+                select(Message.sender_id, Message.created_at, Message.content).where(
+                    Message.room_id == chat_room_id,
+                    Message.sender_id.in_(user_ids),
+                    Message.deleted_at.is_(None),
+                    Message.thread_root_id.is_(None),
+                    Message.created_at >= seg_since_dt,
+                    Message.created_at < seg_until_dt,
+                )
+            )
+        elif personal_room_ids:
+            rows = await session.execute(
+                select(Room.created_by, Message.created_at, Message.content)
+                .join(Room, Room.id == Message.room_id)
+                .where(
+                    Message.room_id.in_(personal_room_ids),
+                    Message.deleted_at.is_(None),
+                    Message.thread_root_id.is_(None),
+                    Message.created_at >= seg_since_dt,
+                    Message.created_at < seg_until_dt,
+                )
+            )
+        else:
+            continue
+        for uid, created_at, content in rows.all():
+            msgs_by_user.setdefault(uid, []).append((created_at.date(), content))
 
     # Кто отправил ЛЮБОЕ сообщение сегодня (активность на платформе).
     active_rows = await session.execute(
@@ -980,17 +1106,19 @@ async def get_admin_user_days(session: AsyncSession, user_id: int) -> list[Recen
     program_start = program_start_for(user, intake_starts, timeline)
     program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
 
-    room_id = await _personal_room_id(session, user.id)
-    messages = await _load_journal_messages(session, room_id, program_start) if room_id else []
-    pardons = await _load_pardons(session, user.id)
-    credits = await _load_credits(session, user.id)
-    per_day = _calc_closed_days(messages)
-
     graduated_on = _platform_day(user.graduated_at) if user.graduated_at else None
     window_ends_on = intake_ends.get(user.intake_id) if user.intake_id else None
     today = _platform_today()
     window_closed_on = window_ends_on if window_ends_on and today > window_ends_on else None
     as_of = graduated_on or window_closed_on or today
+
+    room_id = await _personal_room_id(session, user.id)
+    messages = await _load_journal_messages_for_user(
+        session, user.id, room_id, timeline, program_start, as_of
+    )
+    pardons = await _load_pardons(session, user.id)
+    credits = await _load_credits(session, user.id)
+    per_day = _calc_closed_days(messages)
 
     stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
     return _recent_days(

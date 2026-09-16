@@ -26,6 +26,35 @@ export { stripInlineMarks } from './inlineMarks'
 // вместо голого пути (не полный markdown — только эта одна конструкция, скобки в
 // обычном тексте никто не набирает). @упоминание: @ + латиница/цифры/_ (как ник в
 // Telegram). Один общий проход, чтобы токены не пересекались.
+// Невидимый маркер раздела Динамики (см. backend `_JOURNAL_MARKER` /
+// `dynamics._journal_category`) — в канале-дневнике (markdown-рендер) он и так
+// не виден, это HTML-комментарий; здесь, в простом рендере, его нужно вырезать
+// явно, иначе он торчит буквальным текстом. Актуально с тех пор, как задание
+// может вести отписки в обычную группу (chat_room_id), а не только в личный
+// дневник — см. docs/DYNAMICS.md «Целевая комната задания».
+const JOURNAL_MARKER_RE = /^<!--journal:[a-z0-9_]+-->\n*/
+// Заголовок записи — первая строка вида `## эмодзи подпись`, за ней markdown
+// требует пустую строку до тела (buildJournalContent, api/messages.ts). В
+// markdown-рендере (личный дневник) это просто отступ между заголовком и
+// абзацем; в простом рендере (без блочной вёрстки) пустая строка становится
+// заметным пустым рядом — поэтому здесь решётки убираем, а не показываем как
+// есть, и саму пустую строку схлопываем, оставляя перенос без разрыва.
+const JOURNAL_HEADING_RE = /^##\s+([^\n]*)\n*/
+
+/** Убирает маркер раздела Динамики и превращает `## заголовок` в лёгкое
+ * инлайновое выделение (**жирный**, как в диалоговых репликах) без пустой
+ * строки перед телом — так запись в общем чате читается так же, как в личном
+ * дневнике, а не «заголовок / пробел / текст». Используется и полным
+ * рендером сообщения, и превью (закреп, тред-цитата, пересылка). */
+export function stripJournalMarker(text: string): string {
+  const stripped = text.replace(JOURNAL_MARKER_RE, '')
+  const heading = stripped.match(JOURNAL_HEADING_RE)
+  if (!heading) return stripped
+  const rest = stripped.slice(heading[0].length)
+  const title = heading[1].trim()
+  return rest ? `**${title}**\n${rest}` : `**${title}**`
+}
+
 const LINK_TEXT_RE = /\[(?<linkLabel>[^\]\n]+)\]\((?<linkPath>\/[a-zA-Z][\w/-]*)\)/
 const URL_RE = /(?<url>https?:\/\/[^\s]+)/
 const INTERNAL_PATH_RE = /(?<![\w/])(?<path>\/[a-zA-Z][\w/-]*)/
@@ -205,7 +234,7 @@ export function renderMessageText(
   navigate?: (path: string) => void,
   mentionUsers?: Map<string, number>,
 ): ReactNode {
-  const lines = text.split('\n')
+  const lines = stripJournalMarker(text).split('\n')
   return lines.map((line, i) => (
     <Fragment key={i}>
       {i > 0 && <br />}

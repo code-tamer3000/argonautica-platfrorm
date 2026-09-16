@@ -561,6 +561,9 @@ export interface JournalStructure {
   starts_on: string | null
   title: string | null
   description: string | null
+  // NULL — отписки идут в личный дневник (как раньше); иначе — id группы, куда
+  // на время действия этого задания переехал виджет отписок.
+  chat_room_id: number | null
   sections: JournalSection[]
 }
 
@@ -571,6 +574,7 @@ export interface JournalProgram {
   title: string | null
   description: string | null
   created_by: number | null
+  chat_room_id: number | null
   sections: JournalSection[]
 }
 

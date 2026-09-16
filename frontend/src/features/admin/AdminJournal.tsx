@@ -7,6 +7,7 @@ import {
   type JournalProgramBody,
   type JournalSectionInput,
 } from '../../api/journal'
+import { useRooms } from '../../api/rooms'
 import type { JournalProgram } from '../../lib/types'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
@@ -35,9 +36,12 @@ interface ProgramFormProps {
 }
 
 function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
+  const { data: rooms = [] } = useRooms()
+  const groups = rooms.filter((r) => r.type === 'group')
   const [startsOn, setStartsOn] = useState(initial?.starts_on ?? todayStr())
   const [title, setTitle] = useState(initial?.title ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
+  const [chatRoomId, setChatRoomId] = useState<number | null>(initial?.chat_room_id ?? null)
   const [sections, setSections] = useState<SectionDraft[]>(
     initial
       ? initial.sections.map((s) => ({
@@ -107,6 +111,7 @@ function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
       starts_on: startsOn,
       title: title.trim() || null,
       description: description.trim() || null,
+      chat_room_id: chatRoomId,
       sections: cleaned,
     })
   }
@@ -147,6 +152,26 @@ function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
           onChange={(e) => setDescription(e.target.value)}
         />
       </label>
+      <label className={styles.label}>
+        Куда идут отписки
+        <select
+          className={styles.input}
+          value={chatRoomId ?? ''}
+          onChange={(e) => setChatRoomId(e.target.value ? Number(e.target.value) : null)}
+        >
+          <option value="">Личный дневник участника (по умолчанию)</option>
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>{g.name || `Группа #${g.id}`}</option>
+          ))}
+        </select>
+      </label>
+      {chatRoomId != null && (
+        <p className={styles.mediaEmpty}>
+          Пока это задание активно, виджет отписок появится в выбранной группе у всех
+          её участников — отписка туда засчитывается в их прогресс. В личном дневнике
+          участников этой группы останется только свободная запись, без виджета.
+        </p>
+      )}
 
       <div className={styles.mediaSectionTitle}>Разделы дневника</div>
       {sections.map((s, i) => (
@@ -225,9 +250,16 @@ function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
 
 export function AdminJournal() {
   const { data: programs = [], isLoading } = useJournalPrograms()
+  const { data: rooms = [] } = useRooms()
   const createProgram = useCreateProgram()
   const updateProgram = useUpdateProgram()
   const deleteProgram = useDeleteProgram()
+
+  function chatRoomName(id: number | null): string | null {
+    if (id == null) return null
+    const room = rooms.find((r) => r.id === id)
+    return room?.name || `группа #${id}`
+  }
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editItem, setEditItem] = useState<JournalProgram | null>(null)
@@ -297,6 +329,7 @@ export function AdminJournal() {
               </span>
               <span className={styles.listMeta}>
                 с {p.starts_on} · {p.sections.map((s) => `${s.emoji}${s.label}`).join(', ')}
+                {chatRoomName(p.chat_room_id) && ` · отписки в чат «${chatRoomName(p.chat_room_id)}»`}
               </span>
             </div>
             <div className={styles.listActions}>
