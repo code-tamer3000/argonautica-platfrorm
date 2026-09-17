@@ -135,16 +135,16 @@ function MeetingBlock({
   partner: PairMemberOut | undefined
   usernameOf: (uid: number) => string
 }) {
-  // Назначение встречи из интерфейса убрано: участники договариваются сами в ЛС.
-  // Участнику (есть partner) — от первого лица «Спишитесь с @partner». Админу
-  // (пары, где он не состоит) — от третьего лица: «@X и @Y должны списаться».
+  // Назначение встречи из интерфейса убрано: участники изучают дневник и задания
+  // друг друга сами. Участнику (есть partner) — от второго лица. Админу (пары,
+  // где он не состоит) — от третьего лица, оба участника названы.
   if (partner) {
     return (
       <div className={styles.myStatusRow}>
         <span className={styles.myStatusLabel}>Встреча:</span>
         <span>
-          Спишитесь с @{usernameOf(partner.user_id)} в личных сообщениях для
-          назначения встречи.
+          Изучи дневник и задания @{usernameOf(partner.user_id)}, по
+          необходимости задай вопросы в личных сообщениях.
         </span>
       </div>
     )
@@ -156,7 +156,8 @@ function MeetingBlock({
     <div className={styles.myStatusRow}>
       <span className={styles.myStatusLabel}>Встреча:</span>
       <span>
-        {names} должны списаться в личных сообщениях для назначения встречи.
+        {names} должны изучить дневник и задания друг друга, по необходимости
+        задать вопросы в личных сообщениях.
       </span>
     </div>
   )
