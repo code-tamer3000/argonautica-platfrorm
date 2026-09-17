@@ -75,6 +75,14 @@ set in `AdminJournal` when creating/editing a задание — must reference 
   own section messages there — filtered by `sender_id`, since a group has multiple
   authors, unlike a personal room where root messages are owner-only — count toward
   **their own** progress/streak exactly as a personal-diary entry would.
+- **Admins never see the widget in that group** (`ChatPane`: `isJournalTargetRoom` is
+  false for `role = 'admin'` on the chat-routed branch). Admins are there to read, not
+  to отписываться; the panel would only eat screen space. An admin's own personal diary
+  is untouched by this rule.
+- **The widget hides while the reader scrolls up** in the chat-routed group: the moment
+  the message list is scrolled upward it unmounts, and it comes back once the list is
+  back at the bottom (`MessageList.onScrolledUpChange`). In the personal diary it is
+  never auto-hidden — it is the only way to open the composer there.
 - **In the personal diary**, for the users who are members of that group, the widget is
   hidden while this задание is active: only a plain free-form message composer is
   shown (no gating, no marker parsing) — see `ChatPane`'s `isJournalTargetRoom`.
