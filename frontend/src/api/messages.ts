@@ -42,6 +42,9 @@ export interface SendBody {
   sticker_id?: number
   attachment_ids?: number[]
   reply_to_message_id?: number
+  // Ответ ЦИТАТОЙ (Telegram-style) — ортогонально reply_to_message_id (id корня
+  // треда). См. lib/types.ts QuotedMessageOut / docs/MESSAGES.md «Quotes».
+  quoted_message_id?: number
   // Ссылка на материал КБ / задачу (одна на сообщение). Оба поля вместе.
   ref_kind?: RefKind
   ref_id?: number

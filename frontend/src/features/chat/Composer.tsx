@@ -15,7 +15,7 @@ import { plural } from '../../lib/format'
 import { htmlToMarkerText, markerTextToHtml } from '../../lib/inlineMarks'
 import { MAX_ATTACHMENTS, preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
 import { stripInlineMarks, stripJournalMarker } from '../../lib/messageText'
-import type { MessageOut, MessageRefOut } from '../../lib/types'
+import type { MessageOut, MessageRefOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
@@ -77,6 +77,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const { user } = useAuth()
   const pendingForward = useUiStore((s) => s.pendingForward)
   const setPendingForward = useUiStore((s) => s.setPendingForward)
+  const pendingQuote = useUiStore((s) => s.pendingQuote)
+  const setPendingQuote = useUiStore((s) => s.setPendingQuote)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const pendingDraft = useUiStore((s) => s.pendingDraft)
@@ -84,6 +86,9 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // Пересылку показываем только в композере ВЫБРАННОЙ для неё комнаты (не любой,
   // где этот roomId совпал бы случайно — targetRoomId фиксирован в пикере).
   const repost = pendingForward?.targetRoomId === roomId ? pendingForward : null
+  // Цитата — тот же приём, что pendingForward: показываем только в композере ТОЙ
+  // комнаты, где её поставили (см. stores/ui.ts PendingQuote).
+  const quote = pendingQuote?.roomId === roomId ? pendingQuote.message : null
   // Раздел дневника, «заряженный» именно в эту комнату: следующая отправка
   // (текст/файл/голос/стикер) уходит как запись дневника этого раздела. Мета
   // раздела берётся из активного задания (см. api/journal.ts).
@@ -314,6 +319,39 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     return ref ? { ref_kind: ref.kind, ref_id: ref.id } : {}
   }
 
+  // Цитата в тело запроса. quoted_message_id ОРТОГОНАЛЕН reply_to_message_id
+  // (см. docs/MESSAGES.md «Quotes») — оба можно передать одновременно (цитата
+  // внутри треда), поэтому это отдельная функция, а не ветка refBody.
+  function quoteBody(q: MessageOut | null): Partial<SendBody> {
+    return q ? { quoted_message_id: q.id } : {}
+  }
+
+  // Оптимистичный QuotedMessageOut для мгновенного показа плашки в оптимистичном
+  // пузыре (outbox), ДО ответа сервера — тот перерезолвит `quote` живьём на чтении.
+  function optimisticQuoteOf(q: MessageOut | null): QuotedMessageOut | undefined {
+    if (!q) return undefined
+    const kind: QuoteKind = q.content
+      ? 'text'
+      : q.sticker_id != null
+        ? 'sticker'
+        : q.ref
+          ? 'ref'
+          : 'attachment'
+    return {
+      id: q.id,
+      sender_id: q.sender_id,
+      // Маркеры/markdown НЕ снимаем (в отличие от threadSnippet/repostSnippet
+      // ниже, которые остаются однострочными plain-превью composer'а): сервер
+      // на чтении (truncate_for_quote) их тоже сохраняет, MessageItem рендерит
+      // quote.preview тем же путём, что и полный content — без этого готовый
+      // пузырь после ответа сервера «моргнул» бы форматированием.
+      preview: stripJournalMarker(q.content ?? '').trim() || null,
+      kind,
+      thread_root_id: q.thread_root_id,
+      deleted: false,
+    }
+  }
+
   // Оптимистичный MessageRefOut (для мгновенного показа кнопки в бабле). title —
   // из пикера; available:true оптимистично (сервер перерезолвит на чтении).
   function optimisticRefOf(ref: PickedRef | null): MessageRefOut | undefined {
@@ -342,14 +380,20 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // Верхнеуровневая отправка (обычное сообщение/голос): текст+стикер сразу, а сырые
   // вложения — в outbox через enqueueMedia (заливка в фоне из очереди, переживает
   // офлайн/перезагрузку). Без вложений — обычный enqueue. Черновик комнаты очищаем.
-  function enqueueTopLevel(body: SendBody, uploads: PendingUpload[], ref: PickedRef | null = null) {
+  function enqueueTopLevel(
+    body: SendBody,
+    uploads: PendingUpload[],
+    ref: PickedRef | null = null,
+    quoted: MessageOut | null = null,
+  ) {
     if (!user) {
       send.mutate(body) // без пользователя (не должно случаться) — прямой путь
       return
     }
     const optRef = optimisticRefOf(ref)
-    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads, optRef)
-    else outboxEnqueue(roomId, body, user.id, [], optRef)
+    const optQuote = optimisticQuoteOf(quoted)
+    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads, optRef, undefined, optQuote)
+    else outboxEnqueue(roomId, body, user.id, [], optRef, undefined, optQuote)
     void clearDraft(roomId)
   }
 
@@ -366,10 +410,12 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       if (!content && pendingFiles.length === 0 && !pendingRef) return
       const uploads = pendingFiles
       const ref = pendingRef
+      const q = quote
       resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
-      const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(ref) }
+      setPendingQuote(null)
+      const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(ref), ...quoteBody(q) }
       if (content) body.content = content
       try {
         if (uploads.length) body.attachment_ids = await uploadAll(uploads)
@@ -393,16 +439,21 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       if (!content && pendingFiles.length === 0 && !pendingRef) return
       const uploads = pendingFiles
       const ref = pendingRef
+      const q = quote
       resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
-      const body: SendBody = { content: buildJournalContent(journalMeta, content), ...refBody(ref) }
+      setPendingQuote(null)
+      const body: SendBody = {
+        content: buildJournalContent(journalMeta, content), ...refBody(ref), ...quoteBody(q),
+      }
       const optRef = optimisticRefOf(ref)
+      const optQuote = optimisticQuoteOf(q)
       if (user) {
         if (uploads.length) {
-          enqueueMedia(roomId, body, user.id, uploads, optRef, { category: journalKey })
+          enqueueMedia(roomId, body, user.id, uploads, optRef, { category: journalKey }, optQuote)
         } else {
-          outboxEnqueue(roomId, body, user.id, [], optRef, { category: journalKey })
+          outboxEnqueue(roomId, body, user.id, [], optRef, { category: journalKey }, optQuote)
         }
       }
       return
@@ -449,12 +500,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     if (!content && pendingFiles.length === 0 && !pendingRef) return
     const uploads = pendingFiles
     const ref = pendingRef
+    const q = quote
     resetEditor('')
     setPendingFiles([])
     setPendingRef(null)
-    const body: SendBody = { ...refBody(ref) }
+    setPendingQuote(null)
+    const body: SendBody = { ...refBody(ref), ...quoteBody(q) }
     if (content) body.content = content
-    enqueueTopLevel(body, uploads, ref)
+    enqueueTopLevel(body, uploads, ref, q)
   }
 
   function onKey(e: KeyboardEvent<HTMLDivElement>) {
@@ -538,6 +591,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       (threadRoot.sticker_id != null ? '[стикер]' : '[вложение]')
     : ''
 
+  const quoteAuthor = quote
+    ? users.get(quote.sender_id)?.display_name ?? `Участник #${quote.sender_id}`
+    : ''
+  const quoteSnippet = quote
+    ? stripInlineMarks(stripJournalMarker(quote.content ?? '').trim()) ||
+      (quote.sticker_id != null ? '[стикер]' : '[вложение]')
+    : ''
+
   return (
     <div className={`${styles.composer} ${revealOnMount ? styles.composerReveal : ''}`}>
       {inThread && (
@@ -559,6 +620,19 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
             )}
           </button>
           <span className={styles.ctxSnippet}>{threadSnippet || '…'}</span>
+        </div>
+      )}
+      {quote && (
+        <div className={`${styles.contextBar} ${styles.contextBarQuote}`}>
+          <span className={styles.ctxLabel}>Ответ {quoteAuthor}:</span>
+          <span className={styles.ctxSnippet}>{quoteSnippet}</span>
+          <button
+            className={styles.pendingChipX}
+            onClick={() => setPendingQuote(null)}
+            aria-label="Убрать цитату"
+          >
+            ✕
+          </button>
         </div>
       )}
       {repost && (

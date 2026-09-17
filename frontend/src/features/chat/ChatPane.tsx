@@ -48,6 +48,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const dmPeers = useUiStore((s) => s.dmPeers)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
   const setPendingForward = useUiStore((s) => s.setPendingForward)
+  const setPendingQuote = useUiStore((s) => s.setPendingQuote)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const journalFreeEntry = useUiStore((s) => s.journalFreeEntry)
@@ -98,11 +99,51 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     if (targetRoomId !== roomId) onOpenRoom?.(targetRoomId)
   }, [forwardingMsg, roomId, setPendingForward, onOpenRoom])
 
+  // Цитата (Telegram-style «ответить»): ставим в композер, фокус подхватит его сам
+  // (см. Composer pendingQuote-эффект). useCallback — стабильная ссылка для
+  // мемоизированного MessageItem/меню, как и остальные колбэки ниже.
+  const handleQuote = useCallback((msg: MessageOut) => {
+    setPendingQuote({ roomId, message: msg })
+  }, [roomId, setPendingQuote])
+
+  // Свайп влево (useSwipeToReply) отдаёт только id — ищем сообщение в загруженной
+  // верхнеуровневой ленте. Промах (свайп по ответу в открытом треде, чьи данные вне
+  // этого списка, либо ушедшее за пагинацию) — молча игнорируем, «Ответить» в меню
+  // сообщения остаётся рабочим запасным путём.
+  const handleSwipeReply = useCallback((messageId: number) => {
+    const msg = messages.find((m) => m.id === messageId)
+    if (msg) handleQuote(msg)
+  }, [messages, handleQuote])
+
+  // Клик по плашке цитаты внутри сообщения → к оригиналу. Если он сам внутри
+  // треда — сперва раскрываем ветку (иначе scrollToMessage его не найдёт: реплики
+  // треда не живут в основной ленте), потом на следующем кадре скроллим и подсвечиваем.
+  const handleQuoteJump = useCallback((quote: { id: number; thread_root_id: number | null; deleted: boolean }) => {
+    if (quote.deleted) return
+    if (quote.thread_root_id != null && threadRootId !== quote.thread_root_id) {
+      setThreadRootId(quote.thread_root_id)
+      requestAnimationFrame(() => {
+        if (messageListRef.current?.scrollToMessage(quote.id)) {
+          setHighlightedMsgId(quote.id)
+          setTimeout(() => setHighlightedMsgId(null), 2000)
+        }
+      })
+      return
+    }
+    if (messageListRef.current?.scrollToMessage(quote.id)) {
+      setHighlightedMsgId(quote.id)
+      setTimeout(() => setHighlightedMsgId(null), 2000)
+    } else {
+      toast('Сообщение не загружено — пролистайте выше')
+    }
+  }, [threadRootId])
+
   // Контекстное меню сообщения (общий хук для ленты и треда).
   const msgMenu = useMessageMenu({
     roomId,
     canPin: !!canPin,
-    onReply: (msg) => setThreadRootId(msg.id),
+    onQuote: handleQuote,
+    onOpenThread: (msg) => setThreadRootId(msg.id),
     onEdit: (msg) => setEditingId(msg.id),
     onForward: handleForward,
   })
@@ -439,8 +480,12 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onClearEdit={clearEdit}
         onToggleThread={toggleThread}
         onForward={handleForward}
+        onQuote={handleQuote}
+        onQuoteJump={handleQuoteJump}
         onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={onAtBottomChange}
+        onSwipeReply={handleSwipeReply}
+        swipeEnabled={!isGraduated}
       />
       <TypingIndicator roomId={roomId} users={users} />
       {isJournalTargetRoom && !isGraduated && !isWindowClosed && (

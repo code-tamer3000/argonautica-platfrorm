@@ -975,3 +975,349 @@ async def test_message_new_ws_event_has_no_redacted_variant_without_zoom_link(
     )
     assert resp.status_code == 201, resp.text
     assert "content_for_cheap_tariff" not in published[0][1]
+
+
+# --- цитаты (Telegram-style «ответить», ортогональны треду) -----------------
+
+
+async def test_send_with_quote_returns_preview(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id, "member")
+    a_headers = await _headers(client, a)
+    b_headers = await _headers(client, b)
+
+    original = await _send(client, a_headers, room.id, content="исходный текст")
+    quoting = await _send(
+        client, b_headers, room.id, content="ответ", quoted_message_id=original["id"]
+    )
+
+    assert quoting["quote"]["id"] == original["id"]
+    assert quoting["quote"]["sender_id"] == a.id
+    assert quoting["quote"]["preview"] == "исходный текст"
+    assert quoting["quote"]["kind"] == "text"
+    assert quoting["quote"]["deleted"] is False
+
+
+async def test_quote_does_not_create_thread(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Прямая защита ADR-002/ADR-010: цитата — презентация, не структура треда."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    original = await _send(client, headers, room.id, content="root")
+    quoting = await _send(
+        client, headers, room.id, content="quote reply", quoted_message_id=original["id"]
+    )
+    assert quoting["thread_root_id"] is None
+
+    resp = await client.get(f"/api/rooms/{room.id}/messages", headers=headers)
+    assert resp.status_code == 200
+    ids = {m["id"] for m in resp.json()}
+    assert ids == {original["id"], quoting["id"]}  # обе записи в ленте верхнего уровня
+
+    row = (
+        await session.execute(select(Message).where(Message.id == original["id"]))
+    ).scalar_one()
+    assert row.reply_count == 0
+    assert row.last_reply_at is None
+
+
+async def test_quote_foreign_room_404(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room_a = await make_room(created_by=owner.id)
+    room_b = await make_room(created_by=owner.id)
+    await add_membership(room_a.id, owner.id, "owner")
+    await add_membership(room_b.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    foreign = await _send(client, headers, room_b.id, content="из другой комнаты")
+    resp = await client.post(
+        f"/api/rooms/{room_a.id}/messages",
+        headers=headers,
+        json={"content": "цитирую чужое", "quoted_message_id": foreign["id"]},
+    )
+    assert resp.status_code == 404
+
+
+async def test_quote_unknown_id_404(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "цитирую несуществующее", "quoted_message_id": 9_999_999},
+    )
+    assert resp.status_code == 404
+
+
+async def test_quote_deleted_target_404(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    victim = await _send(client, headers, room.id, content="скоро удалю")
+    deleted = await client.delete(
+        f"/api/rooms/{room.id}/messages/{victim['id']}", headers=headers
+    )
+    assert deleted.status_code == 204
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "цитирую удалённое", "quoted_message_id": victim["id"]},
+    )
+    assert resp.status_code == 404
+
+
+async def test_quote_of_message_deleted_later(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Оригинал удалили ПОСЛЕ того, как его процитировали — текст/автор не текут."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    original = await _send(client, headers, room.id, content="исчезнет")
+    quoting = await _send(
+        client, headers, room.id, content="ответ", quoted_message_id=original["id"]
+    )
+    deleted = await client.delete(
+        f"/api/rooms/{room.id}/messages/{original['id']}", headers=headers
+    )
+    assert deleted.status_code == 204
+
+    resp = await client.get(f"/api/rooms/{room.id}/messages", headers=headers)
+    assert resp.status_code == 200
+    item = next(m for m in resp.json() if m["id"] == quoting["id"])
+    assert item["quote"]["kind"] == "deleted"
+    assert item["quote"]["deleted"] is True
+    assert item["quote"]["preview"] is None
+    assert item["quote"]["sender_id"] is None
+
+
+async def test_quote_inside_thread(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """reply_to_message_id и quoted_message_id вместе: ветка остаётся плоской,
+    цитата дополнительно резолвится в ThreadOut."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    root = await _send(client, headers, room.id, content="root")
+    aside = await _send(client, headers, room.id, content="в сторону")
+    reply = await _send(
+        client,
+        headers,
+        room.id,
+        content="ответ в треде с цитатой",
+        reply_to_message_id=root["id"],
+        quoted_message_id=aside["id"],
+    )
+    assert reply["thread_root_id"] == root["id"]
+    assert reply["quote"]["id"] == aside["id"]
+
+    thread = await client.get(
+        f"/api/rooms/{room.id}/messages/{root['id']}/thread", headers=headers
+    )
+    assert thread.status_code == 200
+    body = thread.json()
+    assert body["root"]["reply_count"] == 1
+    reply_in_thread = next(r for r in body["replies"] if r["id"] == reply["id"])
+    assert reply_in_thread["quote"]["id"] == aside["id"]
+
+
+async def test_quote_preview_keeps_marks_strips_journal_marker(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Превью цитаты рендерится клиентом теми же путями, что и полный текст
+    (renderMessageText/renderMarkdown) — в отличие от превью уведомлений,
+    inline-маркеры (**/*/ ++) СОХРАНЯЮТСЯ. Снимается только технический
+    journal-маркер (HTML-комментарий, никогда не должен быть виден как есть)."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    marked = await _send(
+        client, headers, room.id, content="<!--journal:mood-->**жирно**"
+    )
+    quoting = await _send(
+        client, headers, room.id, content="ответ", quoted_message_id=marked["id"]
+    )
+    assert quoting["quote"]["preview"] == "**жирно**"
+
+    long_text = "x" * 500
+    long_original = await _send(client, headers, room.id, content=long_text)
+    quoting_long = await _send(
+        client,
+        headers,
+        room.id,
+        content="ответ 2",
+        quoted_message_id=long_original["id"],
+    )
+    assert len(quoting_long["quote"]["preview"]) == 140
+
+
+async def test_quote_in_ws_payload(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    published: list[tuple[int, dict[str, object]]] = []
+
+    async def _spy(room_id: int, event: dict[str, object]) -> None:
+        published.append((room_id, event))
+
+    monkeypatch.setattr("app.api.messages.publish_room_event", _spy)
+
+    original = await _send(client, headers, room.id, content="исходный")
+    await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "цитата в эфир", "quoted_message_id": original["id"]},
+    )
+    assert len(published) == 2  # исходное + цитирующее
+    quote_event = published[-1][1]
+    assert quote_event["message"]["quote"]["id"] == original["id"]
+    assert quote_event["message"]["quote"]["preview"] == "исходный"
+
+
+async def test_forward_drops_quote(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    sender = await make_user()
+    peer = await make_user()
+    room = await make_room(created_by=sender.id)
+    await add_membership(room.id, sender.id, "owner")
+
+    dm = await make_room(created_by=sender.id, type="dm")
+    await add_membership(dm.id, sender.id, "member")
+    await add_membership(dm.id, peer.id, "member")
+
+    headers = await _headers(client, sender)
+    original = await _send(client, headers, room.id, content="исходный")
+    quoting = await _send(
+        client, headers, room.id, content="цитата", quoted_message_id=original["id"]
+    )
+
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages/{quoting['id']}/repost",
+        headers=headers,
+        params={"target_room_id": dm.id},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["quote"] is None
+
+
+async def test_feed_resolves_many_quotes(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Несколько разных цитат на одной странице резолвятся батчем без промахов."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    m1 = await _send(client, headers, room.id, content="первое")
+    m2 = await _send(client, headers, room.id, content="второе")
+    m3 = await _send(client, headers, room.id, content="третье")
+    q1 = await _send(client, headers, room.id, content="q1", quoted_message_id=m1["id"])
+    q2 = await _send(client, headers, room.id, content="q2", quoted_message_id=m2["id"])
+    q3 = await _send(client, headers, room.id, content="q3", quoted_message_id=m3["id"])
+
+    resp = await client.get(f"/api/rooms/{room.id}/messages", headers=headers)
+    assert resp.status_code == 200
+    by_id = {m["id"]: m for m in resp.json()}
+    assert by_id[q1["id"]]["quote"]["preview"] == "первое"
+    assert by_id[q2["id"]]["quote"]["preview"] == "второе"
+    assert by_id[q3["id"]]["quote"]["preview"] == "третье"
+
+
+async def test_news_quote_preview_redacts_zoom_link_for_cheap_tariff(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    """ARG-115: цитата поста-анонса не должна обходить маскировку Zoom-ссылок."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    news = await ensure_news_channel(session, admin.intake_id)
+    await session.commit()
+
+    announcement = await _send(client, admin_h, news.id, content=_ZOOM_TEXT)
+    await _send(
+        client,
+        admin_h,
+        news.id,
+        content="см. выше",
+        quoted_message_id=announcement["id"],
+    )
+
+    cheap_plan = await _create_plan(client, admin_h, CHEAP_TARIFF_NAME)
+    viewer = await make_user(intake_id=admin.intake_id, plan_id=cheap_plan)
+    viewer_h = await _headers(client, viewer)
+
+    resp = await client.get(f"/api/rooms/{news.id}/messages", headers=viewer_h)
+    assert resp.status_code == 200
+    quoting_item = next(m for m in resp.json() if m.get("quote") is not None)
+    assert ZOOM_LINK_PLACEHOLDER in quoting_item["quote"]["preview"]
+    assert "zoom.us" not in quoting_item["quote"]["preview"]

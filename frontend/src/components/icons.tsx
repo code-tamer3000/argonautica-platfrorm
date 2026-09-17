@@ -19,6 +19,7 @@ import {
   Italic,
   LifeBuoy,
   MessageSquare,
+  MessagesSquare,
   Megaphone,
   Mic,
   Moon,
@@ -81,6 +82,7 @@ export const IconPause = (p: IconProps) => <Pause {...DEFAULTS} {...p} />
 export const IconTrash = (p: IconProps) => <Trash2 {...DEFAULTS} {...p} />
 export const IconClose = (p: IconProps) => <X {...DEFAULTS} {...p} />
 export const IconReply = (p: IconProps) => <CornerUpLeft {...DEFAULTS} {...p} />
+export const IconThread = (p: IconProps) => <MessagesSquare {...DEFAULTS} {...p} />
 export const IconForward = (p: IconProps) => <CornerUpRight {...DEFAULTS} {...p} />
 export const IconCopy = (p: IconProps) => <Copy {...DEFAULTS} {...p} />
 export const IconEdit = (p: IconProps) => <Pencil {...DEFAULTS} {...p} />

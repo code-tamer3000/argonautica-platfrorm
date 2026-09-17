@@ -452,3 +452,93 @@ async def test_bold_mention_still_notifies(
     item = data["items"][0]
     assert item["kind"] == "mention"
     assert item["actor_id"] == a.id
+
+
+async def test_quote_in_group_notifies_original_author(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Цитата — второй, более тихий слой поверх _recipients: верхнеуровневое
+    сообщение в группе само по себе не уведомляет (см. test_group_top_level_
+    message_creates_no_notification), но цитата в нём — уведомляет автора оригинала."""
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+
+    ha = await _headers(client, a)
+    hb = await _headers(client, b)
+
+    original = await _send(client, ha, room.id, content="root")
+    await _send(
+        client, hb, room.id, content="цитирую тебя", quoted_message_id=original["id"]
+    )
+
+    data = await _notifications(client, ha)
+    assert data["unread_count"] == 1
+    assert data["items"][0]["kind"] == "reply"
+    assert data["items"][0]["actor_id"] == b.id
+
+
+async def test_self_quote_creates_no_notification(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    a = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    ha = await _headers(client, a)
+
+    original = await _send(client, ha, room.id, content="root")
+    await _send(
+        client, ha, room.id, content="цитирую себя", quoted_message_id=original["id"]
+    )
+    assert await _db_count(session, a.id) == 0
+
+
+async def test_quote_of_third_party_inside_thread_does_not_steal_reply(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Ответ в треде с цитатой третьего: автор КОРНЯ не теряет своё 'reply', автор
+    процитированного получает своё — ровно по одному уведомлению каждому, без дублей."""
+    a = await make_user()
+    b = await make_user()
+    c = await make_user()
+    room = await make_room(created_by=a.id)
+    await add_membership(room.id, a.id, "owner")
+    await add_membership(room.id, b.id)
+    await add_membership(room.id, c.id)
+
+    ha = await _headers(client, a)
+    hb = await _headers(client, b)
+    hc = await _headers(client, c)
+
+    root = await _send(client, ha, room.id, content="root")
+    aside = await _send(client, hb, room.id, content="реплика в сторону")
+    await _send(
+        client,
+        hc,
+        room.id,
+        content="ответ в треде с цитатой b",
+        reply_to_message_id=root["id"],
+        quoted_message_id=aside["id"],
+    )
+
+    a_data = await _notifications(client, ha)
+    assert a_data["unread_count"] == 1
+    assert a_data["items"][0]["kind"] == "reply"
+    assert a_data["items"][0]["actor_id"] == c.id
+
+    b_data = await _notifications(client, hb)
+    assert b_data["unread_count"] == 1
+    assert b_data["items"][0]["kind"] == "reply"
+    assert b_data["items"][0]["actor_id"] == c.id

@@ -4,7 +4,7 @@ import { useThread } from '../../api/threads'
 import { useUsersMap } from '../../api/users'
 import { Spinner } from '../../components/Spinner'
 import { plural } from '../../lib/format'
-import type { MessageOut } from '../../lib/types'
+import type { MessageOut, QuotedMessageOut } from '../../lib/types'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageItem } from './MessageItem'
 import { useMessageMenu } from './useMessageMenu'
@@ -21,6 +21,10 @@ interface Props {
   // Канал-дневник → текст ответов рендерится как markdown (см. MessageItem).
   markdown?: boolean
   onForward?: (msg: MessageOut) => void
+  // «Ответить» = цитата — можно и внутри открытого треда, не выходя из него.
+  onQuote?: (msg: MessageOut) => void
+  // Клик по плашке цитаты внутри ответа треда → скролл/подсветка оригинала.
+  onQuoteJump?: (quote: QuotedMessageOut) => void
 }
 
 /**
@@ -30,7 +34,7 @@ interface Props {
  * и на компе, с вложениями/стикерами/голосом. Ответ уходит в корень (плоский тред,
  * см. docs/MESSAGES.md); открытый тред обновляется по инвалидации thread-query.
  */
-export function InlineThread({ roomId, rootId, canPin, markdown, onForward }: Props) {
+export function InlineThread({ roomId, rootId, canPin, markdown, onForward, onQuote, onQuoteJump }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedAll, setExpandedAll] = useState(false)
@@ -40,10 +44,12 @@ export function InlineThread({ roomId, rootId, canPin, markdown, onForward }: Pr
   // видеть последние ответы и композер с полем «Ответить в тред».
   const endRef = useRef<HTMLDivElement>(null)
   const scrolledRef = useRef(false)
-  // «Ответить» в меню не показываем — мы уже в треде, ответ уходит в корень через композер.
+  // «Ответить в тред» в меню не показываем — мы уже внутри треда, второй уровень
+  // вложенности не бывает (ADR-002). «Ответить» (цитата) — можно, она ортогональна.
   const msgMenu = useMessageMenu({
     roomId,
     canPin: !!canPin,
+    onQuote,
     onEdit: (m) => setEditingId(m.id),
     onForward,
   })
@@ -120,10 +126,13 @@ export function InlineThread({ roomId, rootId, canPin, markdown, onForward }: Pr
             markdown={markdown}
             author={users.get(r.sender_id)}
             forwardedFrom={r.forwarded_from_sender_id != null ? users.get(r.forwarded_from_sender_id) : undefined}
+            quoteAuthor={r.quote?.sender_id != null ? users.get(r.quote.sender_id) : undefined}
             isInThread
             editingId={editingId}
             isSelected={msgMenu.menu?.msg.id === r.id}
             onClearEdit={() => setEditingId(null)}
+            onQuote={onQuote}
+            onQuoteJump={onQuoteJump}
             onOpenMenu={msgMenu.openMenu}
           />
         ))}

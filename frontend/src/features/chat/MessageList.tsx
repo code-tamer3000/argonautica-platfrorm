@@ -1,9 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Spinner } from '../../components/Spinner'
 import { dayLabel, sameDay } from '../../lib/format'
-import type { MessageOut, PublicUserOut } from '../../lib/types'
+import type { MessageOut, PublicUserOut, QuotedMessageOut } from '../../lib/types'
 import { InlineThread } from './InlineThread'
 import { MessageItem } from './MessageItem'
+import { useSwipeToReply } from './useSwipeToReply'
 import styles from './chat.module.css'
 
 export interface MessageListHandle {
@@ -34,19 +35,36 @@ interface Props {
   onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
   onForward?: (msg: MessageOut) => void
+  // Меню «Ответить» = цитата (docs/MESSAGES.md «Quotes») — MessageList сам меню не
+  // строит (это ChatPane/InlineThread через useMessageMenu), но пробрасывает onQuote
+  // ДАЛЬШЕ в InlineThread — там свой независимый useMessageMenu (можно цитировать
+  // сообщение, не выходя из открытого треда).
+  onQuote?: (msg: MessageOut) => void
+  // Клик по плашке цитаты внутри сообщения → скролл/подсветка оригинала.
+  onQuoteJump?: (quote: QuotedMessageOut) => void
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
+  // Свайп влево по сообщению ставит его в цитату — то же действие, что пункт меню
+  // «Ответить». undefined/false из родителя (например, у выпускника) — свайп выключен.
+  onSwipeReply?: (messageId: number) => void
+  swipeEnabled?: boolean
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
     expandedThreadId, canPin, markdown, onClearEdit, onToggleThread, onForward,
-    onOpenMenu, onAtBottomChange },
+    onQuote, onQuoteJump, onOpenMenu, onAtBottomChange, onSwipeReply, swipeEnabled = true },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
   const count = messages.length
+
+  useSwipeToReply(
+    containerRef,
+    onSwipeReply ?? (() => {}),
+    swipeEnabled && !!onSwipeReply,
+  )
 
   // Максимальный id, известный на момент первой отрисовки ленты. Сообщения с id
   // больше этого — «новые» (пришли в реальном времени / отправлены после открытия),
@@ -149,12 +167,15 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               markdown={markdown}
               author={users.get(m.sender_id)}
               forwardedFrom={m.forwarded_from_sender_id != null ? users.get(m.forwarded_from_sender_id) : undefined}
+              quoteAuthor={m.quote?.sender_id != null ? users.get(m.quote.sender_id) : undefined}
               editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
               threadOpen={expandedThreadId === m.id}
               onClearEdit={onClearEdit}
               onToggleThread={onToggleThread}
+              onQuote={onQuote}
+              onQuoteJump={onQuoteJump}
               onOpenMenu={onOpenMenu}
             />
             {expandedThreadId === m.id && (
@@ -164,6 +185,8 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
                 canPin={canPin}
                 markdown={markdown}
                 onForward={onForward}
+                onQuote={onQuote}
+                onQuoteJump={onQuoteJump}
               />
             )}
           </div>
