@@ -340,7 +340,12 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     return {
       id: q.id,
       sender_id: q.sender_id,
-      preview: stripInlineMarks(stripJournalMarker(q.content ?? '').trim()) || null,
+      // Маркеры/markdown НЕ снимаем (в отличие от threadSnippet/repostSnippet
+      // ниже, которые остаются однострочными plain-превью composer'а): сервер
+      // на чтении (truncate_for_quote) их тоже сохраняет, MessageItem рендерит
+      // quote.preview тем же путём, что и полный content — без этого готовый
+      // пузырь после ответа сервера «моргнул» бы форматированием.
+      preview: stripJournalMarker(q.content ?? '').trim() || null,
       kind,
       thread_root_id: q.thread_root_id,
       deleted: false,
