@@ -21,6 +21,16 @@ export interface PendingForward {
   message: MessageOut
 }
 
+// Цитата, «зажатая» в композере (Telegram-style «ответить»): держим roomId, чтобы
+// композер другой комнаты (переключились чатом) не подхватил чужую цитату — тот же
+// приём, что targetRoomId у PendingForward. Стор, а не локальный useState ChatPane:
+// цитировать можно и из InlineThread (свой useMessageMenu), не только из основной
+// ленты — общий держатель нужен обоим местам.
+export interface PendingQuote {
+  roomId: number
+  message: MessageOut
+}
+
 interface UiState {
   activeRoomId: number | null
   setActiveRoom: (id: number | null) => void
@@ -28,6 +38,10 @@ interface UiState {
   // Пересылка, ожидающая отправки (см. PendingForward).
   pendingForward: PendingForward | null
   setPendingForward: (f: PendingForward | null) => void
+
+  // Цитата, ожидающая отправки (см. PendingQuote).
+  pendingQuote: PendingQuote | null
+  setPendingQuote: (q: PendingQuote | null) => void
 
   // Черновик, «заряженный» в композер комнаты (напр. шапка ответа админа на
   // обращение из техподдержки). Композер той же комнаты подставляет text один раз
@@ -72,6 +86,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   pendingForward: null,
   setPendingForward: (f) => set({ pendingForward: f }),
+
+  pendingQuote: null,
+  setPendingQuote: (q) => set({ pendingQuote: q }),
 
   pendingDraft: null,
   setPendingDraft: (v) => set({ pendingDraft: v }),

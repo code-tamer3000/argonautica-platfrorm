@@ -5,23 +5,37 @@ import { useToggleReaction } from '../../api/reactions'
 import { useStickerMap } from '../../api/stickers'
 import { useUsersByUsername } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
-import { IconBook, IconChevronDown, IconTasks } from '../../components/icons'
+import { IconBook, IconChevronDown, IconReply, IconTasks } from '../../components/icons'
 import { timeHM } from '../../lib/format'
 import { renderMarkdown } from '../../lib/markdown'
 import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
-import type { MessageOut, PublicUserOut } from '../../lib/types'
+import type { MessageOut, PublicUserOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
 import { Attachment } from './Attachment'
 import { MediaGroup } from './MediaGroup'
 import { ReactionChip } from './ReactionChip'
 import styles from './chat.module.css'
 
+// Плейсхолдер плашки цитаты, когда у оригинала нет текста (та же логика, что у
+// threadSnippet в Composer.tsx — фолбэки [стикер]/[вложение]).
+function quoteFallbackLabel(kind: QuoteKind): string {
+  switch (kind) {
+    case 'sticker': return '[стикер]'
+    case 'attachment': return '[вложение]'
+    case 'ref': return '[ссылка]'
+    default: return ''
+  }
+}
+
 interface Props {
   msg: MessageOut
   continuation: boolean
   author?: PublicUserOut
   forwardedFrom?: PublicUserOut
+  // Автор цитируемого сообщения (см. msg.quote) — резолвится в MessageList из
+  // общей карты users, тем же приёмом, что forwardedFrom.
+  quoteAuthor?: PublicUserOut
   isInThread?: boolean
   // Каналы-дневники рендерят текст как markdown (заголовки/списки/жирный —
   // участники ведут ежедневные записи с оформлением). Личные чаты, группы и
@@ -34,6 +48,12 @@ interface Props {
   threadOpen?: boolean
   onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
+  // Клик по плашке цитаты внутри сообщения → скролл/подсветка оригинала.
+  onQuoteJump?: (quote: QuotedMessageOut) => void
+  // Кнопка ↩, проявляющаяся при наведении (десктоп) — тот же результат, что пункт
+  // меню «Ответить» и свайп влево на тач-устройствах, но без похода в меню.
+  // undefined → кнопку не показываем (совпадает с видимостью пункта меню).
+  onQuote?: (msg: MessageOut) => void
   // Тап по сообщению → открыть контекстное меню действий (позиция = rect сообщения).
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
 }
@@ -47,6 +67,7 @@ function MessageItemInner({
   continuation,
   author,
   forwardedFrom,
+  quoteAuthor,
   isInThread,
   markdown,
   editingId,
@@ -55,6 +76,8 @@ function MessageItemInner({
   threadOpen,
   onClearEdit,
   onToggleThread,
+  onQuoteJump,
+  onQuote,
   onOpenMenu,
 }: Props) {
   const stickerMap = useStickerMap()
@@ -145,11 +168,31 @@ function MessageItemInner({
     <div
       className={msgClass}
       data-selected={isSelected || undefined}
+      // Цель свайпа влево (useSwipeToReply.ts): хук делегирует слушатели на
+      // скролл-контейнер ленты (работает и для ответов треда — они рендерятся
+      // внутри того же контейнера) и ищет узел сдвига/id по этим атрибутам (по
+      // хешированному CSS-модульному классу селектиться нельзя). data-outbox —
+      // хук пропускает ещё не отправленные (temp id) сообщения.
+      data-swipe="true"
+      data-msg-id={msg.id}
+      data-outbox={outbox ? 'true' : undefined}
       onClick={(e) => {
         e.stopPropagation()
         if (!isEditing && !outbox) onOpenMenu?.(msg, e.currentTarget.getBoundingClientRect())
       }}
     >
+      {/* Кнопка ↩ на hover (десктоп) — та же цитата, что пункт меню и свайп влево
+          на тач. @media (hover: none) в CSS прячет её на устройствах без указателя. */}
+      {onQuote && !isEditing && !outbox && (
+        <button
+          type="button"
+          className={styles.quoteHoverBtn}
+          aria-label="Ответить"
+          onClick={(e) => { e.stopPropagation(); onQuote(msg) }}
+        >
+          <IconReply size={16} />
+        </button>
+      )}
       <div className={styles.msgAvatar}>
         {!continuation && <Avatar name={name} url={author?.avatar_url} size={36} />}
       </div>
@@ -163,6 +206,33 @@ function MessageItemInner({
 
         {forwardedName && (
           <div className={styles.msgForwarded}>переслано от {forwardedName}</div>
+        )}
+
+        {msg.quote && (
+          // Ортогонально треду (thread_root_id) — Telegram-style плашка «ответить
+          // цитатой». Клик скроллит/подсвечивает оригинал (docs/MESSAGES.md «Quotes»).
+          <button
+            type="button"
+            className={styles.quoteBox}
+            disabled={msg.quote.deleted}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (msg.quote && !msg.quote.deleted) onQuoteJump?.(msg.quote)
+            }}
+          >
+            {msg.quote.deleted ? (
+              <span className={styles.quoteDeleted}>Сообщение удалено</span>
+            ) : (
+              <>
+                <span className={styles.quoteAuthor}>
+                  {quoteAuthor?.display_name ?? `Участник #${msg.quote.sender_id}`}
+                </span>
+                <span className={styles.quotePreview}>
+                  {msg.quote.preview ?? quoteFallbackLabel(msg.quote.kind)}
+                </span>
+              </>
+            )}
+          </button>
         )}
 
         {isEditing ? (

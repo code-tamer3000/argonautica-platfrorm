@@ -269,6 +269,7 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | sender_id | BIGINT | FK users, NOT NULL | |
 | content | TEXT | NULL | NULL if sticker/attachment-only |
 | thread_root_id | BIGINT | FK messages, NULL | NULL = top level; set = reply, points at root |
+| quoted_message_id | BIGINT | FK messages, NULL | reply WITH QUOTE (Telegram-style) — ORTHOGONAL to thread_root_id, never written together with it as a structural link. See [MESSAGES.md](MESSAGES.md) «Quotes» |
 | sticker_id | BIGINT | FK stickers, NULL | if message is a sticker |
 | forwarded_from_sender_id | BIGINT | FK users, NULL | forwarding: original author. See [MESSAGES.md](MESSAGES.md) |
 | ref_kind | TEXT | NULL, CHECK | ссылка на материал/задачу: `'kb'` \| `'task'`. No FK (target resolved lazily). See [MESSAGES.md](MESSAGES.md) |
@@ -279,7 +280,7 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | edited_at | TIMESTAMPTZ | NULL | |
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
 
-**Index:** (`room_id`, `thread_root_id`, `created_at`).
+**Index:** (`room_id`, `thread_root_id`, `created_at`). No index on `quoted_message_id` — the only read path resolves previews by `id IN (...)` on the page's messages (PK lookup); there is no "who quoted this" query in the product.
 **CHECK:** `ck_messages_ref_pair` — `(ref_kind IS NULL) = (ref_id IS NULL)` (both or neither); `ck_messages_ref_kind` — `ref_kind IN ('kb','task')`.
 
 ## message_attachments
@@ -744,6 +745,7 @@ calendar_events --> intakes ; calendar_events --< calendar_event_plans >-- plans
 users --< room_members >-- rooms
 users --< messages (sender) >-- rooms
 messages --+ (thread_root_id -> messages.id, self-FK to root)
+messages --+ (quoted_message_id -> messages.id, self-FK, ORTHOGONAL to thread_root_id)
 messages --< message_attachments >-- media_assets
 messages --> stickers --> stickerpacks
 rooms --< pinned_messages >-- messages

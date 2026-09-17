@@ -51,6 +51,13 @@ class Message(Base):
     thread_root_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("messages.id")
     )
+    # Цитата (Telegram-style «ответить») — презентационный указатель, ОРТОГОНАЛЕН
+    # треду: не пишет thread_root_id, не инкрементит reply_count/last_reply_at,
+    # не меняет предикат ленты. Нет индекса — единственный путь чтения: IN (id, ...)
+    # по PK при отдаче страницы; обратный запрос «кто меня процитировал» не нужен.
+    quoted_message_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("messages.id")
+    )
     sticker_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("stickers.id")
     )

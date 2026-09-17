@@ -10,6 +10,10 @@
 """
 import re
 
+# Служебный маркер категорий дневника в начале content — ни в одном превью не нужен
+# (колокольчик, push, дашборд, цитата в чате).
+JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z0-9_]+-->")
+
 # Те же правила, что и в BOLD_RE/UNDERLINE_RE/ITALIC_RE из frontend/src/lib/messageText.tsx:
 # маркер не переносится через перевод строки, сразу внутри маркера — не пробел, у курсива
 # дополнительно запрещены соседние словесные символы и `*` (не путать с жирным/"2*2*2").
@@ -29,3 +33,16 @@ def strip_inline_marks(text: str) -> str:
             break
         result = next_
     return result
+
+
+def preview_text(content: str | None, limit: int) -> str | None:
+    """Текстовый сниппет content для превью (колокольчик, push, цитата в чате):
+    снимает journal-маркер и inline-разметку, обрезает до limit. None, если текста
+    после очистки не осталось (стикер/вложение-only сообщение)."""
+    if not content:
+        return None
+    text = JOURNAL_MARKER.sub("", content).strip()
+    text = strip_inline_marks(text)
+    if not text:
+        return None
+    return text[:limit]

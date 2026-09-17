@@ -5,7 +5,7 @@ import { usePin } from '../../api/pins'
 import { useToggleReaction } from '../../api/reactions'
 import reactionIcon from '../../assets/reactions/star.webp'
 import {
-  IconCopy, IconEdit, IconForward, IconPin, IconReply, IconTrash, IconUsers,
+  IconCopy, IconEdit, IconForward, IconPin, IconReply, IconThread, IconTrash, IconUsers,
 } from '../../components/icons'
 import type { MessageOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -15,8 +15,12 @@ import type { MenuItem } from './MessageActionsMenu'
 interface Options {
   roomId: number
   canPin: boolean
-  // undefined → пункт «Ответить» не показываем (внутри треда — уже отвечаем, п.2).
-  onReply?: (msg: MessageOut) => void
+  // «Ответить» = цитата (Telegram-style, не тред — см. docs/MESSAGES.md «Quotes»).
+  // undefined → пункт не показываем.
+  onQuote?: (msg: MessageOut) => void
+  // «Ответить в тред» — прежняя Slack-логика (аккордеон под корнем). undefined →
+  // пункт не показываем (уже внутри треда — там снова отвечать в тред нельзя, п.2).
+  onOpenThread?: (msg: MessageOut) => void
   onEdit: (msg: MessageOut) => void
   // Пересылка: открывает пикер комнаты, затем подхватывает сообщение в композер
   // выбранного чата (навигация + pendingForward). undefined → пункт не показываем.
@@ -25,7 +29,7 @@ interface Options {
 
 // Общая логика контекстного меню сообщения для ленты и треда. Видимость пунктов
 // зеркалит правила бэкенда: править — только автор текста; удалять — автор или admin.
-export function useMessageMenu({ roomId, canPin, onReply, onEdit, onForward }: Options) {
+export function useMessageMenu({ roomId, canPin, onQuote, onOpenThread, onEdit, onForward }: Options) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const pin = usePin(roomId)
@@ -37,14 +41,17 @@ export function useMessageMenu({ roomId, canPin, onReply, onEdit, onForward }: O
   useEffect(() => { setMenu(null) }, [roomId])
 
   // Выпускник (graduated_at) в Рубке только читает: из меню остаётся копирование,
-  // всё пишущее (ответ/правка/закреп/репост/удаление) убрано — бэкенд их и так
-  // отбивает 403 (см. services/graduation.py).
+  // всё пишущее (ответ/цитата/правка/закреп/репост/удаление) убрано — бэкенд их
+  // и так отбивает 403 (см. services/graduation.py).
   const isGraduated = !!user?.graduated_at
 
   function buildItems(msg: MessageOut): MenuItem[] {
     const items: MenuItem[] = []
-    if (onReply && !isGraduated) {
-      items.push({ key: 'reply', label: 'Ответить', icon: <IconReply size={18} />, onClick: () => onReply(msg) })
+    if (onQuote && !isGraduated) {
+      items.push({ key: 'quote', label: 'Ответить', icon: <IconReply size={18} />, onClick: () => onQuote(msg) })
+    }
+    if (onOpenThread && !isGraduated) {
+      items.push({ key: 'thread', label: 'Ответить в тред', icon: <IconThread size={18} />, onClick: () => onOpenThread(msg) })
     }
     if (msg.content) {
       items.push({
