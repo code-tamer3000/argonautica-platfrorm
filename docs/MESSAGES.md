@@ -20,6 +20,7 @@
 
 - Feed query: `room_id = X AND thread_root_id IS NULL AND deleted_at IS NULL`.
 - Cursor by id: query params `before` / `after` (message id), `limit` (1–100, default 50). See [API_CONVENTIONS.md](API_CONVENTIONS.md).
+- Frontend: a floating **«к последним сообщениям»** button (`MessageList.scrollDownBtn`) appears in every room once the feed is scrolled more than one screen above the bottom, and returns it to the end.
 
 ## Threads (flat, Slack-style)
 

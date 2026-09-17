@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { IconChevronDown } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { dayLabel, sameDay } from '../../lib/format'
 import type { MessageOut, PublicUserOut, QuotedMessageOut } from '../../lib/types'
@@ -44,6 +45,9 @@ interface Props {
   onQuoteJump?: (quote: QuotedMessageOut) => void
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   onAtBottomChange?: (isBottom: boolean) => void
+  // Пользователь поехал вверх по ленте (читает историю) → true; вернулся к низу → false.
+  // ChatPane по этому флагу прячет виджет отписки, чтобы он не закрывал чужие сообщения.
+  onScrolledUpChange?: (scrolledUp: boolean) => void
   // Свайп влево по сообщению ставит его в цитату — то же действие, что пункт меню
   // «Ответить». undefined/false из родителя (например, у выпускника) — свайп выключен.
   onSwipeReply?: (messageId: number) => void
@@ -53,11 +57,21 @@ interface Props {
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
     expandedThreadId, canPin, markdown, onClearEdit, onToggleThread, onForward,
-    onQuote, onQuoteJump, onOpenMenu, onAtBottomChange, onSwipeReply, swipeEnabled = true },
+    onQuote, onQuoteJump, onOpenMenu, onAtBottomChange, onScrolledUpChange,
+    onSwipeReply, swipeEnabled = true },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
   const atBottom = useRef(true)
+  // Кнопка «вниз»: показываем, когда лента уехала вверх больше чем на экран.
+  const [showScrollDown, setShowScrollDown] = useState(false)
+  // «Уехал вверх» считаем по НАПРАВЛЕНИЮ скролла, а не по расстоянию до низа:
+  // расстояние меняется само, когда ChatPane по этому же флагу убирает виджет над
+  // лентой (область ленты становится выше) — по расстоянию вышла бы автоколебалка
+  // спрятал → стало ближе к низу → показал → снова далеко. Направление такой
+  // обратной связи не даёт: скролл-события при смене высоты не приходят.
+  const scrolledUp = useRef(false)
+  const lastScrollTop = useRef(0)
   const count = messages.length
 
   useSwipeToReply(
@@ -85,7 +99,11 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
     isAtBottom: () => atBottom.current,
     scrollToBottom() {
       const el = containerRef.current
-      if (el) el.scrollTop = el.scrollHeight
+      if (!el) return
+      el.scrollTop = el.scrollHeight
+      lastScrollTop.current = el.scrollTop
+      setScrolledUp(false)
+      setShowScrollDown(false)
     },
     releaseBottom() {
       atBottom.current = false
@@ -128,14 +146,32 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
     }
   }, [count])
 
+  function setScrolledUp(up: boolean) {
+    if (scrolledUp.current === up) return
+    scrolledUp.current = up
+    onScrolledUpChange?.(up)
+  }
+
   function onScroll() {
     const el = containerRef.current
     if (!el) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
     const wasAtBottom = atBottom.current
-    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+    atBottom.current = dist < 80
     if (!wasAtBottom && atBottom.current) onAtBottomChange?.(true)
     else if (wasAtBottom && !atBottom.current) onAtBottomChange?.(false)
+    // Вверх — от первого же заметного движения; обратно — только когда вернулись к низу.
+    if (el.scrollTop < lastScrollTop.current - 8) setScrolledUp(true)
+    else if (dist < 40) setScrolledUp(false)
+    lastScrollTop.current = el.scrollTop
+    setShowScrollDown(dist > el.clientHeight)
     if (el.scrollTop < 60 && hasMore && !loading) loadMore()
+  }
+
+  function scrollDown() {
+    const el = containerRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }
 
   return (
@@ -192,6 +228,21 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
           </div>
         )
       })}
+      {/* Кнопка «в конец ленты». Живёт последним ребёнком самого скроллера и
+          прилипает к его нижней кромке (position: sticky) — абсолютное
+          позиционирование здесь уехало бы вместе с содержимым. */}
+      <div className={styles.scrollDownDock} aria-hidden={!showScrollDown}>
+        <button
+          type="button"
+          className={`${styles.scrollDownBtn} ${showScrollDown ? styles.scrollDownBtnShown : ''}`}
+          onClick={scrollDown}
+          tabIndex={showScrollDown ? 0 : -1}
+          title="К последним сообщениям"
+          aria-label="К последним сообщениям"
+        >
+          <IconChevronDown size={20} />
+        </button>
+      </div>
     </div>
   )
 })

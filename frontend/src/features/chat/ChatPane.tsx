@@ -277,6 +277,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     (bottom: boolean) => { if (bottom) tryMarkRead() },
     [tryMarkRead],
   )
+  // Уехали вверх по ленте — читаем историю/отвечаем на чужое: виджет отписки
+  // (DailyJournalForm) прячем, чтобы он не съедал экран. Вернулись к низу — вернулся.
+  const [listScrolledUp, setListScrolledUp] = useState(false)
+  const onScrolledUpChange = useCallback((up: boolean) => setListScrolledUp(up), [])
 
   if (!room) {
     return (
@@ -306,8 +310,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   // комната задания»). Композер держим скрытым, пока не выбран режим в
   // DailyJournalForm, ТОЛЬКО пока дневник и есть эта целевая комната.
   const { data: structure } = useJournalStructure()
+  // Админ в общем чате отписок виджет не получает вовсе: он там не отписывается,
+  // а место над лентой занимает (в СВОЙ личный дневник это правило не лезет).
+  const isAdmin = user?.role === 'admin'
   const isJournalTargetRoom = structure?.chat_room_id
-    ? room.id === structure.chat_room_id
+    ? room.id === structure.chat_room_id && !isAdmin
     : isOwnPersonal
   // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403).
   const isGraduated = !!user?.graduated_at
@@ -484,11 +491,17 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         onQuoteJump={handleQuoteJump}
         onOpenMenu={msgMenu.openMenu}
         onAtBottomChange={onAtBottomChange}
+        onScrolledUpChange={onScrolledUpChange}
         onSwipeReply={handleSwipeReply}
         swipeEnabled={!isGraduated}
       />
       <TypingIndicator roomId={roomId} users={users} />
-      {isJournalTargetRoom && !isGraduated && !isWindowClosed && (
+      {/* Виджет отписки. В ОБЩЕМ чате отписок (не свой дневник) он прячется, пока
+          человек читает историю выше: там же идёт обычная переписка, и постоянная
+          панель на пол-экрана мешала бы читать и отвечать. В своём личном дневнике
+          не прячем — без него там композер и не откроется (выбор режима). */
+      {isJournalTargetRoom && !isGraduated && !isWindowClosed &&
+        !(!isOwnPersonal && listScrolledUp) && (
         <DailyJournalForm roomId={roomId} />
       )}
       {/* Экспедиция пройдена: вместо любого ввода — плашка. История комнаты
