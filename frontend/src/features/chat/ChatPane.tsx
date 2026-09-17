@@ -499,7 +499,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {/* Виджет отписки. В ОБЩЕМ чате отписок (не свой дневник) он прячется, пока
           человек читает историю выше: там же идёт обычная переписка, и постоянная
           панель на пол-экрана мешала бы читать и отвечать. В своём личном дневнике
-          не прячем — без него там композер и не откроется (выбор режима). */
+          не прячем — без него там композер и не откроется (выбор режима). */}
       {isJournalTargetRoom && !isGraduated && !isWindowClosed &&
         !(!isOwnPersonal && listScrolledUp) && (
         <DailyJournalForm roomId={roomId} />
