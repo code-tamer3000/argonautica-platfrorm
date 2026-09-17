@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.message import Message
 from app.schemas.message import QUOTE_PREVIEW_LEN, QuotedMessageOut
-from app.services.text_marks import preview_text
+from app.services.text_marks import truncate_for_quote
 
 
 async def assert_quote_target(
@@ -74,7 +74,7 @@ async def resolve_message_quotes(
         result[qid] = QuotedMessageOut(
             id=target.id,
             sender_id=target.sender_id,
-            preview=preview_text(target.content, QUOTE_PREVIEW_LEN),
+            preview=truncate_for_quote(target.content, QUOTE_PREVIEW_LEN),
             kind=_quote_kind(target),
             thread_root_id=target.thread_root_id,
             deleted=False,

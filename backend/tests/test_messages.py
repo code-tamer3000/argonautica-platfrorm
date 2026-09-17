@@ -1169,12 +1169,16 @@ async def test_quote_inside_thread(
     assert reply_in_thread["quote"]["id"] == aside["id"]
 
 
-async def test_quote_preview_strips_marks(
+async def test_quote_preview_keeps_marks_strips_journal_marker(
     client: AsyncClient,
     make_user: MakeUser,
     make_room: MakeRoom,
     add_membership: AddMembership,
 ) -> None:
+    """Превью цитаты рендерится клиентом теми же путями, что и полный текст
+    (renderMessageText/renderMarkdown) — в отличие от превью уведомлений,
+    inline-маркеры (**/*/ ++) СОХРАНЯЮТСЯ. Снимается только технический
+    journal-маркер (HTML-комментарий, никогда не должен быть виден как есть)."""
     owner = await make_user()
     room = await make_room(created_by=owner.id)
     await add_membership(room.id, owner.id, "owner")
@@ -1186,7 +1190,7 @@ async def test_quote_preview_strips_marks(
     quoting = await _send(
         client, headers, room.id, content="ответ", quoted_message_id=marked["id"]
     )
-    assert quoting["quote"]["preview"] == "жирно"
+    assert quoting["quote"]["preview"] == "**жирно**"
 
     long_text = "x" * 500
     long_original = await _send(client, headers, room.id, content=long_text)

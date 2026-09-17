@@ -132,6 +132,25 @@ function MessageItemInner({
     [markdown, msg.content, navigate, mentionUsers],
   )
 
+  // Превью цитаты (msg.quote.preview) рендерится ТЕМИ ЖЕ путями, что и полный
+  // текст, — сервер сохраняет разметку/маркеры для него (в отличие от превью
+  // уведомлений), см. backend/app/services/text_marks.py::truncate_for_quote.
+  // Цитировать можно только сообщение СВОЕЙ комнаты (message_quotes.py), поэтому
+  // markdown-режим цитаты всегда совпадает с режимом этого сообщения — свой
+  // room-уровневый `markdown` проп ниже используется без отдельного условия.
+  const quotePreview = msg.quote?.preview ?? null
+  const quoteMarkdownHtml = useMemo(
+    () => (markdown && quotePreview ? renderMarkdown(quotePreview) : null),
+    [markdown, quotePreview],
+  )
+  const quoteContentParts = useMemo(
+    () =>
+      !markdown && quotePreview
+        ? renderMessageText(quotePreview, styles.mention, navigate, mentionUsers)
+        : null,
+    [markdown, quotePreview, navigate, mentionUsers],
+  )
+
   // Несколько фото/видео в одном сообщении показываем альбомом — одной сеткой, а не
   // столбиком отдельных боксов (MediaGroup). В сетку идут только «плиточные» вложения:
   // картинки и видео, у которых есть что показать. Видео с провалившимся транскодом,
@@ -225,10 +244,19 @@ function MessageItemInner({
             ) : (
               <>
                 <span className={styles.quoteAuthor}>
+                  {/* Маленький значок ↩ — визуально маркирует блок как «это ответ
+                      на сообщение», отдельно от акцентной полоски слева. */}
+                  <IconReply size={12} className={styles.quoteAuthorIcon} />
                   {quoteAuthor?.display_name ?? `Участник #${msg.quote.sender_id}`}
                 </span>
                 <span className={styles.quotePreview}>
-                  {msg.quote.preview ?? quoteFallbackLabel(msg.quote.kind)}
+                  {quotePreview == null ? (
+                    quoteFallbackLabel(msg.quote.kind)
+                  ) : quoteMarkdownHtml != null ? (
+                    <span dangerouslySetInnerHTML={{ __html: quoteMarkdownHtml }} />
+                  ) : (
+                    quoteContentParts
+                  )}
                 </span>
               </>
             )}
