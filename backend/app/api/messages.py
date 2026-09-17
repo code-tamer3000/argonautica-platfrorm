@@ -30,12 +30,14 @@ from app.schemas.message import (
     MessageOut,
     MessageRefOut,
     PinnedOut,
+    QuotedMessageOut,
     ReadRequest,
     ReadStateOut,
     SendMessageRequest,
     ThreadOut,
 )
 from app.services.media import resolve_attachments
+from app.services.message_quotes import assert_quote_target, resolve_message_quotes
 from app.services.message_refs import (
     assert_ref_visible,
     resolve_message_refs,
@@ -183,11 +185,22 @@ async def _refs_map(
     return await resolve_message_refs(session, refs, viewer)
 
 
+async def _quotes_map(
+    session: AsyncSession, messages: list[Message], room: Room
+) -> dict[int, QuotedMessageOut]:
+    """Разрешить цитаты всех сообщений батчем (без N+1) — quoted_message_id -> превью."""
+    quoted_ids = [m.quoted_message_id for m in messages if m.quoted_message_id is not None]
+    if not quoted_ids:
+        return {}
+    return await resolve_message_quotes(session, quoted_ids, room.id)
+
+
 def _to_out(
     message: Message,
     attachments: list[AttachmentOut],
     refs: dict[tuple[str, int], MessageRefOut] | None = None,
     reaction: tuple[int, bool] | None = None,
+    quotes: dict[int, QuotedMessageOut] | None = None,
 ) -> MessageOut:
     out = MessageOut.model_validate(message)
     out.attachments = attachments
@@ -197,6 +210,8 @@ def _to_out(
         out.ref = refs.get((message.ref_kind, message.ref_id))
     if reaction is not None:
         out.reaction_count, out.reacted_by_me = reaction
+    if message.quoted_message_id is not None and quotes is not None:
+        out.quote = quotes.get(message.quoted_message_id)
     return out
 
 
@@ -210,19 +225,30 @@ def _redacted_variant(room: Room, content: str | None) -> str | None:
     return redacted if redacted != content else None
 
 
+def _redact_quote_preview(room: Room, out: MessageOut) -> None:
+    """ARG-115 для цитаты: в новостном канале маскируем Zoom-ссылки в превью
+    цитаты БЕЗУСЛОВНО (в отличие от content, без отдельного per-tariff варианта) —
+    WS-payload одно тело на всех подписчиков, тот же консерватизм, что уже принят
+    для ref в broadcast (resolve_ref_for_broadcast)."""
+    if not room.is_news or out.quote is None or out.quote.preview is None:
+        return
+    out.quote.preview = redact_zoom_links(out.quote.preview)
+
+
 def _pinned_out(
     pin: PinnedMessage,
     message: Message,
     attachments: list[AttachmentOut],
     refs: dict[tuple[str, int], MessageRefOut] | None = None,
     reaction: tuple[int, bool] | None = None,
+    quotes: dict[int, QuotedMessageOut] | None = None,
 ) -> PinnedOut:
     return PinnedOut(
         room_id=pin.room_id,
         message_id=pin.message_id,
         pinned_by=pin.pinned_by,
         pinned_at=pin.pinned_at,
-        message=_to_out(message, attachments, refs, reaction),
+        message=_to_out(message, attachments, refs, reaction, quotes),
     )
 
 
@@ -274,12 +300,20 @@ async def send_message(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Reply target not found")
         thread_root_id = target.thread_root_id or target.id
 
+    # Цитата (Telegram-style «ответить») — ОРТОГОНАЛЬНА треду: не участвует в
+    # плоскости thread_root_id и денормализации reply_count ниже. Разрешена вместе
+    # с reply_to_message_id (цитата внутри треда) и на цель из любого треда той же
+    # комнаты — это чистая презентация, не структура (см. docs/DECISIONS.md).
+    if body.quoted_message_id is not None:
+        await assert_quote_target(session, room_id, body.quoted_message_id)
+
     message = Message(
         room_id=room_id,
         sender_id=current_user.id,
         content=body.content,
         sticker_id=body.sticker_id,
         thread_root_id=thread_root_id,
+        quoted_message_id=body.quoted_message_id,
         ref_kind=body.ref_kind,
         ref_id=body.ref_id,
     )
@@ -303,15 +337,19 @@ async def send_message(
     await session.refresh(message)
     resolved = await resolve_attachments(session, [message.id])
     refs = await _refs_map(session, [message], current_user)
-    out = _to_out(message, resolved.get(message.id, []), refs)
+    quotes = await _quotes_map(session, [message], room)
+    out = _to_out(message, resolved.get(message.id, []), refs, quotes=quotes)
     # Живая доставка подписчикам комнаты (payload самодостаточный). Ссылку в
     # broadcast резолвим консервативно (заголовок только для универсально видимой
-    # цели) — payload один на всех, нельзя раскрыть чужой черновик.
-    ws_out = _to_out(message, resolved.get(message.id, []))
+    # цели) — payload один на всех, нельзя раскрыть чужой черновик. Цитата, в
+    # отличие от ref, указывает внутрь этой же комнаты — новых прав не раскрывает,
+    # консервативный резолв не нужен (см. message_quotes.py), только ARG-115.
+    ws_out = _to_out(message, resolved.get(message.id, []), quotes=quotes)
     if message.ref_kind is not None and message.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
         )
+    _redact_quote_preview(room, ws_out)
     # Сайд-эффекты — только после успешного commit (иначе «отправлено, но
     # потерялось»: событие ушло в WS, а транзакция откатилась). См. after_commit.
     event = ws_schemas.message_new_event(
@@ -409,6 +447,9 @@ async def forward_message(
         # Ссылка на материал/задачу переносится вместе с пересылкой.
         ref_kind=source.ref_kind,
         ref_id=source.ref_id,
+        # quoted_message_id НЕ переносим: форвард уходит в другую комнату, а цитата
+        # по конструкции указывает внутрь СВОЕЙ (см. message_quotes.py) — перенос
+        # сломал бы этот инвариант.
     )
     session.add(forwarded)
     await session.flush()
@@ -470,20 +511,25 @@ async def list_messages(
     messages = list((await session.execute(stmt)).scalars().all())
     attachments = await resolve_attachments(session, [m.id for m in messages])
     refs = await _refs_map(session, messages, current_user)
+    quotes = await _quotes_map(session, messages, room)
     reactions = await _reactions_map(session, [m.id for m in messages], current_user.id)
     # Непрочитанные ответы в тредах — только для корней с ответами (иначе лишний скан).
     roots_with_replies = [m.id for m in messages if m.reply_count > 0]
     unread = await _unread_replies_map(session, roots_with_replies, last_read)
     # Zoom-ссылки на эфиры (ARG-115): для дешёвого тарифа в новостном канале
     # скрываем текстом-плейсхолдером — только чтение ленты, треды/пины/репост вне
-    # границ задачи (см. docs/ROOMS.md).
+    # границ задачи (см. docs/ROOMS.md). Цитата поста-анонса — тот же обход, если
+    # её не маскировать так же, как исходный текст.
     redact = room.is_news and await is_cheap_tariff(session, current_user)
     out = []
     for m in messages:
-        item = _to_out(m, attachments.get(m.id, []), refs, reactions.get(m.id))
+        item = _to_out(m, attachments.get(m.id, []), refs, reactions.get(m.id), quotes)
         item.unread_reply_count = unread.get(m.id, 0)
-        if redact and item.content:
-            item.content = redact_zoom_links(item.content)
+        if redact:
+            if item.content:
+                item.content = redact_zoom_links(item.content)
+            if item.quote is not None and item.quote.preview:
+                item.quote.preview = redact_zoom_links(item.quote.preview)
         out.append(item)
     return out
 
@@ -527,13 +573,16 @@ async def get_thread(
         session, [root.id, *[r.id for r in replies]]
     )
     refs = await _refs_map(session, [root, *replies], current_user)
+    quotes = await _quotes_map(session, [root, *replies], room)
     reactions = await _reactions_map(
         session, [root.id, *[r.id for r in replies]], current_user.id
     )
     return ThreadOut(
-        root=_to_out(root, attachments.get(root.id, []), refs, reactions.get(root.id)),
+        root=_to_out(
+            root, attachments.get(root.id, []), refs, reactions.get(root.id), quotes
+        ),
         replies=[
-            _to_out(r, attachments.get(r.id, []), refs, reactions.get(r.id))
+            _to_out(r, attachments.get(r.id, []), refs, reactions.get(r.id), quotes)
             for r in replies
         ],
     )
@@ -575,17 +624,21 @@ async def edit_message(
 
     attachments = await resolve_attachments(session, [message.id])
     refs = await _refs_map(session, [message], current_user)
+    quotes = await _quotes_map(session, [message], room)
     reaction = (await _reactions_map(session, [message.id], current_user.id)).get(message.id)
-    out = _to_out(message, attachments.get(message.id, []), refs, reaction)
+    out = _to_out(message, attachments.get(message.id, []), refs, reaction, quotes)
     # ws_out идёт в общий бродкаст на всю комнату: reacted_by_me — персональное для
     # каждого зрителя поле, кладём в бродкаст только свежий count (см. docs/MESSAGES.md,
     # frontend сохраняет свой локальный reacted_by_me при обработке message.edited).
     ws_reaction = (reaction[0], False) if reaction is not None else None
-    ws_out = _to_out(message, attachments.get(message.id, []), reaction=ws_reaction)
+    ws_out = _to_out(
+        message, attachments.get(message.id, []), reaction=ws_reaction, quotes=quotes
+    )
     if message.ref_kind is not None and message.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
         )
+    _redact_quote_preview(room, ws_out)
     event = ws_schemas.message_edited_event(
         ws_out, _redacted_variant(room, ws_out.content)
     )
@@ -750,8 +803,11 @@ async def pin_message(
 
     attachments = await resolve_attachments(session, [message.id])
     refs = await _refs_map(session, [message], current_user)
+    quotes = await _quotes_map(session, [message], room)
     reaction = (await _reactions_map(session, [message.id], current_user.id)).get(message.id)
-    return _pinned_out(pin, message, attachments.get(message.id, []), refs, reaction)
+    return _pinned_out(
+        pin, message, attachments.get(message.id, []), refs, reaction, quotes
+    )
 
 
 @router.delete(
@@ -866,9 +922,10 @@ async def list_pins(
     pairs = list(rows.all())
     attachments = await resolve_attachments(session, [m.id for _, m in pairs])
     refs = await _refs_map(session, [m for _, m in pairs], current_user)
+    quotes = await _quotes_map(session, [m for _, m in pairs], room)
     reactions = await _reactions_map(session, [m.id for _, m in pairs], current_user.id)
     return [
-        _pinned_out(p, m, attachments.get(m.id, []), refs, reactions.get(m.id))
+        _pinned_out(p, m, attachments.get(m.id, []), refs, reactions.get(m.id), quotes)
         for p, m in pairs
     ]
 

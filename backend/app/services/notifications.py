@@ -24,7 +24,7 @@ from app.schemas.notification import NotificationOut
 from app.services import push as push_service
 from app.services.notify_prefs import push_allowed
 from app.services.redaction import redact_zoom_links
-from app.services.text_marks import strip_inline_marks
+from app.services.text_marks import preview_text
 from app.services.visibility import cheap_tariff_user_ids
 from app.ws import schemas as ws_schemas
 from app.ws.pubsub import publish_user_event
@@ -32,18 +32,10 @@ from app.ws.pubsub import publish_user_event
 logger = logging.getLogger(__name__)
 
 _PREVIEW_LEN = 120
-# Служебный маркер категорий дневника в начале content — в превью не нужен.
-_JOURNAL_MARKER = re.compile(r"^<!--journal:[a-z0-9_]+-->")
 
 
 def _preview(content: str | None) -> str | None:
-    if not content:
-        return None
-    text = _JOURNAL_MARKER.sub("", content).strip()
-    text = strip_inline_marks(text)
-    if not text:
-        return None
-    return text[:_PREVIEW_LEN]
+    return preview_text(content, _PREVIEW_LEN)
 
 
 async def _reply_recipient(session: AsyncSession, message: Message) -> int | None:
@@ -52,6 +44,18 @@ async def _reply_recipient(session: AsyncSession, message: Message) -> int | Non
     if root is None or root.sender_id == message.sender_id:
         return None
     return root.sender_id
+
+
+async def _quote_recipient(session: AsyncSession, message: Message) -> int | None:
+    """Автор процитированного сообщения (кому «ответили цитатой»). Ортогонально
+    _reply_recipient — цитата не трогает thread_root_id, поэтому это отдельная,
+    более низкоприоритетная ветка (см. on_new_message: setdefault)."""
+    if message.quoted_message_id is None:
+        return None
+    quoted = await session.get(Message, message.quoted_message_id)
+    if quoted is None or quoted.sender_id == message.sender_id:
+        return None
+    return quoted.sender_id
 
 
 async def _dm_recipient(session: AsyncSession, message: Message) -> int | None:
@@ -182,6 +186,11 @@ async def on_new_message(
         # (не пингуем дважды того, кому и так «ответили»/пришла личка).
         kind, recipient_ids = await _recipients(session, message, room)
         kind_by_uid: dict[int, str] = {uid: kind for uid in recipient_ids}
+        # Цитата (Telegram-style «ответить») — второй, более тихий слой: не отбирает
+        # kind у треда/лички/новости (setdefault), reply переиспользуем как есть.
+        quoted_uid = await _quote_recipient(session, message)
+        if quoted_uid is not None:
+            kind_by_uid.setdefault(quoted_uid, "reply")
         for uid in await _mention_recipient_ids(session, message, room):
             kind_by_uid.setdefault(uid, "mention")
         if not kind_by_uid:

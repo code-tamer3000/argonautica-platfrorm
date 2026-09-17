@@ -19,6 +19,21 @@ export interface MessageRefOut {
   available: boolean
 }
 
+// Чем рисовать плашку цитаты, если текста нет (сообщение — стикер/вложение/ref),
+// либо оригинал недоступен (мягко удалён).
+export type QuoteKind = 'text' | 'sticker' | 'attachment' | 'ref' | 'deleted'
+
+// Цитируемое сообщение (Telegram-style «ответить»), ОРТОГОНАЛЬНО треду —
+// не путать с thread_root_id. Резолвится сервером на каждом чтении (не снимок).
+export interface QuotedMessageOut {
+  id: number
+  sender_id: number | null // null у удалённого/недоступного — автора не раскрываем
+  preview: string | null // текст без inline-маркеров, обрезан сервером
+  kind: QuoteKind
+  thread_root_id: number | null // если оригинал сам внутри треда — куда переходить
+  deleted: boolean
+}
+
 export interface TokenPair {
   access_token: string
   refresh_token: string
@@ -183,6 +198,9 @@ export interface MessageOut {
   // Ссылка на материал КБ / задачу (одна на сообщение). null = ссылки нет.
   // title/available резолвит сервер для текущего зрителя.
   ref?: MessageRefOut | null
+  // Цитируемое сообщение (Telegram-style «ответить»). null = цитаты нет.
+  // Ортогонально thread_root_id — см. docs/MESSAGES.md «Quotes».
+  quote?: QuotedMessageOut | null
   // Реакция (MVP: один фиксированный образ). reacted_by_me — для текущего зрителя.
   reaction_count: number
   reacted_by_me: boolean

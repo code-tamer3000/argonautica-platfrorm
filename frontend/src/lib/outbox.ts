@@ -22,7 +22,7 @@ import {
   STORE_OUTBOX_BLOBS,
 } from './idb'
 import { runPendingUpload, type PendingUpload } from './mediaUpload'
-import type { AttachmentOut, MediaAssetOut, MediaKind, MessageOut, MessageRefOut } from './types'
+import type { AttachmentOut, MediaAssetOut, MediaKind, MessageOut, MessageRefOut, QuotedMessageOut } from './types'
 import type { SendBody } from '../api/messages'
 
 // Вложение, которое ещё НЕ залито в MinIO (сообщение поставлено в очередь офлайн).
@@ -60,6 +60,11 @@ export interface OutboxItem {
   // Ссылка (материал/задача) для оптимистичного показа кнопки «Перейти к…» сразу.
   // title берём из пикера; сервер перерезолвит `ref` (title/available) на чтении.
   optimisticRef?: MessageRefOut
+  // Снимок цитируемого сообщения (Telegram-style «ответить») для мгновенной
+  // отрисовки плашки, ДО ответа сервера. Сервер на чтении перерезолвит `quote`
+  // живьём (см. backend/app/services/message_quotes.py) — этот снимок используется
+  // только в оптимистичном пузыре и заменяется целиком настоящим сообщением.
+  optimisticQuote?: QuotedMessageOut
   tempId: number
   attempts: number
   // Запись дневника (раздел «заряжен» в composer): по успешной отправке снимаем
@@ -226,6 +231,7 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
     attachment_ids: item.body.attachment_ids ?? [],
     attachments: item.attachments,
     ref: item.optimisticRef ?? null,
+    quote: item.optimisticQuote ?? null,
     reaction_count: 0,
     reacted_by_me: false,
     _outbox: { clientId: item.clientId, status: item.status, uploadProgress: item.uploadProgress },
@@ -246,6 +252,7 @@ export function enqueue(
   locals: LocalAttachment[] = [],
   optimisticRef?: MessageRefOut,
   journal?: { category: string },
+  optimisticQuote?: QuotedMessageOut,
 ): string {
   const cid = clientId()
   const attachments: AttachmentOut[] = []
@@ -267,6 +274,7 @@ export function enqueue(
     attachments,
     blobAssetIds,
     optimisticRef,
+    optimisticQuote,
     journal,
     tempId: nextTempId(),
     attempts: 0,
@@ -290,6 +298,7 @@ export function enqueueMedia(
   uploads: PendingUpload[],
   optimisticRef?: MessageRefOut,
   journal?: { category: string },
+  optimisticQuote?: QuotedMessageOut,
 ): string {
   const cid = clientId()
   const attachments: AttachmentOut[] = []
@@ -325,6 +334,7 @@ export function enqueueMedia(
     blobAssetIds: [],
     pendingUploads,
     optimisticRef,
+    optimisticQuote,
     journal,
     tempId: nextTempId(),
     attempts: 0,

@@ -13,10 +13,20 @@ RefKind = Literal["kb", "task"]
 # сеткой (см. docs/MESSAGES.md); больше — уже не группа, а свалка в ленте.
 MAX_ATTACHMENTS = 6
 
+# Сниппет цитируемого сообщения в плашке «ответить цитатой» (Telegram-style).
+QUOTE_PREVIEW_LEN = 140
+
+# Чем рисовать плашку цитаты, если текста нет (сообщение — стикер/вложение/ref),
+# либо оригинал недоступен (мягко удалён).
+QuoteKind = Literal["text", "sticker", "attachment", "ref", "deleted"]
+
 
 class SendMessageRequest(BaseModel):
     """Отправка сообщения. content nullable, но сообщение должно нести хоть что-то:
     текст, стикер, вложение или ссылку. reply_to_message_id — ответ в тред (см. эндпоинт).
+    quoted_message_id — ответ ЦИТАТОЙ (Telegram-style): презентационная ссылка на
+    сообщение той же комнаты, ортогональная треду (не путать с reply_to_message_id,
+    который означает «id корня треда»; см. docs/MESSAGES.md «Quotes»).
     ref_kind/ref_id — опциональная ссылка на материал КБ / задачу (одна на сообщение).
     """
 
@@ -24,6 +34,7 @@ class SendMessageRequest(BaseModel):
     sticker_id: int | None = None
     attachment_ids: list[int] = []
     reply_to_message_id: int | None = None
+    quoted_message_id: int | None = None
     ref_kind: RefKind | None = None
     ref_id: int | None = None
 
@@ -57,6 +68,19 @@ class MessageRefOut(BaseModel):
     available: bool
 
 
+class QuotedMessageOut(BaseModel):
+    """Развёрнутая цитата для зрителя. Резолвится на КАЖДОМ чтении (не снимок на
+    момент отправки) — правка оригинала автоматически видна во всех плашках.
+    """
+
+    id: int
+    sender_id: int | None  # None у удалённого/недоступного — автора не раскрываем
+    preview: str | None  # текст без inline-маркеров/journal-маркера, <= QUOTE_PREVIEW_LEN
+    kind: QuoteKind
+    thread_root_id: int | None  # если оригинал сам внутри треда — куда переходить
+    deleted: bool
+
+
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,6 +105,9 @@ class MessageOut(BaseModel):
     attachments: list[AttachmentOut] = []
     # Ссылка на материал КБ / задачу, разрешённая для зрителя. None = ссылки нет.
     ref: MessageRefOut | None = None
+    # Цитируемое сообщение (Telegram-style «ответить»), разрешённое для зрителя.
+    # None = цитаты нет. Ортогонально thread_root_id — см. docs/MESSAGES.md «Quotes».
+    quote: QuotedMessageOut | None = None
     # Реакция (один фиксированный образ, MVP): общий счётчик + реагировал ли зритель.
     reaction_count: int = 0
     reacted_by_me: bool = False

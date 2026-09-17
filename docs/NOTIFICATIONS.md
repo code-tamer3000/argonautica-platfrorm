@@ -12,7 +12,7 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 | kind | Trigger | room_id / message_id / actor_id |
 |---|---|---|
 | `dm` | direct message to you | set |
-| `reply` | reply in a thread on your message | set |
+| `reply` | reply in a thread on your message, **or** a quote reply to your message (Telegram-style «ответить», see [MESSAGES.md](MESSAGES.md) «Quotes») | set |
 | `mention` | someone `@`-mentioned you in a message you can see | set |
 | `news` | post in the news channel | set |
 | `cabin_granted` | admin opened Cabin access to you (system) | all of room/message/actor NULL |
@@ -23,7 +23,8 @@ In-app notification feed (header bell). Stored in **Postgres** (needs history, s
 ## Generation & delivery
 
 - Message-driven kinds are generated in the send transaction (`on_new_message`): recipients = thread-root author (reply) / the other dm participant / everyone (news).
-- `mention` — parsed from the message body (`@username`, case-insensitive, Telegram-style handle chars). Recipients must have **access to the room** (channel → any user; dm/group → members only — never notify a non-member, IDOR). Additive to the primary kind but **deduped per user**: if a mentioned user is already the reply/dm/news recipient, they get one notification and the primary kind wins (no double-ping). Self-mentions are skipped.
+- **Quote reply → `reply`** — a second, lower-priority layer on top of the primary kind (`_quote_recipient`, `setdefault`-merged): if the message carries `quoted_message_id`, the quoted message's author gets `reply` too, unless they already have the primary kind for this message (thread-root author / dm peer / news — never overridden) or quoted themselves. This is why a plain top-level post in a group/channel that quotes someone now DOES notify, even though a plain top-level post normally doesn't (see [MESSAGES.md](MESSAGES.md) «Quotes»).
+- `mention` — parsed from the message body (`@username`, case-insensitive, Telegram-style handle chars). Recipients must have **access to the room** (channel → any user; dm/group → members only — never notify a non-member, IDOR). Additive to the primary kind but **deduped per user**: if a mentioned user is already the reply/quote/dm/news recipient, they get one notification and the higher-priority kind wins (no double-ping). Self-mentions are skipped.
 - `cabin_granted` — `notify_cabin_granted` on the `can_access_cabin` false→true transition (see [CABIN.md](CABIN.md)).
 - `admin` — `broadcast_admin` (one row per user, `title`/`body` set). Endpoint: `POST /api/admin/notifications/broadcast` (admin-only, body `{title, body}`, returns `{recipients}`).
 - Realtime delivery over the personal Redis pub/sub channel `user:{id}` → WS events `notification.new` / `notification.removed` (see [MESSAGES.md](MESSAGES.md)).
