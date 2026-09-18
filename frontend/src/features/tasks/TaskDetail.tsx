@@ -29,6 +29,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
+import { PlaylistCard } from '../../components/PlaylistCard'
 import { Attachment } from '../chat/Attachment'
 import { PairPanel } from './PairPanel'
 import { StreamPanel } from './stream/StreamPanel'
@@ -274,6 +275,11 @@ export function TaskDetail() {
           {task.attachments.map((att) => (
             <Attachment key={att.asset_id} attachment={att} />
           ))}
+        </div>
+      )}
+      {task.playlist && (
+        <div className={styles.submissionMedia}>
+          <PlaylistCard playlist={task.playlist} />
         </div>
       )}
 

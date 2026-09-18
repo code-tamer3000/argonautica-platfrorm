@@ -68,6 +68,9 @@ export interface KbItemCreateBody {
   published?: boolean
   category_id?: number | null
   media_asset_ids?: number[]
+  // Плейлист-вложение (docs/FILES.md «Плейлист») — уже созданный через
+  // POST /api/media/playlists, ортогонален media_asset_ids.
+  playlist_id?: number | null
   // Изоляция по потоку/тарифу (ARG-96): null/пусто = доступен всем потокам/тарифам.
   intake_id?: number | null
   plan_ids?: number[]

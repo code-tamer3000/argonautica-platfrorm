@@ -9,6 +9,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.media import PlaylistOut
+
 
 class KbCategoryCreate(BaseModel):
     """Создание категории (admin)."""
@@ -46,6 +48,9 @@ class KbItemCreate(BaseModel):
     published: bool = False
     category_id: int | None = None
     media_asset_ids: list[int] = []
+    # Плейлист-вложение материала (docs/FILES.md «Плейлист») — уже созданный через
+    # POST /api/media/playlists, ортогонален media_asset_ids.
+    playlist_id: int | None = None
     intake_id: int | None = None
     plan_ids: list[int] = []
 
@@ -77,6 +82,7 @@ class KbItemOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     media_asset_ids: list[int] = []
+    playlist: PlaylistOut | None = None
     intake_id: int | None = None
     plan_ids: list[int] = []
 

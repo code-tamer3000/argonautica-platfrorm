@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useAdminIntakes } from '../../api/admin'
 import { useRooms } from '../../api/rooms'
+import { GlobalPlayer } from '../../components/GlobalPlayer'
 import { StarSpark } from '../../components/StarSpark'
 import { Toasts } from '../../components/Toasts'
 import { useRealtime } from '../../hooks/useRealtime'
@@ -229,6 +230,7 @@ export function AppShell() {
       </div>
       {!isObserver && <WelcomePopup />}
       {!isObserver && <LimboPopup />}
+      <GlobalPlayer />
       <Toasts />
     </div>
   )

@@ -7,9 +7,13 @@ MediaUrlOut (presigned-GET после проверки прав).
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MediaKind = Literal["image", "video", "file", "audio"]
+
+# Плейлист — вложение из нескольких аудиотреков (docs/FILES.md «Плейлист»). Лимит —
+# деталь реализации (Assumptions в ARG-139), не заявлена продуктом отдельно.
+MAX_PLAYLIST_TRACKS = 30
 
 
 class UploadRequest(BaseModel):
@@ -102,3 +106,63 @@ class AttachmentOut(BaseModel):
     # thumb_url-постер, url ведёт на оригинал как фолбэк); 'done' — url = вариант;
     # 'failed' — вариант не собрался, url = оригинал, клиент рисует «обработка не удалась».
     transcode_status: str | None = None
+
+
+class PlaylistTrackInput(BaseModel):
+    """Один трек при создании плейлиста. `media_asset_id` — уже загруженный
+    kind='audio' ассет (обычный upload-flow, POST /api/media/uploads + /assets).
+    `title`/`artist`/`duration` — распознанное из ID3-тегов на клиенте, с фолбэком
+    на имя файла; автор может поправить перед отправкой (docs/FILES.md «Плейлист»).
+    """
+
+    media_asset_id: int
+    title: str = Field(min_length=1, max_length=300)
+    artist: str | None = Field(default=None, max_length=300)
+    duration: int | None = Field(default=None, ge=0)
+
+
+class PlaylistCreateRequest(BaseModel):
+    """Создание плейлиста. Порядок `tracks` = порядок воспроизведения (позиция в
+    списке = порядок прикрепления, без drag&drop — см. Границы ARG-139). Плейлист
+    не имеет собственного ACL: права читаются через носителя, к которому он будет
+    прикреплён следующим запросом (сообщение / задача / материал КБ)."""
+
+    title: str = Field(min_length=1, max_length=300)
+    cover_media_id: int | None = None
+    tracks: list[PlaylistTrackInput]
+
+    @model_validator(mode="after")
+    def _validate(self) -> "PlaylistCreateRequest":
+        if not self.tracks:
+            raise ValueError("A playlist needs at least one track")
+        if len(self.tracks) > MAX_PLAYLIST_TRACKS:
+            raise ValueError(f"At most {MAX_PLAYLIST_TRACKS} tracks per playlist")
+        return self
+
+
+class PlaylistTrackOut(BaseModel):
+    """Трек с готовым presigned-URL — как AttachmentOut, но со своими метаданными."""
+
+    asset_id: int
+    position: int
+    title: str
+    artist: str | None
+    duration: int | None
+    url: str
+    mime_type: str
+    size: int
+
+
+class PlaylistOut(BaseModel):
+    """Плейлист-вложение с уже готовыми presigned-URL всех треков и обложки.
+
+    Как AttachmentOut, встраивается прямо в payload сообщения/задачи/материала —
+    без отдельного round-trip. Неизменяем после отправки (docs/FILES.md «Плейлист»).
+    """
+
+    id: int
+    title: str
+    cover_url: str | None = None
+    created_by: int
+    created_at: datetime
+    tracks: list[PlaylistTrackOut]

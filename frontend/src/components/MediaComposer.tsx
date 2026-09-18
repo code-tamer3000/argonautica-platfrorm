@@ -1,10 +1,11 @@
 import { useRef, useState, type ChangeEvent, type FocusEvent } from 'react'
 import { mediaUpload } from '../lib/mediaUpload'
-import type { MediaKind } from '../lib/types'
+import type { MediaKind, PlaylistOut } from '../lib/types'
 import { toast } from '../stores/toast'
 import { Button } from './Button'
 import { IconAttach } from './icons'
 import styles from './mediaComposer.module.css'
+import { PlaylistComposer } from './PlaylistComposer'
 
 const KIND_LABEL: Record<MediaKind, string> = {
   image: 'Изображение',
@@ -29,6 +30,11 @@ interface Props {
   placeholder?: string
   rows?: number
   disabled?: boolean
+  // Плейлист-вложение (docs/FILES.md «Плейлист») — опционален; когда родитель не
+  // передаёт эти пропы, кнопка «Плейлист» не показывается (например, в композере
+  // сдачи задания, где плейлист не предусмотрен).
+  playlist?: PlaylistOut | null
+  onPlaylistChange?: (p: PlaylistOut | null) => void
 }
 
 /**
@@ -47,6 +53,8 @@ export function MediaComposer({
   placeholder,
   rows = 4,
   disabled = false,
+  playlist,
+  onPlaylistChange,
 }: Props) {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
@@ -156,6 +164,13 @@ export function MediaComposer({
         >
           {uploading ? 'Загрузка…' : 'Прикрепить файлы'}
         </Button>
+        {onPlaylistChange && (
+          <PlaylistComposer
+            value={playlist ?? null}
+            onChange={onPlaylistChange}
+            disabled={disabled}
+          />
+        )}
       </div>
     </div>
   )

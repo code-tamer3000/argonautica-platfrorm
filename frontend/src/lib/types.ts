@@ -195,6 +195,8 @@ export interface MessageOut {
   // Вложения с готовыми presigned-URL и превью — приходят прямо в ленте, без
   // отдельного запроса на каждый ассет. Пусто у старых сообщений в кэше.
   attachments: AttachmentOut[]
+  // Плейлист-вложение (см. PlaylistOut). null/undefined = вложения нет.
+  playlist?: PlaylistOut | null
   // Ссылка на материал КБ / задачу (одна на сообщение). null = ссылки нет.
   // title/available резолвит сервер для текущего зрителя.
   ref?: MessageRefOut | null
@@ -242,6 +244,28 @@ export interface AttachmentOut {
   // играем как раньше по url). 'processing' — вариант готовится (спиннер + постер);
   // 'done' — url ведёт на вариант; 'failed' — вариант не собрался, url = оригинал.
   transcode_status?: 'processing' | 'done' | 'failed' | null
+}
+
+// Плейлист-вложение (docs/FILES.md «Плейлист») — несколько аудиотреков одним
+// вложением, играют подряд глобальным мини-плеером. Неизменяем после отправки.
+export interface PlaylistTrackOut {
+  asset_id: number
+  position: number
+  title: string
+  artist: string | null
+  duration: number | null
+  url: string
+  mime_type: string
+  size: number
+}
+
+export interface PlaylistOut {
+  id: number
+  title: string
+  cover_url: string | null
+  created_by: number
+  created_at: string
+  tracks: PlaylistTrackOut[]
 }
 
 export interface ThreadOut {
@@ -325,6 +349,8 @@ export interface KbItemOut {
   created_at: string
   updated_at: string
   media_asset_ids: number[]
+  // Плейлист-вложение материала (см. PlaylistOut). null/undefined = вложения нет.
+  playlist?: PlaylistOut | null
   // Изоляция по потоку/тарифу (ARG-96): null/пусто = доступен всем потокам/тарифам.
   intake_id: number | null
   plan_ids: number[]

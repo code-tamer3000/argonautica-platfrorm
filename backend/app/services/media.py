@@ -31,8 +31,9 @@ from app.core.config import settings
 from app.models.kb import KbItem, KbItemMedia, KbItemPlan
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment
+from app.models.playlist import Playlist, PlaylistTrack
 from app.models.user import User
-from app.schemas.media import AttachmentOut
+from app.schemas.media import AttachmentOut, PlaylistOut, PlaylistTrackOut
 from app.services.rooms import assert_room_access, load_room
 from app.services.visibility import intake_visible, plan_visible
 
@@ -528,6 +529,80 @@ async def assert_media_access(
         except HTTPException:
             continue
 
+    # Плейлист (docs/FILES.md «Плейлист»): свой ACL нет, доступ читается через
+    # носителя (сообщение/задача/материал КБ), к которому плейлист прикреплён —
+    # тем же путём, что и обычное вложение того же носителя выше. Ассет может быть
+    # треком ИЛИ обложкой плейлиста.
+    playlist_ids = set(
+        (
+            await session.execute(
+                select(PlaylistTrack.playlist_id).where(
+                    PlaylistTrack.media_asset_id == asset.id
+                )
+            )
+        ).scalars().all()
+    ) | set(
+        (
+            await session.execute(
+                select(Playlist.id).where(Playlist.cover_media_id == asset.id)
+            )
+        ).scalars().all()
+    )
+    if playlist_ids:
+        for kb_item in (
+            (
+                await session.execute(
+                    select(KbItem).where(KbItem.playlist_id.in_(playlist_ids))
+                )
+            )
+            .scalars()
+            .all()
+        ):
+            if user.role == "admin":
+                return
+            if not kb_item.published:
+                continue
+            if not intake_visible(kb_item.intake_id, user):
+                continue
+            if await plan_visible(
+                session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, kb_item.id, user.plan_id
+            ):
+                return
+
+        for task in (
+            (
+                await session.execute(
+                    select(Task).where(
+                        Task.playlist_id.in_(playlist_ids), Task.deleted_at.is_(None)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        ):
+            if await _visible_task(task):
+                return
+
+        playlist_room_ids = (
+            (
+                await session.execute(
+                    select(Message.room_id).where(
+                        Message.playlist_id.in_(playlist_ids),
+                        Message.deleted_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for room_id in playlist_room_ids:
+            try:
+                room = await load_room(session, room_id)
+                await assert_room_access(session, room, user)
+                return
+            except HTTPException:
+                continue
+
     raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this media asset")
 
 
@@ -611,6 +686,150 @@ def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
         duration=asset.duration,
         transcode_status=asset.transcode_status,
     )
+
+
+async def build_playlist_out(session: AsyncSession, playlist: Playlist) -> PlaylistOut:
+    """Резолвит один плейлист в `PlaylistOut` с готовыми presigned-URL (обложка +
+    каждый трек). Подпись локальна — N запросов в сеть не создаёт."""
+    tracks = (
+        (
+            await session.execute(
+                select(PlaylistTrack)
+                .where(PlaylistTrack.playlist_id == playlist.id)
+                .order_by(PlaylistTrack.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    asset_ids = {t.media_asset_id for t in tracks}
+    if playlist.cover_media_id is not None:
+        asset_ids.add(playlist.cover_media_id)
+    assets_by_id: dict[int, MediaAsset] = {}
+    if asset_ids:
+        rows = await session.execute(
+            select(MediaAsset).where(MediaAsset.id.in_(asset_ids))
+        )
+        assets_by_id = {a.id: a for a in rows.scalars().all()}
+
+    cover_url = None
+    if playlist.cover_media_id is not None and playlist.cover_media_id in assets_by_id:
+        cover_asset = assets_by_id[playlist.cover_media_id]
+        cover_url = presigned_get_url(
+            cover_asset.bucket, cover_asset.thumb_key or cover_asset.storage_key
+        )
+
+    track_outs: list[PlaylistTrackOut] = []
+    for track in tracks:
+        asset = assets_by_id.get(track.media_asset_id)
+        if asset is None:
+            # Ассет мягко исчез (не должно случаться — media_assets не удаляются),
+            # трек молча пропускаем, а не роняем весь плейлист 500-й.
+            continue
+        track_outs.append(
+            PlaylistTrackOut(
+                asset_id=asset.id,
+                position=track.position,
+                title=track.title,
+                artist=track.artist,
+                duration=track.duration if track.duration is not None else asset.duration,
+                url=presigned_get_url(
+                    asset.bucket,
+                    serving_key(asset),
+                    download_name=attachment_download_name(asset),
+                ),
+                mime_type=asset.mime_type,
+                size=asset.size,
+            )
+        )
+
+    return PlaylistOut(
+        id=playlist.id,
+        title=playlist.title,
+        cover_url=cover_url,
+        created_by=playlist.created_by,
+        created_at=playlist.created_at,
+        tracks=track_outs,
+    )
+
+
+async def resolve_playlists(
+    session: AsyncSession, playlist_ids: list[int]
+) -> dict[int, PlaylistOut]:
+    """`{playlist_id: PlaylistOut}` батчем — зеркало `resolve_attachments`, для
+    вставки в payload сообщения/задачи/материала КБ. Доступ гейтится носителем на
+    уровне вызывающего эндпоинта (кто читает носителя — читает и его плейлист)."""
+    if not playlist_ids:
+        return {}
+    playlists = (
+        (
+            await session.execute(
+                select(Playlist).where(Playlist.id.in_(playlist_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {p.id: await build_playlist_out(session, p) for p in playlists}
+
+
+async def create_playlist(
+    session: AsyncSession,
+    user: User,
+    title: str,
+    cover_media_id: int | None,
+    tracks: list[tuple[int, str, str | None, int | None]],
+) -> Playlist:
+    """Создаёт плейлист + треки. `tracks` — `(media_asset_id, title, artist,
+    duration)` в порядке прикрепления (позиция = индекс в списке, docs/FILES.md
+    «Плейлист»). Все переданные ассеты должны существовать и быть `kind='audio'`
+    (обложка — отдельно, `kind='image'`); иначе 404/400. Плейлист сам по себе не
+    прикреплён ни к чему — следующий запрос (отправка сообщения / создание
+    задачи / материала КБ) проставит `playlist_id` на носителе.
+    """
+    asset_ids = [t[0] for t in tracks]
+    rows = await session.execute(
+        select(MediaAsset).where(MediaAsset.id.in_(asset_ids))
+    )
+    assets_by_id = {a.id: a for a in rows.scalars().all()}
+    if set(assets_by_id) != set(asset_ids):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+    for asset_id in asset_ids:
+        if assets_by_id[asset_id].kind != "audio":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Asset {asset_id} is not an audio file",
+            )
+
+    if cover_media_id is not None:
+        cover_asset = await session.get(MediaAsset, cover_media_id)
+        if cover_asset is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Cover media not found")
+        if cover_asset.kind != "image":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "Cover must be an image"
+            )
+
+    playlist = Playlist(
+        title=title, cover_media_id=cover_media_id, created_by=user.id
+    )
+    session.add(playlist)
+    await session.flush()
+
+    for position, (media_asset_id, track_title, artist, duration) in enumerate(tracks):
+        session.add(
+            PlaylistTrack(
+                playlist_id=playlist.id,
+                media_asset_id=media_asset_id,
+                position=position,
+                title=track_title,
+                artist=artist,
+                duration=duration,
+            )
+        )
+    await session.flush()
+    await session.refresh(playlist)
+    return playlist
 
 
 async def resolve_attachments(

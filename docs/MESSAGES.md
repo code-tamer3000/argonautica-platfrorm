@@ -1,7 +1,7 @@
 # Messages, Threads & Realtime
 
 > Source: docs/archive/{DATA_MODEL.md, PLATFORM_SPEC.md §4.3–4.8/§4.14, DECISIONS.md}, restructured 2026-07-06.
-> Endpoints: `/api/rooms/...`, WS `/ws`. Tables: `messages`, `message_attachments`, `pinned_messages`, `stickers`, `message_reactions` (see [DATA_MODEL.md](DATA_MODEL.md)). Every action re-checks room access (`load_room` + `assert_room_access`).
+> Endpoints: `/api/rooms/...`, WS `/ws`. Tables: `messages`, `message_attachments`, `pinned_messages`, `stickers`, `message_reactions`, `playlists`/`playlist_tracks` (see [DATA_MODEL.md](DATA_MODEL.md)). Every action re-checks room access (`load_room` + `assert_room_access`).
 
 ## Send / edit / delete
 
@@ -90,6 +90,12 @@ A second, lighter way to reply — **orthogonal to threads**, not a replacement.
 ## Voice messages
 
 - Recorded audio is a normal attachment with `media_assets.kind='audio'`, same presigned flow. Uploaded as-is (WebM/Opus or AAC/MP4, whatever the sender's `MediaRecorder` produced) and normalized to AAC/M4A server-side in the background (same transcode worker/queue as video) so it plays on every recipient's device, iPhone included — see [FILES.md](FILES.md) "Audio transcode".
+
+## Playlist attachment (ARG-139)
+
+- A message can carry one playlist alongside (or instead of) `attachment_ids`/`sticker_id`: `SendMessageRequest.playlist_id` — an already-created `playlists` row (`POST /api/media/playlists`), attached via the message's `playlist_id` FK, orthogonal to the normal album. `MessageOut.playlist` carries the fully-resolved `PlaylistOut` (presigned cover + track URLs), same "already resolved in the payload" principle as `attachments`.
+- **Forwarding carries the playlist**, same as `attachment_ids`: the forwarded message gets the same `playlist_id`, not a new playlist — access in the target room is re-checked through the normal carrier chain.
+- Rendered as one `PlaylistCard` (not N voice bubbles) that hands playback to the app-wide `GlobalPlayer` — see [FILES.md](FILES.md) "Playlist" for the full create/read/player flow, [DATA_MODEL.md](DATA_MODEL.md) for the tables.
 
 ## Realtime (WebSocket + Redis)
 

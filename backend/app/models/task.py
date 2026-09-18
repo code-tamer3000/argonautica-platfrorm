@@ -54,6 +54,10 @@ class Task(Base):
     kb_item_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("kb_items.id")
     )
+    # Плейлист-вложение условия задачи (docs/FILES.md «Плейлист») — одно на задачу.
+    playlist_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("playlists.id")
+    )
     # Для перекрёстной задачи (individual внутри пары) — пара, к которой она относится.
     # NULL у всех обычных задач. Связывает выданную задачу с парой (видимость, завершение).
     pair_id: Mapped[int | None] = mapped_column(

@@ -1,7 +1,28 @@
 import { useQuery } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
 import { reportMetric } from '../lib/metrics'
-import type { MediaUrlOut } from '../lib/types'
+import type { MediaUrlOut, PlaylistOut } from '../lib/types'
+
+export interface PlaylistTrackInput {
+  media_asset_id: number
+  title: string
+  artist?: string | null
+  duration?: number | null
+}
+
+export interface PlaylistCreateBody {
+  title: string
+  cover_media_id?: number | null
+  tracks: PlaylistTrackInput[]
+}
+
+/** Создать плейлист из уже загруженных аудио-ассетов (docs/FILES.md «Плейлист»).
+ * Плейлист сам по себе ничему не прикреплён — вызывающий передаёт `id` результата
+ * как `playlist_id` в следующий запрос (отправка сообщения / создание задачи или
+ * материала КБ). */
+export function createPlaylist(body: PlaylistCreateBody): Promise<PlaylistOut> {
+  return http.post<PlaylistOut>('/api/media/playlists', body)
+}
 
 export function useMediaUrl(assetId: number | null) {
   return useQuery({
