@@ -28,6 +28,9 @@ interface PlayerState {
   /** Страховка от «завис навсегда»: если `seeked` почему-то не пришёл (ошибка
    * сети/элемента), снимаем isSeeking сами через таймаут — см. `seek`. */
   seekTimeout: ReturnType<typeof setTimeout> | null
+  /** Позиция, на которую сейчас идёт перемотка, — чтобы отличить дубль коммита
+   * одного жеста (pointerup+mouseup+touchend) от новой перемотки, см. `seek`. */
+  seekTarget: number | null
 
   setAudioEl: (el: HTMLAudioElement | null) => void
   playPlaylist: (playlist: PlaylistOut, trackIndex?: number) => void
@@ -72,6 +75,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   audioEl: null,
   isSeeking: false,
   seekTimeout: null,
+  seekTarget: null,
 
   setAudioEl: (el) => set({ audioEl: el }),
 
@@ -85,7 +89,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
     // isPlaying:true — намерение (сыграть НОВЫЙ трек сразу после подстановки src
     // эффектом в GlobalPlayer); подтвердит/поправит его настоящий onPlay/onPause.
-    set({ playlist, trackIndex, isPlaying: true, currentTime: 0, isSeeking: false })
+    set({ playlist, trackIndex, isPlaying: true, currentTime: 0, isSeeking: false, seekTarget: null })
   },
 
   toggle: () => {
@@ -105,7 +109,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { playlist, trackIndex } = get()
     if (!playlist) return
     if (trackIndex + 1 < playlist.tracks.length) {
-      set({ trackIndex: trackIndex + 1, currentTime: 0, isPlaying: true, isSeeking: false })
+      set({ trackIndex: trackIndex + 1, currentTime: 0, isPlaying: true, isSeeking: false, seekTarget: null })
     }
   },
 
@@ -113,29 +117,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { playlist, trackIndex } = get()
     if (!playlist) return
     if (trackIndex > 0) {
-      set({ trackIndex: trackIndex - 1, currentTime: 0, isPlaying: true, isSeeking: false })
+      set({ trackIndex: trackIndex - 1, currentTime: 0, isPlaying: true, isSeeking: false, seekTarget: null })
     }
   },
 
   previewSeek: (t) => set({ currentTime: t, isSeeking: true }),
 
   seek: (t) => {
-    const { audioEl, seekTimeout } = get()
+    const { audioEl, seekTimeout, isSeeking, seekTarget } = get()
+    // pointerup/mouseup/touchend дублируют коммит ОДНОГО жеста (см. тип выше).
+    // Дубль распознаём по цели перемотки, а НЕ по audioEl.currentTime: элемент
+    // обновляет currentTime сразу, а событие `seeked` присылает позже, так что
+    // второй вызов «видел» бы позицию уже на месте, снимал isSeeking досрочно —
+    // и ближайший timeupdate со старой позицией возвращал ползунок назад.
+    if (isSeeking && seekTarget !== null && Math.abs(seekTarget - t) <= 0.25) return
     if (seekTimeout) clearTimeout(seekTimeout)
-    // pointerup/mouseup/touchend дублируют коммит одного жеста (см. тип выше) —
-    // если currentTime уже там (второй/третий вызов с тем же t), браузер не
-    // выдаст новый seeked, и isSeeking застрял бы на true навсегда. Поэтому
-    // реально перематываем и держим isSeeking, только если позиция и правда меняется.
     if (audioEl && Math.abs(audioEl.currentTime - t) > 0.25) {
       audioEl.currentTime = t
       // Страховка: если seeked не пришёл за 4с (сеть/ошибка элемента), снимаем
       // isSeeking сами — иначе ползунок замер бы навсегда.
       const timeout = setTimeout(() => {
-        if (get().isSeeking) set({ isSeeking: false, seekTimeout: null })
+        if (get().isSeeking) set({ isSeeking: false, seekTimeout: null, seekTarget: null })
       }, 4000)
-      set({ currentTime: t, isSeeking: true, seekTimeout: timeout })
+      set({ currentTime: t, isSeeking: true, seekTimeout: timeout, seekTarget: t })
     } else {
-      set({ currentTime: t, isSeeking: false, seekTimeout: null })
+      set({ currentTime: t, isSeeking: false, seekTimeout: null, seekTarget: null })
     }
   },
 
@@ -155,6 +161,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       expanded: false,
       isSeeking: false,
       seekTimeout: null,
+      seekTarget: null,
     })
   },
 
@@ -176,7 +183,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   _onSeeked: (t) => {
     const { seekTimeout } = get()
     if (seekTimeout) clearTimeout(seekTimeout)
-    set({ currentTime: t, isSeeking: false, seekTimeout: null })
+    set({ currentTime: t, isSeeking: false, seekTimeout: null, seekTarget: null })
   },
   _onEnded: () => {
     // Автопереход к следующему; на последнем треке — остановиться и свернуться на
@@ -184,10 +191,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const { playlist, trackIndex } = get()
     if (!playlist) return
     if (trackIndex + 1 < playlist.tracks.length) {
-      set({ trackIndex: trackIndex + 1, currentTime: 0, isPlaying: true, isSeeking: false })
+      set({ trackIndex: trackIndex + 1, currentTime: 0, isPlaying: true, isSeeking: false, seekTarget: null })
     } else {
       useMediaSession.getState().release(SESSION_ID)
-      set({ trackIndex: 0, currentTime: 0, isPlaying: false, isSeeking: false })
+      set({ trackIndex: 0, currentTime: 0, isPlaying: false, isSeeking: false, seekTarget: null })
     }
   },
 }))

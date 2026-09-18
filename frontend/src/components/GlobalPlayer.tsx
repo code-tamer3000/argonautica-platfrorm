@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { usePlayerStore } from '../stores/player'
 import styles from './globalPlayer.module.css'
 import {
@@ -33,11 +33,16 @@ export function GlobalPlayer() {
   const currentTime = usePlayerStore((s) => s.currentTime)
   const duration = usePlayerStore((s) => s.duration)
   const expanded = usePlayerStore((s) => s.expanded)
-  const audioRef = useRef<HTMLAudioElement>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  useEffect(() => {
-    usePlayerStore.getState().setAudioEl(audioRef.current)
-    return () => usePlayerStore.getState().setAudioEl(null)
+  // Callback-ref, а НЕ useEffect([]): <audio> рендерится только когда есть что
+  // играть, поэтому на монтировании компонента его в DOM ещё нет и эффект с
+  // пустыми deps записывал в стор null — навсегда. Из-за этого toggle() молча
+  // выходил (кнопка паузы «не работает»), а seek() не трогал элемент и ползунок
+  // откатывался следующим timeupdate (ARG-139, отзыв после выката).
+  const setAudio = useCallback((el: HTMLAudioElement | null) => {
+    audioRef.current = el
+    usePlayerStore.getState().setAudioEl(el)
   }, [])
 
   // Сигнал для CSS (тот же приём, что html[data-kb='open'] в lib/viewport.ts):
@@ -86,7 +91,7 @@ export function GlobalPlayer() {
     // вместо кнопок «трек вперёд/назад» — жалоба на ARG-139). play/pause шлют
     // команду ПРЯМО в <audio> (не toggle/наш стор) — состояние обновится по
     // настоящим onPlay/onPause, кнопка ОС не должна гадать по нашему isPlaying.
-    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+    const handlers: [MediaSessionAction, MediaSessionActionHandler | null][] = [
       ['play', () => void usePlayerStore.getState().audioEl?.play()],
       ['pause', () => usePlayerStore.getState().audioEl?.pause()],
       ['previoustrack', () => usePlayerStore.getState().prev()],
@@ -97,22 +102,22 @@ export function GlobalPlayer() {
           if (details.seekTime != null) usePlayerStore.getState().seek(details.seekTime)
         },
       ],
-      // ±10с системной перемотки — тоже настоящая позиция, а не no-op/фолбэк.
-      [
-        'seekbackward',
-        (details) => {
-          const s = usePlayerStore.getState()
-          s.seek(Math.max(0, s.currentTime - (details.seekOffset ?? 10)))
-        },
-      ],
-      [
-        'seekforward',
-        (details) => {
-          const s = usePlayerStore.getState()
-          s.seek(s.currentTime + (details.seekOffset ?? 10))
-        },
-      ],
     ]
+    // ±10с системной перемотки НЕ регистрируем, когда в плейлисте больше одного
+    // трека: iOS отдаёт в системном плеере ограниченный набор кнопок и, если
+    // seekbackward/seekforward заданы, показывает именно их ВМЕСТО «трек вперёд/
+    // назад» (жалоба после выката ARG-139). Явный null перебивает и поведение
+    // браузера по умолчанию. Для плейлиста из одного трека наоборот — ±10с
+    // полезнее бесполезных перелистываний.
+    const single = playlist.tracks.length < 2
+    const seekBy = (delta: number) => {
+      const s = usePlayerStore.getState()
+      s.seek(Math.max(0, Math.min(s.duration || Infinity, s.currentTime + delta)))
+    }
+    handlers.push(
+      ['seekbackward', single ? (d) => seekBy(-(d.seekOffset ?? 10)) : null],
+      ['seekforward', single ? (d) => seekBy(d.seekOffset ?? 10) : null],
+    )
     for (const [action, handler] of handlers) {
       try {
         navigator.mediaSession.setActionHandler(action, handler)
@@ -152,7 +157,7 @@ export function GlobalPlayer() {
   return (
     <>
       <audio
-        ref={audioRef}
+        ref={setAudio}
         // isPlaying — ТОЛЬКО отсюда (настоящие play/pause элемента), не руками в
         // toggle/next/prev/playPlaylist: иначе кнопка визуально «не работает»,
         // когда стор и реальный <audio> расходятся (ARG-139, отзыв после ревью).
