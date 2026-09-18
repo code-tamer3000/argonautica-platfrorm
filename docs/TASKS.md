@@ -250,6 +250,26 @@ submitted (`my_status == 'submitted'`) doesn't appear in the row list (there's n
 ждём ответа" so it doesn't look forgotten. No new tables, no push/scheduler — purely a
 read-side reshuffle of numbers `list_tasks()` already computes.
 
+## Черновик (`tasks.is_draft`)
+
+`tasks.is_draft` (`BOOLEAN NOT NULL DEFAULT false`) is the task-side equivalent of
+`kb_items.published` ([KB.md](KB.md)): while it is set, the task exists **for admins only** —
+absent from the participant list, 404 on direct read, not submittable, no calendar entry,
+no media access, no WS fan-out. Historical rows get `false`, i.e. they stay published.
+
+It is **orthogonal to `publish_at`**, not a special case of it: a draft stays hidden even
+when its `publish_at` is already in the past, and clearing the flag hands control back to
+the date (NULL → visible immediately, future → scheduled). Both flow through the same
+`published_where()` / `is_published()` pair in `services/tasks.py`, so every visibility site
+listed in the next section covers drafts too, with no extra checks scattered around.
+
+`TaskCreate.is_draft` (default `false`) creates one; `TaskUpdate.is_draft` flips it
+(absent = leave alone). Publishing a draft fans out `task.created`, not `task.updated` —
+recipients have never seen the task, so "новое задание" is the truthful event. In «База
+заданий» a draft carries a «Черновик» chip, `GET /api/admin/tasks?state=draft` lists only
+drafts (`state=scheduled` deliberately excludes them — a draft may have no date at all),
+and the row's kebab has a one-click «Опубликовать» / «Вернуть в черновик».
+
 ## Отложенная публикация (`tasks.publish_at`)
 
 `tasks.publish_at` (nullable `TIMESTAMPTZ`) lets an admin schedule a task to appear on its
@@ -260,7 +280,7 @@ read**, the same pattern as Междумирье's 5-day grace period ([LIMBO.md
 scheduler, no cron, no background tick exists in this project on purpose.
 
 `services/tasks.py::published_where()` (SQL `WHERE`) / `is_published()` (scalar check) are
-the single source of truth, applied everywhere a task's visibility is decided for a
+the single source of truth (they also carry the `is_draft` check from the previous section), applied everywhere a task's visibility is decided for a
 non-admin: `_visible_common_where` (covers `list_tasks`, `compute_progress`,
 `attention_count`, `overdue_tasks_for`), `assert_task_visible` (covers task detail,
 submissions, review — 404, not 403: an unpublished task reads as "doesn't exist yet", the

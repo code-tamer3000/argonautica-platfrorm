@@ -91,6 +91,15 @@ class Task(Base):
     # принципом, что и Междумирье (нет планировщика в проекте, см.
     # services/limbo.py). См. services/tasks.py::published_where/is_published.
     publish_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Черновик: задача существует только для админа, пока он её не опубликует
+    # (аналог kb_items.published, см. docs/KB.md). Ортогонален publish_at:
+    # черновик скрыт независимо от даты, а сняв флаг, админ либо публикует
+    # сразу (publish_at IS NULL), либо ставит задачу в расписание. Проверяется
+    # той же парой published_where/is_published, что и отложенная публикация, —
+    # одна точка истины на все места, где решается видимость.
+    is_draft: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     # Самоссылка на задачу-источник, из которой эта клонирована переизданием на
     # другой поток (services/tasks.py::clone_task, «База заданий»). NULL —
     # создана обычным способом, не клон.

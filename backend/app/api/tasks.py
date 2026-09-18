@@ -214,6 +214,7 @@ async def create_task(
         kb_item_id=body.kb_item_id,
         deadline_at=body.deadline_at,
         publish_at=body.publish_at,
+        is_draft=body.is_draft,
         created_by=current_admin.id,
         intake_id=body.intake_id,
         playlist_id=body.playlist_id,
@@ -314,6 +315,7 @@ async def create_task(
         pair_id=task.pair_id,
         deadline_at=task.deadline_at,
         publish_at=task.publish_at,
+        is_draft=task.is_draft,
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
@@ -335,6 +337,12 @@ async def update_task(
     task = await load_task(session, task_id)
 
     changes = body.model_dump(exclude_unset=True)
+    # Черновик → публикация. Запоминаем ДО применения изменений: получателям
+    # такая задача ни разу не показывалась, поэтому им уходит task.created
+    # (как при обычном создании), а не task.updated про «изменилось условие».
+    was_draft = task.is_draft
+    if changes.get("is_draft") is not None:
+        task.is_draft = changes["is_draft"]
     # playlist_id: не передан — не трогаем; id — прикрепить/заменить (та же
     # проверка владения, что при создании); явный null — отцепить.
     if "playlist_id" in changes:
@@ -376,7 +384,13 @@ async def update_task(
     await sync_task_calendar_event(session, task)
     await session.refresh(task)
     if is_published(task):
-        await fan_out_task_event(session, task, ws_schemas.task_updated_event(task.id))
+        await fan_out_task_event(
+            session,
+            task,
+            ws_schemas.task_created_event(task.id, task.type, task.title)
+            if was_draft
+            else ws_schemas.task_updated_event(task.id),
+        )
     attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
     playlist_out = (
         (await resolve_playlists(session, [task.playlist_id])).get(task.playlist_id)
@@ -392,6 +406,7 @@ async def update_task(
         pair_id=task.pair_id,
         deadline_at=task.deadline_at,
         publish_at=task.publish_at,
+        is_draft=task.is_draft,
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
@@ -1044,6 +1059,7 @@ async def list_tasks(
             pair_id=t.pair_id,
             deadline_at=t.deadline_at,
             publish_at=t.publish_at,
+            is_draft=t.is_draft,
             created_by=t.created_by,
             created_at=t.created_at,
             attachments=task_attachments.get(t.id, []),
@@ -1128,6 +1144,7 @@ async def get_task(
         pair_id=task.pair_id,
         deadline_at=task.deadline_at,
         publish_at=task.publish_at,
+        is_draft=task.is_draft,
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=task_attachments,

@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +55,7 @@ def _effective_plan_id(user: User) -> int | None:
 def published_where(now: datetime | None = None) -> ColumnElement[bool]:
     """WHERE «задача уже опубликована» (база заданий, отложенная публикация).
 
+    Черновик (`is_draft`) не опубликован никогда, независимо от даты.
     NULL `publish_at` — опубликована сразу (все исторические строки). Иначе
     видна не-админу только когда `now() >= publish_at` — считается лениво на
     каждом чтении, без планировщика (в проекте его нет принципиально, см.
@@ -62,11 +63,16 @@ def published_where(now: datetime | None = None) -> ColumnElement[bool]:
     задачи всегда, с отдельной пометкой в хабе.
     """
     now = now or datetime.now(UTC)
-    return or_(Task.publish_at.is_(None), Task.publish_at <= now)
+    return and_(
+        Task.is_draft.is_(False),
+        or_(Task.publish_at.is_(None), Task.publish_at <= now),
+    )
 
 
 def is_published(task: Task, now: datetime | None = None) -> bool:
     """Скалярный эквивалент published_where для уже загруженного объекта Task."""
+    if task.is_draft:
+        return False
     if task.publish_at is None:
         return True
     return task.publish_at <= (now or datetime.now(UTC))

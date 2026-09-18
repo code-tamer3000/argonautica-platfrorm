@@ -39,6 +39,9 @@ class TaskCreate(BaseModel):
     # NULL — опубликована сразу. Иначе скрыта от не-админов до этого момента
     # (лениво, без планировщика — см. services/tasks.py::published_where).
     publish_at: datetime | None = None
+    # Черновик: задача видна только админам, пока он не снят. Ортогонален
+    # publish_at (см. models/task.py::Task.is_draft).
+    is_draft: bool = False
     assignee_ids: list[int] = []
     # Пары для type='pair'. Организатор встречи выбирается сервером случайно.
     pairs: list[PairInput] = []
@@ -66,6 +69,8 @@ class TaskUpdate(BaseModel):
     deadline_at: datetime | None = None
     kb_item_id: int | None = None
     publish_at: datetime | None = None
+    # None — не трогаем; false — опубликовать черновик; true — снова спрятать.
+    is_draft: bool | None = None
     # None — не трогаем набор медиа; список — ЗАМЕНЯЕТ весь набор целиком.
     media_asset_ids: list[int] | None = None
     # Не передан — плейлист не трогаем; id — прикрепить/заменить; явный null —
@@ -86,6 +91,7 @@ class TaskOut(BaseModel):
     pair_id: int | None = None  # set only on a cross-task (peer-learning)
     deadline_at: datetime | None
     publish_at: datetime | None = None
+    is_draft: bool = False
     created_by: int
     created_at: datetime
     attachments: list[AttachmentOut] = []
@@ -426,6 +432,7 @@ class TaskLibraryItemOut(BaseModel):
     plan_ids: list[int] = []
     deadline_at: datetime | None
     publish_at: datetime | None
+    is_draft: bool = False
     created_at: datetime
     created_by: int
     submitted_count: int

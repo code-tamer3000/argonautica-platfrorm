@@ -36,6 +36,9 @@ export interface TaskFormValues {
   // NULL — опубликована сразу. Иначе задача скрыта от не-админов до этого
   // момента (лениво, без планировщика — см. docs/TASKS.md).
   publish_at: string | null
+  // Черновик: задача существует только для админа, пока флаг не снят (аналог
+  // «черновик/опубликовано» у материала БЗ). Ортогонален publish_at.
+  is_draft: boolean
   kb_item_id: number | null
   assignee_ids: number[]
   // Пары для type='pair': каждая — [userA, userB]. Организатор встречи выбирается сервером.
@@ -73,6 +76,7 @@ export type TaskFormInitial = Pick<
   | 'body'
   | 'deadline_at'
   | 'publish_at'
+  | 'is_draft'
   | 'kb_item_id'
   | 'attachments'
   | 'playlist'
@@ -96,6 +100,7 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
   const [body, setBody] = useState(initial?.body ?? '')
   const [deadline, setDeadline] = useState(isoToLocalInput(initial?.deadline_at ?? null))
   const [publishAt, setPublishAt] = useState(isoToLocalInput(initial?.publish_at ?? null))
+  const [isDraft, setIsDraft] = useState(initial?.is_draft ?? false)
   const [kbItemId, setKbItemId] = useState<number | null>(initial?.kb_item_id ?? null)
   const [assignees, setAssignees] = useState<number[]>([])
   // Пары для парного задания. Черновик текущей собираемой пары — [a, b].
@@ -210,6 +215,7 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
       body,
       deadline_at: localInputToIso(deadline),
       publish_at: localInputToIso(publishAt),
+      is_draft: isDraft,
       kb_item_id: kbItemId,
       assignee_ids: assignees,
       pairs,
@@ -312,6 +318,19 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
       </label>
       <p className={styles.mediaEmpty}>
         Не заполнено — опубликована сразу. Иначе скрыта от участников до этого момента.
+      </p>
+
+      <label className={styles.checkLabel}>
+        <input
+          type="checkbox"
+          checked={isDraft}
+          onChange={(e) => setIsDraft(e.target.checked)}
+        />
+        Черновик — не показывать участникам
+      </label>
+      <p className={styles.mediaEmpty}>
+        Черновик виден только администраторам, независимо от даты публикации. Снимите
+        галочку, когда задание готово, — тогда сработает дата выше.
       </p>
 
       <label className={styles.label}>

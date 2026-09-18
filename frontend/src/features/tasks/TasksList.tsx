@@ -303,6 +303,7 @@ export function TasksList() {
         body: values.body || null,
         deadline_at: values.deadline_at,
         publish_at: values.publish_at,
+        is_draft: values.is_draft,
         kb_item_id: values.kb_item_id,
         assignee_ids: values.type === 'individual' ? values.assignee_ids : undefined,
         pairs:
@@ -334,8 +335,10 @@ export function TasksList() {
         body: values.body || null,
         deadline_at: values.deadline_at,
         publish_at: values.publish_at,
+        is_draft: values.is_draft,
         kb_item_id: values.kb_item_id,
         media_asset_ids: values.media.map((m) => m.id),
+        playlist_id: values.playlist?.id ?? null,
         intake_id: editTask.type === 'common' ? values.intake_id : undefined,
         plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
       },

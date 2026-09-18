@@ -212,6 +212,7 @@ export function AdminTasks() {
         body: values.body || null,
         deadline_at: values.deadline_at,
         publish_at: values.publish_at,
+        is_draft: values.is_draft,
         kb_item_id: values.kb_item_id,
         assignee_ids: values.type === 'individual' ? values.assignee_ids : undefined,
         pairs:
@@ -244,6 +245,7 @@ export function AdminTasks() {
         body: values.body || null,
         deadline_at: values.deadline_at,
         publish_at: values.publish_at,
+        is_draft: values.is_draft,
         kb_item_id: values.kb_item_id,
         media_asset_ids: values.media.map((m) => m.id),
         playlist_id: values.playlist?.id ?? null,
@@ -255,6 +257,18 @@ export function AdminTasks() {
           toast('Сохранено')
           setEditTask(null)
         },
+        onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+      },
+    )
+  }
+
+  // Быстрое «опубликовать/вернуть в черновик» из списка, без открытия формы —
+  // единственное, что меняем, это флаг (PATCH применяет только переданные поля).
+  function toggleDraft(item: TaskLibraryItemOut) {
+    updateTask.mutate(
+      { id: item.id, is_draft: !item.is_draft },
+      {
+        onSuccess: () => toast(item.is_draft ? 'Опубликовано' : 'Возвращено в черновик'),
         onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
       },
     )
@@ -331,7 +345,8 @@ export function AdminTasks() {
                     {item.deadline_at && ` · дедлайн ${dayLabel(item.deadline_at)}`}
                   </div>
                   <div className={styles.checkRow}>
-                    {scheduled && item.publish_at && (
+                    {item.is_draft && <Chip kind="unreviewed">Черновик</Chip>}
+                    {!item.is_draft && scheduled && item.publish_at && (
                       <Chip kind="soon">Запланировано: {dateTimeMsk(item.publish_at)}</Chip>
                     )}
                     {item.published_intake_ids.length > 0 && (
@@ -351,6 +366,11 @@ export function AdminTasks() {
                       ...(canRepublish
                         ? [{ key: 'republish', label: 'Опубликовать для потока…', onClick: () => setRepublishTask(item) }]
                         : [{ key: 'from', label: 'Создать на основе', onClick: () => setCreateFromTask(item) }]),
+                      {
+                        key: 'draft',
+                        label: item.is_draft ? 'Опубликовать' : 'Вернуть в черновик',
+                        onClick: () => toggleDraft(item),
+                      },
                       { key: 'edit', label: 'Редактировать', onClick: () => setEditTask(item) },
                       { key: 'delete', label: 'Удалить', onClick: () => setDeleteTaskId(item.id), danger: true },
                     ]}
