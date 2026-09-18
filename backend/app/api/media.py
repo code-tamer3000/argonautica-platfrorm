@@ -27,7 +27,7 @@ from app.schemas.media import (
     MediaUrlOut,
     PlaylistCreateRequest,
     PlaylistOut,
-    PlaylistRenameRequest,
+    PlaylistUpdateRequest,
     UploadRequest,
     UploadTicket,
 )
@@ -35,7 +35,7 @@ from app.services.media import (
     PRESIGN_EXPIRES,
     PRESIGN_GET_EXPIRES,
     assert_media_access,
-    assert_playlist_owner,
+    assert_playlist_editor,
     attachment_download_name,
     build_playlist_out,
     build_storage_key,
@@ -47,6 +47,7 @@ from app.services.media import (
     remove_playlist_track,
     rename_playlist,
     serving_key,
+    set_playlist_cover,
     stat_object,
 )
 from app.services.ratelimit import enforce_rate_limit
@@ -354,15 +355,20 @@ async def get_playlist(
 
 
 @router.patch("/playlists/{playlist_id}", response_model=PlaylistOut)
-async def rename_playlist_endpoint(
+async def update_playlist_endpoint(
     playlist_id: int,
-    body: PlaylistRenameRequest,
+    body: PlaylistUpdateRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> PlaylistOut:
-    """Переименовать плейлист — только автор (ARG-139, «3 точки» в PlaylistCard)."""
-    playlist = await assert_playlist_owner(session, playlist_id, current_user)
-    await rename_playlist(session, playlist, body.title)
+    """Переименовать и/или сменить обложку — автор или админ (ARG-139, «3 точки»
+    в PlaylistCard). Поля применяются только если реально переданы (exclude_unset)."""
+    playlist = await assert_playlist_editor(session, playlist_id, current_user)
+    changes = body.model_dump(exclude_unset=True)
+    if "title" in changes and changes["title"] is not None:
+        await rename_playlist(session, playlist, changes["title"])
+    if "cover_media_id" in changes:
+        await set_playlist_cover(session, playlist, changes["cover_media_id"])
     await session.commit()
     return await build_playlist_out(session, playlist)
 
@@ -374,9 +380,9 @@ async def remove_playlist_track_endpoint(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> PlaylistOut:
-    """Убрать трек из плейлиста — только автор; минимум один трек должен остаться
-    (ARG-139, «3 точки» в PlaylistCard)."""
-    playlist = await assert_playlist_owner(session, playlist_id, current_user)
+    """Убрать трек из плейлиста — автор или админ; минимум один трек должен
+    остаться (ARG-139, «3 точки» в PlaylistCard)."""
+    playlist = await assert_playlist_editor(session, playlist_id, current_user)
     await remove_playlist_track(session, playlist, track_id)
     await session.commit()
     return await build_playlist_out(session, playlist)

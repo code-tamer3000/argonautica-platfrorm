@@ -833,27 +833,43 @@ async def create_playlist(
     return playlist
 
 
-async def assert_playlist_owner(
+async def assert_playlist_editor(
     session: AsyncSession, playlist_id: int, user: User
 ) -> Playlist:
-    """Плейлист существует и принадлежит `user` — иначе 404/403. Правка плейлиста
-    (переименование/удаление трека) доступна только автору, даже админу чужой
-    плейлист не переписывает (симметрично `edit_message`: правка текста — только
-    автор). Носитель тут не смотрим: право на правку — авторство самого плейлиста,
-    а не видимость его карьера (см. docs/FILES.md «Плейлист»)."""
+    """Плейлист существует и правку может сделать `user` — иначе 404/403. Правка
+    (переименование/обложка/удаление трека) доступна автору ИЛИ любому админу
+    (ARG-139, отзыв после ревью — расширено с «только автор»: админ модерирует
+    контент платформы так же, как чужие сообщения/задачи). Носитель тут не
+    смотрим: право на правку — авторство плейлиста или роль, а не видимость его
+    карьера (см. docs/FILES.md «Плейлист»)."""
     playlist = await session.get(Playlist, playlist_id)
     if playlist is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
-    if playlist.created_by != user.id:
+    if playlist.created_by != user.id and user.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your playlist")
     return playlist
 
 
 async def rename_playlist(session: AsyncSession, playlist: Playlist, title: str) -> None:
-    """Переименование — единственная правка контента плейлиста после отправки,
-    которую просил автор (ARG-139, отзыв после ревью): состав/порядок треков
-    остаётся снимком на момент прикрепления, редактируется только заголовок."""
+    """Переименование (ARG-139, отзыв после ревью). Состав/порядок треков
+    остаётся снимком на момент прикрепления."""
     playlist.title = title
+    await session.flush()
+
+
+async def set_playlist_cover(
+    session: AsyncSession, playlist: Playlist, cover_media_id: int | None
+) -> None:
+    """Одна обложка на ВЕСЬ плейлист (не per-track) — заменяет обложку, снятую
+    при создании из ID3 первого трека, либо задаёт её впервые (ARG-139, отзыв
+    после ревью). `None` — очистить, вернуться к заглушке дизайн-системы."""
+    if cover_media_id is not None:
+        cover_asset = await session.get(MediaAsset, cover_media_id)
+        if cover_asset is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Cover media not found")
+        if cover_asset.kind != "image":
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cover must be an image")
+    playlist.cover_media_id = cover_media_id
     await session.flush()
 
 

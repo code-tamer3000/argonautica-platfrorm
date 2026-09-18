@@ -24,9 +24,20 @@ export function createPlaylist(body: PlaylistCreateBody): Promise<PlaylistOut> {
   return http.post<PlaylistOut>('/api/media/playlists', body)
 }
 
-/** Переименовать плейлист — только автор (ARG-139, «3 точки» в PlaylistCard). */
-export function renamePlaylist(playlistId: number, title: string): Promise<PlaylistOut> {
-  return http.patch<PlaylistOut>(`/api/media/playlists/${playlistId}`, { title })
+export interface PlaylistUpdateBody {
+  title?: string
+  // null — очистить обложку (вернуться к заглушке); одна картинка на ВЕСЬ
+  // плейлист, не per-track.
+  cover_media_id?: number | null
+}
+
+/** Переименовать и/или сменить обложку — автор или админ (ARG-139, «3 точки»
+ * в PlaylistCard). Только переданные поля применяются. */
+export function updatePlaylist(
+  playlistId: number,
+  body: PlaylistUpdateBody,
+): Promise<PlaylistOut> {
+  return http.patch<PlaylistOut>(`/api/media/playlists/${playlistId}`, body)
 }
 
 /** Убрать трек из плейлиста — только автор, минимум один трек должен остаться.

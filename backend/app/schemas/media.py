@@ -171,8 +171,14 @@ class PlaylistOut(BaseModel):
     tracks: list[PlaylistTrackOut]
 
 
-class PlaylistRenameRequest(BaseModel):
-    """Переименование плейлиста — единственная правка после отправки, доступная
-    автору (ARG-139, отзыв после ревью). Состав/порядок треков неизменны."""
+class PlaylistUpdateRequest(BaseModel):
+    """Правка плейлиста после отправки, доступная автору и админу (ARG-139,
+    отзыв после ревью): переименование и/или замена обложки на весь плейлист
+    сразу (одна картинка для всех треков — cover_media_id на самом плейлисте,
+    не per-track). Оба поля опциональны и применяются только если переданы
+    (exclude_unset на эндпоинте) — PATCH с одним полем не трогает другое.
+    Состав/порядок треков остаются неизменны."""
 
-    title: str = Field(min_length=1, max_length=300)
+    title: str | None = Field(default=None, min_length=1, max_length=300)
+    # kind='image' ассет; null — очистить обложку (вернуться к заглушке).
+    cover_media_id: int | None = None

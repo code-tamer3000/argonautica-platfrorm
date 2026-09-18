@@ -306,3 +306,53 @@ async def test_owner_can_remove_track_but_not_the_last_one(
         f"/api/media/playlists/{playlist['id']}/tracks/{last_track_id}", headers=headers
     )
     assert resp2.status_code == 400
+
+
+async def test_admin_can_rename_and_set_cover_on_someone_elses_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    owner = await make_user()
+    admin = await make_user(role="admin")
+    owner_h = await _headers(client, owner)
+    admin_h = await _headers(client, admin)
+    a1 = await _make_audio_asset(session, owner.id, "one")
+    playlist = await _create_playlist(client, owner_h, [a1.id])
+
+    cover = MediaAsset(
+        bucket="chat-media",
+        storage_key="test/cover.png",
+        kind="image",
+        mime_type="image/png",
+        size=10,
+        created_by=admin.id,
+    )
+    session.add(cover)
+    await session.commit()
+    await session.refresh(cover)
+
+    resp = await client.patch(
+        f"/api/media/playlists/{playlist['id']}",
+        headers=admin_h,
+        json={"title": "Модерация", "cover_media_id": cover.id},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["title"] == "Модерация"
+    assert body["cover_url"]
+
+
+async def test_set_cover_rejects_non_image_asset(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    a1 = await _make_audio_asset(session, owner.id, "one")
+    a2 = await _make_audio_asset(session, owner.id, "two")
+    playlist = await _create_playlist(client, headers, [a1.id])
+
+    resp = await client.patch(
+        f"/api/media/playlists/{playlist['id']}",
+        headers=headers,
+        json={"cover_media_id": a2.id},
+    )
+    assert resp.status_code == 400
