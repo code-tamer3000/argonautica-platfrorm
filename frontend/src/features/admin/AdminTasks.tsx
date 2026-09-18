@@ -246,6 +246,7 @@ export function AdminTasks() {
         publish_at: values.publish_at,
         kb_item_id: values.kb_item_id,
         media_asset_ids: values.media.map((m) => m.id),
+        playlist_id: values.playlist?.id ?? null,
         intake_id: editTask.type === 'common' ? values.intake_id : undefined,
         plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
       },

@@ -108,8 +108,9 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
   const [media, setMedia] = useState<MediaChip[]>(
     () => (initial?.attachments ?? []).map((a) => ({ id: a.asset_id, kind: a.kind }))
   )
-  // «Создать на основе» переносит и плейлист (тот же id — как attachment_ids выше);
-  // редактирование существующей задачи плейлист не меняет (нет API, см. Границы ARG-139).
+  // «Создать на основе» переносит и плейлист (тот же id — как attachment_ids выше).
+  // Редактирование тоже показывает уже прикреплённый плейлист и умеет его
+  // заменить/убрать: PATCH /api/tasks/{id} принимает playlist_id.
   const [playlist, setPlaylist] = useState<PlaylistOut | null>(initial?.playlist ?? null)
   // Изоляция общей задачи по потоку/тарифу (ARG-96) — не действует на
   // individual/pair/stream, там видимость уже держится на назначении/членстве.
@@ -285,10 +286,8 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
           onAttachmentsChange={setMedia}
           placeholder="Условие задачи (поддерживается Markdown)…"
           rows={6}
-          // Плейлист неизменяем после отправки (docs/FILES.md «Плейлист») — кнопка
-          // только при создании/«создать на основе», не при редактировании.
           playlist={playlist}
-          onPlaylistChange={editing ? undefined : setPlaylist}
+          onPlaylistChange={setPlaylist}
         />
       </div>
 

@@ -252,6 +252,8 @@ export interface TaskUpdateBody {
   kb_item_id?: number | null
   publish_at?: string | null
   media_asset_ids?: number[]
+  // Не передан — плейлист не трогаем; id — прикрепить/заменить; null — отцепить.
+  playlist_id?: number | null
   intake_id?: number | null
   plan_ids?: number[]
 }
@@ -596,6 +598,9 @@ export interface TaskLibraryItemOut {
   body: string | null
   kb_item_id: number | null
   attachments: AttachmentOut[]
+  // Плейлист-вложение условия. Форма редактирования задачи инициализируется этим
+  // объектом — без него уже прикреплённый плейлист исчезал из формы.
+  playlist?: PlaylistOut | null
   intake_id: number | null
   plan_ids: number[]
   deadline_at: string | null

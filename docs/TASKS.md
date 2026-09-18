@@ -70,7 +70,7 @@ completed or not. Only intake (ARG-96) is dropped unconditionally for everyone.
 - **Prompt media** (`task_media`) — attached by admin to the task itself; mirror of `task_submission_media` (submission attachments). Both go through the shared `media_assets` / presigned flow (see [FILES.md](FILES.md)).
 - `create_task` / `update_task` accept `media_asset_ids` → saved into `task_media`. `get_task` / `list_tasks` return `attachments` batch-signed via `resolve_task_attachments`.
 - **Media access**: `assert_media_access` gates task media by task visibility — `common` → any participant whose intake/plan pass isolation (ARG-96); `individual` → assignee / admin.
-- **Playlist attachment (ARG-139)**: `TaskCreate.playlist_id` — one already-created playlist (`POST /api/media/playlists`) attached to the task's condition, orthogonal to `media_asset_ids`. Set only at creation (no update API — immutable after send, see [FILES.md](FILES.md) "Playlist"); `TaskOut.playlist` carries the fully-resolved object. Access to its tracks follows the same task-visibility check as prompt media above.
+- **Playlist attachment (ARG-139)**: `TaskCreate.playlist_id` — one already-created playlist (`POST /api/media/playlists`) attached to the task's condition, orthogonal to `media_asset_ids`. `TaskUpdate.playlist_id` changes it afterwards: absent = leave alone, id = attach/replace (same ownership check as on create), explicit `null` = detach. `TaskOut.playlist` **and `TaskLibraryItemOut.playlist`** carry the fully-resolved object — the admin edit form is initialized from the library row, so the field has to be there. Republishing copies `playlist_id` to the clone. Access to its tracks follows the same task-visibility check as prompt media above.
 
 ## Review
 

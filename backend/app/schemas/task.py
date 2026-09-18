@@ -68,6 +68,9 @@ class TaskUpdate(BaseModel):
     publish_at: datetime | None = None
     # None — не трогаем набор медиа; список — ЗАМЕНЯЕТ весь набор целиком.
     media_asset_ids: list[int] | None = None
+    # Не передан — плейлист не трогаем; id — прикрепить/заменить; явный null —
+    # отцепить (сам объект playlists не удаляем, как и media_assets при замене).
+    playlist_id: int | None = None
     intake_id: int | None = None
     plan_ids: list[int] | None = None
 
@@ -414,6 +417,11 @@ class TaskLibraryItemOut(BaseModel):
     body: str | None
     kb_item_id: int | None = None
     attachments: list[AttachmentOut] = []
+    # Плейлист-вложение условия задачи — та же форма, что в TaskOut. Нужен не
+    # только для показа в списке: форма редактирования («База заданий» → карандаш)
+    # инициализируется ИМЕННО этим объектом, и без него уже прикреплённый плейлист
+    # молча исчезал из формы (ARG-139, отзыв после выката).
+    playlist: PlaylistOut | None = None
     intake_id: int | None
     plan_ids: list[int] = []
     deadline_at: datetime | None
