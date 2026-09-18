@@ -1,4 +1,14 @@
-.wrap { display: flex; flex-direction: column; gap: var(--space-2); }
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* Внутри чужих flex-строк (кнопки композера, чипы вложений) не сжиматься вбок —
+     всегда своя полноширинная строка. Работает вместе с flex-wrap:wrap у родителя. */
+  flex: 1 1 100%;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
 
 .panel {
   display: flex;

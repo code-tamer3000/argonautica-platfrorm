@@ -952,6 +952,16 @@ a.mention:hover { text-decoration: underline; }
   background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); padding: var(--space-3); box-shadow: var(--glow-gold);
 }
+
+/* --- Сборка плейлиста (ARG-139): тот же приём, что .pickerPop — плавает НАД
+   композером, не выдавливая поле ввода текста и не «съезжая» вбок в его flex-строке. */
+.playlistPop {
+  position: absolute; bottom: calc(100% + var(--space-2)); left: var(--space-5);
+  right: var(--space-5); z-index: 30;
+  max-height: 420px; overflow-y: auto;
+  background: var(--bg-surface); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card); padding: var(--space-3); box-shadow: var(--glow-gold);
+}
 /* @-автодополнение: всплывает над полем ввода (bottom:100% от .composer). Список
    участников скроллится внутри себя (max-height): на канале с полным составом их
    больше, чем влезает, а выбрать нужно любого. -webkit-overflow-scrolling + contain —
@@ -1238,6 +1248,7 @@ a.mention:hover { text-decoration: underline; }
 
   /* Стикер-пикер, @-попап и панель форматирования не должны уезжать за край */
   .pickerPop { left: var(--space-3); right: var(--space-3); width: auto; }
+  .playlistPop { left: var(--space-3); right: var(--space-3); }
   .mentionPop { left: var(--space-3); right: var(--space-3); max-width: none; }
   .fmtBar { left: var(--space-3); }
   .attVideo { max-width: 100%; }

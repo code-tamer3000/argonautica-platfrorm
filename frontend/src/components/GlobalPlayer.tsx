@@ -80,9 +80,20 @@ export function GlobalPlayer() {
         onEnded={() => store()._onEnded()}
       />
       <div className={styles.bar}>
-        <div className={styles.progressTrack}>
-          <div className={styles.progressFill} style={{ transform: `scaleX(${pct / 100})` }} />
-        </div>
+        {/* Перемотка прямо в мини-баре, не только в развёрнутом виде — тонкий range
+            поверх декоративной полосы (тот же приём, что VoicePlayer.seek). */}
+        <input
+          type="range"
+          className={styles.seekMini}
+          min={0}
+          max={duration || 1}
+          step={0.5}
+          value={currentTime}
+          onChange={(e) => usePlayerStore.getState().seek(Number(e.target.value))}
+          onClick={(e) => e.stopPropagation()}
+          style={{ ['--pct' as string]: `${pct}%` }}
+          aria-label="Позиция воспроизведения"
+        />
         <button
           type="button"
           className={styles.cover}
