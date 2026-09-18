@@ -240,6 +240,21 @@
   :global(html[data-kb='open']) .content { padding-bottom: 0; }
 }
 
+/* Глобальный мини-плеер (GlobalPlayer) — `position: fixed` поверх ВСЕГО контента,
+   в т.ч. композера чата, который иначе физически заезжал бы под него (жалоба на
+   ARG-139). Резервируем под бар место так же, как под нижний таб-бар выше —
+   тем же приёмом (html[data-player='open'], ставит GlobalPlayer). 60px — высота
+   .bar (см. globalPlayer.module.css), держать числа синхронными. */
+:global(html[data-player='open']) .content { padding-bottom: 60px; }
+@media (max-width: 768px) {
+  :global(html[data-player='open']) .content {
+    padding-bottom: calc(58px + 60px + env(safe-area-inset-bottom));
+  }
+  /* Клавиатура открыта одновременно с плеером: #root уже сжат до visual viewport —
+     резерва под скрытый таб-бар не нужно, только под сам плеер. */
+  :global(html[data-kb='open'][data-player='open']) .content { padding-bottom: 60px; }
+}
+
 /* Полоса статуса связи (см. ConnectionBanner) — снимает догадку «лагает у меня
    или у них». Тонкая, под топбаром, во всю ширину. */
 .connBanner {

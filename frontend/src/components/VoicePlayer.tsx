@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useMediaSession } from '../stores/mediaSession'
 import { IconPause, IconPlay } from './icons'
 import styles from './voicePlayer.module.css'
 
@@ -28,6 +29,8 @@ function fmt(sec: number, long: boolean): string {
  * плохо тянется в узкий пузырь сообщения. Скорость — как в VideoPlayer (1/1.5/2×),
  * привычно для длинных голосовых.
  */
+let voicePlayerSeq = 0
+
 export function VoicePlayer({ src, duration, className }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -35,6 +38,9 @@ export function VoicePlayer({ src, duration, className }: Props) {
   // Длину знаем из media_assets сразу; уточняем по loadedmetadata (точнее).
   const [total, setTotal] = useState(duration ?? 0)
   const [rate, setRate] = useState(1)
+  // Стабильный id для координации «один звук за раз» (docs/FILES.md «Плейлист»):
+  // запуск этого голосового ставит на паузу плейлист/другое голосовое, и наоборот.
+  const sessionId = useRef(`voice-${++voicePlayerSeq}`)
 
   useEffect(() => {
     const el = audioRef.current
@@ -47,14 +53,19 @@ export function VoicePlayer({ src, duration, className }: Props) {
     const onEnd = () => {
       setPlaying(false)
       setCurrent(0)
+      useMediaSession.getState().release(sessionId.current)
     }
+    const onPause = () => setPlaying(false)
     el.addEventListener('timeupdate', onTime)
     el.addEventListener('loadedmetadata', onMeta)
     el.addEventListener('ended', onEnd)
+    el.addEventListener('pause', onPause)
     return () => {
       el.removeEventListener('timeupdate', onTime)
       el.removeEventListener('loadedmetadata', onMeta)
       el.removeEventListener('ended', onEnd)
+      el.removeEventListener('pause', onPause)
+      useMediaSession.getState().release(sessionId.current)
     }
   }, [])
 
@@ -62,6 +73,7 @@ export function VoicePlayer({ src, duration, className }: Props) {
     const el = audioRef.current
     if (!el) return
     if (el.paused) {
+      useMediaSession.getState().claim(sessionId.current, () => el.pause())
       void el.play()
       setPlaying(true)
     } else {

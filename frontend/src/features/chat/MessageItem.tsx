@@ -12,6 +12,7 @@ import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
+import { PlaylistCard } from '../../components/PlaylistCard'
 import { Attachment } from './Attachment'
 import { MediaGroup } from './MediaGroup'
 import { ReactionChip } from './ReactionChip'
@@ -306,6 +307,12 @@ function MessageItemInner({
                   : msg.attachment_ids.map(id => (
                       <Attachment key={id} assetId={id} />
                     ))}
+              </div>
+            )}
+
+            {msg.playlist && (
+              <div className={styles.attachments} onClick={(e) => e.stopPropagation()}>
+                <PlaylistCard playlist={msg.playlist} />
               </div>
             )}
 

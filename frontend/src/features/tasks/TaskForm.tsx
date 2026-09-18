@@ -5,6 +5,7 @@ import { useAdminPlans } from '../../api/plans'
 import type { TaskOut, TaskType } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
+import type { PlaylistOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 // Форма создания/редактирования задачи — перенесена из features/admin/AdminTasks
 // в основной раздел «Задачи» (админ-действия теперь живут там, не в «Управлении»).
@@ -42,6 +43,8 @@ export interface TaskFormValues {
   // Участники type='stream': сетку по ним строит сервер (build_bracket).
   participant_ids: number[]
   media: MediaChip[]
+  // Плейлист-вложение условия (docs/FILES.md «Плейлист») — null, если не прикреплён.
+  playlist: PlaylistOut | null
   // Изоляция по потоку/тарифу (ARG-96) — применяется только к type='common'.
   intake_id: number | null
   plan_ids: number[]
@@ -65,7 +68,16 @@ export function localInputToIso(value: string): string | null {
 // TaskLibraryItemOut (переиздание/«Создать на основе» из базы заданий).
 export type TaskFormInitial = Pick<
   TaskOut,
-  'type' | 'title' | 'body' | 'deadline_at' | 'publish_at' | 'kb_item_id' | 'attachments' | 'intake_id' | 'plan_ids'
+  | 'type'
+  | 'title'
+  | 'body'
+  | 'deadline_at'
+  | 'publish_at'
+  | 'kb_item_id'
+  | 'attachments'
+  | 'playlist'
+  | 'intake_id'
+  | 'plan_ids'
 >
 
 interface TaskFormProps {
@@ -96,6 +108,10 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
   const [media, setMedia] = useState<MediaChip[]>(
     () => (initial?.attachments ?? []).map((a) => ({ id: a.asset_id, kind: a.kind }))
   )
+  // «Создать на основе» переносит и плейлист (тот же id — как attachment_ids выше).
+  // Редактирование тоже показывает уже прикреплённый плейлист и умеет его
+  // заменить/убрать: PATCH /api/tasks/{id} принимает playlist_id.
+  const [playlist, setPlaylist] = useState<PlaylistOut | null>(initial?.playlist ?? null)
   // Изоляция общей задачи по потоку/тарифу (ARG-96) — не действует на
   // individual/pair/stream, там видимость уже держится на назначении/членстве.
   // Новая задача по умолчанию берёт «текущий поток» админа (ARG-104); при
@@ -199,6 +215,7 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
       pairs,
       participant_ids: streamers,
       media,
+      playlist,
       intake_id: taskIntakeId,
       plan_ids: taskPlanIds,
     })
@@ -269,6 +286,8 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
           onAttachmentsChange={setMedia}
           placeholder="Условие задачи (поддерживается Markdown)…"
           rows={6}
+          playlist={playlist}
+          onPlaylistChange={setPlaylist}
         />
       </div>
 

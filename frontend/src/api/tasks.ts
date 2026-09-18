@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
-import type { AttachmentOut } from '../lib/types'
+import type { AttachmentOut, PlaylistOut } from '../lib/types'
 
 // --- Контракт бэкенда (поля = ответы API) ---
 
@@ -21,6 +21,8 @@ export interface TaskOut {
   created_by: number
   created_at: string
   attachments: AttachmentOut[]
+  // Плейлист-вложение условия задачи (см. PlaylistOut). null/undefined = вложения нет.
+  playlist?: PlaylistOut | null
   // Изоляция по потоку/тарифу (ARG-96) — читается только для type='common'.
   intake_id: number | null
   plan_ids: number[]
@@ -235,6 +237,9 @@ export interface TaskCreateBody {
   // Только для type='stream': участники сетки (её строит сервер).
   participant_ids?: number[]
   media_asset_ids?: number[]
+  // Плейлист-вложение условия (docs/FILES.md «Плейлист») — уже созданный через
+  // POST /api/media/playlists, ортогонален media_asset_ids.
+  playlist_id?: number | null
   // Изоляция по потоку/тарифу (ARG-96) — применяется только к type='common'.
   intake_id?: number | null
   plan_ids?: number[]
@@ -247,6 +252,8 @@ export interface TaskUpdateBody {
   kb_item_id?: number | null
   publish_at?: string | null
   media_asset_ids?: number[]
+  // Не передан — плейлист не трогаем; id — прикрепить/заменить; null — отцепить.
+  playlist_id?: number | null
   intake_id?: number | null
   plan_ids?: number[]
 }
@@ -591,6 +598,9 @@ export interface TaskLibraryItemOut {
   body: string | null
   kb_item_id: number | null
   attachments: AttachmentOut[]
+  // Плейлист-вложение условия. Форма редактирования задачи инициализируется этим
+  // объектом — без него уже прикреплённый плейлист исчезал из формы.
+  playlist?: PlaylistOut | null
   intake_id: number | null
   plan_ids: number[]
   deadline_at: string | null

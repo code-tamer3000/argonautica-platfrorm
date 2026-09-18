@@ -1,0 +1,369 @@
+/* Липнет внизу экрана над контентом; на мобиле — над таб-баром AppShell (58px +
+   safe-area, см. appshell.module.css), чтобы не перекрывать навигацию/композер. */
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 42;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--color-frame-deep);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* Перемотка прямо в мини-баре — тонкий range поверх верхнего края (тот же приём
+   заливки через --pct, что и VoicePlayer.seek), а не декоративная полоса без
+   взаимодействия: без этого потянуть трек на середину можно было только в
+   развёрнутом виде. Хитбокс выше видимой линии (18px), чтобы попадать пальцем. */
+.seekMini {
+  position: absolute;
+  /* Хитбокс целиком НАД .bar (не заходит внутрь панели) — не перехватывает клики
+     по обложке/кнопкам/названию ниже. */
+  top: -10px;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: 10px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.seekMini::-webkit-slider-runnable-track {
+  height: 2px;
+  margin-top: 8px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--pct, 0%),
+    var(--color-frame-deep) var(--pct, 0%),
+    var(--color-frame-deep) 100%
+  );
+}
+.seekMini::-moz-range-track {
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0%,
+    var(--accent) var(--pct, 0%),
+    var(--color-frame-deep) var(--pct, 0%),
+    var(--color-frame-deep) 100%
+  );
+}
+.seekMini::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+}
+.seekMini::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+}
+
+.cover {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-btn);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-frame);
+  border: 1px solid var(--color-frame-deep);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+.cover img { width: 100%; height: 100%; object-fit: cover; }
+
+.meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+}
+.trackTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trackArtist {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controls {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.ctrlBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.ctrlBtn:hover:not(:disabled) { color: var(--accent-bright); }
+.ctrlBtn:disabled { opacity: 0.35; cursor: default; }
+
+.playBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--color-kost-yar);
+  cursor: pointer;
+}
+.playBtn:hover { background: var(--accent-bright); }
+
+.closeBtn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.closeBtn:hover { color: var(--text-primary); }
+
+@media (max-width: 768px) {
+  .bar { bottom: calc(58px + env(safe-area-inset-bottom)); }
+  /* Клавиатура открыта: нижний таб-бар прячется и #root уже сжат до visual
+     viewport (см. appshell.module.css, lib/viewport.ts) — резерв под таб-бар
+     под баром больше не нужен, иначе между клавиатурой и баром висит пустая
+     полоса высотой таб-бара. */
+  :global(html[data-kb='open']) .bar { bottom: 0; }
+}
+
+/* ───────────────────── Развёрнутый вид ───────────────────── */
+
+.expandedOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.expandedSheet {
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.expandedHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.expandedCollapse {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+}
+.expandedTitle {
+  font-family: var(--font-t3);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expandedCoverWrap {
+  display: flex;
+  justify-content: center;
+}
+.expandedCover {
+  width: 200px;
+  height: 200px;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+}
+.expandedCoverPlaceholder {
+  width: 200px;
+  height: 200px;
+  border-radius: var(--radius-lg);
+  background: var(--color-frame);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.expandedNow {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.expandedNowTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+}
+.expandedNowArtist {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+
+.seek {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--color-frame-deep);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+}
+.seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  cursor: pointer;
+}
+
+.timeRow {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.expandedControls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-5);
+}
+.expandedPlayBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--color-kost-yar);
+  cursor: pointer;
+}
+.expandedPlayBtn:hover { background: var(--accent-bright); }
+
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.queueItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  text-align: left;
+}
+.queueItem:hover { background: var(--color-frame); }
+.queueItemActive { background: var(--color-frame); }
+.queuePos {
+  flex: none;
+  width: 20px;
+  text-align: center;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+.queueItemActive .queuePos { color: var(--accent-bright); }
+.queueMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.queueTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queueArtist {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

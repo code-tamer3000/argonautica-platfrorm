@@ -41,6 +41,9 @@ export interface SendBody {
   content?: string
   sticker_id?: number
   attachment_ids?: number[]
+  // Плейлист-вложение (docs/FILES.md «Плейлист») — уже созданный через
+  // POST /api/media/playlists, ортогонален attachment_ids.
+  playlist_id?: number
   reply_to_message_id?: number
   // Ответ ЦИТАТОЙ (Telegram-style) — ортогонально reply_to_message_id (id корня
   // треда). См. lib/types.ts QuotedMessageOut / docs/MESSAGES.md «Quotes».

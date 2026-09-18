@@ -1,0 +1,188 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* Внутри чужих flex-строк (кнопки композера, чипы вложений) не сжиматься вбок —
+     всегда своя полноширинная строка. Работает вместе с flex-wrap:wrap у родителя. */
+  flex: 1 1 100%;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-card);
+  background: var(--bg-deep);
+}
+
+.titleInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-t4);
+  font-size: var(--text-body-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+}
+.titleInput:focus { outline: none; border-color: var(--divider-gold); }
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.itemPos {
+  flex: none;
+  width: 18px;
+  text-align: center;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+.itemFields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: var(--space-2);
+}
+.itemInput {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn);
+  color: var(--text-primary);
+}
+.itemInput:focus { outline: none; border-color: var(--divider-gold); }
+.itemRemove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-ghost);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.itemRemove:hover { color: var(--blood-bright); }
+
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+.cancel {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  cursor: pointer;
+}
+.cancel:hover { color: var(--text-primary); }
+
+/* Уже созданный плейлист — компактный чип поверх панели (как pendingChip). */
+.attached {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-pill);
+  max-width: 280px;
+}
+.attachedIcon {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-btn);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-frame);
+  color: var(--text-secondary);
+}
+.attachedIcon img { width: 100%; height: 100%; object-fit: cover; }
+.attachedMeta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.attachedTitle {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachedCount {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.attachedRemove {
+  flex: none;
+  background: transparent;
+  border: none;
+  color: var(--text-ghost);
+  cursor: pointer;
+  display: inline-flex;
+}
+.attachedRemove:hover { color: var(--blood-bright); }
+
+/* Прикреплённый плейлист в форме задания/материала КБ (editable): полная карточка
+   со всеми действиями автора вместо чипа. Своя строка внутри .actions (там
+   flex-wrap) — рядом с «Прикрепить файлы» карточка не помещается. */
+.attachedCard {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.detach {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-ghost);
+}
+.detach:hover:not(:disabled) { color: var(--blood-bright); }
+.detach:disabled { opacity: 0.5; cursor: default; }

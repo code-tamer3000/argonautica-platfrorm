@@ -1,7 +1,7 @@
 # Knowledge Base
 
 > Source: docs/archive/{PLATFORM_SPEC.md §4.9, DATA_MODEL.md, DECISIONS.md, PROGRESS.md st.8/19}, restructured 2026-07-06.
-> Endpoints: `/api/kb`. Tables: `kb_items`, `kb_item_media`, `kb_comments`, `kb_categories` (see [DATA_MODEL.md](DATA_MODEL.md)). Service: `services/kb.py`.
+> Endpoints: `/api/kb`. Tables: `kb_items`, `kb_item_media`, `kb_comments`, `kb_categories`, `playlists`/`playlist_tracks` (see [DATA_MODEL.md](DATA_MODEL.md)). Service: `services/kb.py`.
 
 The second half of the product: the author's materials (markdown + files/video), read by participants.
 
@@ -47,6 +47,10 @@ two-step (`components/ConfirmDialog.tsx`), never `window.confirm`. The create/ed
 ## Media access via publication
 
 - `assert_media_access` grants any participant a presigned-GET to an asset attached to a **published** item (through the normal `GET /api/media/{id}`). Unlinking or unpublishing closes access. See [FILES.md](FILES.md).
+
+## Playlist attachment (ARG-139)
+
+- `KbItemCreate.playlist_id` — one already-created playlist (`POST /api/media/playlists`), attached alongside (or instead of) `media_asset_ids`. `KbItemUpdate.playlist_id` changes it afterwards: absent = leave alone, id = attach/replace (same ownership check as on create), explicit `null` = detach. `KbItemOut.playlist` carries the fully-resolved object; its tracks follow the same "published item → any participant" access rule as ordinary KB media above.
 
 ## Isolation by intake and plan (ARG-96)
 

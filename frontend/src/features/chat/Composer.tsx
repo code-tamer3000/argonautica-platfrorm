@@ -9,13 +9,14 @@ import {
 import { appendMessage } from '../../api/cache'
 import { useJournalStructure } from '../../api/journal'
 import { useUsersMap } from '../../api/users'
-import { IconAttach, IconBook, IconChevronDown, IconFile, IconSend, IconSticker, IconTasks } from '../../components/icons'
+import { IconAttach, IconBook, IconChevronDown, IconFile, IconMusic, IconSend, IconSticker, IconTasks } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { plural } from '../../lib/format'
 import { htmlToMarkerText, markerTextToHtml } from '../../lib/inlineMarks'
 import { MAX_ATTACHMENTS, preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
 import { stripInlineMarks, stripJournalMarker } from '../../lib/messageText'
-import type { MessageOut, MessageRefOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
+import type { MessageOut, MessageRefOut, PlaylistOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
+import { PlaylistComposer } from '../../components/PlaylistComposer'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import { wsClient } from '../../lib/wsClient'
@@ -60,6 +61,11 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
   // Одна прикреплённая ссылка на материал/задачу (title — для чипа/оптимистичного показа).
   const [pendingRef, setPendingRef] = useState<PickedRef | null>(null)
+  // Плейлист-вложение (docs/FILES.md «Плейлист») — уже созданный на сервере
+  // (PlaylistComposer грузит треки и создаёт плейлист сам, синхронно, без
+  // офлайн-очереди — как pendingRef, просто отправляем готовый id).
+  const [pendingPlaylist, setPendingPlaylist] = useState<PlaylistOut | null>(null)
+  const [playlistPanelOpen, setPlaylistPanelOpen] = useState(false)
   // Меню скрепки (Файл / Материал / Задача) и открытый пикер ссылки.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [refPickerOpen, setRefPickerOpen] = useState(false)
@@ -407,16 +413,19 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     // Ответ в тред: прямой mutate (тред-реплики не живут в оптимистичной ленте
     // комнаты). Вложения тут заливаем синхронно — офлайн-outbox сюда не заведён.
     if (inThread && threadRootId != null) {
-      if (!content && pendingFiles.length === 0 && !pendingRef) return
+      if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
       const uploads = pendingFiles
       const ref = pendingRef
       const q = quote
+      const playlist = pendingPlaylist
       resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
       setPendingQuote(null)
+      setPendingPlaylist(null)
       const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(ref), ...quoteBody(q) }
       if (content) body.content = content
+      if (playlist) body.playlist_id = playlist.id
       try {
         if (uploads.length) body.attachment_ids = await uploadAll(uploads)
       } catch (err) {
@@ -436,17 +445,20 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         toast(`Введите: ${journalMeta.label}`, 'error')
         return
       }
-      if (!content && pendingFiles.length === 0 && !pendingRef) return
+      if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
       const uploads = pendingFiles
       const ref = pendingRef
       const q = quote
+      const playlist = pendingPlaylist
       resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
       setPendingQuote(null)
+      setPendingPlaylist(null)
       const body: SendBody = {
         content: buildJournalContent(journalMeta, content), ...refBody(ref), ...quoteBody(q),
       }
+      if (playlist) body.playlist_id = playlist.id
       const optRef = optimisticRefOf(ref)
       const optQuote = optimisticQuoteOf(q)
       if (user) {
@@ -481,32 +493,40 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       setReposting(false)
       const uploads = pendingFiles
       const ref = pendingRef
+      const playlist = pendingPlaylist
       resetEditor('')
       setPendingFiles([])
       setPendingRef(null)
+      setPendingPlaylist(null)
       const body: SendBody = { ...refBody(ref) }
       if (content) body.content = content
+      if (playlist) body.playlist_id = playlist.id
       try {
         if (uploads.length) body.attachment_ids = await uploadAll(uploads)
       } catch (err) {
         toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
         return
       }
-      if (body.content || body.attachment_ids?.length || ref) enqueueTopLevel(body, [], ref)
+      if (body.content || body.attachment_ids?.length || body.playlist_id || ref) {
+        enqueueTopLevel(body, [], ref)
+      }
       toast('Переслано')
       return
     }
 
-    if (!content && pendingFiles.length === 0 && !pendingRef) return
+    if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
     const uploads = pendingFiles
     const ref = pendingRef
     const q = quote
+    const playlist = pendingPlaylist
     resetEditor('')
     setPendingFiles([])
     setPendingRef(null)
     setPendingQuote(null)
+    setPendingPlaylist(null)
     const body: SendBody = { ...refBody(ref), ...quoteBody(q) }
     if (content) body.content = content
+    if (playlist) body.playlist_id = playlist.id
     enqueueTopLevel(body, uploads, ref, q)
   }
 
@@ -571,7 +591,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     onEditorInput()
   }
 
-  const canSend = !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef
+  const canSend =
+    !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist
   // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
   // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
   const hasText = !!text.trim()
@@ -697,6 +718,29 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         </div>
       )}
 
+      {/* Уже собранный плейлист — маленький чип в общем ряду вложений, как pendingRef. */}
+      {pendingPlaylist && !playlistPanelOpen && (
+        <div className={styles.pendingAtt}>
+          <PlaylistComposer value={pendingPlaylist} onChange={setPendingPlaylist} />
+        </div>
+      )}
+
+      {/* Сборка плейлиста (выбор файлов, правка полей) — floating-попап, как
+          StickerPicker (.pickerPop), а НЕ инлайн в поток композера: целая мини-форма
+          в ряду чипов/над textarea выдавливала бы поле ввода текста (ARG-139, отзыв
+          после ревью). «Отмена» внутри панели закрывает попап без прикрепления —
+          поле ввода текста всё это время доступно и не перекрыто. */}
+      {playlistPanelOpen && (
+        <div className={styles.playlistPop}>
+          <PlaylistComposer
+            value={null}
+            onChange={setPendingPlaylist}
+            autoOpen={playlistPanelOpen}
+            onClose={() => setPlaylistPanelOpen(false)}
+          />
+        </div>
+      )}
+
       {pickerOpen && <StickerPicker onPick={handleSticker} />}
       {refPickerOpen && (
         <RefPicker
@@ -803,6 +847,15 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
                       }}
                     >
                       <IconTasks size={18} /> Задача
+                    </button>
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => {
+                        setAttachMenuOpen(false)
+                        setPlaylistPanelOpen(true)
+                      }}
+                    >
+                      <IconMusic size={18} /> Плейлист
                     </button>
                   </div>
                 </>

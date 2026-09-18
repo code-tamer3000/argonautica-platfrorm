@@ -19,11 +19,15 @@ from app.core.metrics import log_media_metric, record_step
 from app.core.redis import redis_client
 from app.db.session import after_commit, get_session
 from app.models.media import MediaAsset
+from app.models.playlist import Playlist
 from app.models.user import User
 from app.schemas.media import (
     ConfirmRequest,
     MediaAssetOut,
     MediaUrlOut,
+    PlaylistCreateRequest,
+    PlaylistOut,
+    PlaylistUpdateRequest,
     UploadRequest,
     UploadTicket,
 )
@@ -31,13 +35,19 @@ from app.services.media import (
     PRESIGN_EXPIRES,
     PRESIGN_GET_EXPIRES,
     assert_media_access,
+    assert_playlist_editor,
     attachment_download_name,
+    build_playlist_out,
     build_storage_key,
+    create_playlist,
     generate_image_preview,
     generate_image_thumbnail,
     presigned_get_url,
     presigned_put_url,
+    remove_playlist_track,
+    rename_playlist,
     serving_key,
+    set_playlist_cover,
     stat_object,
 )
 from app.services.ratelimit import enforce_rate_limit
@@ -290,3 +300,89 @@ async def get_media_url(
         preview_url=preview_url,
         transcode_status=asset.transcode_status,
     )
+
+
+@router.post("/playlists", response_model=PlaylistOut, status_code=201)
+async def create_playlist_endpoint(
+    body: PlaylistCreateRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PlaylistOut:
+    """Создать плейлист из уже загруженных аудио-ассетов (docs/FILES.md «Плейлист»).
+
+    Плейлист сам по себе ничему не прикреплён — следующий запрос (отправка
+    сообщения / создание задачи или материала КБ с `playlist_id`) привязывает его
+    к носителю, который и определяет права на чтение (см. `assert_media_access`).
+    """
+    playlist = await create_playlist(
+        session,
+        current_user,
+        title=body.title,
+        cover_media_id=body.cover_media_id,
+        tracks=[
+            (t.media_asset_id, t.title, t.artist, t.duration) for t in body.tracks
+        ],
+    )
+    await session.commit()
+    return await build_playlist_out(session, playlist)
+
+
+@router.get("/playlists/{playlist_id}", response_model=PlaylistOut)
+async def get_playlist(
+    playlist_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PlaylistOut:
+    """Прочитать плейлист напрямую (например, перед прикреплением к следующему
+    носителю — автор ещё не привязал его никуда, поэтому доступ разрешён создателю
+    без проверки носителя; иначе — как обычно, через media asset первого трека)."""
+    playlist = await session.get(Playlist, playlist_id)
+    if playlist is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+    if playlist.created_by != current_user.id:
+        first_asset_id = None
+        result = await build_playlist_out(session, playlist)
+        if result.tracks:
+            first_asset_id = result.tracks[0].asset_id
+        if first_asset_id is not None:
+            asset = await session.get(MediaAsset, first_asset_id)
+            if asset is not None:
+                await assert_media_access(session, asset, current_user)
+        else:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this playlist")
+        return result
+    return await build_playlist_out(session, playlist)
+
+
+@router.patch("/playlists/{playlist_id}", response_model=PlaylistOut)
+async def update_playlist_endpoint(
+    playlist_id: int,
+    body: PlaylistUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PlaylistOut:
+    """Переименовать и/или сменить обложку — автор или админ (ARG-139, «3 точки»
+    в PlaylistCard). Поля применяются только если реально переданы (exclude_unset)."""
+    playlist = await assert_playlist_editor(session, playlist_id, current_user)
+    changes = body.model_dump(exclude_unset=True)
+    if "title" in changes and changes["title"] is not None:
+        await rename_playlist(session, playlist, changes["title"])
+    if "cover_media_id" in changes:
+        await set_playlist_cover(session, playlist, changes["cover_media_id"])
+    await session.commit()
+    return await build_playlist_out(session, playlist)
+
+
+@router.delete("/playlists/{playlist_id}/tracks/{track_id}", response_model=PlaylistOut)
+async def remove_playlist_track_endpoint(
+    playlist_id: int,
+    track_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PlaylistOut:
+    """Убрать трек из плейлиста — автор или админ; минимум один трек должен
+    остаться (ARG-139, «3 точки» в PlaylistCard)."""
+    playlist = await assert_playlist_editor(session, playlist_id, current_user)
+    await remove_playlist_track(session, playlist, track_id)
+    await session.commit()
+    return await build_playlist_out(session, playlist)

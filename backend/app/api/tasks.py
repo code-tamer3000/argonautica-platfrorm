@@ -25,6 +25,7 @@ from app.models.intake import Intake
 from app.models.kb import KbItem
 from app.models.media import MediaAsset
 from app.models.plan import Plan
+from app.models.playlist import Playlist
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -66,6 +67,7 @@ from app.services import stream as stream_service
 from app.services.graduation import assert_not_graduated, is_graduated
 from app.services.media import (
     presign_asset_urls,
+    resolve_playlists,
     resolve_submission_attachments,
     resolve_task_attachments,
 )
@@ -172,6 +174,10 @@ async def create_task(
     await _assert_kb_item_exists(session, body.kb_item_id)
     await _assert_intake_exists(session, body.intake_id)
     await _assert_plans_exist(session, body.plan_ids)
+    if body.playlist_id is not None:
+        playlist = await session.get(Playlist, body.playlist_id)
+        if playlist is None or playlist.created_by != current_admin.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
 
     pairs_input: list[list[int]] = []
     stream_user_ids: list[int] = []
@@ -210,6 +216,7 @@ async def create_task(
         publish_at=body.publish_at,
         created_by=current_admin.id,
         intake_id=body.intake_id,
+        playlist_id=body.playlist_id,
     )
     session.add(task)
     await session.flush()
@@ -293,6 +300,11 @@ async def create_task(
             session, task, ws_schemas.task_created_event(task.id, task.type, task.title)
         )
     attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
+    playlist_out = (
+        (await resolve_playlists(session, [task.playlist_id])).get(task.playlist_id)
+        if task.playlist_id is not None
+        else None
+    )
     return TaskOut(
         id=task.id,
         type=task.type,
@@ -305,6 +317,7 @@ async def create_task(
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
+        playlist=playlist_out,
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
         source_task_id=task.source_task_id,
@@ -322,6 +335,15 @@ async def update_task(
     task = await load_task(session, task_id)
 
     changes = body.model_dump(exclude_unset=True)
+    # playlist_id: не передан — не трогаем; id — прикрепить/заменить (та же
+    # проверка владения, что при создании); явный null — отцепить.
+    if "playlist_id" in changes:
+        new_playlist_id = changes["playlist_id"]
+        if new_playlist_id is not None:
+            playlist = await session.get(Playlist, new_playlist_id)
+            if playlist is None or playlist.created_by != current_admin.id:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+        task.playlist_id = new_playlist_id
     if "kb_item_id" in changes:
         await _assert_kb_item_exists(session, changes["kb_item_id"])
     if "intake_id" in changes:
@@ -356,6 +378,11 @@ async def update_task(
     if is_published(task):
         await fan_out_task_event(session, task, ws_schemas.task_updated_event(task.id))
     attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
+    playlist_out = (
+        (await resolve_playlists(session, [task.playlist_id])).get(task.playlist_id)
+        if task.playlist_id is not None
+        else None
+    )
     return TaskOut(
         id=task.id,
         type=task.type,
@@ -368,6 +395,7 @@ async def update_task(
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=attachments,
+        playlist=playlist_out,
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
         source_task_id=task.source_task_id,
@@ -975,6 +1003,8 @@ async def list_tasks(
             unreviewed_counts[tid] = unreviewed
 
     task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
+    task_playlist_ids = [t.playlist_id for t in tasks if t.playlist_id is not None]
+    task_playlists = await resolve_playlists(session, task_playlist_ids)
 
     # Тарифы каждой задачи (ARG-96) — батчем, без N+1.
     task_plans: dict[int, list[int]] = {}
@@ -1017,6 +1047,7 @@ async def list_tasks(
             created_by=t.created_by,
             created_at=t.created_at,
             attachments=task_attachments.get(t.id, []),
+            playlist=task_playlists.get(t.playlist_id) if t.playlist_id else None,
             pairs=pairs_by_task.get(t.id),
             my_status=(a.status if (a := my_assignments.get(t.id)) else None),
             late=bool(a.late) if (a := my_assignments.get(t.id)) else False,
@@ -1083,6 +1114,11 @@ async def get_task(
     ).one()
     total, submitted, accepted, unreviewed = agg
     task_attachments = (await resolve_task_attachments(session, [task.id])).get(task.id, [])
+    task_playlist = (
+        (await resolve_playlists(session, [task.playlist_id])).get(task.playlist_id)
+        if task.playlist_id is not None
+        else None
+    )
     return TaskWithStatusOut(
         id=task.id,
         type=task.type,
@@ -1095,6 +1131,7 @@ async def get_task(
         created_by=task.created_by,
         created_at=task.created_at,
         attachments=task_attachments,
+        playlist=task_playlist,
         pairs=await _visible_pairs_for(session, task, current_user),
         stream=await _visible_stream_for(session, task, current_user),
         my_status=my.status if my else None,

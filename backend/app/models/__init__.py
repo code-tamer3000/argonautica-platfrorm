@@ -21,6 +21,7 @@ from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, PinnedMessage
 from app.models.notification import Notification
 from app.models.plan import Plan
+from app.models.playlist import Playlist, PlaylistTrack
 from app.models.push import PushSubscription
 from app.models.room import Room, RoomMember, RoomPlan
 from app.models.sticker import Sticker, Stickerpack
@@ -62,6 +63,8 @@ __all__ = [
     "IntakeStage",
     "ExpeditionLock",
     "Plan",
+    "Playlist",
+    "PlaylistTrack",
     "JournalPardon",
     "JournalCredit",
     "JournalProgram",
