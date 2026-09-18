@@ -80,37 +80,53 @@ export function GlobalPlayer() {
         ? [{ src: playlist.cover_url, sizes: '512x512', type: 'image/jpeg' }]
         : [],
     })
-    navigator.mediaSession.setActionHandler('play', () => usePlayerStore.getState().toggle())
-    navigator.mediaSession.setActionHandler('pause', () => usePlayerStore.getState().toggle())
-    navigator.mediaSession.setActionHandler('previoustrack', () => usePlayerStore.getState().prev())
-    navigator.mediaSession.setActionHandler('nexttrack', () => usePlayerStore.getState().next())
-    navigator.mediaSession.setActionHandler('seekto', (details) => {
-      if (details.seekTime != null) usePlayerStore.getState().seek(details.seekTime)
-    })
-    // ±10с системной перемотки — тоже настоящая позиция, а не no-op/фолбэк.
-    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-      const s = usePlayerStore.getState()
-      s.seek(Math.max(0, s.currentTime - (details.seekOffset ?? 10)))
-    })
-    navigator.mediaSession.setActionHandler('seekforward', (details) => {
-      const s = usePlayerStore.getState()
-      s.seek(s.currentTime + (details.seekOffset ?? 10))
-    })
+    // Каждый handler — своей try/catch: на iOS Safari 'seekto' исторически не
+    // поддерживался и падение на нём обрывало бы регистрацию prev/next, которые
+    // идут ПОСЛЕ него (в итоге ОС показывала бы только системную перемотку ±Nс
+    // вместо кнопок «трек вперёд/назад» — жалоба на ARG-139). play/pause шлют
+    // команду ПРЯМО в <audio> (не toggle/наш стор) — состояние обновится по
+    // настоящим onPlay/onPause, кнопка ОС не должна гадать по нашему isPlaying.
+    const handlers: [MediaSessionAction, MediaSessionActionHandler][] = [
+      ['play', () => void usePlayerStore.getState().audioEl?.play()],
+      ['pause', () => usePlayerStore.getState().audioEl?.pause()],
+      ['previoustrack', () => usePlayerStore.getState().prev()],
+      ['nexttrack', () => usePlayerStore.getState().next()],
+      [
+        'seekto',
+        (details) => {
+          if (details.seekTime != null) usePlayerStore.getState().seek(details.seekTime)
+        },
+      ],
+      // ±10с системной перемотки — тоже настоящая позиция, а не no-op/фолбэк.
+      [
+        'seekbackward',
+        (details) => {
+          const s = usePlayerStore.getState()
+          s.seek(Math.max(0, s.currentTime - (details.seekOffset ?? 10)))
+        },
+      ],
+      [
+        'seekforward',
+        (details) => {
+          const s = usePlayerStore.getState()
+          s.seek(s.currentTime + (details.seekOffset ?? 10))
+        },
+      ],
+    ]
+    for (const [action, handler] of handlers) {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler)
+      } catch {
+        // Действие не поддержано этим браузером — остальные регистрируем как есть.
+      }
+    }
     return () => {
       navigator.mediaSession.metadata = null
-      for (const action of [
-        'play',
-        'pause',
-        'previoustrack',
-        'nexttrack',
-        'seekto',
-        'seekbackward',
-        'seekforward',
-      ] as const) {
+      for (const [action] of handlers) {
         try {
           navigator.mediaSession.setActionHandler(action, null)
         } catch {
-          // Некоторые действия (например seekto) не во всех браузерах — не роняем эффект.
+          // См. выше.
         }
       }
     }
@@ -137,12 +153,21 @@ export function GlobalPlayer() {
     <>
       <audio
         ref={audioRef}
+        // isPlaying — ТОЛЬКО отсюда (настоящие play/pause элемента), не руками в
+        // toggle/next/prev/playPlaylist: иначе кнопка визуально «не работает»,
+        // когда стор и реальный <audio> расходятся (ARG-139, отзыв после ревью).
+        onPlay={() => store()._onPlay()}
+        onPause={() => store()._onPause()}
         onTimeUpdate={(e) => store()._onTime(e.currentTarget.currentTime)}
         onDurationChange={(e) => {
           if (Number.isFinite(e.currentTarget.duration)) {
             store()._onDuration(e.currentTarget.duration)
           }
         }}
+        // Перемотка реально завершилась (буфер догнал целевую позицию) — только
+        // теперь снова доверяем timeupdate. До этого момента isSeeking держит
+        // показанную позицию неподвижной (см. stores/player.ts::seek).
+        onSeeked={(e) => store()._onSeeked(e.currentTarget.currentTime)}
         onEnded={() => store()._onEnded()}
       />
       <div className={styles.bar}>
@@ -159,7 +184,11 @@ export function GlobalPlayer() {
           // ТОЛЬКО по отпусканию — иначе на медленной сети ползунок «доезжает и
           // откатывается» пока <audio> догоняет частые currentTime= (см. stores/player.ts).
           onChange={(e) => usePlayerStore.getState().previewSeek(Number(e.target.value))}
+          // Три дублирующих коммита разом: pointerup не везде надёжен внутри
+          // WebView PWA-обёртки, mouseup/touchend — подстраховка (idempotent).
           onPointerUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
+          onMouseUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
+          onTouchEnd={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
           onKeyUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
           onClick={(e) => e.stopPropagation()}
           style={{ ['--pct' as string]: `${pct}%` }}
@@ -259,6 +288,8 @@ export function GlobalPlayer() {
               // См. комментарий у seekMini выше — то же preview/commit разделение.
               onChange={(e) => usePlayerStore.getState().previewSeek(Number(e.target.value))}
               onPointerUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
+              onMouseUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
+              onTouchEnd={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
               onKeyUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
               aria-label="Позиция воспроизведения"
             />

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { removePlaylistTrack, renamePlaylist } from '../api/media'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { removePlaylistTrack, updatePlaylist } from '../api/media'
 import { useAuth } from '../features/auth/AuthContext'
+import { mediaUpload } from '../lib/mediaUpload'
 import type { PlaylistOut } from '../lib/types'
 import { usePlayerStore } from '../stores/player'
 import { toast } from '../stores/toast'
@@ -21,20 +22,24 @@ function fmt(sec: number | null): string {
  * ГЛОБАЛЬНЫЙ плеер (см. stores/player.ts) с этого трека; сама карточка
  * не проигрывает звук — это делает `<GlobalPlayer>`, смонтированный в layout'е.
  *
- * Автору доступна правка через «3 точки» (ARG-139, отзыв после ревью): переименовать
- * плейлист, убрать трек. Состояние держим локально (`local`) и синхронизируем с
- * проигрывающимся плейлистом в сторе — сам `playlist` в кэше сообщения/задачи/
- * материала не мутируем (пришёл бы актуальным на следующем перечитывании страницы).
+ * Правка через «3 точки» доступна автору ИЛИ любому админу (ARG-139, отзыв
+ * после ревью — расширено с «только автор»): переименовать, сменить обложку
+ * на весь плейлист сразу (одна картинка для всех треков, не per-track), убрать
+ * трек. Состояние держим локально (`local`) и синхронизируем с проигрывающимся
+ * плейлистом в сторе — сам `playlist` в кэше сообщения/задачи/материала не
+ * мутируем (пришёл бы актуальным на следующем перечитывании страницы).
  */
 export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
   const { user } = useAuth()
-  const isOwner = user != null && user.id === playlist.created_by
+  const isEditor = user != null && (user.id === playlist.created_by || user.role === 'admin')
 
   const [local, setLocal] = useState(playlist)
   useEffect(() => setLocal(playlist), [playlist])
 
   const [renaming, setRenaming] = useState(false)
   const [titleDraft, setTitleDraft] = useState(local.title)
+  const [coverBusy, setCoverBusy] = useState(false)
+  const coverFileRef = useRef<HTMLInputElement>(null)
 
   const activePlaylist = usePlayerStore((s) => s.playlist)
   const activeIndex = usePlayerStore((s) => s.trackIndex)
@@ -44,7 +49,7 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
   function applyUpdate(updated: PlaylistOut) {
     setLocal(updated)
     // Тот же плейлист сейчас играет в глобальном плеере — обновить и там, иначе
-    // мини-бар/развёрнутый вид продолжат показывать старое название/список.
+    // мини-бар/развёрнутый вид продолжат показывать старое название/обложку/список.
     if (activePlaylist?.id === updated.id) {
       usePlayerStore.setState((s) => ({
         playlist: updated,
@@ -58,9 +63,24 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
     setRenaming(false)
     if (!title || title === local.title) return
     try {
-      applyUpdate(await renamePlaylist(local.id, title))
+      applyUpdate(await updatePlaylist(local.id, { title }))
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Не удалось переименовать', 'error')
+    }
+  }
+
+  async function handleCoverChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setCoverBusy(true)
+    try {
+      const { asset } = await mediaUpload(file)
+      applyUpdate(await updatePlaylist(local.id, { cover_media_id: asset.id }))
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Не удалось сменить обложку', 'error')
+    } finally {
+      setCoverBusy(false)
     }
   }
 
@@ -78,6 +98,14 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
 
   return (
     <div className={styles.card}>
+      <input
+        ref={coverFileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        tabIndex={-1}
+        onChange={handleCoverChange}
+      />
       <div className={styles.header}>
         <div className={styles.cover}>
           {local.cover_url ? <img src={local.cover_url} alt="" /> : <IconMusic size={20} />}
@@ -102,10 +130,12 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
             <span className={styles.title}>{local.title}</span>
           )}
           <span className={styles.count}>
-            {local.tracks.length} {local.tracks.length === 1 ? 'трек' : 'треков'}
+            {coverBusy
+              ? 'Меняем обложку…'
+              : `${local.tracks.length} ${local.tracks.length === 1 ? 'трек' : 'треков'}`}
           </span>
         </div>
-        {isOwner && !renaming && (
+        {isEditor && !renaming && (
           <KebabMenu
             ariaLabel="Действия с плейлистом"
             items={[
@@ -116,6 +146,11 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
                   setTitleDraft(local.title)
                   setRenaming(true)
                 },
+              },
+              {
+                key: 'cover',
+                label: 'Сменить обложку',
+                onClick: () => coverFileRef.current?.click(),
               },
             ]}
           />
@@ -143,7 +178,7 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
                 </span>
                 <span className={styles.trackDuration}>{fmt(track.duration)}</span>
               </button>
-              {isOwner && (
+              {isEditor && (
                 <button
                   type="button"
                   className={styles.trackRemove}
