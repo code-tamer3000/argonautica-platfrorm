@@ -246,3 +246,63 @@ async def test_playlist_attached_to_common_task(
     got = await client.get(f"/api/tasks/{task['id']}", headers=participant_h)
     assert got.status_code == 200, got.text
     assert got.json()["playlist"]["tracks"][0]["url"]
+
+
+async def test_owner_can_rename_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    a1 = await _make_audio_asset(session, owner.id, "one")
+    playlist = await _create_playlist(client, headers, [a1.id])
+
+    resp = await client.patch(
+        f"/api/media/playlists/{playlist['id']}",
+        headers=headers,
+        json={"title": "Новое название"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["title"] == "Новое название"
+
+
+async def test_non_owner_cannot_rename_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    owner = await make_user()
+    other = await make_user()
+    owner_h = await _headers(client, owner)
+    other_h = await _headers(client, other)
+    a1 = await _make_audio_asset(session, owner.id, "one")
+    playlist = await _create_playlist(client, owner_h, [a1.id])
+
+    resp = await client.patch(
+        f"/api/media/playlists/{playlist['id']}",
+        headers=other_h,
+        json={"title": "Чужое название"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_owner_can_remove_track_but_not_the_last_one(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    a1 = await _make_audio_asset(session, owner.id, "one")
+    a2 = await _make_audio_asset(session, owner.id, "two")
+    playlist = await _create_playlist(client, headers, [a1.id, a2.id])
+    track_ids = [t["id"] for t in playlist["tracks"]]
+
+    resp = await client.delete(
+        f"/api/media/playlists/{playlist['id']}/tracks/{track_ids[0]}", headers=headers
+    )
+    assert resp.status_code == 200, resp.text
+    remaining = resp.json()
+    assert len(remaining["tracks"]) == 1
+
+    # Последний трек убрать нельзя — плейлист не может остаться пустым.
+    last_track_id = remaining["tracks"][0]["id"]
+    resp2 = await client.delete(
+        f"/api/media/playlists/{playlist['id']}/tracks/{last_track_id}", headers=headers
+    )
+    assert resp2.status_code == 400

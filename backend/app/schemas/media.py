@@ -143,6 +143,9 @@ class PlaylistCreateRequest(BaseModel):
 class PlaylistTrackOut(BaseModel):
     """Трек с готовым presigned-URL — как AttachmentOut, но со своими метаданными."""
 
+    # id самой playlist_tracks-строки (НЕ media_asset_id) — нужен, чтобы убрать
+    # именно этот трек через DELETE .../tracks/{track_id} (ARG-139).
+    id: int
     asset_id: int
     position: int
     title: str
@@ -166,3 +169,10 @@ class PlaylistOut(BaseModel):
     created_by: int
     created_at: datetime
     tracks: list[PlaylistTrackOut]
+
+
+class PlaylistRenameRequest(BaseModel):
+    """Переименование плейлиста — единственная правка после отправки, доступная
+    автору (ARG-139, отзыв после ревью). Состав/порядок треков неизменны."""
+
+    title: str = Field(min_length=1, max_length=300)

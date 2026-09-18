@@ -249,6 +249,9 @@ export interface AttachmentOut {
 // Плейлист-вложение (docs/FILES.md «Плейлист») — несколько аудиотреков одним
 // вложением, играют подряд глобальным мини-плеером. Неизменяем после отправки.
 export interface PlaylistTrackOut {
+  // id самой playlist_tracks-строки (не media_asset_id) — используется, чтобы
+  // убрать именно этот трек (DELETE .../tracks/{id}).
+  id: number
   asset_id: number
   position: number
   title: string

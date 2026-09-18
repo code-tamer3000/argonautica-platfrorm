@@ -40,6 +40,16 @@ export function GlobalPlayer() {
     return () => usePlayerStore.getState().setAudioEl(null)
   }, [])
 
+  // Сигнал для CSS (тот же приём, что html[data-kb='open'] в lib/viewport.ts):
+  // .content/.composer резервируют место под фикс-бар, только когда он реально
+  // на экране — иначе он физически перекрывает композер чата (жалоба на ARG-139).
+  useEffect(() => {
+    const root = document.documentElement
+    if (playlist) root.setAttribute('data-player', 'open')
+    else root.removeAttribute('data-player')
+    return () => root.removeAttribute('data-player')
+  }, [playlist])
+
   const track = playlist?.tracks[trackIndex]
 
   // Смена трека (в т.ч. первый запуск плейлиста) — подставить src и, если нужно,
@@ -54,6 +64,62 @@ export function GlobalPlayer() {
     if (isPlaying) void el.play()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.asset_id])
+
+  // Media Session API: заголовок/обложка/prev-next на лок-скрине и в системном
+  // уведомлении телефона. Без этого Android/iOS показывают только play/pause и
+  // перемотку по ±10с под общим именем PWA — не видно, какой трек играет, и
+  // «следующий»/«предыдущий» недоступны (жалоба на ARG-139). Действия шлём через
+  // getState() — обработчики регистрируются раз, актуальный стор читают сами.
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || !playlist || !track) return
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.title,
+      artist: track.artist ?? undefined,
+      album: playlist.title,
+      artwork: playlist.cover_url
+        ? [{ src: playlist.cover_url, sizes: '512x512', type: 'image/jpeg' }]
+        : [],
+    })
+    navigator.mediaSession.setActionHandler('play', () => usePlayerStore.getState().toggle())
+    navigator.mediaSession.setActionHandler('pause', () => usePlayerStore.getState().toggle())
+    navigator.mediaSession.setActionHandler('previoustrack', () => usePlayerStore.getState().prev())
+    navigator.mediaSession.setActionHandler('nexttrack', () => usePlayerStore.getState().next())
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (details.seekTime != null) usePlayerStore.getState().seek(details.seekTime)
+    })
+    // ±10с системной перемотки — тоже настоящая позиция, а не no-op/фолбэк.
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      const s = usePlayerStore.getState()
+      s.seek(Math.max(0, s.currentTime - (details.seekOffset ?? 10)))
+    })
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      const s = usePlayerStore.getState()
+      s.seek(s.currentTime + (details.seekOffset ?? 10))
+    })
+    return () => {
+      navigator.mediaSession.metadata = null
+      for (const action of [
+        'play',
+        'pause',
+        'previoustrack',
+        'nexttrack',
+        'seekto',
+        'seekbackward',
+        'seekforward',
+      ] as const) {
+        try {
+          navigator.mediaSession.setActionHandler(action, null)
+        } catch {
+          // Некоторые действия (например seekto) не во всех браузерах — не роняем эффект.
+        }
+      }
+    }
+  }, [playlist, track])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused'
+  }, [isPlaying])
 
   useEffect(() => {
     const el = audioRef.current
@@ -89,7 +155,12 @@ export function GlobalPlayer() {
           max={duration || 1}
           step={0.5}
           value={currentTime}
-          onChange={(e) => usePlayerStore.getState().seek(Number(e.target.value))}
+          // Визуально двигаем ползунок на каждый тик drag'а, но реально перематываем
+          // ТОЛЬКО по отпусканию — иначе на медленной сети ползунок «доезжает и
+          // откатывается» пока <audio> догоняет частые currentTime= (см. stores/player.ts).
+          onChange={(e) => usePlayerStore.getState().previewSeek(Number(e.target.value))}
+          onPointerUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
+          onKeyUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
           onClick={(e) => e.stopPropagation()}
           style={{ ['--pct' as string]: `${pct}%` }}
           aria-label="Позиция воспроизведения"
@@ -185,7 +256,10 @@ export function GlobalPlayer() {
               max={duration || 1}
               step={0.5}
               value={currentTime}
-              onChange={(e) => usePlayerStore.getState().seek(Number(e.target.value))}
+              // См. комментарий у seekMini выше — то же preview/commit разделение.
+              onChange={(e) => usePlayerStore.getState().previewSeek(Number(e.target.value))}
+              onPointerUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
+              onKeyUp={(e) => usePlayerStore.getState().seek(Number(e.currentTarget.value))}
               aria-label="Позиция воспроизведения"
             />
             <div className={styles.timeRow}>

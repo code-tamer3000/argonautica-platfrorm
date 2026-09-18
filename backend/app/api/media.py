@@ -27,6 +27,7 @@ from app.schemas.media import (
     MediaUrlOut,
     PlaylistCreateRequest,
     PlaylistOut,
+    PlaylistRenameRequest,
     UploadRequest,
     UploadTicket,
 )
@@ -34,6 +35,7 @@ from app.services.media import (
     PRESIGN_EXPIRES,
     PRESIGN_GET_EXPIRES,
     assert_media_access,
+    assert_playlist_owner,
     attachment_download_name,
     build_playlist_out,
     build_storage_key,
@@ -42,6 +44,8 @@ from app.services.media import (
     generate_image_thumbnail,
     presigned_get_url,
     presigned_put_url,
+    remove_playlist_track,
+    rename_playlist,
     serving_key,
     stat_object,
 )
@@ -346,4 +350,33 @@ async def get_playlist(
         else:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this playlist")
         return result
+    return await build_playlist_out(session, playlist)
+
+
+@router.patch("/playlists/{playlist_id}", response_model=PlaylistOut)
+async def rename_playlist_endpoint(
+    playlist_id: int,
+    body: PlaylistRenameRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PlaylistOut:
+    """Переименовать плейлист — только автор (ARG-139, «3 точки» в PlaylistCard)."""
+    playlist = await assert_playlist_owner(session, playlist_id, current_user)
+    await rename_playlist(session, playlist, body.title)
+    await session.commit()
+    return await build_playlist_out(session, playlist)
+
+
+@router.delete("/playlists/{playlist_id}/tracks/{track_id}", response_model=PlaylistOut)
+async def remove_playlist_track_endpoint(
+    playlist_id: int,
+    track_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> PlaylistOut:
+    """Убрать трек из плейлиста — только автор; минимум один трек должен остаться
+    (ARG-139, «3 точки» в PlaylistCard)."""
+    playlist = await assert_playlist_owner(session, playlist_id, current_user)
+    await remove_playlist_track(session, playlist, track_id)
+    await session.commit()
     return await build_playlist_out(session, playlist)

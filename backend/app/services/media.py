@@ -24,7 +24,7 @@ import botocore.auth
 from botocore.client import BaseClient, Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -728,6 +728,7 @@ async def build_playlist_out(session: AsyncSession, playlist: Playlist) -> Playl
             continue
         track_outs.append(
             PlaylistTrackOut(
+                id=track.id,
                 asset_id=asset.id,
                 position=track.position,
                 title=track.title,
@@ -830,6 +831,53 @@ async def create_playlist(
     await session.flush()
     await session.refresh(playlist)
     return playlist
+
+
+async def assert_playlist_owner(
+    session: AsyncSession, playlist_id: int, user: User
+) -> Playlist:
+    """Плейлист существует и принадлежит `user` — иначе 404/403. Правка плейлиста
+    (переименование/удаление трека) доступна только автору, даже админу чужой
+    плейлист не переписывает (симметрично `edit_message`: правка текста — только
+    автор). Носитель тут не смотрим: право на правку — авторство самого плейлиста,
+    а не видимость его карьера (см. docs/FILES.md «Плейлист»)."""
+    playlist = await session.get(Playlist, playlist_id)
+    if playlist is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+    if playlist.created_by != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your playlist")
+    return playlist
+
+
+async def rename_playlist(session: AsyncSession, playlist: Playlist, title: str) -> None:
+    """Переименование — единственная правка контента плейлиста после отправки,
+    которую просил автор (ARG-139, отзыв после ревью): состав/порядок треков
+    остаётся снимком на момент прикрепления, редактируется только заголовок."""
+    playlist.title = title
+    await session.flush()
+
+
+async def remove_playlist_track(
+    session: AsyncSession, playlist: Playlist, track_id: int
+) -> None:
+    """Убрать один трек. Плейлист не может остаться пустым — минимум один трек;
+    удалить последний означает удалить сам носитель (сообщение/задачу/материал),
+    а не плейлист по отдельности (у него нет самостоятельного жизненного цикла)."""
+    track = await session.get(PlaylistTrack, track_id)
+    if track is None or track.playlist_id != playlist.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Track not found")
+    count = await session.scalar(
+        select(func.count())
+        .select_from(PlaylistTrack)
+        .where(PlaylistTrack.playlist_id == playlist.id)
+    )
+    if count is not None and count <= 1:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Playlist must keep at least one track — delete its carrier instead",
+        )
+    await session.delete(track)
+    await session.flush()
 
 
 async def resolve_attachments(
