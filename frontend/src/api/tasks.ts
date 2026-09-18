@@ -18,6 +18,8 @@ export interface TaskOut {
   // NULL — опубликована сразу. Иначе скрыта от не-админов до этого момента
   // (лениво, без планировщика — см. docs/TASKS.md «Отложенная публикация»).
   publish_at: string | null
+  // Черновик: видна только админам, независимо от publish_at.
+  is_draft: boolean
   created_by: number
   created_at: string
   attachments: AttachmentOut[]
@@ -232,6 +234,8 @@ export interface TaskCreateBody {
   deadline_at?: string | null
   // NULL/не передано — опубликована сразу.
   publish_at?: string | null
+  // true — создать черновиком: видна только админам, пока флаг не снят.
+  is_draft?: boolean
   assignee_ids?: number[]
   pairs?: PairInput[]
   // Только для type='stream': участники сетки (её строит сервер).
@@ -254,6 +258,8 @@ export interface TaskUpdateBody {
   media_asset_ids?: number[]
   // Не передан — плейлист не трогаем; id — прикрепить/заменить; null — отцепить.
   playlist_id?: number | null
+  // Не передан — не трогаем; false — опубликовать черновик; true — спрятать.
+  is_draft?: boolean
   intake_id?: number | null
   plan_ids?: number[]
 }
@@ -605,6 +611,7 @@ export interface TaskLibraryItemOut {
   plan_ids: number[]
   deadline_at: string | null
   publish_at: string | null
+  is_draft: boolean
   created_at: string
   created_by: number
   submitted_count: number
@@ -623,7 +630,7 @@ export interface TaskLibraryFilters {
   intakeId?: number | 'null' | null // 'null' — только кросс-потоковые
   type?: TaskType
   q?: string
-  state?: 'published' | 'scheduled' | 'all'
+  state?: 'published' | 'scheduled' | 'draft' | 'all'
 }
 
 export const taskLibraryKey = (filters?: TaskLibraryFilters) =>

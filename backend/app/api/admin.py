@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import ColumnElement, delete, exists, func, or_, select, union, update
+from sqlalchemy import ColumnElement, and_, delete, exists, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
@@ -891,7 +891,7 @@ async def list_task_library(
     ] = None,
     type: Annotated[str | None, Query()] = None,
     q: Annotated[str | None, Query()] = None,
-    state: Annotated[Literal["published", "scheduled", "all"], Query()] = "all",
+    state: Annotated[Literal["published", "scheduled", "draft", "all"], Query()] = "all",
 ) -> TaskLibraryListOut:
     """База заданий (админский хаб): все неудалённые задачи всех потоков, кроме
     перекрёстных задач парного обучения (`pair_id IS NOT NULL` — те участники
@@ -910,7 +910,12 @@ async def list_task_library(
     if state == "published":
         where.append(published_where())
     elif state == "scheduled":
-        where.append(~published_where())
+        # «Запланировано» — именно отложенная публикация по дате, без черновиков:
+        # у черновика даты может не быть вовсе, и смешивать их в одном фильтре
+        # значит потерять и то и другое.
+        where.append(and_(~published_where(), Task.is_draft.is_(False)))
+    elif state == "draft":
+        where.append(Task.is_draft.is_(True))
 
     tasks = list(
         (
@@ -981,6 +986,7 @@ async def list_task_library(
                 plan_ids=task_plans.get(t.id, []),
                 deadline_at=t.deadline_at,
                 publish_at=t.publish_at,
+                is_draft=t.is_draft,
                 created_at=t.created_at,
                 created_by=t.created_by,
                 submitted_count=submitted_counts.get(t.id, 0),
@@ -1066,6 +1072,7 @@ async def republish_task(
         pair_id=clone.pair_id,
         deadline_at=clone.deadline_at,
         publish_at=clone.publish_at,
+        is_draft=clone.is_draft,
         created_by=clone.created_by,
         created_at=clone.created_at,
         attachments=attachments,

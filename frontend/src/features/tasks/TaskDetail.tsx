@@ -247,6 +247,9 @@ export function TaskDetail() {
       <div className={styles.viewerHead}>
         <div className={styles.headChips}>
           <Badge tone="accent">{TYPE_LABEL[task.type]}</Badge>
+          {/* Открыть черновик может только админ (остальным — 404), но открыв,
+              он должен видеть, что задание ещё не опубликовано. */}
+          {task.is_draft && <Chip kind="unreviewed">Черновик</Chip>}
           {task.my_status === 'accepted' && (
             <Chip kind="accepted">Принята</Chip>
           )}
