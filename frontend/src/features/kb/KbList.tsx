@@ -89,6 +89,7 @@ export function KbList() {
         published: values.published,
         category_id: values.category_id,
         media_asset_ids: values.media_asset_ids,
+        playlist_id: values.playlist_id,
         intake_id: values.intake_id,
         plan_ids: values.plan_ids,
       },

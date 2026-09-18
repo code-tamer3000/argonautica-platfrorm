@@ -271,6 +271,7 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | thread_root_id | BIGINT | FK messages, NULL | NULL = top level; set = reply, points at root |
 | quoted_message_id | BIGINT | FK messages, NULL | reply WITH QUOTE (Telegram-style) — ORTHOGONAL to thread_root_id, never written together with it as a structural link. See [MESSAGES.md](MESSAGES.md) «Quotes» |
 | sticker_id | BIGINT | FK stickers, NULL | if message is a sticker |
+| playlist_id | BIGINT | FK playlists, NULL | playlist attachment (ARG-139, see "Playlist" below); one per message, immutable |
 | forwarded_from_sender_id | BIGINT | FK users, NULL | forwarding: original author. See [MESSAGES.md](MESSAGES.md) |
 | ref_kind | TEXT | NULL, CHECK | ссылка на материал/задачу: `'kb'` \| `'task'`. No FK (target resolved lazily). See [MESSAGES.md](MESSAGES.md) |
 | ref_id | BIGINT | NULL | kb_item / task id; paired with `ref_kind` |
@@ -344,6 +345,35 @@ Public URL is not stored: access is via presigned URL after an auth check (see [
 
 **Video/audio transcode columns** (see [FILES.md](FILES.md) "Video transcode" / "Audio transcode"): expand-only, all nullable. `transcode_status` is the *durable serving state* (the worker's live progress/attempt count lives only in Redis); the served `url` is the variant iff `transcode_status='done'` and `variant_key` is set, else the original. Legacy videos/audio (rows created before the respective feature) keep all three NULL and serve the original unchanged.
 
+## Playlist (ARG-139)
+See [FILES.md](FILES.md) "Playlist" for the full flow. No ACL of its own — read access is resolved through whichever carrier's `playlist_id` points at it.
+
+**playlists**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| title | TEXT | NOT NULL | |
+| cover_media_id | BIGINT | FK media_assets, NULL | `kind='image'`; embedded ID3 picture of the first track, a custom upload, or NULL (client shows a placeholder) |
+| created_by | BIGINT | FK users, NOT NULL | |
+| created_at | TIMESTAMPTZ | NOT NULL | |
+
+**playlist_tracks**
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGSERIAL | PK | |
+| playlist_id | BIGINT | FK playlists ON DELETE CASCADE, NOT NULL | |
+| media_asset_id | BIGINT | FK media_assets, NOT NULL | `kind='audio'`, ordinary upload-flow asset |
+| position | INT | NOT NULL | 0-based, playback order = attachment order (no reordering API) |
+| title | TEXT | NOT NULL | snapshot at attach time (ID3 tag or filename fallback), not looked up from media_assets |
+| artist | TEXT | NULL | |
+| duration | INT | NULL | seconds; falls back to `media_assets.duration` on read if NULL |
+
+**UNIQUE:** (`playlist_id`, `position`).
+
+**Carrier FK** — one nullable `playlist_id BIGINT FK playlists` column each on `messages`, `tasks`, `kb_items` (same shape as `messages.sticker_id`): at most one playlist per carrier, set once at creation, never edited (immutable after send — see FILES.md "Boundaries"). No join table, no plan/intake isolation of its own — the carrier's own visibility rules already gate it.
+
 ## stickerpacks / stickers
 Admin adds packs. Sticker message: `content = NULL`, `sticker_id` set.
 
@@ -387,6 +417,7 @@ See [KB.md](KB.md). **kb_categories** is out-of-MVP (structure only).
 | title | TEXT | NOT NULL | |
 | body | TEXT | NULL | markdown |
 | published | BOOLEAN | NOT NULL, default false | draft / published |
+| playlist_id | BIGINT | FK playlists, NULL | playlist attachment (ARG-139, see "Playlist" above); one per material, immutable |
 | created_by | BIGINT | FK users | admin |
 | sort_order | INT | NOT NULL, default 0 | |
 | created_at | TIMESTAMPTZ | NOT NULL | |
@@ -581,6 +612,7 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 | title | TEXT | NOT NULL | |
 | body | TEXT | NULL | markdown |
 | kb_item_id | BIGINT | FK kb_items, NULL | optional link to a KB item |
+| playlist_id | BIGINT | FK playlists, NULL | playlist attachment on the task's condition (ARG-139, see "Playlist" above); one per task, immutable |
 | pair_id | BIGINT | FK task_pairs, NULL | set only on a cross-task (peer-learning); links it to its pair |
 | deadline_at | TIMESTAMPTZ | NULL | synced to `calendar_events` (services/tasks.py) |
 | created_by | BIGINT | FK users, NOT NULL | author; for a cross-task = the giving participant |

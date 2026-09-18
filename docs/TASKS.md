@@ -1,7 +1,7 @@
 # Tasks (раздел «Задачи»)
 
 > Source: backend/app/{models/task.py, api/tasks.py, services/tasks.py} + docs/archive/PROGRESS.md st.22, restructured 2026-07-06.
-> Endpoints: `/api/tasks`. Tables: `tasks`, `task_media`, `task_assignments`, `task_submissions`, `task_submission_media`, `task_comments` (see [DATA_MODEL.md](DATA_MODEL.md)).
+> Endpoints: `/api/tasks`. Tables: `tasks`, `task_media`, `task_assignments`, `task_submissions`, `task_submission_media`, `task_comments`, `playlists`/`playlist_tracks` (see [DATA_MODEL.md](DATA_MODEL.md)).
 
 Author assigns work; participants submit; admin reviews. A task is **common** (`type='common'` — visible to every active participant, anyone may submit), **individual** (`type='individual'` — addressed to specific users via `task_assignments`), or **pair** (`type='pair'` — peer-learning; see "Pair tasks" below).
 
@@ -70,6 +70,7 @@ completed or not. Only intake (ARG-96) is dropped unconditionally for everyone.
 - **Prompt media** (`task_media`) — attached by admin to the task itself; mirror of `task_submission_media` (submission attachments). Both go through the shared `media_assets` / presigned flow (see [FILES.md](FILES.md)).
 - `create_task` / `update_task` accept `media_asset_ids` → saved into `task_media`. `get_task` / `list_tasks` return `attachments` batch-signed via `resolve_task_attachments`.
 - **Media access**: `assert_media_access` gates task media by task visibility — `common` → any participant whose intake/plan pass isolation (ARG-96); `individual` → assignee / admin.
+- **Playlist attachment (ARG-139)**: `TaskCreate.playlist_id` — one already-created playlist (`POST /api/media/playlists`) attached to the task's condition, orthogonal to `media_asset_ids`. Set only at creation (no update API — immutable after send, see [FILES.md](FILES.md) "Playlist"); `TaskOut.playlist` carries the fully-resolved object. Access to its tracks follows the same task-visibility check as prompt media above.
 
 ## Review
 

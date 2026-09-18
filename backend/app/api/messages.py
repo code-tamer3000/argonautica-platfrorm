@@ -20,11 +20,12 @@ from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, MessageReaction, PinnedMessage
+from app.models.playlist import Playlist
 from app.models.room import Room
 from app.models.sticker import Sticker
 from app.models.user import User
 from app.schemas.journal import JournalAnchorOut
-from app.schemas.media import AttachmentOut
+from app.schemas.media import AttachmentOut, PlaylistOut
 from app.schemas.message import (
     EditMessageRequest,
     MessageOut,
@@ -36,7 +37,7 @@ from app.schemas.message import (
     SendMessageRequest,
     ThreadOut,
 )
-from app.services.media import resolve_attachments
+from app.services.media import resolve_attachments, resolve_playlists
 from app.services.message_quotes import assert_quote_target, resolve_message_quotes
 from app.services.message_refs import (
     assert_ref_visible,
@@ -201,11 +202,14 @@ def _to_out(
     refs: dict[tuple[str, int], MessageRefOut] | None = None,
     reaction: tuple[int, bool] | None = None,
     quotes: dict[int, QuotedMessageOut] | None = None,
+    playlists: dict[int, PlaylistOut] | None = None,
 ) -> MessageOut:
     out = MessageOut.model_validate(message)
     out.attachments = attachments
     # attachment_ids — для обратной совместимости со старыми клиентами (см. схему).
     out.attachment_ids = [att.asset_id for att in attachments]
+    if message.playlist_id is not None and playlists is not None:
+        out.playlist = playlists.get(message.playlist_id)
     if message.ref_kind is not None and message.ref_id is not None and refs is not None:
         out.ref = refs.get((message.ref_kind, message.ref_id))
     if reaction is not None:
@@ -213,6 +217,16 @@ def _to_out(
     if message.quoted_message_id is not None and quotes is not None:
         out.quote = quotes.get(message.quoted_message_id)
     return out
+
+
+async def _playlists_map(
+    session: AsyncSession, messages: list[Message]
+) -> dict[int, PlaylistOut]:
+    """Разрешить плейлисты батчем для списка сообщений — зеркало `_refs_map`."""
+    playlist_ids = [m.playlist_id for m in messages if m.playlist_id is not None]
+    if not playlist_ids:
+        return {}
+    return await resolve_playlists(session, playlist_ids)
 
 
 def _redacted_variant(room: Room, content: str | None) -> str | None:
@@ -242,13 +256,14 @@ def _pinned_out(
     refs: dict[tuple[str, int], MessageRefOut] | None = None,
     reaction: tuple[int, bool] | None = None,
     quotes: dict[int, QuotedMessageOut] | None = None,
+    playlists: dict[int, PlaylistOut] | None = None,
 ) -> PinnedOut:
     return PinnedOut(
         room_id=pin.room_id,
         message_id=pin.message_id,
         pinned_by=pin.pinned_by,
         pinned_at=pin.pinned_at,
-        message=_to_out(message, attachments, refs, reaction, quotes),
+        message=_to_out(message, attachments, refs, reaction, quotes, playlists),
     )
 
 
@@ -282,6 +297,14 @@ async def send_message(
         if set(found.scalars().all()) != set(body.attachment_ids):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
 
+    if body.playlist_id is not None:
+        # Прикрепить можно только свой, ещё никуда не привязанный плейлист (анти-IDOR
+        # — иначе можно было бы подставить чужой playlist_id и получить доступ к его
+        # трекам через carrier-цепочку в assert_media_access).
+        playlist = await session.get(Playlist, body.playlist_id)
+        if playlist is None or playlist.created_by != current_user.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+
     # Ссылка на материал/задачу: цель должна существовать и быть видимой отправителю
     # (анти-IDOR — нельзя сослаться на черновик КБ / чужую задачу).
     if body.ref_kind is not None and body.ref_id is not None:
@@ -312,6 +335,7 @@ async def send_message(
         sender_id=current_user.id,
         content=body.content,
         sticker_id=body.sticker_id,
+        playlist_id=body.playlist_id,
         thread_root_id=thread_root_id,
         quoted_message_id=body.quoted_message_id,
         ref_kind=body.ref_kind,
@@ -336,15 +360,20 @@ async def send_message(
     await session.flush()
     await session.refresh(message)
     resolved = await resolve_attachments(session, [message.id])
+    playlists = await _playlists_map(session, [message])
     refs = await _refs_map(session, [message], current_user)
     quotes = await _quotes_map(session, [message], room)
-    out = _to_out(message, resolved.get(message.id, []), refs, quotes=quotes)
+    out = _to_out(
+        message, resolved.get(message.id, []), refs, quotes=quotes, playlists=playlists
+    )
     # Живая доставка подписчикам комнаты (payload самодостаточный). Ссылку в
     # broadcast резолвим консервативно (заголовок только для универсально видимой
     # цели) — payload один на всех, нельзя раскрыть чужой черновик. Цитата, в
     # отличие от ref, указывает внутрь этой же комнаты — новых прав не раскрывает,
     # консервативный резолв не нужен (см. message_quotes.py), только ARG-115.
-    ws_out = _to_out(message, resolved.get(message.id, []), quotes=quotes)
+    ws_out = _to_out(
+        message, resolved.get(message.id, []), quotes=quotes, playlists=playlists
+    )
     if message.ref_kind is not None and message.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
             session, message.ref_kind, message.ref_id
@@ -442,6 +471,9 @@ async def forward_message(
         sender_id=current_user.id,
         content=source.content,
         sticker_id=source.sticker_id,
+        # Плейлист переносится вместе с пересылкой (как attachment_ids ниже) — тот же
+        # плейлист, доступ к нему у новой комнаты проверяется той же carrier-цепочкой.
+        playlist_id=source.playlist_id,
         # Цепочка пересылок сохраняет ПЕРВОГО автора, а не промежуточного пересыльщика.
         forwarded_from_sender_id=source.forwarded_from_sender_id or source.sender_id,
         # Ссылка на материал/задачу переносится вместе с пересылкой.
@@ -462,9 +494,10 @@ async def forward_message(
     await session.flush()
     await session.refresh(forwarded)
     resolved = await resolve_attachments(session, [forwarded.id])
+    playlists = await _playlists_map(session, [forwarded])
     refs = await _refs_map(session, [forwarded], current_user)
-    out = _to_out(forwarded, resolved.get(forwarded.id, []), refs)
-    ws_out = _to_out(forwarded, resolved.get(forwarded.id, []))
+    out = _to_out(forwarded, resolved.get(forwarded.id, []), refs, playlists=playlists)
+    ws_out = _to_out(forwarded, resolved.get(forwarded.id, []), playlists=playlists)
     if forwarded.ref_kind is not None and forwarded.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
             session, forwarded.ref_kind, forwarded.ref_id
@@ -510,6 +543,7 @@ async def list_messages(
 
     messages = list((await session.execute(stmt)).scalars().all())
     attachments = await resolve_attachments(session, [m.id for m in messages])
+    playlists = await _playlists_map(session, messages)
     refs = await _refs_map(session, messages, current_user)
     quotes = await _quotes_map(session, messages, room)
     reactions = await _reactions_map(session, [m.id for m in messages], current_user.id)
@@ -523,7 +557,9 @@ async def list_messages(
     redact = room.is_news and await is_cheap_tariff(session, current_user)
     out = []
     for m in messages:
-        item = _to_out(m, attachments.get(m.id, []), refs, reactions.get(m.id), quotes)
+        item = _to_out(
+            m, attachments.get(m.id, []), refs, reactions.get(m.id), quotes, playlists
+        )
         item.unread_reply_count = unread.get(m.id, 0)
         if redact:
             if item.content:
@@ -572,6 +608,7 @@ async def get_thread(
     attachments = await resolve_attachments(
         session, [root.id, *[r.id for r in replies]]
     )
+    playlists = await _playlists_map(session, [root, *replies])
     refs = await _refs_map(session, [root, *replies], current_user)
     quotes = await _quotes_map(session, [root, *replies], room)
     reactions = await _reactions_map(
@@ -579,10 +616,17 @@ async def get_thread(
     )
     return ThreadOut(
         root=_to_out(
-            root, attachments.get(root.id, []), refs, reactions.get(root.id), quotes
+            root,
+            attachments.get(root.id, []),
+            refs,
+            reactions.get(root.id),
+            quotes,
+            playlists,
         ),
         replies=[
-            _to_out(r, attachments.get(r.id, []), refs, reactions.get(r.id), quotes)
+            _to_out(
+                r, attachments.get(r.id, []), refs, reactions.get(r.id), quotes, playlists
+            )
             for r in replies
         ],
     )
@@ -623,16 +667,23 @@ async def edit_message(
     await session.refresh(message)
 
     attachments = await resolve_attachments(session, [message.id])
+    playlists = await _playlists_map(session, [message])
     refs = await _refs_map(session, [message], current_user)
     quotes = await _quotes_map(session, [message], room)
     reaction = (await _reactions_map(session, [message.id], current_user.id)).get(message.id)
-    out = _to_out(message, attachments.get(message.id, []), refs, reaction, quotes)
+    out = _to_out(
+        message, attachments.get(message.id, []), refs, reaction, quotes, playlists
+    )
     # ws_out идёт в общий бродкаст на всю комнату: reacted_by_me — персональное для
     # каждого зрителя поле, кладём в бродкаст только свежий count (см. docs/MESSAGES.md,
     # frontend сохраняет свой локальный reacted_by_me при обработке message.edited).
     ws_reaction = (reaction[0], False) if reaction is not None else None
     ws_out = _to_out(
-        message, attachments.get(message.id, []), reaction=ws_reaction, quotes=quotes
+        message,
+        attachments.get(message.id, []),
+        reaction=ws_reaction,
+        quotes=quotes,
+        playlists=playlists,
     )
     if message.ref_kind is not None and message.ref_id is not None:
         ws_out.ref = await resolve_ref_for_broadcast(
@@ -802,11 +853,12 @@ async def pin_message(
         after_commit(session, lambda: publish_room_event(room_id, pin_event))
 
     attachments = await resolve_attachments(session, [message.id])
+    playlists = await _playlists_map(session, [message])
     refs = await _refs_map(session, [message], current_user)
     quotes = await _quotes_map(session, [message], room)
     reaction = (await _reactions_map(session, [message.id], current_user.id)).get(message.id)
     return _pinned_out(
-        pin, message, attachments.get(message.id, []), refs, reaction, quotes
+        pin, message, attachments.get(message.id, []), refs, reaction, quotes, playlists
     )
 
 
@@ -921,11 +973,14 @@ async def list_pins(
     )
     pairs = list(rows.all())
     attachments = await resolve_attachments(session, [m.id for _, m in pairs])
+    playlists = await _playlists_map(session, [m for _, m in pairs])
     refs = await _refs_map(session, [m for _, m in pairs], current_user)
     quotes = await _quotes_map(session, [m for _, m in pairs], room)
     reactions = await _reactions_map(session, [m.id for _, m in pairs], current_user.id)
     return [
-        _pinned_out(p, m, attachments.get(m.id, []), refs, reactions.get(m.id), quotes)
+        _pinned_out(
+            p, m, attachments.get(m.id, []), refs, reactions.get(m.id), quotes, playlists
+        )
         for p, m in pairs
     ]
 

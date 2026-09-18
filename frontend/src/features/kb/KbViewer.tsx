@@ -7,6 +7,7 @@ import { KbForm, type KbFormValues } from './KbForm'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { PageHeader } from '../../components/PageHeader'
+import { PlaylistCard } from '../../components/PlaylistCard'
 import { KebabMenu } from '../../components/KebabMenu'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Overlay'
@@ -113,6 +114,11 @@ export function KbViewer() {
           {item.media_asset_ids.map((assetId) => (
             <MdAttachment key={assetId} itemId={id} assetId={assetId} />
           ))}
+        </div>
+      )}
+      {item.playlist && (
+        <div className={styles.kbMedia}>
+          <PlaylistCard playlist={item.playlist} />
         </div>
       )}
 

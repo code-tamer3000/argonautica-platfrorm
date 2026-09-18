@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { resetKbVideoProgress, saveKbVideoProgress, useKbVideoProgress } from '../api/kb'
+import { useMediaSession } from '../stores/mediaSession'
 import { ProgressRing } from './ProgressRing'
 import styles from './videoPlayer.module.css'
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const
+let videoPlayerSeq = 0
 // Не спамим PUT на каждый timeupdate (несколько раз в секунду) — сохраняем не чаще раза в 5с.
 const PROGRESS_SAVE_INTERVAL_MS = 5000
 
@@ -37,6 +39,7 @@ interface Props {
  */
 export function VideoPlayer({ src, width, height, poster, className, kbProgress }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const videoSessionId = useRef(`video-${++videoPlayerSeq}`)
   const [rate, setRate] = useState(1)
   const [menuOpen, setMenuOpen] = useState(false)
   const [loaded, setLoaded] = useState(false)
@@ -88,6 +91,7 @@ export function VideoPlayer({ src, width, height, poster, className, kbProgress 
       if (kp && v && !v.ended && v.currentTime > 1) {
         void saveKbVideoProgress(kp.itemId, kp.assetId, v.currentTime)
       }
+      useMediaSession.getState().release(videoSessionId.current)
     }
   }, [])
 
@@ -104,6 +108,12 @@ export function VideoPlayer({ src, width, height, poster, className, kbProgress 
         controls
         playsInline
         preload="metadata"
+        onPlay={(e) => {
+          // Координация «один звук за раз» (docs/FILES.md «Плейлист»): запуск видео
+          // ставит на паузу плейлист/голосовое, и наоборот.
+          const v = e.currentTarget
+          useMediaSession.getState().claim(videoSessionId.current, () => v.pause())
+        }}
         onLoadedMetadata={(e) => {
           const v = e.currentTarget
           if (!ratio && v.videoWidth && v.videoHeight) setRatio(v.videoWidth / v.videoHeight)
@@ -114,7 +124,10 @@ export function VideoPlayer({ src, width, height, poster, className, kbProgress 
         }}
         onLoadedData={() => setLoaded(true)}
         onTimeUpdate={() => saveProgress(false)}
-        onPause={() => saveProgress(true)}
+        onPause={() => {
+          saveProgress(true)
+          useMediaSession.getState().release(videoSessionId.current)
+        }}
         onEnded={() => {
           const kp = kbProgressRef.current
           if (kp) void resetKbVideoProgress(kp.itemId, kp.assetId)

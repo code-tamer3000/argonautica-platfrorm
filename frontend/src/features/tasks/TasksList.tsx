@@ -311,6 +311,7 @@ export function TasksList() {
             : undefined,
         participant_ids: values.type === 'stream' ? values.participant_ids : undefined,
         media_asset_ids: values.media.map((m) => m.id),
+        playlist_id: values.playlist?.id ?? null,
         intake_id: values.type === 'common' ? values.intake_id : undefined,
         plan_ids: values.type === 'common' ? values.plan_ids : undefined,
       },

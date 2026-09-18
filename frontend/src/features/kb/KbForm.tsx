@@ -7,6 +7,8 @@ import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
+import { PlaylistComposer } from '../../components/PlaylistComposer'
+import type { PlaylistOut } from '../../lib/types'
 import { Attachment } from '../chat/Attachment'
 // Форма создания/редактирования материала БЗ — перенесена из features/admin/AdminKb
 // в основной раздел «База знаний» (админ-действия теперь живут там, не в «Управлении»).
@@ -19,6 +21,9 @@ export interface KbFormValues {
   published: boolean
   category_id: number | null
   media_asset_ids: number[]
+  // Плейлист-вложение материала (docs/FILES.md «Плейлист») — null, если не прикреплён.
+  // Только для СОЗДАНИЯ (см. Границы ARG-139: неизменяем после отправки).
+  playlist_id: number | null
   intake_id: number | null
   plan_ids: number[]
 }
@@ -43,6 +48,9 @@ export function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const { data: plans = [] } = useAdminPlans()
   // Локально загруженные медиа для режима СОЗДАНИЯ (когда item ещё нет).
   const [stagedMedia, setStagedMedia] = useState<number[]>([])
+  const [stagedPlaylist, setStagedPlaylist] = useState<PlaylistOut | null>(
+    initial?.playlist ?? null,
+  )
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<number | null>(null)
   // Отмена текущей загрузки + подтверждающий поп-ап над ней.
@@ -66,6 +74,7 @@ export function KbForm({ initial, onSubmit, item }: KbFormProps) {
       published,
       category_id: categoryId,
       media_asset_ids: stagedMedia,
+      playlist_id: stagedPlaylist?.id ?? null,
       intake_id: intakeId,
       plan_ids: planIds,
     })
@@ -265,6 +274,9 @@ export function KbForm({ initial, onSubmit, item }: KbFormProps) {
             </button>
           </div>
         )}
+        {/* Плейлист неизменяем после отправки (docs/FILES.md «Плейлист») — только
+            при создании нового материала, не при редактировании существующего. */}
+        {!item && <PlaylistComposer value={stagedPlaylist} onChange={setStagedPlaylist} />}
       </div>
 
       {cancelAsk && (

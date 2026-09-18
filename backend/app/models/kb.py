@@ -41,6 +41,10 @@ class KbItem(Base):
     published: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Плейлист-вложение материала (docs/FILES.md «Плейлист») — один на материал.
+    playlist_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("playlists.id")
+    )
     created_by: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("users.id"), nullable=False
     )

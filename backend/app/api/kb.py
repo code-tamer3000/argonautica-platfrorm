@@ -26,6 +26,7 @@ from app.models.kb import (
 )
 from app.models.media import MediaAsset
 from app.models.plan import Plan
+from app.models.playlist import Playlist
 from app.models.user import User
 from app.schemas.kb import (
     AttachMediaRequest,
@@ -40,6 +41,7 @@ from app.schemas.kb import (
     KbVideoProgressOut,
     KbVideoProgressUpdate,
 )
+from app.schemas.media import PlaylistOut
 from app.services.kb import (
     assert_category_exists,
     assert_kb_item_visible,
@@ -47,6 +49,7 @@ from app.services.kb import (
     attached_plan_ids,
     load_kb_item,
 )
+from app.services.media import resolve_playlists
 from app.services.visibility import plan_visibility_clause
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
@@ -55,11 +58,23 @@ router = APIRouter(prefix="/api/kb", tags=["kb"])
 _PATCHABLE_FIELDS = {"title", "body", "published", "category_id", "sort_order", "intake_id"}
 
 
-def _to_out(item: KbItem, media_ids: list[int], plan_ids: list[int]) -> KbItemOut:
+def _to_out(
+    item: KbItem,
+    media_ids: list[int],
+    plan_ids: list[int],
+    playlist: PlaylistOut | None = None,
+) -> KbItemOut:
     out = KbItemOut.model_validate(item)
     out.media_asset_ids = media_ids
     out.plan_ids = plan_ids
+    out.playlist = playlist
     return out
+
+
+async def _resolve_item_playlist(session: AsyncSession, item: KbItem) -> PlaylistOut | None:
+    if item.playlist_id is None:
+        return None
+    return (await resolve_playlists(session, [item.playlist_id])).get(item.playlist_id)
 
 
 async def _assert_assets_exist(session: AsyncSession, asset_ids: list[int]) -> None:
@@ -196,6 +211,10 @@ async def create_item(
     await assert_category_exists(session, body.category_id)
     await _assert_intake_exists(session, body.intake_id)
     await _assert_plans_exist(session, body.plan_ids)
+    if body.playlist_id is not None:
+        playlist = await session.get(Playlist, body.playlist_id)
+        if playlist is None or playlist.created_by != current_admin.id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
 
     item = KbItem(
         title=body.title,
@@ -204,6 +223,7 @@ async def create_item(
         category_id=body.category_id,
         created_by=current_admin.id,
         intake_id=body.intake_id,
+        playlist_id=body.playlist_id,
     )
     session.add(item)
     await session.flush()
@@ -215,7 +235,8 @@ async def create_item(
     await session.refresh(item)
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
-    return _to_out(item, media_ids, body.plan_ids)
+    playlist_out = await _resolve_item_playlist(session, item)
+    return _to_out(item, media_ids, body.plan_ids, playlist_out)
 
 
 @router.patch("/items/{item_id}", response_model=KbItemOut)
@@ -245,7 +266,8 @@ async def update_item(
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
     plan_ids = await _item_plan_ids(session, item.id)
-    return _to_out(item, media_ids, plan_ids)
+    playlist_out = await _resolve_item_playlist(session, item)
+    return _to_out(item, media_ids, plan_ids, playlist_out)
 
 
 @router.delete("/items/{item_id}", status_code=204)
@@ -290,7 +312,8 @@ async def attach_media(
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
     plan_ids = await _item_plan_ids(session, item.id)
-    return _to_out(item, media_ids, plan_ids)
+    playlist_out = await _resolve_item_playlist(session, item)
+    return _to_out(item, media_ids, plan_ids, playlist_out)
 
 
 @router.delete("/items/{item_id}/media/{media_asset_id}", status_code=204)
@@ -339,7 +362,17 @@ async def list_items(
     items = list((await session.execute(stmt)).scalars().all())
     media = await attached_media_ids(session, [i.id for i in items])
     plans = await attached_plan_ids(session, [i.id for i in items])
-    return [_to_out(i, media.get(i.id, []), plans.get(i.id, [])) for i in items]
+    playlist_ids = [i.playlist_id for i in items if i.playlist_id is not None]
+    playlists = await resolve_playlists(session, playlist_ids)
+    return [
+        _to_out(
+            i,
+            media.get(i.id, []),
+            plans.get(i.id, []),
+            playlists.get(i.playlist_id) if i.playlist_id else None,
+        )
+        for i in items
+    ]
 
 
 @router.get("/items/{item_id}", response_model=KbItemOut)
@@ -354,7 +387,8 @@ async def get_item(
 
     media_ids = (await attached_media_ids(session, [item.id])).get(item.id, [])
     plan_ids = await _item_plan_ids(session, item.id)
-    return _to_out(item, media_ids, plan_ids)
+    playlist_out = await _resolve_item_playlist(session, item)
+    return _to_out(item, media_ids, plan_ids, playlist_out)
 
 
 # --- позиция просмотра видео (личная, ARG-118) ------------------------------

@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.schemas.media import AttachmentOut
+from app.schemas.media import AttachmentOut, PlaylistOut
 
 # Ссылка-референс из сообщения: на материал КБ или задачу.
 RefKind = Literal["kb", "task"]
@@ -33,6 +33,9 @@ class SendMessageRequest(BaseModel):
     content: str | None = None
     sticker_id: int | None = None
     attachment_ids: list[int] = []
+    # Плейлист-вложение (docs/FILES.md «Плейлист») — уже созданный через
+    # POST /api/media/playlists, ортогонален attachment_ids (одно на сообщение).
+    playlist_id: int | None = None
     reply_to_message_id: int | None = None
     quoted_message_id: int | None = None
     ref_kind: RefKind | None = None
@@ -51,7 +54,13 @@ class SendMessageRequest(BaseModel):
             raise ValueError(f"At most {MAX_ATTACHMENTS} attachments per message")
         has_text = bool(self.content and self.content.strip())
         has_ref = self.ref_kind is not None
-        if not (has_text or self.sticker_id is not None or self.attachment_ids or has_ref):
+        if not (
+            has_text
+            or self.sticker_id is not None
+            or self.attachment_ids
+            or self.playlist_id is not None
+            or has_ref
+        ):
             raise ValueError("Message must carry text, a sticker, attachments or a ref")
         return self
 
@@ -103,6 +112,8 @@ class MessageOut(BaseModel):
     # клиенты используют attachments с готовыми presigned-URL и превью.
     attachment_ids: list[int] = []
     attachments: list[AttachmentOut] = []
+    # Плейлист-вложение, разрешённый в готовые presigned-URL. None = вложения нет.
+    playlist: PlaylistOut | None = None
     # Ссылка на материал КБ / задачу, разрешённая для зрителя. None = ссылки нет.
     ref: MessageRefOut | None = None
     # Цитируемое сообщение (Telegram-style «ответить»), разрешённое для зрителя.

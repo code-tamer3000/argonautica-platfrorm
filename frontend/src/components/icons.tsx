@@ -34,7 +34,10 @@ import {
   Lock,
   Menu,
   MoreVertical,
+  Music,
   Settings,
+  SkipBack,
+  SkipForward,
   Smile,
   Sticker,
   Sun,
@@ -89,6 +92,9 @@ export const IconEdit = (p: IconProps) => <Pencil {...DEFAULTS} {...p} />
 export const IconFlame = (p: IconProps) => <Flame {...DEFAULTS} {...p} />
 export const IconWaves = (p: IconProps) => <Waves {...DEFAULTS} {...p} />
 export const IconCheck = (p: IconProps) => <CircleCheck {...DEFAULTS} {...p} />
+export const IconMusic = (p: IconProps) => <Music {...DEFAULTS} {...p} />
+export const IconSkipBack = (p: IconProps) => <SkipBack {...DEFAULTS} {...p} />
+export const IconSkipForward = (p: IconProps) => <SkipForward {...DEFAULTS} {...p} />
 // Компас — знак пройденной экспедиции (плашка «только чтение», бейдж в Динамике).
 export const IconCompass = (p: IconProps) => <Compass {...DEFAULTS} {...p} />
 export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
