@@ -280,7 +280,7 @@ export function KbForm({ initial, onSubmit, item }: KbFormProps) {
         {/* И при создании, и при редактировании: у существующего материала здесь
             виден уже прикреплённый плейлист, его можно заменить или убрать —
             PATCH /api/kb/items/{id} принимает playlist_id. */}
-        <PlaylistComposer value={stagedPlaylist} onChange={setStagedPlaylist} />
+        <PlaylistComposer value={stagedPlaylist} onChange={setStagedPlaylist} editable />
       </div>
 
       {cancelAsk && (

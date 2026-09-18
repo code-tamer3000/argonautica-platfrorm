@@ -29,7 +29,17 @@ function fmt(sec: number | null): string {
  * плейлистом в сторе — сам `playlist` в кэше сообщения/задачи/материала не
  * мутируем (пришёл бы актуальным на следующем перечитывании страницы).
  */
-export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
+interface Props {
+  playlist: PlaylistOut
+  /** Правка применилась на сервере — отдать свежий объект родителю. Нужен там,
+   * где карточка живёт внутри формы (композер задания/материала КБ): форма
+   * держит плейлист в своём state и отправит его id при сохранении, поэтому
+   * обязана знать про переименование/удалённый трек. В ленте сообщений не
+   * передаётся — там свежие данные придут с перезагрузкой страницы. */
+  onChange?: (playlist: PlaylistOut) => void
+}
+
+export function PlaylistCard({ playlist, onChange }: Props) {
   const { user } = useAuth()
   const isEditor = user != null && (user.id === playlist.created_by || user.role === 'admin')
 
@@ -48,6 +58,7 @@ export function PlaylistCard({ playlist }: { playlist: PlaylistOut }) {
 
   function applyUpdate(updated: PlaylistOut) {
     setLocal(updated)
+    onChange?.(updated)
     // Тот же плейлист сейчас играет в глобальном плеере — обновить и там, иначе
     // мини-бар/развёрнутый вид продолжат показывать старое название/обложку/список.
     if (activePlaylist?.id === updated.id) {

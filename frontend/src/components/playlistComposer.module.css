@@ -160,3 +160,29 @@
   display: inline-flex;
 }
 .attachedRemove:hover { color: var(--blood-bright); }
+
+/* Прикреплённый плейлист в форме задания/материала КБ (editable): полная карточка
+   со всеми действиями автора вместо чипа. Своя строка внутри .actions (там
+   flex-wrap) — рядом с «Прикрепить файлы» карточка не помещается. */
+.attachedCard {
+  flex: 1 1 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.detach {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-ghost);
+}
+.detach:hover:not(:disabled) { color: var(--blood-bright); }
+.detach:disabled { opacity: 0.5; cursor: default; }

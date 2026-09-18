@@ -169,6 +169,9 @@ export function MediaComposer({
             value={playlist ?? null}
             onChange={onPlaylistChange}
             disabled={disabled}
+            // Формы задания/материала: прикреплённый плейлист показываем полной
+            // карточкой — его здесь и правят (название, обложка, состав треков).
+            editable
           />
         )}
       </div>

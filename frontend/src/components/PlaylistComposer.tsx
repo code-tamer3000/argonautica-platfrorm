@@ -6,6 +6,7 @@ import type { PlaylistOut } from '../lib/types'
 import { toast } from '../stores/toast'
 import { Button } from './Button'
 import { IconMusic, IconTrash } from './icons'
+import { PlaylistCard } from './PlaylistCard'
 import styles from './playlistComposer.module.css'
 
 const MAX_PLAYLIST_TRACKS = 30
@@ -29,6 +30,11 @@ interface Props {
   autoOpen?: boolean
   /** Вызывается по «Отмена» — родитель может скрыть панель (autoOpen → false). */
   onClose?: () => void
+  /** Уже прикреплённый плейлист показать полной карточкой (с правкой названия,
+   * обложки и удалением отдельных треков), а не компактным чипом. Включаем в
+   * формах задания и материала КБ — там правка вложения и есть смысл экрана;
+   * в композере чата остаётся чип, чтобы не выдавливать поле ввода. */
+  editable?: boolean
 }
 
 /**
@@ -49,6 +55,7 @@ export function PlaylistComposer({
   disabled = false,
   autoOpen = false,
   onClose,
+  editable = false,
 }: Props) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [title, setTitle] = useState('')
@@ -144,6 +151,25 @@ export function PlaylistComposer({
       setBusy(false)
       setUploadProgress(null)
     }
+  }
+
+  if (value && editable) {
+    // Правка плейлиста «на месте»: та же карточка, что видит получатель, с теми
+    // же действиями автора/админа (переименовать, сменить обложку, убрать трек —
+    // PATCH/DELETE /api/media/playlists/*). onChange держит state формы свежим.
+    return (
+      <div className={styles.attachedCard}>
+        <PlaylistCard playlist={value} onChange={onChange} />
+        <button
+          type="button"
+          className={styles.detach}
+          onClick={() => onChange(null)}
+          disabled={disabled}
+        >
+          <IconTrash size={14} /> Убрать плейлист целиком
+        </button>
+      </div>
+    )
   }
 
   if (value) {
