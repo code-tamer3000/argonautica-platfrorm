@@ -718,10 +718,22 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         </div>
       )}
 
-      {(playlistPanelOpen || pendingPlaylist) && (
+      {/* Уже собранный плейлист — маленький чип в общем ряду вложений, как pendingRef. */}
+      {pendingPlaylist && !playlistPanelOpen && (
         <div className={styles.pendingAtt}>
+          <PlaylistComposer value={pendingPlaylist} onChange={setPendingPlaylist} />
+        </div>
+      )}
+
+      {/* Сборка плейлиста (выбор файлов, правка полей) — floating-попап, как
+          StickerPicker (.pickerPop), а НЕ инлайн в поток композера: целая мини-форма
+          в ряду чипов/над textarea выдавливала бы поле ввода текста (ARG-139, отзыв
+          после ревью). «Отмена» внутри панели закрывает попап без прикрепления —
+          поле ввода текста всё это время доступно и не перекрыто. */}
+      {playlistPanelOpen && (
+        <div className={styles.playlistPop}>
           <PlaylistComposer
-            value={pendingPlaylist}
+            value={null}
             onChange={setPendingPlaylist}
             autoOpen={playlistPanelOpen}
             onClose={() => setPlaylistPanelOpen(false)}
