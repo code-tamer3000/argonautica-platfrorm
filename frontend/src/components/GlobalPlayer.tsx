@@ -81,7 +81,7 @@ export function GlobalPlayer() {
       />
       <div className={styles.bar}>
         <div className={styles.progressTrack}>
-          <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          <div className={styles.progressFill} style={{ transform: `scaleX(${pct / 100})` }} />
         </div>
         <button
           type="button"
