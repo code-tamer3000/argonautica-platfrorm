@@ -92,6 +92,10 @@ function TaskCard({
         )}
       </div>
       <div className={styles.cardChips}>
+        {/* Черновик видит только админ — участнику такая задача вообще не
+            приходит (published_where, docs/TASKS.md «Черновик»). Чип нужен,
+            чтобы в общем списке она не читалась как обычная опубликованная. */}
+        {task.is_draft && <Chip kind="unreviewed">Черновик</Chip>}
         {task.my_status && (
           <Chip kind={statusChipKind(task.my_status)}>
             {STATUS_LABEL[task.my_status]}
