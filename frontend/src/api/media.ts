@@ -24,6 +24,17 @@ export function createPlaylist(body: PlaylistCreateBody): Promise<PlaylistOut> {
   return http.post<PlaylistOut>('/api/media/playlists', body)
 }
 
+/** Переименовать плейлист — только автор (ARG-139, «3 точки» в PlaylistCard). */
+export function renamePlaylist(playlistId: number, title: string): Promise<PlaylistOut> {
+  return http.patch<PlaylistOut>(`/api/media/playlists/${playlistId}`, { title })
+}
+
+/** Убрать трек из плейлиста — только автор, минимум один трек должен остаться.
+ * `trackId` — PlaylistTrackOut.id (НЕ asset_id). */
+export function removePlaylistTrack(playlistId: number, trackId: number): Promise<PlaylistOut> {
+  return http.del<PlaylistOut>(`/api/media/playlists/${playlistId}/tracks/${trackId}`)
+}
+
 export function useMediaUrl(assetId: number | null) {
   return useQuery({
     queryKey: ['media', assetId],

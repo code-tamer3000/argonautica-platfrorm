@@ -168,6 +168,11 @@
 
 @media (max-width: 768px) {
   .bar { bottom: calc(58px + env(safe-area-inset-bottom)); }
+  /* Клавиатура открыта: нижний таб-бар прячется и #root уже сжат до visual
+     viewport (см. appshell.module.css, lib/viewport.ts) — резерв под таб-бар
+     под баром больше не нужен, иначе между клавиатурой и баром висит пустая
+     полоса высотой таб-бара. */
+  :global(html[data-kb='open']) .bar { bottom: 0; }
 }
 
 /* ───────────────────── Развёрнутый вид ───────────────────── */

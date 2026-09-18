@@ -372,7 +372,7 @@ See [FILES.md](FILES.md) "Playlist" for the full flow. No ACL of its own — rea
 
 **UNIQUE:** (`playlist_id`, `position`).
 
-**Carrier FK** — one nullable `playlist_id BIGINT FK playlists` column each on `messages`, `tasks`, `kb_items` (same shape as `messages.sticker_id`): at most one playlist per carrier, set once at creation, never edited (immutable after send — see FILES.md "Boundaries"). No join table, no plan/intake isolation of its own — the carrier's own visibility rules already gate it.
+**Carrier FK** — one nullable `playlist_id BIGINT FK playlists` column each on `messages`, `tasks`, `kb_items` (same shape as `messages.sticker_id`): at most one playlist per carrier, and the FK itself is set once at creation and never repointed. The `playlists` row it points at can still be renamed/trimmed by its author after send (see FILES.md "Edit after send") — what's frozen is *which* playlist is attached, not its title/track set. No join table, no plan/intake isolation of its own — the carrier's own visibility rules already gate it.
 
 ## stickerpacks / stickers
 Admin adds packs. Sticker message: `content = NULL`, `sticker_id` set.

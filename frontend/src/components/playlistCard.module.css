@@ -49,6 +49,18 @@
   font-size: var(--text-label-md);
   color: var(--text-secondary);
 }
+/* Переименование прямо в шапке (ARG-139, «3 точки» у автора) — тот же слот, что .title. */
+.titleEdit {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 1px var(--space-1);
+  font-family: var(--font-t4);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-btn);
+}
 
 .tracks {
   list-style: none;
@@ -59,8 +71,15 @@
   gap: 1px;
 }
 
+.trackRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .track {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -71,6 +90,22 @@
   cursor: pointer;
   text-align: left;
 }
+/* Убрать трек — только у владельца (ARG-139), рядом с треком, не в общем меню
+   плейлиста: действие относится к ОДНОМУ треку, а не ко всему объекту. */
+.trackRemove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--text-ghost);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.trackRemove:hover { color: var(--blood-bright); }
 .track:hover { background: var(--bg-surface); }
 .trackActive { background: var(--bg-surface); }
 
