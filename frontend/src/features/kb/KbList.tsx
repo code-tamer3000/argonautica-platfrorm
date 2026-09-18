@@ -112,6 +112,7 @@ export function KbList() {
         body: values.body || null,
         published: values.published,
         category_id: values.category_id,
+        playlist_id: values.playlist_id,
         intake_id: values.intake_id,
         plan_ids: values.plan_ids,
       },

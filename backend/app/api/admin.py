@@ -84,7 +84,7 @@ from app.schemas.user import (
     UserOut,
 )
 from app.services.limbo import apply_plan_change
-from app.services.media import presign_asset_urls, resolve_task_attachments
+from app.services.media import presign_asset_urls, resolve_playlists, resolve_task_attachments
 from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
@@ -954,6 +954,11 @@ async def list_task_library(
     root_ids = {t.source_task_id or t.id for t in tasks}
     published_intakes = await family_published_intake_ids(session, list(root_ids))
     task_attachments = await resolve_task_attachments(session, task_ids) if task_ids else {}
+    # Плейлисты резолвим пачкой — форма редактирования задачи инициализируется
+    # этим объектом (без него прикреплённый плейлист исчезал из формы).
+    task_playlists = await resolve_playlists(
+        session, [t.playlist_id for t in tasks if t.playlist_id is not None]
+    )
 
     items = []
     for t in tasks:
@@ -971,6 +976,7 @@ async def list_task_library(
                 body=t.body,
                 kb_item_id=t.kb_item_id,
                 attachments=task_attachments.get(t.id, []),
+                playlist=task_playlists.get(t.playlist_id) if t.playlist_id else None,
                 intake_id=t.intake_id,
                 plan_ids=task_plans.get(t.id, []),
                 deadline_at=t.deadline_at,
@@ -1063,6 +1069,11 @@ async def republish_task(
         created_by=clone.created_by,
         created_at=clone.created_at,
         attachments=attachments,
+        playlist=(
+            (await resolve_playlists(session, [clone.playlist_id])).get(clone.playlist_id)
+            if clone.playlist_id is not None
+            else None
+        ),
         intake_id=clone.intake_id,
         plan_ids=plan_ids,
         source_task_id=clone.source_task_id,

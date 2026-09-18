@@ -250,6 +250,15 @@ async def update_item(
     item = await load_kb_item(session, item_id)
 
     changes = body.model_dump(exclude_unset=True)
+    # playlist_id: не передан — не трогаем; id — прикрепить/заменить (та же
+    # проверка владения, что при создании); явный null — отцепить.
+    if "playlist_id" in changes:
+        new_playlist_id = changes["playlist_id"]
+        if new_playlist_id is not None:
+            playlist = await session.get(Playlist, new_playlist_id)
+            if playlist is None or playlist.created_by != current_admin.id:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+        item.playlist_id = new_playlist_id
     if "category_id" in changes:
         await assert_category_exists(session, changes["category_id"])
     if "intake_id" in changes:

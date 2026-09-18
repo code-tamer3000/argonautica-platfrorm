@@ -82,6 +82,8 @@ export interface KbItemUpdateBody {
   published?: boolean
   category_id?: number | null
   sort_order?: number
+  // Не передан — плейлист не трогаем; id — прикрепить/заменить; null — отцепить.
+  playlist_id?: number | null
   intake_id?: number | null
   plan_ids?: number[]
 }

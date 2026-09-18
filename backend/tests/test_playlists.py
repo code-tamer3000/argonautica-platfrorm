@@ -10,6 +10,7 @@ from app.models.user import User
 from app.services.media import ensure_buckets
 
 from .conftest import AddMembership, MakeRoom, MakeUser, auth_headers, login
+from .test_admin_intakes import create_intake
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -356,3 +357,147 @@ async def test_set_cover_rejects_non_image_asset(
         json={"cover_media_id": a2.id},
     )
     assert resp.status_code == 400
+
+
+async def test_task_library_returns_playlist_for_edit_form(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Регрессия: «База заданий» отдавала задачу без `playlist`, и форма
+    редактирования (она инициализируется именно этим объектом) теряла уже
+    прикреплённый плейлист."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    a1 = await _make_audio_asset(session, admin.id, "one")
+    playlist = await _create_playlist(client, admin_h, [a1.id])
+
+    create = await client.post(
+        "/api/tasks",
+        headers=admin_h,
+        json={"type": "common", "title": "Слушаем", "playlist_id": playlist["id"]},
+    )
+    assert create.status_code == 201, create.text
+    task_id = create.json()["id"]
+
+    lib = await client.get("/api/admin/tasks", headers=admin_h)
+    assert lib.status_code == 200, lib.text
+    row = next(i for i in lib.json()["items"] if i["id"] == task_id)
+    assert row["playlist"]["id"] == playlist["id"]
+    assert row["playlist"]["tracks"][0]["url"]
+
+
+async def test_task_patch_attaches_replaces_and_detaches_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    a1 = await _make_audio_asset(session, admin.id, "one")
+    a2 = await _make_audio_asset(session, admin.id, "two")
+    first = await _create_playlist(client, admin_h, [a1.id])
+    second = await _create_playlist(client, admin_h, [a2.id])
+
+    create = await client.post(
+        "/api/tasks", headers=admin_h, json={"type": "common", "title": "Без музыки"}
+    )
+    assert create.status_code == 201, create.text
+    task_id = create.json()["id"]
+    assert create.json()["playlist"] is None
+
+    attach = await client.patch(
+        f"/api/tasks/{task_id}", headers=admin_h, json={"playlist_id": first["id"]}
+    )
+    assert attach.status_code == 200, attach.text
+    assert attach.json()["playlist"]["id"] == first["id"]
+
+    replace = await client.patch(
+        f"/api/tasks/{task_id}", headers=admin_h, json={"playlist_id": second["id"]}
+    )
+    assert replace.status_code == 200, replace.text
+    assert replace.json()["playlist"]["id"] == second["id"]
+
+    # Поле не передано — плейлист не трогаем.
+    untouched = await client.patch(
+        f"/api/tasks/{task_id}", headers=admin_h, json={"title": "Другое имя"}
+    )
+    assert untouched.status_code == 200, untouched.text
+    assert untouched.json()["playlist"]["id"] == second["id"]
+
+    detach = await client.patch(
+        f"/api/tasks/{task_id}", headers=admin_h, json={"playlist_id": None}
+    )
+    assert detach.status_code == 200, detach.text
+    assert detach.json()["playlist"] is None
+
+
+async def test_task_patch_rejects_someone_elses_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Анти-IDOR: чужой playlist_id нельзя прицепить и через PATCH."""
+    admin = await make_user(role="admin")
+    other_admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    other_h = await _headers(client, other_admin)
+    a1 = await _make_audio_asset(session, other_admin.id, "one")
+    foreign = await _create_playlist(client, other_h, [a1.id])
+
+    create = await client.post(
+        "/api/tasks", headers=admin_h, json={"type": "common", "title": "Без музыки"}
+    )
+    task_id = create.json()["id"]
+    resp = await client.patch(
+        f"/api/tasks/{task_id}", headers=admin_h, json={"playlist_id": foreign["id"]}
+    )
+    assert resp.status_code == 404
+
+
+async def test_republished_task_keeps_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Клон из «Базы заданий» ссылается на тот же плейлист — доступ к трекам
+    гейтится по задаче-носителю, переливать файлы не нужно."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    a1 = await _make_audio_asset(session, admin.id, "one")
+    playlist = await _create_playlist(client, admin_h, [a1.id])
+
+    create = await client.post(
+        "/api/tasks",
+        headers=admin_h,
+        json={"type": "common", "title": "Слушаем", "playlist_id": playlist["id"]},
+    )
+    task_id = create.json()["id"]
+
+    intake = await create_intake(client, admin_h)
+    resp = await client.post(
+        f"/api/admin/tasks/{task_id}/republish",
+        headers=admin_h,
+        json={"intake_id": intake["id"]},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["playlist"]["id"] == playlist["id"]
+
+
+async def test_kb_patch_attaches_and_detaches_playlist(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    a1 = await _make_audio_asset(session, admin.id, "one")
+    playlist = await _create_playlist(client, admin_h, [a1.id])
+
+    create = await client.post(
+        "/api/kb/items", headers=admin_h, json={"title": "Материал", "published": True}
+    )
+    assert create.status_code == 201, create.text
+    item_id = create.json()["id"]
+
+    attach = await client.patch(
+        f"/api/kb/items/{item_id}", headers=admin_h, json={"playlist_id": playlist["id"]}
+    )
+    assert attach.status_code == 200, attach.text
+    assert attach.json()["playlist"]["id"] == playlist["id"]
+
+    detach = await client.patch(
+        f"/api/kb/items/{item_id}", headers=admin_h, json={"playlist_id": None}
+    )
+    assert detach.status_code == 200, detach.text
+    assert detach.json()["playlist"] is None

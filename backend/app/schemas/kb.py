@@ -65,6 +65,9 @@ class KbItemUpdate(BaseModel):
     published: bool | None = None
     category_id: int | None = None
     sort_order: int | None = None
+    # Не передан — плейлист не трогаем; id — прикрепить/заменить; явный null —
+    # отцепить (сам объект playlists не удаляем).
+    playlist_id: int | None = None
     intake_id: int | None = None
     plan_ids: list[int] | None = None
 

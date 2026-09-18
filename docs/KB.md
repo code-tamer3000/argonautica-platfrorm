@@ -50,7 +50,7 @@ two-step (`components/ConfirmDialog.tsx`), never `window.confirm`. The create/ed
 
 ## Playlist attachment (ARG-139)
 
-- `KbItemCreate.playlist_id` — one already-created playlist (`POST /api/media/playlists`), attached alongside (or instead of) `media_asset_ids`. Set only at creation, no update API (immutable after send — see [FILES.md](FILES.md) "Playlist"). `KbItemOut.playlist` carries the fully-resolved object; its tracks follow the same "published item → any participant" access rule as ordinary KB media above.
+- `KbItemCreate.playlist_id` — one already-created playlist (`POST /api/media/playlists`), attached alongside (or instead of) `media_asset_ids`. `KbItemUpdate.playlist_id` changes it afterwards: absent = leave alone, id = attach/replace (same ownership check as on create), explicit `null` = detach. `KbItemOut.playlist` carries the fully-resolved object; its tracks follow the same "published item → any participant" access rule as ordinary KB media above.
 
 ## Isolation by intake and plan (ARG-96)
 

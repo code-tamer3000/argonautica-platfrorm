@@ -21,8 +21,9 @@ export interface KbFormValues {
   published: boolean
   category_id: number | null
   media_asset_ids: number[]
-  // Плейлист-вложение материала (docs/FILES.md «Плейлист») — null, если не прикреплён.
-  // Только для СОЗДАНИЯ (см. Границы ARG-139: неизменяем после отправки).
+  // Плейлист-вложение материала (docs/FILES.md «Плейлист») — null, если не
+  // прикреплён. Отправляется и при создании, и при редактировании (PATCH умеет
+  // прикрепить/заменить/отцепить).
   playlist_id: number | null
   intake_id: number | null
   plan_ids: number[]
@@ -276,7 +277,10 @@ export function KbForm({ initial, onSubmit, item }: KbFormProps) {
         )}
         {/* Плейлист неизменяем после отправки (docs/FILES.md «Плейлист») — только
             при создании нового материала, не при редактировании существующего. */}
-        {!item && <PlaylistComposer value={stagedPlaylist} onChange={setStagedPlaylist} />}
+        {/* И при создании, и при редактировании: у существующего материала здесь
+            виден уже прикреплённый плейлист, его можно заменить или убрать —
+            PATCH /api/kb/items/{id} принимает playlist_id. */}
+        <PlaylistComposer value={stagedPlaylist} onChange={setStagedPlaylist} />
       </div>
 
       {cancelAsk && (

@@ -434,6 +434,10 @@ async def clone_task(
         title=source.title,
         body=source.body,
         kb_item_id=source.kb_item_id,
+        # Тот же playlist_id, что у источника — как и media_asset_id ниже: доступ
+        # к трекам гейтится по задаче-носителю, а не по владельцу плейлиста, так
+        # что переливать файлы не нужно. Без этого переиздание теряло плейлист.
+        playlist_id=source.playlist_id,
         deadline_at=deadline_at,
         publish_at=publish_at,
         created_by=created_by,
