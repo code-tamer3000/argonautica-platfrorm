@@ -501,3 +501,144 @@ async def test_kb_patch_attaches_and_detaches_playlist(
     )
     assert detach.status_code == 200, detach.text
     assert detach.json()["playlist"] is None
+
+
+async def test_playlist_picker_lists_own_and_accessible_only(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """Пикер «прикрепить существующий» отдаёт свои плейлисты и те, что уже
+    прикреплены к доступному носителю, — но НЕ чужие из комнат, куда нет доступа."""
+    author = await make_user()
+    member = await make_user()
+    outsider = await make_user()
+    author_h = await _headers(client, author)
+    member_h = await _headers(client, member)
+    outsider_h = await _headers(client, outsider)
+
+    room = await make_room(created_by=author.id, type="group")
+    await add_membership(room.id, author.id)
+    await add_membership(room.id, member.id)
+
+    a1 = await _make_audio_asset(session, author.id, "one")
+    shared = await _create_playlist(client, author_h, [a1.id])
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=author_h,
+        json={"playlist_id": shared["id"]},
+    )
+    assert resp.status_code == 201, resp.text
+
+    # Свой — видно всегда, даже пока никуда не прикреплён.
+    a2 = await _make_audio_asset(session, author.id, "two")
+    unattached = await _create_playlist(client, author_h, [a2.id])
+
+    listed_author = await client.get("/api/media/playlists", headers=author_h)
+    assert listed_author.status_code == 200, listed_author.text
+    author_ids = [p["id"] for p in listed_author.json()["items"]]
+    assert shared["id"] in author_ids
+    assert unattached["id"] in author_ids
+
+    # Участник комнаты видит прикреплённый туда, но не «висящий» чужой черновик.
+    listed_member = await client.get("/api/media/playlists", headers=member_h)
+    member_ids = [p["id"] for p in listed_member.json()["items"]]
+    assert shared["id"] in member_ids
+    assert unattached["id"] not in member_ids
+
+    # Посторонний не видит ни одного.
+    listed_outsider = await client.get("/api/media/playlists", headers=outsider_h)
+    outsider_ids = [p["id"] for p in listed_outsider.json()["items"]]
+    assert shared["id"] not in outsider_ids
+    assert unattached["id"] not in outsider_ids
+
+
+async def test_member_can_reattach_playlist_he_can_see(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """Главное послабление фичи: чужой, но ДОСТУПНЫЙ плейлист можно прикрепить
+    к своему сообщению (раньше пускали только собственный)."""
+    author = await make_user()
+    member = await make_user()
+    author_h = await _headers(client, author)
+    member_h = await _headers(client, member)
+
+    room = await make_room(created_by=author.id, type="group")
+    await add_membership(room.id, author.id)
+    await add_membership(room.id, member.id)
+
+    a1 = await _make_audio_asset(session, author.id, "one")
+    playlist = await _create_playlist(client, author_h, [a1.id])
+    first = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=author_h,
+        json={"playlist_id": playlist["id"]},
+    )
+    assert first.status_code == 201
+
+    reattached = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=member_h,
+        json={"playlist_id": playlist["id"]},
+    )
+    assert reattached.status_code == 201, reattached.text
+    assert reattached.json()["playlist"]["id"] == playlist["id"]
+
+
+async def test_outsider_still_cannot_attach_playlist_he_cannot_see(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """Анти-IDOR не сломан: недоступный чужой playlist_id по-прежнему 404 —
+    иначе подстановкой id музыка из чужой комнаты утекала бы в свою."""
+    author = await make_user()
+    outsider = await make_user()
+    author_h = await _headers(client, author)
+    outsider_h = await _headers(client, outsider)
+
+    closed = await make_room(created_by=author.id, type="group")
+    await add_membership(closed.id, author.id)
+    own_room = await make_room(created_by=outsider.id, type="group")
+    await add_membership(own_room.id, outsider.id)
+
+    a1 = await _make_audio_asset(session, author.id, "one")
+    playlist = await _create_playlist(client, author_h, [a1.id])
+    assert (
+        await client.post(
+            f"/api/rooms/{closed.id}/messages",
+            headers=author_h,
+            json={"playlist_id": playlist["id"]},
+        )
+    ).status_code == 201
+
+    resp = await client.post(
+        f"/api/rooms/{own_room.id}/messages",
+        headers=outsider_h,
+        json={"playlist_id": playlist["id"]},
+    )
+    assert resp.status_code == 404
+
+
+async def test_playlist_picker_search_by_title(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    author = await make_user()
+    author_h = await _headers(client, author)
+    a1 = await _make_audio_asset(session, author.id, "one")
+    playlist = await _create_playlist(client, author_h, [a1.id])
+
+    hit = await client.get("/api/media/playlists?q=Медитация", headers=author_h)
+    assert hit.status_code == 200, hit.text
+    assert playlist["id"] in [p["id"] for p in hit.json()["items"]]
+
+    miss = await client.get("/api/media/playlists?q=неттакого", headers=author_h)
+    assert playlist["id"] not in [p["id"] for p in miss.json()["items"]]

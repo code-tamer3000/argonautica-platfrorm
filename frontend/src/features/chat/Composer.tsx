@@ -66,6 +66,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // офлайн-очереди — как pendingRef, просто отправляем готовый id).
   const [pendingPlaylist, setPendingPlaylist] = useState<PlaylistOut | null>(null)
   const [playlistPanelOpen, setPlaylistPanelOpen] = useState(false)
+  // Внутри попапа сейчас панель сборки нового плейлиста (а не только пикер).
+  const [playlistBuilding, setPlaylistBuilding] = useState(false)
   // Меню скрепки (Файл / Материал / Задача) и открытый пикер ссылки.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [refPickerOpen, setRefPickerOpen] = useState(false)
@@ -731,12 +733,16 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
           после ревью). «Отмена» внутри панели закрывает попап без прикрепления —
           поле ввода текста всё это время доступно и не перекрыто. */}
       {playlistPanelOpen && (
-        <div className={styles.playlistPop}>
+        // Хром попапа — только когда внутри действительно панель сборки: выбор
+        // существующего плейлиста идёт модалкой поверх экрана, и карточка над
+        // композером осталась бы пустой рамкой.
+        <div className={playlistBuilding ? styles.playlistPop : undefined}>
           <PlaylistComposer
             value={null}
             onChange={setPendingPlaylist}
             autoOpen={playlistPanelOpen}
             onClose={() => setPlaylistPanelOpen(false)}
+            onBuildingChange={setPlaylistBuilding}
           />
         </div>
       )}

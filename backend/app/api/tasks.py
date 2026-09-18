@@ -25,7 +25,6 @@ from app.models.intake import Intake
 from app.models.kb import KbItem
 from app.models.media import MediaAsset
 from app.models.plan import Plan
-from app.models.playlist import Playlist
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -66,6 +65,7 @@ from app.schemas.task import (
 from app.services import stream as stream_service
 from app.services.graduation import assert_not_graduated, is_graduated
 from app.services.media import (
+    load_attachable_playlist,
     presign_asset_urls,
     resolve_playlists,
     resolve_submission_attachments,
@@ -175,9 +175,8 @@ async def create_task(
     await _assert_intake_exists(session, body.intake_id)
     await _assert_plans_exist(session, body.plan_ids)
     if body.playlist_id is not None:
-        playlist = await session.get(Playlist, body.playlist_id)
-        if playlist is None or playlist.created_by != current_admin.id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+        # Свой плейлист или уже доступный админу (пикер «выбрать существующий»).
+        await load_attachable_playlist(session, body.playlist_id, current_admin)
 
     pairs_input: list[list[int]] = []
     stream_user_ids: list[int] = []
@@ -348,9 +347,7 @@ async def update_task(
     if "playlist_id" in changes:
         new_playlist_id = changes["playlist_id"]
         if new_playlist_id is not None:
-            playlist = await session.get(Playlist, new_playlist_id)
-            if playlist is None or playlist.created_by != current_admin.id:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+            await load_attachable_playlist(session, new_playlist_id, current_admin)
         task.playlist_id = new_playlist_id
     if "kb_item_id" in changes:
         await _assert_kb_item_exists(session, changes["kb_item_id"])

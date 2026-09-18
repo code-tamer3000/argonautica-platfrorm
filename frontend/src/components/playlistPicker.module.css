@@ -1,0 +1,62 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* Список может быть длинным — крутим его, а не всю модалку. */
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: transparent;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  text-align: left;
+}
+.item:hover { background: var(--color-frame); }
+.cover {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-btn);
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-frame);
+  color: var(--text-secondary);
+}
+.cover img { width: 100%; height: 100%; object-fit: cover; }
+.meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.title {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.count {
+  font-family: var(--font-t4);
+  font-size: 11px;
+  color: var(--text-secondary);
+}

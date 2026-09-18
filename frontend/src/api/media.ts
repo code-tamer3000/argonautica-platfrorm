@@ -24,6 +24,21 @@ export function createPlaylist(body: PlaylistCreateBody): Promise<PlaylistOut> {
   return http.post<PlaylistOut>('/api/media/playlists', body)
 }
 
+/** Плейлисты, ДОСТУПНЫЕ смотрящему, — пикер «прикрепить уже существующий»
+ * (docs/FILES.md «Плейлист»). Область: свои + прикреплённые к носителю, который
+ * юзер и так видит; чужая личка сюда не попадает. */
+export function usePlaylists(q: string, enabled: boolean) {
+  const query = q.trim()
+  return useQuery({
+    queryKey: ['playlists', query],
+    enabled,
+    queryFn: () => {
+      const qs = query ? `?q=${encodeURIComponent(query)}` : ''
+      return http.get<{ items: PlaylistOut[] }>(`/api/media/playlists${qs}`)
+    },
+  })
+}
+
 export interface PlaylistUpdateBody {
   title?: string
   // null — очистить обложку (вернуться к заглушке); одна картинка на ВЕСЬ

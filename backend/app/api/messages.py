@@ -20,7 +20,6 @@ from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.media import MediaAsset
 from app.models.message import Message, MessageAttachment, MessageReaction, PinnedMessage
-from app.models.playlist import Playlist
 from app.models.room import Room
 from app.models.sticker import Sticker
 from app.models.user import User
@@ -37,7 +36,11 @@ from app.schemas.message import (
     SendMessageRequest,
     ThreadOut,
 )
-from app.services.media import resolve_attachments, resolve_playlists
+from app.services.media import (
+    load_attachable_playlist,
+    resolve_attachments,
+    resolve_playlists,
+)
 from app.services.message_quotes import assert_quote_target, resolve_message_quotes
 from app.services.message_refs import (
     assert_ref_visible,
@@ -298,12 +301,11 @@ async def send_message(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
 
     if body.playlist_id is not None:
-        # Прикрепить можно только свой, ещё никуда не привязанный плейлист (анти-IDOR
-        # — иначе можно было бы подставить чужой playlist_id и получить доступ к его
-        # трекам через carrier-цепочку в assert_media_access).
-        playlist = await session.get(Playlist, body.playlist_id)
-        if playlist is None or playlist.created_by != current_user.id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+        # Прикрепить можно свой плейлист ИЛИ уже доступный отправителю (пикер
+        # «выбрать существующий»). Недоступный чужой — 404, иначе подстановкой
+        # playlist_id открывался бы доступ к его трекам через carrier-цепочку в
+        # assert_media_access (анти-IDOR). См. services/media.py.
+        await load_attachable_playlist(session, body.playlist_id, current_user)
 
     # Ссылка на материал/задачу: цель должна существовать и быть видимой отправителю
     # (анти-IDOR — нельзя сослаться на черновик КБ / чужую задачу).
