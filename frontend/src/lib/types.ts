@@ -834,6 +834,9 @@ export type WsEvent =
   // надо перечитать, иначе она появится только после reconnect.
   | { type: 'room.created'; room_id: number }
   | { type: 'room.closed'; room_id: number }
+  // Задание дневника создано/изменено/удалено (ARG-127) — глобальный broadcast,
+  // без payload'а: клиент инвалидирует свой кэш активной структуры.
+  | { type: 'journal.structure_changed' }
   // --- Задачи (приходят по тому же per-user каналу, что и notification.new) ---
   | { type: 'task.created'; task_id: number }
   | { type: 'task.updated'; task_id: number }
