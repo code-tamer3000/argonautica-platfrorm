@@ -692,7 +692,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
             {journalMediaMissing && (
               <>
                 {journalMeta.placeholder && <br />}
-                ⚠️ Прикрепите фото или видео — раздел обязателен
+                📷 Прикрепите фото или видео — раздел обязателен
               </>
             )}
           </span>
