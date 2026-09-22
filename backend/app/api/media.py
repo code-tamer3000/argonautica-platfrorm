@@ -269,41 +269,6 @@ async def confirm_upload(
     return asset
 
 
-@router.get("/{asset_id}", response_model=MediaUrlOut)
-async def get_media_url(
-    asset_id: int,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> MediaUrlOut:
-    """Выдать presigned-GET после проверки прав (авторизация на каждом запросе, п.1)."""
-    asset = await session.get(MediaAsset, asset_id)
-    if asset is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
-    await assert_media_access(session, asset, current_user)
-
-    # Видео с готовым транскодом отдаём вариантом (H.264 720p faststart), иначе оригинал.
-    url = presigned_get_url(
-        asset.bucket, serving_key(asset), download_name=attachment_download_name(asset)
-    )
-    thumb_url = (
-        presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
-    )
-    preview_url = (
-        presigned_get_url(asset.bucket, asset.preview_key) if asset.preview_key else None
-    )
-    return MediaUrlOut(
-        url=url,
-        expires_in=PRESIGN_GET_EXPIRES,
-        kind=asset.kind,
-        duration=asset.duration,
-        width=asset.width,
-        height=asset.height,
-        thumb_url=thumb_url,
-        preview_url=preview_url,
-        transcode_status=asset.transcode_status,
-    )
-
-
 @router.post("/playlists", response_model=PlaylistOut, status_code=201)
 async def create_playlist_endpoint(
     body: PlaylistCreateRequest,
@@ -433,3 +398,43 @@ async def remove_playlist_track_endpoint(
     await remove_playlist_track(session, playlist, track_id)
     await session.commit()
     return await build_playlist_out(session, playlist)
+
+
+# Starlette матчит роуты по порядку РЕГИСТРАЦИИ, не по специфичности: `/playlists`
+# буквально подходит под шаблон `/{asset_id}` (просто строка вместо числа), так что
+# любой литеральный путь в этом файле должен объявляться ВЫШЕ этого catch-all —
+# иначе он перехватит запрос первым и уронит его в 422 (asset_id: int_parsing) на
+# ровном месте (баг был именно так найден и починен).
+@router.get("/{asset_id}", response_model=MediaUrlOut)
+async def get_media_url(
+    asset_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> MediaUrlOut:
+    """Выдать presigned-GET после проверки прав (авторизация на каждом запросе, п.1)."""
+    asset = await session.get(MediaAsset, asset_id)
+    if asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
+    await assert_media_access(session, asset, current_user)
+
+    # Видео с готовым транскодом отдаём вариантом (H.264 720p faststart), иначе оригинал.
+    url = presigned_get_url(
+        asset.bucket, serving_key(asset), download_name=attachment_download_name(asset)
+    )
+    thumb_url = (
+        presigned_get_url(asset.bucket, asset.thumb_key) if asset.thumb_key else None
+    )
+    preview_url = (
+        presigned_get_url(asset.bucket, asset.preview_key) if asset.preview_key else None
+    )
+    return MediaUrlOut(
+        url=url,
+        expires_in=PRESIGN_GET_EXPIRES,
+        kind=asset.kind,
+        duration=asset.duration,
+        width=asset.width,
+        height=asset.height,
+        thumb_url=thumb_url,
+        preview_url=preview_url,
+        transcode_status=asset.transcode_status,
+    )

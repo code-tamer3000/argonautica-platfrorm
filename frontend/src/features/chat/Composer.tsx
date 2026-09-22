@@ -450,7 +450,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       // Обязательное фото/видео (ARG-140) — блокируем до похода на сервер: тот же
       // 422 всё равно вернётся, но лучше не гонять офлайн-outbox впустую.
       if (journalMeta.requires_media && !pendingFiles.some((f) => f.kind === 'image' || f.kind === 'video')) {
-        toast('Прикрепите фото или видео к этому разделу', 'error')
+        toast('Прикрепите фото или видео к этому разделу', 'info')
         return
       }
       if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
@@ -599,15 +599,11 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     onEditorInput()
   }
 
-  // Обязательное фото/видео (ARG-140): пока в заряженном разделе нет ни одного
-  // качественного вложения, кнопка отправки недоступна — так же, как воображаемая
-  // серверная 422 не пропустит текст без него.
-  const journalMediaMissing =
-    !!journalMeta?.requires_media &&
-    !pendingFiles.some((f) => f.kind === 'image' || f.kind === 'video')
+  // Обязательное фото/видео (ARG-140): кнопку отправки НЕ прячем — нажатие без
+  // вложения даёт понятный тост и оставляет текст в поле (см. submit()), вместо
+  // того чтобы подменять кнопку отправки микрофоном, будто отправить нечем.
   const canSend =
-    (!!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist) &&
-    !journalMediaMissing
+    !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist
   // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
   // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
   const hasText = !!text.trim()
@@ -686,16 +682,11 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       )}
       {journalMeta && (
         <div className={`${styles.contextBar} ${styles.contextBarJournal}`}>
-          <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
-          <span className={styles.ctxDesc}>
-            {journalMeta.placeholder}
-            {journalMediaMissing && (
-              <>
-                {journalMeta.placeholder && <br />}
-                📷 Прикрепите фото или видео — раздел обязателен
-              </>
-            )}
-          </span>
+          {/* Имя раздела уже видно в чипе над композером (DailyJournalForm) — здесь
+              оставляем только подсказку, во всю ширину бара. Обязательность
+              фото/видео тут не дублируем текстом — она уже видна по тосту
+              при попытке отправить без вложения (см. submit()). */}
+          <span className={styles.ctxDesc}>{journalMeta.placeholder}</span>
           <button
             className={styles.pendingChipX}
             onClick={() => setPendingJournal(null)}
