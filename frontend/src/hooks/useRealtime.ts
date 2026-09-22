@@ -9,6 +9,7 @@ import {
   updateAttachment,
 } from '../api/cache'
 import { dashboardKey } from '../api/dashboard'
+import { journalStructureKey } from '../api/journal'
 import { notificationsKey } from '../api/notifications'
 import { pinsKey } from '../api/pins'
 import { roomsKey, useRooms } from '../api/rooms'
@@ -192,6 +193,12 @@ export function useRealtime(): void {
           break
         case 'presence':
           setOnline(e.user_id, e.status === 'online')
+          break
+        case 'journal.structure_changed':
+          // Задание дневника поменялось у админа в другой вкладке (ARG-127) — без
+          // этого composer/виджет здесь работали бы по устаревшей структуре до
+          // фокуса/реконнекта. Событие глобальное (как presence), без payload'а.
+          qc.invalidateQueries({ queryKey: journalStructureKey })
           break
         case 'notification.new': {
           const n = e.notification

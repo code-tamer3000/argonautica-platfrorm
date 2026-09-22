@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from typing_extensions import TypedDict
 
 from app.api.deps import get_current_active_user, require_ongoing_participant
-from app.db.session import get_session
+from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
 from app.models.message import Message
@@ -37,6 +37,8 @@ from app.schemas.journal import (
 from app.services.media import presign_asset_urls
 from app.services.tasks import late_submissions_count, overdue_tasks_for
 from app.services.users import avatar_url
+from app.ws.pubsub import publish_journal_structure_changed
+from app.ws.schemas import journal_structure_changed_event
 
 
 class _StatsResult(TypedDict):
@@ -759,6 +761,14 @@ async def _validate_chat_room(session: AsyncSession, room_id: int | None) -> Non
         )
 
 
+def _notify_journal_structure_changed(session: AsyncSession) -> None:
+    """ARG-127: разослать всем уже открытым клиентам, что структура изменилась —
+    иначе они продолжат работать по устаревшему кэшу до фокуса/реконнекта."""
+    after_commit(
+        session, lambda: publish_journal_structure_changed(journal_structure_changed_event())
+    )
+
+
 async def create_program(
     session: AsyncSession, body: JournalProgramIn, created_by: int
 ) -> JournalProgramOut:
@@ -793,6 +803,7 @@ async def create_program(
     session.add(program)
     await session.flush()
     await session.refresh(program, ["sections"])
+    _notify_journal_structure_changed(session)
     return _program_out(program)
 
 
@@ -844,6 +855,7 @@ async def update_program(
         ]
     await session.flush()
     await session.refresh(program, ["sections"])
+    _notify_journal_structure_changed(session)
     return _program_out(program)
 
 
@@ -862,9 +874,7 @@ async def delete_program(session: AsyncSession, program_id: int) -> None:
     if program is not None:
         await session.delete(program)
         await session.flush()
-
-
-
+        _notify_journal_structure_changed(session)
 
 
 async def credit_day(

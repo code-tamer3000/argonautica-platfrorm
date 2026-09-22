@@ -44,6 +44,9 @@ EVENT_ROOM_CREATED = "room.created"
 # Комната закрыта сервером: подгруппа потока утвердила фразу, этап пройден. Клиент
 # убирает её из списка — доступа к ней у бывших членов больше нет (docs/ROOMS.md).
 EVENT_ROOM_CLOSED = "room.closed"
+# Структура дневника (задание) изменилась — глобальный broadcast (как presence),
+# без payload'а: клиент просто инвалидирует свой кэш структуры (ARG-127).
+EVENT_JOURNAL_STRUCTURE_CHANGED = "journal.structure_changed"
 
 
 def _with_cheap_tariff_content(
@@ -188,6 +191,10 @@ def room_created_event(room_id: int) -> dict[str, Any]:
 
 def room_closed_event(room_id: int) -> dict[str, Any]:
     return {"type": EVENT_ROOM_CLOSED, "room_id": room_id}
+
+
+def journal_structure_changed_event() -> dict[str, Any]:
+    return {"type": EVENT_JOURNAL_STRUCTURE_CHANGED}
 
 
 def task_submission_new_event(
