@@ -599,15 +599,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     onEditorInput()
   }
 
-  // Обязательное фото/видео (ARG-140): пока в заряженном разделе нет ни одного
-  // качественного вложения, кнопка отправки недоступна — так же, как воображаемая
-  // серверная 422 не пропустит текст без него.
+  // Обязательное фото/видео (ARG-140): кнопку отправки НЕ прячем — нажатие без
+  // вложения даёт понятный тост и оставляет текст в поле (см. submit()), вместо
+  // того чтобы подменять кнопку отправки микрофоном, будто отправить нечем.
   const journalMediaMissing =
     !!journalMeta?.requires_media &&
     !pendingFiles.some((f) => f.kind === 'image' || f.kind === 'video')
   const canSend =
-    (!!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist) &&
-    !journalMediaMissing
+    !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist
   // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
   // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
   const hasText = !!text.trim()
@@ -686,7 +685,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       )}
       {journalMeta && (
         <div className={`${styles.contextBar} ${styles.contextBarJournal}`}>
-          <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
+          {/* Имя раздела уже видно в чипе над композером (DailyJournalForm) — здесь
+              оставляем только подсказку, во всю ширину бара. */}
           <span className={styles.ctxDesc}>
             {journalMeta.placeholder}
             {journalMediaMissing && (
