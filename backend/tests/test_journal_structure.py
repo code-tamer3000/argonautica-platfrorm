@@ -166,6 +166,60 @@ async def test_admin_create_list_delete_program(
     assert all(p["id"] != program_id for p in gone.json())
 
 
+async def test_update_program_keeping_same_section_keys(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Регрессия: PATCH с тем же набором ключей раздела падал 500
+    (UniqueViolationError на uq_journal_sections_program_key) — `program.sections =
+    [...]` шлёт INSERT новых строк раньше DELETE старых при том же flush, а ключ
+    раздела почти всегда не меняется при обычном редактировании текста/эмодзи."""
+    admin = await make_user(role="admin", password="adminpass123")
+    headers = auth_headers((await login(client, admin.username, "adminpass123"))["access_token"])
+    starts_on = _future_date(500)
+
+    created = await client.post(
+        "/api/admin/journal/programs",
+        headers=headers,
+        json={
+            "starts_on": starts_on,
+            "title": None,
+            "description": None,
+            "sections": [{"key": "focus", "label": "Фокус", "emoji": "🎯"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    program_id = created.json()["id"]
+
+    try:
+        # Тот же ключ "focus" — только подпись меняется. Раньше это падало.
+        updated = await client.patch(
+            f"/api/admin/journal/programs/{program_id}",
+            headers=headers,
+            json={"sections": [{"key": "focus", "label": "Фокус (правка)"}]},
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["sections"][0]["label"] == "Фокус (правка)"
+
+        # Повторное сохранение того же набора (как «просто нажали Сохранить» без
+        # правок) — тоже должно проходить, не только первая правка.
+        again = await client.patch(
+            f"/api/admin/journal/programs/{program_id}",
+            headers=headers,
+            json={
+                "sections": [
+                    {"key": "focus", "label": "Фокус (правка)", "requires_media": True}
+                ]
+            },
+        )
+        assert again.status_code == 200, again.text
+        assert again.json()["sections"][0]["requires_media"] is True
+    finally:
+        deleted = await client.delete(
+            f"/api/admin/journal/programs/{program_id}", headers=headers
+        )
+        assert deleted.status_code == 204
+
+
 async def test_create_duplicate_start_conflicts(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

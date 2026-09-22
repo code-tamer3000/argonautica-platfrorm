@@ -839,7 +839,13 @@ async def update_program(
         await _validate_chat_room(session, body.chat_room_id)
         program.chat_room_id = body.chat_room_id
     if body.sections is not None:
-        # Полная замена набора разделов (delete-orphan подчистит старые).
+        # Полная замена набора разделов (delete-orphan подчистит старые). ВАЖНО:
+        # сначала снять старые и ФЛАШНУТЬ отдельно — иначе unit-of-work шлёт INSERT
+        # новых строк раньше DELETE старых в одном flush, а ключ раздела при обычном
+        # редактировании текста почти всегда не меняется → UniqueViolationError на
+        # uq_journal_sections_program_key (regression, см. test_journal_structure.py).
+        program.sections = []
+        await session.flush()
         program.sections = [
             JournalSection(
                 key=s.key,
