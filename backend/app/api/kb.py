@@ -26,7 +26,6 @@ from app.models.kb import (
 )
 from app.models.media import MediaAsset
 from app.models.plan import Plan
-from app.models.playlist import Playlist
 from app.models.user import User
 from app.schemas.kb import (
     AttachMediaRequest,
@@ -49,7 +48,7 @@ from app.services.kb import (
     attached_plan_ids,
     load_kb_item,
 )
-from app.services.media import resolve_playlists
+from app.services.media import load_attachable_playlist, resolve_playlists
 from app.services.visibility import plan_visibility_clause
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
@@ -212,9 +211,8 @@ async def create_item(
     await _assert_intake_exists(session, body.intake_id)
     await _assert_plans_exist(session, body.plan_ids)
     if body.playlist_id is not None:
-        playlist = await session.get(Playlist, body.playlist_id)
-        if playlist is None or playlist.created_by != current_admin.id:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+        # Свой плейлист или уже доступный админу (пикер «выбрать существующий»).
+        await load_attachable_playlist(session, body.playlist_id, current_admin)
 
     item = KbItem(
         title=body.title,
@@ -255,9 +253,7 @@ async def update_item(
     if "playlist_id" in changes:
         new_playlist_id = changes["playlist_id"]
         if new_playlist_id is not None:
-            playlist = await session.get(Playlist, new_playlist_id)
-            if playlist is None or playlist.created_by != current_admin.id:
-                raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+            await load_attachable_playlist(session, new_playlist_id, current_admin)
         item.playlist_id = new_playlist_id
     if "category_id" in changes:
         await assert_category_exists(session, changes["category_id"])

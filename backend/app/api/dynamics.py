@@ -153,6 +153,35 @@ def _journal_category(content: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def journal_category(content: str | None) -> str | None:
+    """Публичная обёртка над `_journal_category` — `send_message` (app/api/messages.py)
+    использует её, чтобы понять, отправляется ли раздел с обязательным медиа (ARG-140),
+    той же обёрточной схемой, что и `platform_today`/`load_program_start` ниже."""
+    return _journal_category(content)
+
+
+async def section_requires_media(session: AsyncSession, key: str, day: date) -> bool:
+    """Требует ли раздел `key` фото/видео к отписке в задании, активном в день `day`
+    (ARG-140). Не завязано на полный `Timeline`/`ProgramVersion` — только для гейта
+    отправки в `send_message`, вызывается лишь когда сообщение несёт журнальный маркер."""
+    program_id = await session.scalar(
+        select(JournalProgram.id)
+        .where(JournalProgram.starts_on <= day)
+        .order_by(JournalProgram.starts_on.desc())
+        .limit(1)
+    )
+    if program_id is None:
+        return False
+    return bool(
+        await session.scalar(
+            select(JournalSection.requires_media).where(
+                JournalSection.program_id == program_id,
+                JournalSection.key == key,
+            )
+        )
+    )
+
+
 def _platform_day(dt: datetime) -> date:
     """Журнальный день произвольного момента: (МСК-время − 3ч).date().
 
@@ -671,6 +700,7 @@ def _section_out(s: JournalSection) -> JournalSectionOut:
         placeholder=s.placeholder,
         input_type="title" if s.input_type == "title" else "text",
         position=s.position,
+        requires_media=s.requires_media,
     )
 
 
@@ -756,6 +786,7 @@ async def create_program(
             heading=s.heading,
             placeholder=s.placeholder,
             input_type=s.input_type,
+            requires_media=s.requires_media,
         )
         for i, s in enumerate(body.sections)
     ]
@@ -807,6 +838,7 @@ async def update_program(
                 heading=s.heading,
                 placeholder=s.placeholder,
                 input_type=s.input_type,
+                requires_media=s.requires_media,
             )
             for i, s in enumerate(body.sections)
         ]

@@ -52,7 +52,8 @@ permanent, the window date is not).
   задание `starts_on`, and to today if there is no задание at all.
 - A **section** has: `key` (stable slug `[a-z0-9_]+`, used in the message marker), `emoji`,
   `label`, `heading`, `placeholder`, `input_type` (`text` = multiline body under a fixed
-  heading; `title` = single-line where the entered text becomes the heading, e.g. `film`).
+  heading; `title` = single-line where the entered text becomes the heading, e.g. `film`),
+  `requires_media` (ARG-140, below).
 - Seeded задание #1 (`starts_on = 2026-07-03`) reproduces the original hardcoded
   `focus`/`notes`/`film` structure, so historical scoring is unchanged.
 - **Editing** an already-active задание's section *set* re-scores its days; cosmetic edits
@@ -103,6 +104,31 @@ set in `AdminJournal` when creating/editing a задание — must reference 
   was always implicitly true (root posts are owner-only), but a shared group needs it
   explicit or one member's submission would show as "done" for everyone viewing that
   room's calendar.
+
+## Обязательное фото/видео к разделу (ARG-140)
+
+A section can carry `requires_media` (`journal_sections.requires_media`, set per section
+in `AdminJournal` when creating/editing a задание). When set:
+
+- **Hard gate on send**, not a scoring-only rule: `POST /api/rooms/{room_id}/messages`
+  (`app/api/messages.py`) rejects with `422` if the content starts with that section's
+  `<!--journal:{key}-->` marker and none of `attachment_ids` resolves to
+  `media_assets.kind ∈ {'image', 'video'}`. The requirement is looked up against the
+  задание active **today** (`dynamics.section_requires_media`) — the same day-boundary
+  rule as everywhere else in Dynamics, not the day the entry is nominally "for".
+- The composer (`Composer.tsx`) mirrors this client-side: while a section with
+  `requires_media` is charged (`pendingJournal`) and no image/video is attached yet, the
+  send button is unavailable and the context bar explains why — purely UX, the server
+  check above is what actually enforces it (attachment ids are never trusted from the
+  client, see CLAUDE.md "IDOR is threat #1").
+- Voice, audio, and plain files do **not** satisfy the requirement — only `image`/`video`
+  kinds count.
+- **Not retroactive.** Toggling the flag only affects new sends from that point on; it
+  follows the same "editing an active задание's section set re-scores its days, cosmetic
+  edits are safe" caveat as the rest of the section fields — see above.
+- Editing a message never re-triggers this check (edits only ever change text, see
+  [MESSAGES.md](MESSAGES.md)); forwarding copies attachments as-is from a message that
+  already passed the check at send time.
 
 ## Exceptions
 

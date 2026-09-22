@@ -66,6 +66,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // офлайн-очереди — как pendingRef, просто отправляем готовый id).
   const [pendingPlaylist, setPendingPlaylist] = useState<PlaylistOut | null>(null)
   const [playlistPanelOpen, setPlaylistPanelOpen] = useState(false)
+  // Внутри попапа сейчас панель сборки нового плейлиста (а не только пикер).
+  const [playlistBuilding, setPlaylistBuilding] = useState(false)
   // Меню скрепки (Файл / Материал / Задача) и открытый пикер ссылки.
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [refPickerOpen, setRefPickerOpen] = useState(false)
@@ -445,6 +447,12 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         toast(`Введите: ${journalMeta.label}`, 'error')
         return
       }
+      // Обязательное фото/видео (ARG-140) — блокируем до похода на сервер: тот же
+      // 422 всё равно вернётся, но лучше не гонять офлайн-outbox впустую.
+      if (journalMeta.requires_media && !pendingFiles.some((f) => f.kind === 'image' || f.kind === 'video')) {
+        toast('Прикрепите фото или видео к этому разделу', 'error')
+        return
+      }
       if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
       const uploads = pendingFiles
       const ref = pendingRef
@@ -591,8 +599,15 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     onEditorInput()
   }
 
+  // Обязательное фото/видео (ARG-140): пока в заряженном разделе нет ни одного
+  // качественного вложения, кнопка отправки недоступна — так же, как воображаемая
+  // серверная 422 не пропустит текст без него.
+  const journalMediaMissing =
+    !!journalMeta?.requires_media &&
+    !pendingFiles.some((f) => f.kind === 'image' || f.kind === 'video')
   const canSend =
-    !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist
+    (!!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist) &&
+    !journalMediaMissing
   // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
   // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
   const hasText = !!text.trim()
@@ -672,7 +687,9 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       {journalMeta && (
         <div className={`${styles.contextBar} ${styles.contextBarJournal}`}>
           <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
-          <span className={styles.ctxDesc}>{journalMeta.placeholder}</span>
+          <span className={styles.ctxDesc}>
+            {journalMediaMissing ? 'Прикрепите фото или видео — раздел обязателен' : journalMeta.placeholder}
+          </span>
           <button
             className={styles.pendingChipX}
             onClick={() => setPendingJournal(null)}
@@ -731,12 +748,16 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
           после ревью). «Отмена» внутри панели закрывает попап без прикрепления —
           поле ввода текста всё это время доступно и не перекрыто. */}
       {playlistPanelOpen && (
-        <div className={styles.playlistPop}>
+        // Хром попапа — только когда внутри действительно панель сборки: выбор
+        // существующего плейлиста идёт модалкой поверх экрана, и карточка над
+        // композером осталась бы пустой рамкой.
+        <div className={playlistBuilding ? styles.playlistPop : undefined}>
           <PlaylistComposer
             value={null}
             onChange={setPendingPlaylist}
             autoOpen={playlistPanelOpen}
             onClose={() => setPlaylistPanelOpen(false)}
+            onBuildingChange={setPlaylistBuilding}
           />
         </div>
       )}

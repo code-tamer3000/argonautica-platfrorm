@@ -7,6 +7,7 @@ import { toast } from '../stores/toast'
 import { Button } from './Button'
 import { IconMusic, IconTrash } from './icons'
 import { PlaylistCard } from './PlaylistCard'
+import { PlaylistPicker } from './PlaylistPicker'
 import styles from './playlistComposer.module.css'
 
 const MAX_PLAYLIST_TRACKS = 30
@@ -30,6 +31,10 @@ interface Props {
   autoOpen?: boolean
   /** Вызывается по «Отмена» — родитель может скрыть панель (autoOpen → false). */
   onClose?: () => void
+  /** Панель сборки нового плейлиста появилась/исчезла. Нужен чату: он рисует
+   * композер во всплывающей карточке со своим хромом (.playlistPop), и пока
+   * открыт только пикер (он — модалка поверх экрана), карточка была бы пустой. */
+  onBuildingChange?: (building: boolean) => void
   /** Уже прикреплённый плейлист показать полной карточкой (с правкой названия,
    * обложки и удалением отдельных треков), а не компактным чипом. Включаем в
    * формах задания и материала КБ — там правка вложения и есть смысл экрана;
@@ -56,10 +61,18 @@ export function PlaylistComposer({
   autoOpen = false,
   onClose,
   editable = false,
+  onBuildingChange,
 }: Props) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
+  // Пикер «выбрать существующий» — первый экран при прикреплении: чаще всего
+  // нужный плейлист уже есть на платформе, а заливка новых файлов — отдельная
+  // ветка внутри него («+ Загрузить новый»).
+  const [pickerOpen, setPickerOpen] = useState(false)
+  // Автор выбрал в пикере «загрузить новый» — показываем панель сборки, даже пока
+  // файлы ещё не выбраны (иначе после закрытия пикера не осталось бы ничего).
+  const [creatingNew, setCreatingNew] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(
     null,
   )
@@ -71,12 +84,20 @@ export function PlaylistComposer({
   useEffect(() => {
     if (autoOpen && !autoOpenedRef.current) {
       autoOpenedRef.current = true
-      fileRef.current?.click()
+      // Пикер, а не файловый диалог: выбрать уже существующий — частый случай,
+      // а «загрузить новый» доступно первой же кнопкой внутри пикера.
+      setPickerOpen(true)
     }
     if (!autoOpen) autoOpenedRef.current = false
   }, [autoOpen])
 
-  const open = drafts.length > 0 || autoOpen
+  // Панель сборки видна только в ветке «новый плейлист»: при autoOpen (чат) сперва
+  // открывается пикер, и пока автор из него не вышел в загрузку, строить нечего.
+  const open = drafts.length > 0 || creatingNew
+
+  useEffect(() => {
+    onBuildingChange?.(open)
+  }, [open, onBuildingChange])
 
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? [])
@@ -144,6 +165,7 @@ export function PlaylistComposer({
       onChange(playlist)
       setDrafts([])
       setTitle('')
+      setCreatingNew(false)
       onClose?.()
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Не удалось создать плейлист', 'error')
@@ -211,10 +233,29 @@ export function PlaylistComposer({
           variant="outline"
           type="button"
           disabled={disabled}
-          onClick={() => fileRef.current?.click()}
+          onClick={() => setPickerOpen(true)}
         >
           <IconMusic size={16} /> Плейлист
         </Button>
+      )}
+
+      {pickerOpen && (
+        <PlaylistPicker
+          onPick={(picked) => {
+            setPickerOpen(false)
+            onChange(picked)
+            onClose?.()
+          }}
+          onCreateNew={() => {
+            setPickerOpen(false)
+            setCreatingNew(true)
+            fileRef.current?.click()
+          }}
+          onClose={() => {
+            setPickerOpen(false)
+            onClose?.()
+          }}
+        />
       )}
 
       {open && (
@@ -281,6 +322,7 @@ export function PlaylistComposer({
               onClick={() => {
                 setDrafts([])
                 setTitle('')
+                setCreatingNew(false)
                 onClose?.()
               }}
             >

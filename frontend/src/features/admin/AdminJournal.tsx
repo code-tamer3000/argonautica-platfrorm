@@ -26,7 +26,10 @@ function todayStr() {
 type SectionDraft = JournalSectionInput
 
 function emptySection(): SectionDraft {
-  return { key: '', emoji: '', label: '', heading: '', placeholder: '', input_type: 'text' }
+  return {
+    key: '', emoji: '', label: '', heading: '', placeholder: '',
+    input_type: 'text', requires_media: false,
+  }
 }
 
 interface ProgramFormProps {
@@ -51,6 +54,7 @@ function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
           heading: s.heading,
           placeholder: s.placeholder,
           input_type: s.input_type,
+          requires_media: s.requires_media,
         }))
       : [emptySection()],
   )
@@ -87,6 +91,7 @@ function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
         (s.input_type === 'text' ? `## ${s.emoji.trim()} ${s.label.trim()}`.trim() : ''),
       placeholder: s.placeholder.trim(),
       input_type: s.input_type,
+      requires_media: s.requires_media,
     }))
     if (cleaned.length === 0) {
       toast('Нужен хотя бы один раздел', 'error')
@@ -231,6 +236,14 @@ function ProgramForm({ initial, submitting, onSubmit }: ProgramFormProps) {
               aria-label="Заголовок записи"
             />
           )}
+          <label className={styles.label}>
+            <input
+              type="checkbox"
+              checked={s.requires_media}
+              onChange={(e) => patch(i, { requires_media: e.target.checked })}
+            />{' '}
+            Обязательное фото/видео к отписке
+          </label>
         </div>
       ))}
       <Button

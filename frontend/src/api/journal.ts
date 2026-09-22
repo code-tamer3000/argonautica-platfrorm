@@ -11,6 +11,7 @@ export interface JournalSectionInput {
   heading: string
   placeholder: string
   input_type: JournalSection['input_type']
+  requires_media: boolean
 }
 
 export interface JournalProgramBody {

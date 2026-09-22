@@ -688,6 +688,53 @@ def build_attachment_out(asset: MediaAsset) -> AttachmentOut:
     )
 
 
+async def can_access_playlist(
+    session: AsyncSession, playlist: Playlist, user: User
+) -> bool:
+    """Видит ли юзер этот плейлист (и, значит, может ли прикрепить его к своему
+    носителю — пикер «выбрать существующий», docs/FILES.md «Плейлист»).
+
+    Свой — всегда. Чужой — только если есть доступ к его трекам, то есть плейлист
+    уже прикреплён к носителю, который юзер и так видит. Считаем тем же
+    `assert_media_access` по первому треку, что и обычное чтение медиа: одна
+    точка истины. Раньше прикрепить можно было ТОЛЬКО свой плейлист; область
+    расширена сознательно, но не до «любой на платформе» — иначе музыка из чужой
+    лички утекала бы в общий чат в обход авторизации носителя (IDOR, угроза №1).
+    """
+    if playlist.created_by == user.id:
+        return True
+    first = await session.scalar(
+        select(PlaylistTrack.media_asset_id)
+        .where(PlaylistTrack.playlist_id == playlist.id)
+        .order_by(PlaylistTrack.position)
+        .limit(1)
+    )
+    if first is None:
+        return False
+    asset = await session.get(MediaAsset, first)
+    if asset is None:
+        return False
+    try:
+        await assert_media_access(session, asset, user)
+    except HTTPException:
+        return False
+    return True
+
+
+async def load_attachable_playlist(
+    session: AsyncSession, playlist_id: int, user: User
+) -> Playlist:
+    """Плейлист, который юзеру разрешено прикрепить к носителю, иначе 404.
+
+    404, а не 403: чужой недоступный плейлист для юзера не существует — та же
+    семантика, что у недоступного media_asset_id (см. `can_access_playlist`).
+    """
+    playlist = await session.get(Playlist, playlist_id)
+    if playlist is None or not await can_access_playlist(session, playlist, user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Playlist not found")
+    return playlist
+
+
 async def build_playlist_out(session: AsyncSession, playlist: Playlist) -> PlaylistOut:
     """Резолвит один плейлист в `PlaylistOut` с готовыми presigned-URL (обложка +
     каждый трек). Подпись локальна — N запросов в сеть не создаёт."""

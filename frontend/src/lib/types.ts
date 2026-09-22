@@ -600,6 +600,9 @@ export interface JournalSection {
   placeholder: string
   input_type: JournalInputType
   position: number
+  // Обязательное фото/видео к отписке (ARG-140) — композер блокирует отправку
+  // без вложения, сервер отклоняет 422.
+  requires_media: boolean
 }
 
 // Активное на сегодня задание — для виджета и композера участника.

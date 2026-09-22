@@ -9,8 +9,9 @@ import json
 from time import perf_counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.concurrency import run_in_threadpool
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -26,6 +27,7 @@ from app.schemas.media import (
     MediaAssetOut,
     MediaUrlOut,
     PlaylistCreateRequest,
+    PlaylistListOut,
     PlaylistOut,
     PlaylistUpdateRequest,
     UploadRequest,
@@ -325,6 +327,51 @@ async def create_playlist_endpoint(
     )
     await session.commit()
     return await build_playlist_out(session, playlist)
+
+
+@router.get("/playlists", response_model=PlaylistListOut)
+async def list_playlists(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    q: Annotated[str | None, Query(description="Поиск по названию")] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> PlaylistListOut:
+    """Плейлисты, которые смотрящий может прикрепить повторно (пикер «выбрать
+    существующий», docs/FILES.md «Плейлист»).
+
+    Область видимости ровно та же, что у чтения одного плейлиста не-автором:
+    свой плейлист — всегда, чужой — только если есть доступ к его трекам, то
+    есть он прикреплён к носителю, который юзер и так видит (сообщение в его
+    комнате, видимая задача, опубликованный материал). Считаем тем же
+    `assert_media_access`, а не отдельным условием: одна точка истины, иначе
+    пикер стал бы дырой в обход авторизации носителя (IDOR — угроза №1).
+
+    Фильтрация поштучная (сначала кандидаты, потом проверка каждого) — на
+    масштабе платформы в десятки плейлистов это дешевле, чем городить общий
+    SQL по всем четырём типам носителей.
+    """
+    stmt = select(Playlist).order_by(Playlist.id.desc())
+    if q:
+        stmt = stmt.where(Playlist.title.ilike(f"%{q}%"))
+    candidates = list((await session.execute(stmt)).scalars().all())
+
+    items: list[PlaylistOut] = []
+    for playlist in candidates:
+        if len(items) >= limit:
+            break
+        out = await build_playlist_out(session, playlist)
+        if playlist.created_by != current_user.id:
+            if not out.tracks:
+                continue
+            asset = await session.get(MediaAsset, out.tracks[0].asset_id)
+            if asset is None:
+                continue
+            try:
+                await assert_media_access(session, asset, current_user)
+            except HTTPException:
+                continue
+        items.append(out)
+    return PlaylistListOut(items=items)
 
 
 @router.get("/playlists/{playlist_id}", response_model=PlaylistOut)
