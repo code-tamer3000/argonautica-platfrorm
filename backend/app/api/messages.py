@@ -14,7 +14,12 @@ from sqlalchemy import cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
-from app.api.dynamics import intake_window_closed
+from app.api.dynamics import (
+    intake_window_closed,
+    journal_category,
+    platform_today,
+    section_requires_media,
+)
 from app.core.config import settings
 from app.db.session import after_commit, get_session
 from app.models.intake import Intake
@@ -289,16 +294,30 @@ async def send_message(
     if body.sticker_id is not None and await session.get(Sticker, body.sticker_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Sticker not found")
 
+    attachment_kinds: set[str] = set()
     if body.attachment_ids:
         # Прикрепить можно только свои ассеты (нельзя подставить чужой id — IDOR).
         found = await session.execute(
-            select(MediaAsset.id).where(
+            select(MediaAsset.id, MediaAsset.kind).where(
                 MediaAsset.id.in_(body.attachment_ids),
                 MediaAsset.created_by == current_user.id,
             )
         )
-        if set(found.scalars().all()) != set(body.attachment_ids):
+        found_rows = found.all()
+        if {row.id for row in found_rows} != set(body.attachment_ids):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Attachment not found")
+        attachment_kinds = {row.kind for row in found_rows}
+
+    # Обязательное фото/видео к разделу Динамики (ARG-140): раздел определяется
+    # маркером `<!--journal:{key}-->` в начале текста, требование — по заданию,
+    # активному сегодня (день отправки, не день, за который пишут задним числом).
+    cat = journal_category(body.content)
+    if cat is not None and await section_requires_media(session, cat, platform_today()):
+        if not attachment_kinds & {"image", "video"}:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Этот раздел требует прикреплённое фото или видео",
+            )
 
     if body.playlist_id is not None:
         # Прикрепить можно свой плейлист ИЛИ уже доступный отправителю (пикер

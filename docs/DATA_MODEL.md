@@ -487,6 +487,7 @@ Homework entries are `messages` in the personal room — no entry table. The dia
 | heading | TEXT | NOT NULL, default '' | markdown heading of the entry (empty for `title`) |
 | placeholder | TEXT | NOT NULL, default '' | composer hint |
 | input_type | TEXT | NOT NULL, default 'text' | `'text'` \| `'title'` |
+| requires_media | BOOLEAN | NOT NULL, default false | ARG-140: send rejects (422) without an image/video attachment — see [DYNAMICS.md](DYNAMICS.md) |
 
 **UNIQUE:** (`program_id`, `key`), (`program_id`, `position`). **INDEX:** (`program_id`).
 

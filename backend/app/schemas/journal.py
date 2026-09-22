@@ -125,6 +125,9 @@ class JournalSectionOut(BaseModel):
     placeholder: str
     input_type: InputType
     position: int
+    # Обязательное фото/видео к отписке (ARG-140) — композер участника дизейблит
+    # отправку без вложения, сервер отклоняет 422 (см. app/api/messages.py).
+    requires_media: bool = False
 
 
 class JournalStructureOut(BaseModel):
@@ -148,6 +151,7 @@ class JournalSectionIn(BaseModel):
     heading: str = Field(default="", max_length=128)
     placeholder: str = Field(default="", max_length=200)
     input_type: InputType = "text"
+    requires_media: bool = False
 
 
 class JournalProgramIn(BaseModel):

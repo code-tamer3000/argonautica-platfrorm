@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -114,5 +115,8 @@ class JournalSection(Base):
     heading: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     placeholder: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     input_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="text")
+    # Обязательное фото/видео к отписке этого раздела (ARG-140): без него
+    # `send_message` отклоняет отправку — см. dynamics.section_requires_media.
+    requires_media: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     program: Mapped["JournalProgram"] = relationship(back_populates="sections")
