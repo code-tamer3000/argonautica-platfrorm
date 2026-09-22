@@ -503,6 +503,26 @@ async def test_kb_patch_attaches_and_detaches_playlist(
     assert detach.json()["playlist"] is None
 
 
+async def test_list_playlists_route_not_shadowed_by_asset_id_catchall(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Регрессия (прод, ARG-139): `GET /api/media/playlists` объявлен ПОСЛЕ
+    `GET /media/{asset_id}` в исходном коде — Starlette матчит роуты по порядку
+    регистрации, и строка "playlists" буквально подходит под шаблон `{asset_id}`.
+    Запрос перехватывался тем эндпоинтом и падал 422 (int_parsing), а не отдавал
+    список. Юнит-вызов самой функции этого не ловит — маршрутизация ASGI-уровня,
+    нужен реальный HTTP-запрос через приложение. `/playlists/*` должны быть
+    объявлены раньше catch-all `/{asset_id}` в api/media.py."""
+    author = await make_user()
+    author_h = await _headers(client, author)
+    a1 = await _make_audio_asset(session, author.id, "one")
+    await _create_playlist(client, author_h, [a1.id])
+
+    resp = await client.get("/api/media/playlists", headers=author_h)
+    assert resp.status_code == 200, resp.text
+    assert len(resp.json()["items"]) >= 1
+
+
 async def test_playlist_picker_lists_own_and_accessible_only(
     client: AsyncClient,
     make_user: MakeUser,
