@@ -31,7 +31,7 @@ export function PlaylistPicker({
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
-  const { data, isLoading } = usePlaylists(query, true)
+  const { data, isLoading, isError, refetch } = usePlaylists(query, true)
   const items = data?.items ?? []
 
   return (
@@ -49,6 +49,19 @@ export function PlaylistPicker({
 
         {isLoading ? (
           <div className="center"><Spinner /></div>
+        ) : isError ? (
+          // Отдельно от «списка нет»: ошибку запроса (сеть/сервер) не путаем с
+          // «доступных плейлистов действительно нет» — иначе реальный сбой
+          // выглядел бы точь-в-точь как пустая область, и починить нечего.
+          <EmptyState
+            action={
+              <Button type="button" variant="outline" onClick={() => void refetch()}>
+                Повторить
+              </Button>
+            }
+          >
+            Не удалось загрузить список
+          </EmptyState>
         ) : items.length === 0 ? (
           <EmptyState>
             {query ? 'Ничего не найдено' : 'Доступных плейлистов пока нет'}
