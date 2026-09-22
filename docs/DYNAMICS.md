@@ -59,6 +59,18 @@ permanent, the window date is not).
 - **Editing** an already-active задание's section *set* re-scores its days; cosmetic edits
   (text/emoji) are safe. To change structure going forward, create a new задание with a future
   `starts_on`. The admin UI (`AdminJournal`, route `/admin/journal`) warns about this.
+- **Realtime sync (ARG-127).** `create_program`/`update_program`/`delete_program`
+  (`app/api/dynamics.py`) publish a `journal.structure_changed` event on a global
+  broadcast channel (`_JOURNAL_CHANNEL` in `app/ws/pubsub.py`, same pattern as
+  `presence` — every connection gets it, not just one room/user), fired via
+  `after_commit` so a rolled-back transaction never sends a phantom update. The
+  frontend (`useRealtime.ts`) invalidates `journalStructureKey` on it, so an
+  already-open client (composer, `ChatPane`'s `isJournalTargetRoom`) picks up a new
+  задание — including a chat-routing change — within seconds, without a page reload.
+  Before this, only the admin's own tab saw the change locally (React Query's own
+  cache invalidation on the mutation); everyone else waited for `staleTime` (15s) plus
+  a window-focus/reconnect/remount to trigger a refetch, which for an always-foreground
+  tab could mean never.
 
 ## Key model decision
 

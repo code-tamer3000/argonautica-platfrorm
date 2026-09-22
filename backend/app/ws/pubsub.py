@@ -23,6 +23,9 @@ from app.ws.manager import Conn, manager
 logger = logging.getLogger(__name__)
 
 _PRESENCE_CHANNEL = "presence"
+# Тот же приём, что presence: рассылается ВСЕМ подключениям, а не по комнате/юзеру
+# (ARG-127) — структура дневника (задания) не привязана к конкретной комнате.
+_JOURNAL_CHANNEL = "journal"
 _ROOM_PATTERN = "room:*"
 _USER_PATTERN = "user:*"
 
@@ -87,10 +90,20 @@ async def publish_presence(event: dict[str, Any]) -> None:
         logger.exception("Failed to publish presence event")
 
 
+async def publish_journal_structure_changed(event: dict[str, Any]) -> None:
+    """Задание дневника создано/изменено/удалено — разослать ВСЕМ подключённым
+    клиентам, чтобы уже открытые вкладки не работали по устаревшей структуре
+    (ARG-127). Ошибку Redis глотаем — REST-запрос админа не должен падать из-за неё."""
+    try:
+        await redis_client.publish(_JOURNAL_CHANNEL, json.dumps(event))
+    except Exception:
+        logger.exception("Failed to publish journal structure event")
+
+
 async def _run_listener(ready: asyncio.Event) -> None:
     pubsub = redis_client.pubsub()
     await pubsub.psubscribe(_ROOM_PATTERN, _USER_PATTERN)
-    await pubsub.subscribe(_PRESENCE_CHANNEL)
+    await pubsub.subscribe(_PRESENCE_CHANNEL, _JOURNAL_CHANNEL)
     ready.set()  # подписки активны — публикации больше не потеряются
     try:
         async for message in pubsub.listen():
@@ -98,7 +111,7 @@ async def _run_listener(ready: asyncio.Event) -> None:
                 continue
             channel = message["channel"]
             payload: dict[str, Any] = json.loads(message["data"])
-            if channel == _PRESENCE_CHANNEL:
+            if channel in (_PRESENCE_CHANNEL, _JOURNAL_CHANNEL):
                 await manager.broadcast(payload)
             elif channel.startswith("user:"):
                 user_id = int(channel.split(":", 1)[1])

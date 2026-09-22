@@ -688,7 +688,13 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         <div className={`${styles.contextBar} ${styles.contextBarJournal}`}>
           <span className={styles.ctxLabel}>{journalMeta.emoji} {journalMeta.label}</span>
           <span className={styles.ctxDesc}>
-            {journalMediaMissing ? 'Прикрепите фото или видео — раздел обязателен' : journalMeta.placeholder}
+            {journalMeta.placeholder}
+            {journalMediaMissing && (
+              <>
+                {journalMeta.placeholder && <br />}
+                📷 Прикрепите фото или видео — раздел обязателен
+              </>
+            )}
           </span>
           <button
             className={styles.pendingChipX}
