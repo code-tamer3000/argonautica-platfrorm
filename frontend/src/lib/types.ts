@@ -150,6 +150,9 @@ export interface RoomOut {
   unread_count: number
   is_personal: boolean
   is_news: boolean
+  // Только group: композер закрыт всем, кроме admin (ARG-142) — прячем композер,
+  // сервер 403-ит тот же путь независимо от этого поля.
+  is_readonly: boolean
   created_by: number
   peer_id?: number
   // Комната подгруппы потока: над композером висит голосование за общую фразу.

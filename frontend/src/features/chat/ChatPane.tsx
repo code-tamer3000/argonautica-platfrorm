@@ -525,7 +525,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           (см. isJournalTargetRoom). НО когда открыт тред — композер показываем
           всегда (в режиме ответа): ответить в тред можно везде, даже там, где
           верхний уровень запрещён (комментарии). */}
-      {!isGraduated && !(isOwnPersonal && isWindowClosed) && !room.dm_write_locked && (threadRootId != null ||
+      {!isGraduated && !(isOwnPersonal && isWindowClosed) && !room.dm_write_locked &&
+        (!room.is_readonly || user?.role === 'admin') && (threadRootId != null ||
         ((!room.is_personal || room.created_by === user?.id) &&
           (!room.is_news || user?.role === 'admin') &&
           (!isOwnPersonal || !isJournalTargetRoom || journalChosen))) && (
@@ -560,6 +561,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         <MembersDrawer
           roomId={roomId}
           isOwner={room.type === 'group' && room.created_by === user?.id}
+          isReadonly={room.is_readonly}
           onClose={() => setShowMembers(false)}
           onOpenDm={onOpenRoom}
           onDeleted={() => {

@@ -73,6 +73,20 @@ export function useDeleteRoom() {
   })
 }
 
+// Переключение «только чтение» для группы (ARG-142) — только admin, композер
+// закрывается всем остальным. Сервер тот же путь 403-ит независимо от кэша.
+export function useSetGroupReadonly(roomId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (isReadonly: boolean) =>
+      http.patch<RoomOut>(`/api/rooms/${roomId}/readonly`, { is_readonly: isReadonly }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: roomsKey })
+      qc.invalidateQueries({ queryKey: ['room', roomId] })
+    },
+  })
+}
+
 // `enabled=false` — не стрелять запросом там, где вызывающему он не всегда нужен
 // (ARG-114: только для дешёвого тарифа на экране «Дневники»).
 export function usePersonalChannel(enabled = true) {
