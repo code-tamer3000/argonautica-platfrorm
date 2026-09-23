@@ -30,6 +30,7 @@ from app.schemas.room import (
     MemberOut,
     RoomOut,
     UpdateChannelRequest,
+    UpdateGroupReadonlyRequest,
     UpdateRoomAvatarRequest,
 )
 from app.services.media import presign_asset_urls
@@ -646,6 +647,21 @@ async def _count_owners(session: AsyncSession, room_id: int) -> int:
         .where(RoomMember.room_id == room_id, RoomMember.role_in_room == "owner")
     )
     return result.scalar_one()
+
+
+@router.patch("/{room_id}/readonly", response_model=RoomOut)
+async def update_group_readonly(
+    room_id: int,
+    body: UpdateGroupReadonlyRequest,
+    current_admin: Annotated[User, Depends(require_admin)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RoomOut:
+    """Включить/выключить режим «только чтение» для группы (ARG-142). Только
+    platform admin — владелец группы этим управлять не может."""
+    room = await _load_group(session, room_id)
+    room.is_readonly = body.is_readonly
+    await session.flush()
+    return _room_out(room, [])
 
 
 @router.get("/{room_id}/members", response_model=list[MemberOut])

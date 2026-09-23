@@ -62,6 +62,12 @@ class Room(Base):
     dm_unlocked_by_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Только для type='group': композер закрыт всем, кроме admin (ARG-142).
+    # Переключается только platform admin. Реакции и правки старых сообщений
+    # это поле не гейтит — см. docs/ROOMS.md.
+    is_readonly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class RoomPlan(Base):

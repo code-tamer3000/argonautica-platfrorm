@@ -112,6 +112,13 @@ async def assert_can_post(
                 "Only admins can post to the news channel; use threads to comment",
             )
 
+    # Группа в режиме "только чтение" (ARG-142): композер закрыт всем, кроме
+    # admin — и для верхнеуровневых сообщений, и для тред-ответов.
+    if room.is_readonly and user.role != "admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "This chat is read-only"
+        )
+
 
 async def _attachments_map(
     session: AsyncSession, message_ids: list[int]

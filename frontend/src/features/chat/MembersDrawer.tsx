@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useRoomMembers, useRemoveMember, useDeleteRoom } from '../../api/rooms'
+import { useRoomMembers, useRemoveMember, useDeleteRoom, useSetGroupReadonly } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Drawer } from '../../components/Overlay'
@@ -11,20 +11,23 @@ import { UserProfileModal } from './UserProfileModal'
 interface Props {
   roomId: number
   isOwner?: boolean
+  isReadonly?: boolean
   onClose: () => void
   onOpenDm?: (roomId: number) => void
   onDeleted?: () => void
 }
 
-export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }: Props) {
+export function MembersDrawer({ roomId, isOwner, isReadonly, onClose, onOpenDm, onDeleted }: Props) {
   const { data: members, isLoading } = useRoomMembers(roomId, true)
   const remove = useRemoveMember(roomId)
   const deleteRoom = useDeleteRoom()
+  const setReadonly = useSetGroupReadonly(roomId)
   const users = useUsersMap()
   const { user: me } = useAuth()
   const [picked, setPicked] = useState<PublicUserOut | null>(null)
 
   const canDelete = isOwner || me?.role === 'admin'
+  const isAdmin = me?.role === 'admin'
 
   const handleDeleteRoom = () => {
     if (!window.confirm('Удалить группу безвозвратно? Это удалит все сообщения и вложения.')) {
@@ -106,6 +109,28 @@ export function MembersDrawer({ roomId, isOwner, onClose, onOpenDm, onDeleted }:
           </div>
         )
       })}
+
+      {isAdmin && (
+        <div style={{ paddingTop: 16, marginTop: 8, borderTop: '1px solid var(--divider)' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              cursor: setReadonly.isPending ? 'default' : 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isReadonly ?? false}
+              disabled={setReadonly.isPending}
+              onChange={(e) => setReadonly.mutate(e.target.checked)}
+            />
+            Только чтение — писать может только админ
+          </label>
+        </div>
+      )}
 
       {canDelete && (
         <div style={{ paddingTop: 16, marginTop: 8, borderTop: '1px solid var(--divider)' }}>
