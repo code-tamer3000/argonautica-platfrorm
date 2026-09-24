@@ -2,9 +2,12 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   useCreateCrossTask,
+  useUpdateCrossTask,
   useDeletePair,
+  useTask,
   type PairOut,
   type PairMemberOut,
+  type TaskOut,
 } from '../../api/tasks'
 import { useUsersMap } from '../../api/users'
 import { Button } from '../../components/Button'
@@ -12,6 +15,7 @@ import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import { Modal } from '../../components/Overlay'
 import { Chip } from '../../components/Chip'
 import { toast } from '../../stores/toast'
+import { isoToLocalInput } from './TaskForm'
 import styles from './tasks.module.css'
 
 // datetime-local → ISO (для дедлайна в форме выдачи задачи).
@@ -175,17 +179,59 @@ function GiveTaskBlock({
   partnerName: string
 }) {
   const create = useCreateCrossTask(taskId)
+  const update = useUpdateCrossTask(taskId)
   const [open, setOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const crossTaskId = me.cross_task_id
+  // Пока нет сдач — задачу можно поправить; данные для формы тянем только для
+  // этого окна (после первой сдачи кнопка «Редактировать» пропадёт сама).
+  const { data: crossTask } = useTask(
+    crossTaskId != null && me.cross_task_editable ? crossTaskId : -1,
+  )
 
-  // Уже выдал задачу партнёру → показываем ссылку, форма не нужна.
-  if (me.cross_task_id != null) {
+  // Уже выдал задачу партнёру → ссылка на неё + правка, пока партнёр не сдал.
+  if (crossTaskId != null) {
     return (
-      <div className={styles.myStatusRow}>
-        <span className={styles.myStatusLabel}>Ваша задача партнёру:</span>
-        <Link className={styles.kbLink} to={`/tasks/${me.cross_task_id}`}>
-          Открыть
-        </Link>
-      </div>
+      <>
+        <div className={styles.myStatusRow}>
+          <span className={styles.myStatusLabel}>Ваша задача партнёру:</span>
+          <Link className={styles.kbLink} to={`/tasks/${crossTaskId}`}>
+            Открыть
+          </Link>
+          {me.cross_task_editable && (
+            <Button type="button" variant="outline" onClick={() => setEditOpen(true)}>
+              Редактировать
+            </Button>
+          )}
+        </div>
+        {editOpen && crossTask && (
+          <Modal
+            title={`Редактировать задачу для ${partnerName}`}
+            onClose={() => setEditOpen(false)}
+            closeOnBackdrop={false}
+          >
+            <GiveTaskForm
+              partnerName={partnerName}
+              pending={update.isPending}
+              initial={crossTask}
+              submitLabel="Сохранить"
+              onCancel={() => setEditOpen(false)}
+              onSubmit={(values) =>
+                update.mutate(
+                  { pairId, crossTaskId, ...values },
+                  {
+                    onSuccess: () => {
+                      toast('Задача обновлена')
+                      setEditOpen(false)
+                    },
+                    onError: (err) => toast(errMsg(err), 'error'),
+                  },
+                )
+              }
+            />
+          </Modal>
+        )}
+      </>
     )
   }
 
@@ -230,11 +276,16 @@ function GiveTaskBlock({
 function GiveTaskForm({
   partnerName,
   pending,
+  initial,
+  submitLabel = 'Выдать',
   onSubmit,
   onCancel,
 }: {
   partnerName: string
   pending: boolean
+  // Задано при редактировании уже выданной задачи — предзаполняет поля формы.
+  initial?: Pick<TaskOut, 'title' | 'body' | 'deadline_at' | 'attachments'> | null
+  submitLabel?: string
   onSubmit: (v: {
     title: string
     body: string | null
@@ -243,10 +294,12 @@ function GiveTaskForm({
   }) => void
   onCancel: () => void
 }) {
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
-  const [deadline, setDeadline] = useState('')
-  const [media, setMedia] = useState<MediaChip[]>([])
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [body, setBody] = useState(initial?.body ?? '')
+  const [deadline, setDeadline] = useState(isoToLocalInput(initial?.deadline_at ?? null))
+  const [media, setMedia] = useState<MediaChip[]>(
+    () => (initial?.attachments ?? []).map((a) => ({ id: a.asset_id, kind: a.kind })),
+  )
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -296,7 +349,7 @@ function GiveTaskForm({
 
       <div className={styles.reviewActions}>
         <Button type="submit" disabled={pending || !title.trim()}>
-          Выдать
+          {submitLabel}
         </Button>
         <Button type="button" variant="outline" onClick={onCancel}>
           Отмена
