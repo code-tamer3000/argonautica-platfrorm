@@ -125,3 +125,12 @@ killed, network off, app reopened) without hanging on a spinner:
   WS status independently of auth state, so once `AuthGuard` stops blocking the app
   tree on this scenario, the banner shows "офлайн" for free — no separate wiring
   needed.
+- The PWA app-shell icon assets (`/media/star.webp` etc.) must be in the service
+  worker's precache `globPatterns` (`vite.config.ts`) or they render broken on a
+  cold offline start same as any other uncached asset — `webp` was missing and is
+  now included.
+- `dashboard` (`/api/dashboard`, the "Круг Экспедиции" home screen) was added to
+  `queryPersist.ts`'s `PERSIST_KEYS` alongside rooms/messages, since it's the
+  landing page and would otherwise still spin on a cold offline start even though
+  auth is unblocked. Other screens (KB, tasks) remain unpersisted — extending
+  further is a separate task.
