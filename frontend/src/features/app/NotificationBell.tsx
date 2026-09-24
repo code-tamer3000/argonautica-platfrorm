@@ -16,6 +16,8 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   mention: 'упомянул(а) вас',
   cabin_granted: '',
   admin: '',
+  task_comment: '',
+  task_returned: '',
 }
 
 const KIND_FALLBACK: Record<NotificationKind, string> = {
@@ -25,11 +27,15 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   mention: 'Вас упомянули',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
+  task_comment: 'Новый комментарий к вашей сдаче',
+  task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
 const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   cabin_granted: 'Каюта',
+  task_comment: 'Задачи',
+  task_returned: 'Задачи',
 }
 
 export function NotificationBell() {

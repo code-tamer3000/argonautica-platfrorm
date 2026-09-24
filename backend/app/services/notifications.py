@@ -354,3 +354,49 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
             after_commit(session, _push_hook(user_id, payload))
     except Exception:
         logger.exception("Failed to create cabin_granted notification for user %s", user_id)
+
+
+async def notify_task_returned(
+    session: AsyncSession, user_id: int, task_id: int, task_title: str
+) -> None:
+    """Уведомить участника, что его сдача возвращена на доработку.
+
+    Системное уведомление без привязки к комнате/автору (room_id/actor_id пусты) —
+    клик ведёт в /tasks/{task_id} (task_id задан, обрабатывается на фронте по kind).
+    Ошибку логируем и глотаем, чтобы не ронять сам review.
+    """
+    try:
+        row = Notification(user_id=user_id, kind="task_returned", task_id=task_id)
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        out = NotificationOut(
+            id=row.id,
+            kind="task_returned",
+            room_id=None,
+            message_id=None,
+            actor_id=None,
+            actor_name=None,
+            preview=None,
+            ref_date=None,
+            task_id=task_id,
+            created_at=row.created_at,
+            read_at=row.read_at,
+        )
+        notif_event = ws_schemas.notification_new_event(out)
+        after_commit(session, _notif_hook(user_id, notif_event))
+        user_settings = await session.scalar(
+            select(User.settings).where(User.id == user_id)
+        )
+        if push_allowed(user_settings, "task_returned"):
+            payload = push_service.build_payload(
+                title="Задача возвращена на доработку",
+                body=task_title,
+                url=f"/tasks/{task_id}",
+                tag=f"task-returned-{task_id}",
+            )
+            after_commit(session, _push_hook(user_id, payload))
+    except Exception:
+        logger.exception(
+            "Failed to create task_returned notification for user %s", user_id
+        )

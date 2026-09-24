@@ -8,11 +8,13 @@ export function useOpenNotification() {
   const navigate = useNavigate()
   const { data: rooms } = useRooms()
   return useCallback(
-    (n: { kind: NotificationKind; room_id: number | null }) => {
+    (n: { kind: NotificationKind; room_id: number | null; task_id?: number | null }) => {
       if (n.kind === 'cabin_granted') {
         navigate('/cabin')
       } else if (n.kind === 'news') {
         navigate('/news')
+      } else if ((n.kind === 'task_returned' || n.kind === 'task_comment') && n.task_id != null) {
+        navigate(`/tasks/${n.task_id}`)
       } else if (n.room_id != null) {
         const room = rooms?.find((r) => r.id === n.room_id)
         const segment = room?.type === 'channel' ? 'diaries' : 'chats'

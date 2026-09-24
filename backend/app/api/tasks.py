@@ -64,6 +64,7 @@ from app.schemas.task import (
 )
 from app.services import stream as stream_service
 from app.services.graduation import assert_not_graduated, is_graduated
+from app.services.notifications import notify_task_returned
 from app.services.media import (
     load_attachable_playlist,
     presign_asset_urls,
@@ -491,6 +492,9 @@ async def review_assignment(
         assignment.status = "returned"
     assignment.reviewed_at = datetime.now(UTC)
     await session.flush()
+
+    if assignment.status == "returned":
+        await notify_task_returned(session, assignment.user_id, task.id, task.title)
 
     # Перекрёстная задача → пересчитать завершённость её пары (закрыть/откатить
     # родительское pair-задание обоих участников).

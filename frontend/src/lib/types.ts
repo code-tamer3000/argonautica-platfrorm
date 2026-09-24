@@ -632,14 +632,22 @@ export interface JournalProgram {
 }
 
 // --- Уведомления (колокольчик + всплывающие тосты) ---
-export type NotificationKind = 'dm' | 'reply' | 'news' | 'mention' | 'cabin_granted' | 'admin'
+export type NotificationKind =
+  | 'dm'
+  | 'reply'
+  | 'news'
+  | 'mention'
+  | 'cabin_granted'
+  | 'admin'
+  | 'task_comment'
+  | 'task_returned'
 
 export interface NotificationOut {
   id: number
   kind: NotificationKind
   // room_id пуст у уведомлений без комнаты (cabin_granted — открыт доступ к Каюте).
   room_id: number | null
-  // Для системных уведомлений (cabin_granted/admin) actor/message пусты.
+  // Для системных уведомлений (cabin_granted/admin/task_comment/task_returned) actor/message пусты.
   message_id: number | null
   actor_id: number | null
   actor_name: string | null
@@ -647,6 +655,8 @@ export interface NotificationOut {
   ref_date: string | null
   // Заголовок админ-рассылки (kind='admin'); у остальных видов null.
   title: string | null
+  // Цель навигации для task_comment/task_returned (/tasks/{task_id}); у остальных видов null.
+  task_id: number | null
   created_at: string
   read_at: string | null
 }

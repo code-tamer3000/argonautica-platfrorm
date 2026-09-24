@@ -37,6 +37,8 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   mention: 'Вас упомянули',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
+  task_comment: 'Новый комментарий к вашей сдаче',
+  task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
