@@ -64,6 +64,7 @@ from app.schemas.task import (
 )
 from app.services import stream as stream_service
 from app.services.graduation import assert_not_graduated, is_graduated
+from app.services.notifications import notify_task_returned
 from app.services.media import (
     load_attachable_playlist,
     presign_asset_urls,
@@ -439,8 +440,8 @@ async def review_assignment(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TaskTrackOut:
-    """Ревью сдачи. accept → 'accepted'; return → 'returned' + комментарий на
-    последнюю сдачу (обязателен). Оба ставят reviewed_at. Фан-аут статуса адресату.
+    """Ревью сдачи. accept → 'accepted'; return → 'returned' + необязательный
+    комментарий на последнюю сдачу. Оба ставят reviewed_at. Фан-аут статуса адресату.
 
     Оба действия требуют хотя бы одну сдачу (400, если её нет) — принять/вернуть
     нечего, если участник ничего не отправлял.
@@ -478,18 +479,22 @@ async def review_assignment(
     if body.action == "accept":
         assignment.status = "accepted"
     else:
-        # return: комментарий на последнюю сдачу этого назначения.
-        assert body.comment is not None
-        session.add(
-            TaskComment(
-                submission_id=latest.id,
-                author_id=current_user.id,
-                body=body.comment,
+        # return: комментарий на последнюю сдачу этого назначения — необязателен.
+        comment = (body.comment or "").strip()
+        if comment:
+            session.add(
+                TaskComment(
+                    submission_id=latest.id,
+                    author_id=current_user.id,
+                    body=comment,
+                )
             )
-        )
         assignment.status = "returned"
     assignment.reviewed_at = datetime.now(UTC)
     await session.flush()
+
+    if assignment.status == "returned":
+        await notify_task_returned(session, assignment.user_id, task.id, task.title)
 
     # Перекрёстная задача → пересчитать завершённость её пары (закрыть/откатить
     # родительское pair-задание обоих участников).

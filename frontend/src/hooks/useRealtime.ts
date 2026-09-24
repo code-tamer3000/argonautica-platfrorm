@@ -37,6 +37,8 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   mention: 'Вас упомянули',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
+  task_comment: 'Новый комментарий к вашей сдаче',
+  task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
@@ -202,12 +204,19 @@ export function useRealtime(): void {
           break
         case 'notification.new': {
           const n = e.notification
-          // Кэш колокольчика: добавить наверх + инкремент непрочитанных.
-          qc.setQueryData<NotificationListOut>(notificationsKey, (old) =>
-            old
-              ? { items: [n, ...old.items].slice(0, 50), unread_count: old.unread_count + 1 }
-              : { items: [n], unread_count: 1 },
-          )
+          // Кэш колокольчика: DM-бёрст схлопывается сервером в ту же строку (тот же
+          // id, group_count растёт) — тогда просто обновляем её на месте, счётчик
+          // непрочитанных не трогаем (уже посчитан). Иначе — новая строка наверх +1.
+          qc.setQueryData<NotificationListOut>(notificationsKey, (old) => {
+            if (!old) return { items: [n], unread_count: 1 }
+            const existingIdx = old.items.findIndex((it) => it.id === n.id)
+            if (existingIdx !== -1) {
+              const items = [...old.items]
+              items[existingIdx] = n
+              return { ...old, items }
+            }
+            return { items: [n, ...old.items].slice(0, 50), unread_count: old.unread_count + 1 }
+          })
           // Всплывающий тост — только если пользователь не смотрит эту комнату сейчас
           // (иначе он и так видит сообщение — дублировать не нужно).
           if (n.room_id !== useUiStore.getState().activeRoomId) {

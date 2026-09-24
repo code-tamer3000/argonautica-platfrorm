@@ -98,6 +98,8 @@ async def list_notifications(
             ),
             ref_date=n.ref_date,
             title=n.title,
+            task_id=n.task_id,
+            group_count=n.group_count,
             created_at=n.created_at,
             read_at=n.read_at,
         )

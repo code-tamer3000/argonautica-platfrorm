@@ -81,6 +81,48 @@ async def test_dm_message_notifies_peer(
     assert a_data["unread_count"] == 0
 
 
+async def test_dm_burst_collapses_into_one_notification(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+    session: AsyncSession,
+) -> None:
+    """Несколько сообщений подряд от одного собеседника в личку — одна строка в
+    колокольчике с растущим group_count, а не по уведомлению на сообщение."""
+    a = await make_user()
+    b = await make_user()
+    room = await make_room(created_by=a.id, type="dm", name=None)
+    await add_membership(room.id, a.id)
+    await add_membership(room.id, b.id)
+    ha = await _headers(client, a)
+    hb = await _headers(client, b)
+
+    await _send(client, ha, room.id, content="привет")
+    await _send(client, ha, room.id, content="как дела?")
+    last = await _send(client, ha, room.id, content="ты тут?")
+
+    data = await _notifications(client, hb)
+    assert data["unread_count"] == 1
+    assert len(data["items"]) == 1
+    item = data["items"][0]
+    assert item["kind"] == "dm"
+    assert item["group_count"] == 3
+    assert item["message_id"] == last["id"]
+    assert item["preview"] == "ты тут?"
+
+    # Единственная строка в БД для этого получателя, не три.
+    assert await _db_count(session, b.id) == 1
+
+    # После прочтения бёрст стартует заново — следующее сообщение уже новая строка.
+    await client.post("/api/notifications/read", headers=hb, json={"up_to_id": None})
+    await _send(client, ha, room.id, content="ещё одно")
+    data2 = await _notifications(client, hb)
+    unread = [n for n in data2["items"] if n["read_at"] is None]
+    assert len(unread) == 1
+    assert unread[0]["group_count"] == 1
+
+
 async def test_thread_reply_notifies_root_author(
     client: AsyncClient,
     make_user: MakeUser,

@@ -589,13 +589,52 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     requestAnimationFrame(scrollCaretIntoView)
   }
 
+  // Вставляет текст текстовыми узлами вручную, переводы строк — голыми <br> между ними
+  // (Range.insertNode), БЕЗ execCommand('insertText', text) на многострочной строке: на
+  // таком вводе браузер сам решает, как представить перевод строки в DOM, и часто заворачивает
+  // строку в <div>/<p> вместо плоского <br> — та же неопределённость, из-за которой обычный
+  // Enter перехватывается вручную через insertLineBreak (см. onKey). Вставленные так <br> —
+  // ровно та же плоская структура, что даёт insertLineBreak при наборе, поэтому
+  // htmlToMarkerText не нужно отдельно разбирать html-блоки: 1 \n в буфере обмена = ровно
+  // 1 <br> = ровно 1 \n в content, без задвоения пустых строк.
+  function insertPlainTextAtCaret(text: string) {
+    const el = editorRef.current
+    const sel = window.getSelection()
+    if (!el || !sel || sel.rangeCount === 0) return
+    const range = sel.getRangeAt(0)
+    if (!el.contains(range.startContainer)) return
+    range.deleteContents()
+    const frag = document.createDocumentFragment()
+    let lastNode: Node | null = null
+    text.split('\n').forEach((line, i) => {
+      if (i > 0) {
+        const br = document.createElement('br')
+        frag.appendChild(br)
+        lastNode = br
+      }
+      if (line.length > 0) {
+        const textNode = document.createTextNode(line)
+        frag.appendChild(textNode)
+        lastNode = textNode
+      }
+    })
+    range.insertNode(frag)
+    if (lastNode) {
+      const newRange = document.createRange()
+      newRange.setStartAfter(lastNode)
+      newRange.collapse(true)
+      sel.removeAllRanges()
+      sel.addRange(newRange)
+    }
+  }
+
   // Вставка из буфера — всегда как обычный текст (contentEditable иначе протащит чужую
   // разметку/стили из источника). Раньше это было бесплатно (textarea физически не
   // умеет ничего кроме текста), теперь — явный шаг.
   function onPaste(e: ClipboardEvent<HTMLDivElement>) {
     e.preventDefault()
     const pastedText = e.clipboardData.getData('text/plain')
-    document.execCommand('insertText', false, pastedText)
+    insertPlainTextAtCaret(pastedText)
     onEditorInput()
   }
 

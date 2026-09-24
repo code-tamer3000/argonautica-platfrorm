@@ -16,6 +16,24 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   mention: 'упомянул(а) вас',
   cabin_granted: '',
   admin: '',
+  task_comment: '',
+  task_returned: '',
+}
+
+// Склонение «N сообщений» для схлопнутого DM-бёрста (group_count > 1).
+function messagesWord(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'сообщение'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'сообщения'
+  return 'сообщений'
+}
+
+function kindLabel(n: NotificationOut): string {
+  if (n.kind === 'dm' && n.group_count > 1) {
+    return `написал(а) вам ${n.group_count} ${messagesWord(n.group_count)}`
+  }
+  return KIND_LABEL[n.kind]
 }
 
 const KIND_FALLBACK: Record<NotificationKind, string> = {
@@ -25,11 +43,15 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   mention: 'Вас упомянули',
   cabin_granted: 'Вам открыт доступ к разделу «Каюта»',
   admin: 'Уведомление от администрации',
+  task_comment: 'Новый комментарий к вашей сдаче',
+  task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
 const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   cabin_granted: 'Каюта',
+  task_comment: 'Задачи',
+  task_returned: 'Задачи',
 }
 
 export function NotificationBell() {
@@ -105,7 +127,7 @@ export function NotificationBell() {
                   <div className={styles.itemBody}>
                     <div className={styles.itemTitle}>
                       <span className={styles.itemActor}>{title}</span>{' '}
-                      {KIND_LABEL[n.kind] && <span className={styles.itemKind}>{KIND_LABEL[n.kind]}</span>}
+                      {kindLabel(n) && <span className={styles.itemKind}>{kindLabel(n)}</span>}
                     </div>
                     <div className={styles.itemText}>{n.preview ?? KIND_FALLBACK[n.kind]}</div>
                   </div>

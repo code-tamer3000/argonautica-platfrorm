@@ -25,9 +25,10 @@ from app.db.base import Base
 class Notification(Base):
     """Одно уведомление получателю `user_id`.
 
-    От сообщения (dm/reply/news) — заданы actor_id/message_id. cabin_granted —
+    От сообщения (dm/reply/news/mention) — заданы actor_id/message_id. cabin_granted —
     actor_id/message_id/room_id пусты (клик ведёт в /cabin). Админ-рассылка
-    (admin) — заголовок в title, room/message/actor пусты.
+    (admin) — заголовок в title, room/message/actor пусты. task_comment/task_returned —
+    actor_id/message_id/room_id пусты, task_id задан (клик ведёт в /tasks/{task_id}).
 
     `journal_missed` больше не генерируется (снято — раздражало пользователей);
     значение оставлено в CHECK ради обратной совместимости старых строк, новые не
@@ -38,7 +39,7 @@ class Notification(Base):
     __table_args__ = (
         CheckConstraint(
             "kind IN ('dm', 'reply', 'news', 'mention', 'journal_missed', "
-            "'cabin_granted', 'admin')",
+            "'cabin_granted', 'admin', 'task_comment', 'task_returned')",
             name="notification_kind_valid",
         ),
         # Лента колокольчика: последние уведомления пользователя.
@@ -65,6 +66,8 @@ class Notification(Base):
     actor_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id")
     )
+    # Цель навигации для task_comment/task_returned (/tasks/{task_id}). Пусто у прочих видов.
+    task_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tasks.id"))
     # Легаси-поле бывшего journal_missed (день дневника). Больше не пишется.
     ref_date: Mapped[date | None] = mapped_column(Date)
     # Заголовок админ-рассылки (kind='admin'); у остальных видов пуст. Тело —
@@ -72,6 +75,13 @@ class Notification(Base):
     # прямо здесь (title) + preview (первые строки тела).
     title: Mapped[str | None] = mapped_column(Text)
     body: Mapped[str | None] = mapped_column(Text)
+    # Сколько подряд идущих сообщений схлопнуто в эту строку (см. on_new_message:
+    # DM-бёрст от одного и того же собеседника, пока строка не прочитана, не плодит
+    # по уведомлению на каждое сообщение — обновляет счётчик у этой же строки).
+    # У остальных видов всегда 1.
+    group_count: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("1")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

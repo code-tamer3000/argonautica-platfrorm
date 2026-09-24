@@ -217,18 +217,48 @@ async def on_new_message(
         settings_by_uid: dict[int, dict[str, object]] = {
             uid: s for uid, s in rows_settings
         }
-        rows = [
-            Notification(
-                user_id=uid,
-                kind=row_kind,
-                room_id=message.room_id,
-                message_id=message.id,
-                actor_id=sender.id,
-            )
-            for uid, row_kind in kind_by_uid.items()
-        ]
-        session.add_all(rows)
+        # DM-бёрст: если собеседнику уже лежит непрочитанное dm-уведомление от того же
+        # автора в той же комнате, схлопываем в него (message_id/created_at/счётчик
+        # обновляются) вместо новой строки — иначе «написал 5 раз подряд» даёт 5
+        # отдельных уведомлений в колокольчике вместо одного «5 сообщений».
+        dm_uids = [uid for uid, k in kind_by_uid.items() if k == "dm"]
+        existing_dm_by_uid: dict[int, Notification] = {}
+        if dm_uids:
+            existing_dm_rows = (
+                await session.execute(
+                    select(Notification).where(
+                        Notification.user_id.in_(dm_uids),
+                        Notification.kind == "dm",
+                        Notification.actor_id == sender.id,
+                        Notification.room_id == message.room_id,
+                        Notification.read_at.is_(None),
+                    )
+                )
+            ).scalars().all()
+            existing_dm_by_uid = {row.user_id: row for row in existing_dm_rows}
+
+        new_rows: list[Notification] = []
+        updated_rows: list[Notification] = []
+        for uid, row_kind in kind_by_uid.items():
+            existing = existing_dm_by_uid.get(uid)
+            if existing is not None:
+                existing.message_id = message.id
+                existing.group_count += 1
+                existing.created_at = func.now()
+                updated_rows.append(existing)
+            else:
+                new_rows.append(
+                    Notification(
+                        user_id=uid,
+                        kind=row_kind,
+                        room_id=message.room_id,
+                        message_id=message.id,
+                        actor_id=sender.id,
+                    )
+                )
+        session.add_all(new_rows)
         await session.flush()  # присваивает id и created_at (нужны для payload)
+        rows = new_rows + updated_rows
         for row in rows:
             await session.refresh(row)
             row_preview = (
@@ -243,6 +273,7 @@ async def on_new_message(
                 actor_name=sender.display_name,
                 preview=row_preview,
                 ref_date=None,
+                group_count=row.group_count,
                 created_at=row.created_at,
                 read_at=row.read_at,
             )
@@ -354,3 +385,49 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
             after_commit(session, _push_hook(user_id, payload))
     except Exception:
         logger.exception("Failed to create cabin_granted notification for user %s", user_id)
+
+
+async def notify_task_returned(
+    session: AsyncSession, user_id: int, task_id: int, task_title: str
+) -> None:
+    """Уведомить участника, что его сдача возвращена на доработку.
+
+    Системное уведомление без привязки к комнате/автору (room_id/actor_id пусты) —
+    клик ведёт в /tasks/{task_id} (task_id задан, обрабатывается на фронте по kind).
+    Ошибку логируем и глотаем, чтобы не ронять сам review.
+    """
+    try:
+        row = Notification(user_id=user_id, kind="task_returned", task_id=task_id)
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        out = NotificationOut(
+            id=row.id,
+            kind="task_returned",
+            room_id=None,
+            message_id=None,
+            actor_id=None,
+            actor_name=None,
+            preview=None,
+            ref_date=None,
+            task_id=task_id,
+            created_at=row.created_at,
+            read_at=row.read_at,
+        )
+        notif_event = ws_schemas.notification_new_event(out)
+        after_commit(session, _notif_hook(user_id, notif_event))
+        user_settings = await session.scalar(
+            select(User.settings).where(User.id == user_id)
+        )
+        if push_allowed(user_settings, "task_returned"):
+            payload = push_service.build_payload(
+                title="Задача возвращена на доработку",
+                body=task_title,
+                url=f"/tasks/{task_id}",
+                tag=f"task-returned-{task_id}",
+            )
+            after_commit(session, _push_hook(user_id, payload))
+    except Exception:
+        logger.exception(
+            "Failed to create task_returned notification for user %s", user_id
+        )

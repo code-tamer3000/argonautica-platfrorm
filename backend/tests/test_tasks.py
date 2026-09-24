@@ -246,19 +246,32 @@ async def test_submission_lifecycle(
         "my_status"
     ] == "submitted"
 
-    # admin возвращает (с комментарием) → returned + комментарий на последней сдаче
+    # admin возвращает без комментария — комментарий необязателен, comment-запись не создаётся
     tracks = (
         await client.get(f"/api/tasks/{tid}/submissions", headers=admin_h)
     ).json()
     assignment_id = tracks[0]["assignment_id"]
     submission_id = tracks[0]["submissions"][-1]["id"]
-    # возврат без комментария — 422
-    bad = await client.post(
+    no_comment = await client.post(
         f"/api/tasks/assignments/{assignment_id}/review",
         headers=admin_h,
         json={"action": "return"},
     )
-    assert bad.status_code == 422
+    assert no_comment.status_code == 200
+    assert no_comment.json()["status"] == "returned"
+    comments = (
+        await client.get(
+            f"/api/tasks/submissions/{submission_id}/comments", headers=user_h
+        )
+    ).json()
+    assert comments == []
+
+    # повторная сдача (v1.5) и возврат с комментарием → комментарий появляется
+    await client.post(f"/api/tasks/{tid}/submissions", headers=user_h, json={"body": "v1.5"})
+    tracks = (
+        await client.get(f"/api/tasks/{tid}/submissions", headers=admin_h)
+    ).json()
+    submission_id = tracks[0]["submissions"][-1]["id"]
     ret = await client.post(
         f"/api/tasks/assignments/{assignment_id}/review",
         headers=admin_h,
@@ -285,6 +298,55 @@ async def test_submission_lifecycle(
     )
     assert acc.status_code == 200
     assert acc.json()["status"] == "accepted"
+
+
+async def test_return_notifies_submitter(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Возврат сдачи на доработку кладёт task_returned в ленту уведомлений
+    получателя (клик ведёт на задачу через task_id) — accept ничего не шлёт."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    task = await _create_task(
+        client, admin_h, type="individual", title="Notify me", assignee_ids=[user.id]
+    )
+    tid = task["id"]
+    await client.post(f"/api/tasks/{tid}/submissions", headers=user_h, json={"body": "v1"})
+    tracks = (
+        await client.get(f"/api/tasks/{tid}/submissions", headers=admin_h)
+    ).json()
+    assignment_id = tracks[0]["assignment_id"]
+
+    ret = await client.post(
+        f"/api/tasks/assignments/{assignment_id}/review",
+        headers=admin_h,
+        json={"action": "return"},
+    )
+    assert ret.status_code == 200
+
+    notifications = (
+        await client.get("/api/notifications", headers=user_h)
+    ).json()["items"]
+    returned = [n for n in notifications if n["kind"] == "task_returned"]
+    assert len(returned) == 1
+    assert returned[0]["task_id"] == tid
+    assert returned[0]["room_id"] is None
+    assert returned[0]["actor_id"] is None
+
+    # accept не создаёт task_returned повторно.
+    await client.post(f"/api/tasks/{tid}/submissions", headers=user_h, json={"body": "v2"})
+    await client.post(
+        f"/api/tasks/assignments/{assignment_id}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    notifications = (
+        await client.get("/api/notifications", headers=user_h)
+    ).json()["items"]
+    assert len([n for n in notifications if n["kind"] == "task_returned"]) == 1
 
 
 async def test_sets_display_name_task_renames_on_submit(

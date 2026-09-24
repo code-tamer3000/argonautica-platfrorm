@@ -336,16 +336,10 @@ class TaskTrackOut(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    """Ревью сдачи: принять или вернуть. Возврат — обязательно с комментарием."""
+    """Ревью сдачи: принять или вернуть. Комментарий при возврате необязателен."""
 
     action: Literal["accept", "return"]
     comment: str | None = None
-
-    @model_validator(mode="after")
-    def _return_requires_comment(self) -> "ReviewRequest":
-        if self.action == "return" and not (self.comment and self.comment.strip()):
-            raise ValueError("A comment is required when returning a submission")
-        return self
 
 
 class TaskCommentCreate(BaseModel):
