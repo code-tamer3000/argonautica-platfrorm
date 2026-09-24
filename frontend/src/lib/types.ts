@@ -657,6 +657,9 @@ export interface NotificationOut {
   title: string | null
   // Цель навигации для task_comment/task_returned (/tasks/{task_id}); у остальных видов null.
   task_id: number | null
+  // Сколько подряд сообщений от того же собеседника схлопнуто в эту строку
+  // (kind='dm' burst, пока не прочитана). У остальных видов всегда 1.
+  group_count: number
   created_at: string
   read_at: string | null
 }

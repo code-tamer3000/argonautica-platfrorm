@@ -75,6 +75,13 @@ class Notification(Base):
     # прямо здесь (title) + preview (первые строки тела).
     title: Mapped[str | None] = mapped_column(Text)
     body: Mapped[str | None] = mapped_column(Text)
+    # Сколько подряд идущих сообщений схлопнуто в эту строку (см. on_new_message:
+    # DM-бёрст от одного и того же собеседника, пока строка не прочитана, не плодит
+    # по уведомлению на каждое сообщение — обновляет счётчик у этой же строки).
+    # У остальных видов всегда 1.
+    group_count: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("1")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

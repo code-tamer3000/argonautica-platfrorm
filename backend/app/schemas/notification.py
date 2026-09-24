@@ -31,6 +31,9 @@ class NotificationOut(BaseModel):
     ref_date: date | None
     title: str | None = None
     task_id: int | None = None
+    # Сколько подряд сообщений от того же собеседника схлопнуто в эту строку
+    # (kind='dm' burst). У остальных видов всегда 1.
+    group_count: int = 1
     created_at: datetime
     read_at: datetime | None
 
