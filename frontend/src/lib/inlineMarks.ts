@@ -120,12 +120,7 @@ function walkToMarkerText(node: Node): string {
   // execCommand/paste иногда заворачивают строки в <div>/<p> вместо <br> — считаем это
   // переводом строки, чтобы многострочный вставленный текст не склеился в одну строку.
   const isBlock = el.tagName === 'DIV' || el.tagName === 'P'
-  if (!isBlock) return inner
-  // Пустая строка в WebKit/Blink-редакторе — это <div><br></div>: сам <br> уже дал inner='\n',
-  // не добавляем сверху ещё один перевод строки, иначе вставленный многострочный текст с
-  // пустыми строками задваивает их (1 пустая строка в буфере обмена → 2 в content).
-  if (inner === '\n') return inner
-  return `${inner}\n`
+  return isBlock ? `${inner}\n` : inner
 }
 
 /**
