@@ -372,7 +372,7 @@ See [FILES.md](FILES.md) "Playlist" for the full flow. No ACL of its own — rea
 
 **UNIQUE:** (`playlist_id`, `position`).
 
-**Carrier FK** — one nullable `playlist_id BIGINT FK playlists` column each on `messages`, `tasks`, `kb_items` (same shape as `messages.sticker_id`): at most one playlist per carrier, and the FK itself is set once at creation and never repointed. The `playlists` row it points at can still be renamed/trimmed by its author after send (see FILES.md "Edit after send") — what's frozen is *which* playlist is attached, not its title/track set. No join table, no plan/intake isolation of its own — the carrier's own visibility rules already gate it.
+**Carrier FK** — one nullable `playlist_id BIGINT FK playlists` column each on `messages`, `tasks`, `kb_items` (same shape as `messages.sticker_id`): at most one playlist per carrier. `messages.playlist_id` is set once at send and never repointed (no message-edit path touches it). `tasks.playlist_id`/`kb_items.playlist_id` CAN be repointed or cleared afterwards, through `PATCH /api/tasks/{id}` / `PATCH /api/kb/items/{id}` (see FILES.md "Re-attaching on the carrier") — absent field leaves it alone, an id attaches/replaces, explicit `null` detaches. The `playlists` row itself can also be renamed/get a new cover/lose a track by its author or an admin regardless of which carrier holds it (see FILES.md "Edit after send") — that's editing the playlist in place, orthogonal to which carrier's FK points at it. No join table, no plan/intake isolation of its own — the carrier's own visibility rules already gate it.
 
 ## stickerpacks / stickers
 Admin adds packs. Sticker message: `content = NULL`, `sticker_id` set.
@@ -417,7 +417,7 @@ See [KB.md](KB.md). **kb_categories** is out-of-MVP (structure only).
 | title | TEXT | NOT NULL | |
 | body | TEXT | NULL | markdown |
 | published | BOOLEAN | NOT NULL, default false | draft / published |
-| playlist_id | BIGINT | FK playlists, NULL | playlist attachment (ARG-139, see "Playlist" above); one per material, immutable |
+| playlist_id | BIGINT | FK playlists, NULL | playlist attachment (ARG-139, see "Playlist" above); one per material, changeable via `PATCH /api/kb/items/{id}` (attach/replace/detach — see FILES.md "Re-attaching on the carrier") |
 | created_by | BIGINT | FK users | admin |
 | sort_order | INT | NOT NULL, default 0 | |
 | created_at | TIMESTAMPTZ | NOT NULL | |
@@ -614,7 +614,7 @@ Section "Задачи". Eight tables. See [TASKS.md](TASKS.md).
 | title | TEXT | NOT NULL | |
 | body | TEXT | NULL | markdown |
 | kb_item_id | BIGINT | FK kb_items, NULL | optional link to a KB item |
-| playlist_id | BIGINT | FK playlists, NULL | playlist attachment on the task's condition (ARG-139, see "Playlist" above); one per task, immutable |
+| playlist_id | BIGINT | FK playlists, NULL | playlist attachment on the task's condition (ARG-139, see "Playlist" above); one per task, changeable via `PATCH /api/tasks/{id}` (attach/replace/detach — see FILES.md "Re-attaching on the carrier"), also copied on republish |
 | pair_id | BIGINT | FK task_pairs, NULL | set only on a cross-task (peer-learning); links it to its pair |
 | deadline_at | TIMESTAMPTZ | NULL | synced to `calendar_events` (services/tasks.py) |
 | created_by | BIGINT | FK users, NOT NULL | author; for a cross-task = the giving participant |
