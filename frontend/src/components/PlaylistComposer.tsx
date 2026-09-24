@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { createPlaylist } from '../api/media'
 import { readId3Tags, titleFromFileName } from '../lib/id3'
 import { mediaUpload } from '../lib/mediaUpload'
@@ -65,6 +65,10 @@ export function PlaylistComposer({
 }: Props) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [title, setTitle] = useState('')
+  // Обложка, выбранная автором вручную поверх авто-распознанной из ID3 первого
+  // трека — до сих пор её можно было сменить только PATCH'ем уже созданного
+  // плейлиста (PlaylistCard); теперь то же действие доступно прямо в сборке.
+  const [coverOverride, setCoverOverride] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   // Пикер «выбрать существующий» — первый экран при прикреплении: чаще всего
   // нужный плейлист уже есть на платформе, а заливка новых файлов — отдельная
@@ -77,7 +81,28 @@ export function PlaylistComposer({
     null,
   )
   const fileRef = useRef<HTMLInputElement>(null)
+  const coverFileRef = useRef<HTMLInputElement>(null)
   const autoOpenedRef = useRef(false)
+
+  // Превью обложки в панели сборки: ручной выбор — приоритет, иначе то, что
+  // авто-распознано из ID3-тегов первого трека (drafts[0].cover), иначе ничего.
+  const autoCover = drafts.find((d) => d.cover)?.cover ?? null
+  const coverPreviewSource = coverOverride ?? autoCover
+  const coverPreviewUrl = useMemo(
+    () => (coverPreviewSource ? URL.createObjectURL(coverPreviewSource) : null),
+    [coverPreviewSource],
+  )
+  useEffect(() => {
+    return () => {
+      if (coverPreviewUrl) URL.revokeObjectURL(coverPreviewUrl)
+    }
+  }, [coverPreviewUrl])
+
+  function handleCoverPick(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) setCoverOverride(file)
+  }
 
   // autoOpen: родитель уже показал намерение (свой пункт меню) — сразу открыть
   // системный файловый диалог, не заставляя кликать по внутренней кнопке ещё раз.
@@ -140,7 +165,10 @@ export function PlaylistComposer({
     setUploadProgress({ done: 0, total: drafts.length })
     try {
       const tracks: { media_asset_id: number; title: string; artist: string | null; duration: number | null }[] = []
-      let coverMediaId: number | null = null
+      // Ручной выбор обложки — приоритет над авто-распознанной из ID3.
+      let coverMediaId: number | null = coverOverride
+        ? (await mediaUpload(coverOverride)).asset.id
+        : null
       for (let i = 0; i < drafts.length; i++) {
         const d = drafts[i]
         const { asset } = await mediaUpload(d.file)
@@ -165,6 +193,7 @@ export function PlaylistComposer({
       onChange(playlist)
       setDrafts([])
       setTitle('')
+      setCoverOverride(null)
       setCreatingNew(false)
       onClose?.()
     } catch (err) {
@@ -260,13 +289,32 @@ export function PlaylistComposer({
 
       {open && (
         <div className={styles.panel}>
-          <input
-            className={styles.titleInput}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Название плейлиста"
-            disabled={busy}
-          />
+          <div className={styles.buildHeader}>
+            <input
+              ref={coverFileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              tabIndex={-1}
+              onChange={handleCoverPick}
+            />
+            <button
+              type="button"
+              className={styles.buildCover}
+              onClick={() => coverFileRef.current?.click()}
+              disabled={busy}
+              aria-label="Выбрать обложку"
+            >
+              {coverPreviewUrl ? <img src={coverPreviewUrl} alt="" /> : <IconMusic size={18} />}
+            </button>
+            <input
+              className={styles.titleInput}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Название плейлиста"
+              disabled={busy}
+            />
+          </div>
           <ul className={styles.list}>
             {drafts.map((d, i) => (
               <li key={i} className={styles.item}>
@@ -322,6 +370,7 @@ export function PlaylistComposer({
               onClick={() => {
                 setDrafts([])
                 setTitle('')
+                setCoverOverride(null)
                 setCreatingNew(false)
                 onClose?.()
               }}
