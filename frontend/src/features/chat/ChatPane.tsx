@@ -49,6 +49,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const setDmPeer = useUiStore((s) => s.setDmPeer)
   const setPendingForward = useUiStore((s) => s.setPendingForward)
   const setPendingQuote = useUiStore((s) => s.setPendingQuote)
+  const pendingEdit = useUiStore((s) => s.pendingEdit)
+  const setPendingEdit = useUiStore((s) => s.setPendingEdit)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const journalFreeEntry = useUiStore((s) => s.journalFreeEntry)
@@ -61,7 +63,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     [query.data],
   )
 
-  const [editingId, setEditingId] = useState<number | null>(null)
   const [threadRootId, setThreadRootId] = useState<number | null>(null)
   const [showPins, setShowPins] = useState(false)
   const [showMembers, setShowMembers] = useState(false)
@@ -144,7 +145,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     canPin: !!canPin,
     onQuote: handleQuote,
     onOpenThread: (msg) => setThreadRootId(msg.id),
-    onEdit: (msg) => setEditingId(msg.id),
+    onEdit: (msg) => setPendingEdit({ roomId, message: msg }),
     onForward: handleForward,
   })
 
@@ -166,7 +167,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
 
   // Сбросить панели при смене комнаты.
   useEffect(() => {
-    setEditingId(null)
     setThreadRootId(null)
     collapsedThreadRootRef.current = null // не доводить к корню из прошлой комнаты
     setShowPins(false)
@@ -265,7 +265,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   // ре-рендер ChatPane (typing/presence/новое сообщение) пробивал бы memo и
   // перерисовывал всю ленту с медиа.
   const loadMore = useCallback(() => void query.fetchNextPage(), [query])
-  const clearEdit = useCallback(() => setEditingId(null), [])
   const toggleThread = useCallback(
     (rootId: number) => {
       if (threadRootId === rootId) closeThread()
@@ -475,7 +474,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         loadMore={loadMore}
         loading={query.isFetchingNextPage}
         users={users}
-        editingId={editingId}
         selectedMsgId={msgMenu.menu?.msg.id ?? null}
         highlightedMsgId={highlightedMsgId}
         expandedThreadId={threadRootId}
@@ -484,7 +482,6 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         // там ведут ежедневные записи с оформлением. Новостной канал (тоже channel) и
         // личные чаты/группы — простой текст.
         markdown={room.type === 'channel' && !room.is_news}
-        onClearEdit={clearEdit}
         onToggleThread={toggleThread}
         onForward={handleForward}
         onQuote={handleQuote}
@@ -527,6 +524,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           верхний уровень запрещён (комментарии). */}
       {!isGraduated && !(isOwnPersonal && isWindowClosed) && !room.dm_write_locked &&
         (!room.is_readonly || user?.role === 'admin') && (threadRootId != null ||
+        pendingEdit?.roomId === roomId ||
         ((!room.is_personal || room.created_by === user?.id) &&
           (!room.is_news || user?.role === 'admin') &&
           (!isOwnPersonal || !isJournalTargetRoom || journalChosen))) && (

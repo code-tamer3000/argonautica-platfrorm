@@ -25,7 +25,6 @@ interface Props {
   loadMore: () => void
   loading: boolean
   users: Map<number, PublicUserOut>
-  editingId?: number | null
   selectedMsgId?: number | null
   highlightedMsgId?: number | null
   // Корень, чей тред развёрнут прямо в ленте (аккордеон под сообщением). null → все свёрнуты.
@@ -33,7 +32,6 @@ interface Props {
   canPin?: boolean
   // Канал-дневник → текст сообщений рендерится как markdown (см. MessageItem).
   markdown?: boolean
-  onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
   onForward?: (msg: MessageOut) => void
   // Меню «Ответить» = цитата (docs/MESSAGES.md «Quotes») — MessageList сам меню не
@@ -55,8 +53,8 @@ interface Props {
 }
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
-  { roomId, messages, hasMore, loadMore, loading, users, editingId, selectedMsgId, highlightedMsgId,
-    expandedThreadId, canPin, markdown, onClearEdit, onToggleThread, onForward,
+  { roomId, messages, hasMore, loadMore, loading, users, selectedMsgId, highlightedMsgId,
+    expandedThreadId, canPin, markdown, onToggleThread, onForward,
     onQuote, onQuoteJump, onOpenMenu, onAtBottomChange, onScrolledUpChange,
     onSwipeReply, swipeEnabled = true },
   ref,
@@ -204,11 +202,9 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               author={users.get(m.sender_id)}
               forwardedFrom={m.forwarded_from_sender_id != null ? users.get(m.forwarded_from_sender_id) : undefined}
               quoteAuthor={m.quote?.sender_id != null ? users.get(m.quote.sender_id) : undefined}
-              editingId={editingId}
               isSelected={selectedMsgId === m.id}
               isHighlighted={highlightedMsgId === m.id}
               threadOpen={expandedThreadId === m.id}
-              onClearEdit={onClearEdit}
               onToggleThread={onToggleThread}
               onQuote={onQuote}
               onQuoteJump={onQuoteJump}

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
   forwardMessage,
+  useEditMessage,
   useSendMessage,
   type SendBody,
 } from '../../api/messages'
@@ -15,7 +16,7 @@ import { plural } from '../../lib/format'
 import { htmlToMarkerText, markerTextToHtml } from '../../lib/inlineMarks'
 import { MAX_ATTACHMENTS, preparePendingUpload, runPendingUpload, type PendingUpload } from '../../lib/mediaUpload'
 import { stripInlineMarks, stripJournalMarker } from '../../lib/messageText'
-import type { MessageOut, MessageRefOut, PlaylistOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
+import type { AttachmentOut, MessageOut, MessageRefOut, PlaylistOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
 import { PlaylistComposer } from '../../components/PlaylistComposer'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
@@ -79,7 +80,13 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const [voiceActive, setVoiceActive] = useState(false)
   // Идёт отправка пересылки (форвард создаётся до комментария).
   const [reposting, setReposting] = useState(false)
+  // Вложения уже отправленного сообщения, оставшиеся в правке (можно убирать по
+  // одному); новые добавленные во время правки идут в тот же pendingFiles, что и
+  // при обычной отправке — на сохранении оба списка объединяются в attachment_ids.
+  const [editingKeptAttachments, setEditingKeptAttachments] = useState<AttachmentOut[]>([])
+  const editingMsgIdRef = useRef<number | null>(null)
   const send = useSendMessage(roomId)
+  const editMutation = useEditMessage(roomId)
   const qc = useQueryClient()
   const users = useUsersMap()
   const { user } = useAuth()
@@ -87,6 +94,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const setPendingForward = useUiStore((s) => s.setPendingForward)
   const pendingQuote = useUiStore((s) => s.pendingQuote)
   const setPendingQuote = useUiStore((s) => s.setPendingQuote)
+  const pendingEdit = useUiStore((s) => s.pendingEdit)
+  const setPendingEdit = useUiStore((s) => s.setPendingEdit)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const pendingDraft = useUiStore((s) => s.pendingDraft)
@@ -97,6 +106,10 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // Цитата — тот же приём, что pendingForward: показываем только в композере ТОЙ
   // комнаты, где её поставили (см. stores/ui.ts PendingQuote).
   const quote = pendingQuote?.roomId === roomId ? pendingQuote.message : null
+  // Правка — тот же приём (см. stores/ui.ts PendingEdit). Активна независимо от
+  // режима треда/дневника/репоста этого композера — правка ЛЮБОГО сообщения комнаты
+  // (в т.ч. ответа треда) идёт через один и тот же нижний композер.
+  const editing = pendingEdit?.roomId === roomId ? pendingEdit.message : null
   // Раздел дневника, «заряженный» именно в эту комнату: следующая отправка
   // (текст/файл/голос/стикер) уходит как запись дневника этого раздела. Мета
   // раздела берётся из активного задания (см. api/journal.ts).
@@ -235,6 +248,36 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     })
   }, [pendingDraft, roomId, setPendingDraft, resetEditor])
 
+  // Правка, «заряженная» извне («Редактировать» в меню сообщения): один раз (по id)
+  // подставляем текущий текст и вложения сообщения в поле композера и переводим его
+  // в режим правки — остальные режимы (цитата/пересылка/дневник/ссылка/плейлист)
+  // этому сообщению не принадлежат, поэтому сбрасываем их разом.
+  useEffect(() => {
+    if (!editing) {
+      editingMsgIdRef.current = null
+      return
+    }
+    if (editingMsgIdRef.current === editing.id) return
+    editingMsgIdRef.current = editing.id
+    resetEditor(editing.content ?? '')
+    setEditingKeptAttachments(editing.attachments ?? [])
+    setPendingFiles([])
+    setPendingRef(null)
+    setPendingPlaylist(null)
+    setPendingQuote(null)
+    setPendingForward(null)
+    setPendingJournal(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, resetEditor])
+
+  const cancelEdit = useCallback(() => {
+    setPendingEdit(null)
+    resetEditor('')
+    setPendingFiles([])
+    setEditingKeptAttachments([])
+    editingMsgIdRef.current = null
+  }, [setPendingEdit, resetEditor])
+
   // Прикрепление файлов: за раз можно выбрать несколько (input multiple), в сумме на
   // сообщение — не больше MAX_ATTACHMENTS (столько же принимает бэкенд и столько же
   // раскладывает сеткой лента). Лишние молча не выкидываем — говорим вслух.
@@ -242,7 +285,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
     if (!files.length) return
-    const room = MAX_ATTACHMENTS - pendingFiles.length
+    const alreadyAttached = editing ? editingKeptAttachments.length : 0
+    const room = MAX_ATTACHMENTS - pendingFiles.length - alreadyAttached
     if (room <= 0) {
       toast(`К одному сообщению можно прикрепить не больше ${MAX_ATTACHMENTS} файлов`, 'error')
       return
@@ -406,11 +450,41 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   }
 
   async function submit() {
-    if (send.isPending || reposting || uploading) return
+    if (send.isPending || reposting || uploading || editMutation.isPending) return
     justSentRef.current = true
     setTimeout(() => { justSentRef.current = false }, 300)
 
     const content = text.trim()
+
+    // Правка существующего сообщения — приоритетнее треда/дневника/репоста: пока
+    // pendingEdit активен, композер целиком в режиме правки (см. эффект выше).
+    // Вложения заливаем синхронно (правка не идёт через offline-outbox — она и так
+    // требует сети на PATCH). Существующие вложения, не убранные пользователем
+    // (editingKeptAttachments), просто переносятся своими id.
+    if (editing) {
+      const keptIds = editingKeptAttachments.map((a) => a.asset_id)
+      if (!content && keptIds.length === 0 && pendingFiles.length === 0) {
+        toast('Сообщение должно нести текст или вложение', 'error')
+        return
+      }
+      const uploads = pendingFiles
+      let newIds: number[] = []
+      try {
+        if (uploads.length) newIds = await uploadAll(uploads)
+      } catch (err) {
+        toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
+        return
+      }
+      editMutation.mutate(
+        { id: editing.id, content: content || null, attachment_ids: [...keptIds, ...newIds] },
+        {
+          onSuccess: () => cancelEdit(),
+          onError: (err) =>
+            toast(err instanceof Error ? err.message : 'Не удалось сохранить изменения', 'error'),
+        },
+      )
+      return
+    }
 
     // Ответ в тред: прямой mutate (тред-реплики не живут в оптимистичной ленте
     // комнаты). Вложения тут заливаем синхронно — офлайн-outbox сюда не заведён.
@@ -672,6 +746,18 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
 
   return (
     <div className={`${styles.composer} ${revealOnMount ? styles.composerReveal : ''}`}>
+      {editing && (
+        <div className={`${styles.contextBar} ${styles.contextBarQuote}`}>
+          <span className={styles.ctxLabel}>Редактирование сообщения</span>
+          <button
+            className={styles.pendingChipX}
+            onClick={cancelEdit}
+            aria-label="Отменить редактирование"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       {inThread && (
         <div className={`${styles.contextBar} ${styles.contextBarThread}`}>
           {/* «Свернуть тред» живёт здесь, над композером — всегда на виду, не нужно
@@ -733,6 +819,27 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
           >
             ✕
           </button>
+        </div>
+      )}
+      {editing && editingKeptAttachments.length > 0 && (
+        <div className={styles.pendingAtt}>
+          {editingKeptAttachments.map((att) => (
+            <span key={att.asset_id} className={styles.pendingChip}>
+              <IconAttach size={13} />
+              <span className={styles.pendingChipLabel}>
+                {att.kind === 'image' ? 'Изображение' : att.kind === 'video' ? 'Видео' : att.kind === 'audio' ? 'Аудио' : 'Файл'}
+              </span>
+              <button
+                className={styles.pendingChipX}
+                onClick={() =>
+                  setEditingKeptAttachments(prev => prev.filter(a => a.asset_id !== att.asset_id))
+                }
+                aria-label="Убрать вложение"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
         </div>
       )}
       {pendingFiles.length > 0 && (
@@ -829,17 +936,20 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
           <div className={styles.inputShell}>
             {/* Пока печатаем — на мобиле сворачиваем кнопку стикера анимацией (width→0),
                 отдавая освободившееся место полю ввода. На десктопе класс без эффекта
-                (правило только внутри мобильного media query в chat.module.css). */}
-            <button
-              className={`${styles.iconBtnInline} ${styles.stickerBtn} ${hasText ? styles.stickerBtnHidden : ''}`}
-              onClick={() => setPickerOpen(v => !v)}
-              title="Стикер"
-              aria-label="Стикер"
-              tabIndex={hasText ? -1 : 0}
-              aria-hidden={hasText}
-            >
-              <IconSticker size={20} />
-            </button>
+                (правило только внутри мобильного media query в chat.module.css). Стикер
+                сам не редактируется (docs/MESSAGES.md) — кнопку в режиме правки прячем. */}
+            {!editing && (
+              <button
+                className={`${styles.iconBtnInline} ${styles.stickerBtn} ${hasText ? styles.stickerBtnHidden : ''}`}
+                onClick={() => setPickerOpen(v => !v)}
+                title="Стикер"
+                aria-label="Стикер"
+                tabIndex={hasText ? -1 : 0}
+                aria-hidden={hasText}
+              >
+                <IconSticker size={20} />
+              </button>
+            )}
             {/* contentEditable, не textarea — жирный/курсив/подчёркнутый видны сразу по
                 месту (execCommand, см. useRichFormatting.tsx), без сырых маркеров **, *, ++
                 в процессе набора. DOM не контролируется через value — React его не
@@ -853,11 +963,13 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
               aria-multiline="true"
               aria-label="Сообщение"
               data-placeholder={
-                inThread
-                  ? 'Ответить в тред…'
-                  : repost
-                    ? 'Добавить сообщение к пересылке…'
-                    : 'Сообщение…'
+                editing
+                  ? 'Текст сообщения…'
+                  : inThread
+                    ? 'Ответить в тред…'
+                    : repost
+                      ? 'Добавить сообщение к пересылке…'
+                      : 'Сообщение…'
               }
               className={styles.composerInput}
               onInput={onEditorInput}
@@ -868,7 +980,10 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
               enterKeyHint="enter"
             />
             <div className={styles.attachWrap}>
-              {attachMenuOpen && (
+              {/* В режиме правки редактируются только сами медиа-вложения (docs/MESSAGES.md
+                  «Границы») — ссылка на материал/задачу и плейлист сюда не входят, поэтому
+                  меню выбора пропускаем и ведём сразу на выбор файла. */}
+              {attachMenuOpen && !editing && (
                 <>
                   {/* Клик вне меню — закрыть. */}
                   <div
@@ -919,21 +1034,31 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
               )}
               <button
                 className={styles.iconBtnInline}
-                onClick={() => setAttachMenuOpen((v) => !v)}
+                onClick={() => editing ? fileInputRef.current?.click() : setAttachMenuOpen((v) => !v)}
                 disabled={uploading}
                 title="Прикрепить"
                 aria-label="Прикрепить"
-                aria-haspopup="menu"
-                aria-expanded={attachMenuOpen}
+                aria-haspopup={editing ? undefined : 'menu'}
+                aria-expanded={editing ? undefined : attachMenuOpen}
               >
                 {uploading ? <Spinner size={16} /> : <IconAttach size={18} />}
               </button>
             </div>
           </div>
         )}
-        {/* Есть что отправить → круглая кнопка отправки; иначе — VoiceComposer
-            (в idle = кнопка-микрофон, в записи/превью = полная панель). */}
-        {canSend && !voiceActive ? (
+        {/* Режим правки — своя кнопка «Сохранить» вместо отправки/голоса (стикер и
+            голосовое к правке не относятся, см. «Границы» выше). */}
+        {editing ? (
+          <button
+            className={styles.sendBtn}
+            onClick={submit}
+            disabled={editMutation.isPending || uploading}
+            title="Сохранить"
+            aria-label="Сохранить"
+          >
+            {editMutation.isPending ? <Spinner size={16} /> : <IconSend size={20} />}
+          </button>
+        ) : canSend && !voiceActive ? (
           <button
             className={styles.sendBtn}
             onClick={submit}

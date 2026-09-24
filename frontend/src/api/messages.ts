@@ -64,10 +64,18 @@ export function useSendMessage(roomId: number) {
   })
 }
 
+// content/attachment_ids независимы (см. backend EditMessageRequest): передаём
+// только то, что реально меняется — composer всегда шлёт оба поля явно (полное
+// новое состояние), но хук сам по себе допускает частичную правку.
+export interface EditBody {
+  content?: string | null
+  attachment_ids?: number[]
+}
+
 export function useEditMessage(roomId: number) {
   return useMutation({
-    mutationFn: ({ id, content }: { id: number; content: string }) =>
-      http.patch<MessageOut>(`/api/rooms/${roomId}/messages/${id}`, { content }),
+    mutationFn: ({ id, ...body }: EditBody & { id: number }) =>
+      http.patch<MessageOut>(`/api/rooms/${roomId}/messages/${id}`, body),
   })
 }
 
