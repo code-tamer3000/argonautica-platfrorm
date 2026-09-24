@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { initials } from '../lib/format'
 
 interface Props {
@@ -9,13 +10,28 @@ interface Props {
 
 export function Avatar({ name, url, size = 36, square = false }: Props) {
   const radius = square ? 'var(--radius-btn)' : '50%'
-  if (url) {
+  // Офлайн (или протухший кэш до фонового /me) картинка не долетает — вместо
+  // сломанной иконки браузера показываем инициалы. Тот же <img> не переотправит
+  // запрос сам, даже когда сеть вернётся (браузеры не ретраят упавший src) —
+  // поэтому по событию 'online' сбрасываем ошибку и даём <img> попытаться снова.
+  const [broken, setBroken] = useState(false)
+  useEffect(() => {
+    setBroken(false)
+  }, [url])
+  useEffect(() => {
+    const onOnline = () => setBroken(false)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
+
+  if (url && !broken) {
     return (
       <img
         src={url}
         alt={name}
         width={size}
         height={size}
+        onError={() => setBroken(true)}
         style={{ borderRadius: radius, objectFit: 'cover', flex: '0 0 auto', display: 'block' }}
       />
     )

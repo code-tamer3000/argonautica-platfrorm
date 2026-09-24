@@ -13,8 +13,12 @@ const CACHE_KEY = 'v1'
 // Не поднимаем протухший кэш: если снимку больше суток — игнорируем.
 const MAX_AGE_MS = 24 * 60 * 60 * 1000
 
-// Какие запросы персистим — по первому сегменту queryKey.
-const PERSIST_KEYS = new Set(['rooms', 'users', 'stickers', 'stickerpacks', 'messages'])
+// Какие запросы персистим — по первому сегменту queryKey. 'dashboard' (ARG-146) —
+// иначе холодный офлайн-старт разлочил только Рубку, а домашняя «Круг Экспедиции»
+// всё равно висела на спиннере: /api/dashboard — один запрос текущего юзера
+// (экспедиция/дневник/задачи/уведомления/новость-превью), тот же уровень
+// приватности, что у уже персистимых rooms/messages.
+const PERSIST_KEYS = new Set(['rooms', 'users', 'stickers', 'stickerpacks', 'messages', 'dashboard'])
 
 interface Snapshot {
   savedAt: number
