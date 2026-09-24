@@ -25,6 +25,7 @@ import { IconBook, IconSend } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { Chip, type ChipKind } from '../../components/Chip'
+import { Modal } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
@@ -459,6 +460,7 @@ export function TrackCard({
   const users = useUsersMap()
   const review = useReview()
   const [comment, setComment] = useState('')
+  const [returnOpen, setReturnOpen] = useState(false)
   // Принятые сдачи по умолчанию свёрнуты — раскрываются по клику на заголовок.
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const submitter = users.get(track.user_id)
@@ -483,6 +485,7 @@ export function TrackCard({
       {
         onSuccess: () => {
           setComment('')
+          setReturnOpen(false)
           toast('Возвращено на доработку')
         },
         onError: (err: unknown) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
@@ -530,26 +533,45 @@ export function TrackCard({
           )}
 
           {isAdmin && track.status !== 'accepted' && (
-            <>
-              <textarea
-                className={styles.composerInput}
-                placeholder="Комментарий при возврате на доработку (необязательно)…"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                rows={2}
-                style={{ minHeight: 60, marginTop: 'var(--space-3)' }}
-              />
-              <div className={styles.reviewActions}>
-                <Button type="button" onClick={accept} disabled={review.isPending}>
-                  Принять
-                </Button>
-                <Button type="button" variant="outline" onClick={returnWithComment} disabled={review.isPending}>
-                  Вернуть на доработку
-                </Button>
-              </div>
-            </>
+            <div className={styles.reviewActions}>
+              <Button type="button" onClick={accept} disabled={review.isPending}>
+                Принять
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setReturnOpen(true)}
+                disabled={review.isPending}
+              >
+                Вернуть / Не принять
+              </Button>
+            </div>
           )}
         </>
+      )}
+
+      {returnOpen && (
+        <Modal title="Вернуть на доработку" onClose={() => setReturnOpen(false)} closeOnBackdrop={false}>
+          <p className={styles.emptyNote}>
+            Сдача не будет засчитана, участник сможет отправить её повторно.
+          </p>
+          <textarea
+            className={styles.composerInput}
+            placeholder="Комментарий (необязательно)…"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={3}
+            autoFocus
+          />
+          <div className={styles.reviewActions} style={{ marginTop: 'var(--space-3)' }}>
+            <Button type="button" onClick={returnWithComment} disabled={review.isPending}>
+              Вернуть
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setReturnOpen(false)} disabled={review.isPending}>
+              Отмена
+            </Button>
+          </div>
+        </Modal>
       )}
     </div>
   )

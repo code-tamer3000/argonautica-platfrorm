@@ -439,8 +439,8 @@ async def review_assignment(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TaskTrackOut:
-    """Ревью сдачи. accept → 'accepted'; return → 'returned' + комментарий на
-    последнюю сдачу (обязателен). Оба ставят reviewed_at. Фан-аут статуса адресату.
+    """Ревью сдачи. accept → 'accepted'; return → 'returned' + необязательный
+    комментарий на последнюю сдачу. Оба ставят reviewed_at. Фан-аут статуса адресату.
 
     Оба действия требуют хотя бы одну сдачу (400, если её нет) — принять/вернуть
     нечего, если участник ничего не отправлял.
@@ -478,15 +478,16 @@ async def review_assignment(
     if body.action == "accept":
         assignment.status = "accepted"
     else:
-        # return: комментарий на последнюю сдачу этого назначения.
-        assert body.comment is not None
-        session.add(
-            TaskComment(
-                submission_id=latest.id,
-                author_id=current_user.id,
-                body=body.comment,
+        # return: комментарий на последнюю сдачу этого назначения — необязателен.
+        comment = (body.comment or "").strip()
+        if comment:
+            session.add(
+                TaskComment(
+                    submission_id=latest.id,
+                    author_id=current_user.id,
+                    body=comment,
+                )
             )
-        )
         assignment.status = "returned"
     assignment.reviewed_at = datetime.now(UTC)
     await session.flush()

@@ -246,19 +246,32 @@ async def test_submission_lifecycle(
         "my_status"
     ] == "submitted"
 
-    # admin возвращает (с комментарием) → returned + комментарий на последней сдаче
+    # admin возвращает без комментария — комментарий необязателен, comment-запись не создаётся
     tracks = (
         await client.get(f"/api/tasks/{tid}/submissions", headers=admin_h)
     ).json()
     assignment_id = tracks[0]["assignment_id"]
     submission_id = tracks[0]["submissions"][-1]["id"]
-    # возврат без комментария — 422
-    bad = await client.post(
+    no_comment = await client.post(
         f"/api/tasks/assignments/{assignment_id}/review",
         headers=admin_h,
         json={"action": "return"},
     )
-    assert bad.status_code == 422
+    assert no_comment.status_code == 200
+    assert no_comment.json()["status"] == "returned"
+    comments = (
+        await client.get(
+            f"/api/tasks/submissions/{submission_id}/comments", headers=user_h
+        )
+    ).json()
+    assert comments == []
+
+    # повторная сдача (v1.5) и возврат с комментарием → комментарий появляется
+    await client.post(f"/api/tasks/{tid}/submissions", headers=user_h, json={"body": "v1.5"})
+    tracks = (
+        await client.get(f"/api/tasks/{tid}/submissions", headers=admin_h)
+    ).json()
+    submission_id = tracks[0]["submissions"][-1]["id"]
     ret = await client.post(
         f"/api/tasks/assignments/{assignment_id}/review",
         headers=admin_h,
