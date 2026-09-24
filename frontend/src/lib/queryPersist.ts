@@ -18,7 +18,25 @@ const MAX_AGE_MS = 24 * 60 * 60 * 1000
 // всё равно висела на спиннере: /api/dashboard — один запрос текущего юзера
 // (экспедиция/дневник/задачи/уведомления/новость-превью), тот же уровень
 // приватности, что у уже персистимых rooms/messages.
-const PERSIST_KEYS = new Set(['rooms', 'users', 'stickers', 'stickerpacks', 'messages', 'dashboard'])
+// 'kb'/'tasks'/'dynamics'/'notifications' (ARG-147) — те же холодные офлайн-грабли
+// для КБ/Задач/Динамики/Уведомлений: данные лежат в кэше Query до перезапуска
+// процесса, но без персиста экран всё равно показывал пустое/загрузочное
+// состояние. Новости отдельного ключа не требуют — открытая новость это обычная
+// комната/сообщения (is_news), уже покрыта 'rooms'/'messages'. Каюта — исключение,
+// см. «Границы» ARG-147: единственный раздел с настоящей приватностью, гейт
+// устройства не шифрует IndexedDB, персист туда не добавляем.
+const PERSIST_KEYS = new Set([
+  'rooms',
+  'users',
+  'stickers',
+  'stickerpacks',
+  'messages',
+  'dashboard',
+  'kb',
+  'tasks',
+  'dynamics',
+  'notifications',
+])
 
 interface Snapshot {
   savedAt: number
