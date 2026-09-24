@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
+import { getOfflineTrackUrl } from '../lib/offlinePlaylists'
 import { usePlayerStore } from '../stores/player'
+import { toast } from '../stores/toast'
 import styles from './globalPlayer.module.css'
 import {
   IconChevronDown,
@@ -59,14 +61,25 @@ export function GlobalPlayer() {
 
   // Смена трека (в т.ч. первый запуск плейлиста) — подставить src и, если нужно,
   // запустить воспроизведение. Стор уже выставил isPlaying=true к этому моменту.
+  // Источник — сначала локально скачанный для офлайна блоб (ARG-145), иначе как
+  // раньше presigned-URL; проверка асинхронная (поход в IndexedDB), поэтому
+  // отменяем результат, если трек успел смениться ещё раз, пока ждали ответ.
   useEffect(() => {
     const el = audioRef.current
     if (!el || !track) return
-    if (el.src !== track.url) {
-      el.src = track.url
-      el.currentTime = 0
+    let cancelled = false
+    void getOfflineTrackUrl(track.asset_id).then((offlineUrl) => {
+      if (cancelled) return
+      const src = offlineUrl ?? track.url
+      if (el.src !== src) {
+        el.src = src
+        el.currentTime = 0
+      }
+      if (usePlayerStore.getState().isPlaying) void el.play()
+    })
+    return () => {
+      cancelled = true
     }
-    if (isPlaying) void el.play()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.asset_id])
 
@@ -174,6 +187,14 @@ export function GlobalPlayer() {
         // показанную позицию неподвижной (см. stores/player.ts::seek).
         onSeeked={(e) => store()._onSeeked(e.currentTarget.currentTime)}
         onEnded={() => store()._onEnded()}
+        // Трек не скачан для офлайна и сети нет — presigned-URL не загрузится.
+        // Без этого браузер просто молча стопорится на текущем треке (см. «Готово,
+        // когда» в ARG-145: офлайн-плейлист без сети должен явно сказать об этом).
+        onError={() => {
+          if (!navigator.onLine) {
+            toast('Нужна сеть — этот плейлист не скачан для офлайна', 'error')
+          }
+        }}
       />
       <div className={styles.bar}>
         {/* Перемотка прямо в мини-баре, не только в развёрнутом виде — тонкий range
