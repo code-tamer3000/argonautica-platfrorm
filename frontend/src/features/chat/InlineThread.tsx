@@ -5,6 +5,7 @@ import { useUsersMap } from '../../api/users'
 import { Spinner } from '../../components/Spinner'
 import { plural } from '../../lib/format'
 import type { MessageOut, QuotedMessageOut } from '../../lib/types'
+import { useUiStore } from '../../stores/ui'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageItem } from './MessageItem'
 import { useMessageMenu } from './useMessageMenu'
@@ -36,9 +37,9 @@ interface Props {
  */
 export function InlineThread({ roomId, rootId, canPin, markdown, onForward, onQuote, onQuoteJump }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
-  const [editingId, setEditingId] = useState<number | null>(null)
   const [expandedAll, setExpandedAll] = useState(false)
   const users = useUsersMap()
+  const setPendingEdit = useUiStore((s) => s.setPendingEdit)
   const markRead = useMarkRead(roomId)
   // Якорь на конце ветки: при открытии треда докручиваем ленту вниз, чтобы сразу
   // видеть последние ответы и композер с полем «Ответить в тред».
@@ -50,7 +51,7 @@ export function InlineThread({ roomId, rootId, canPin, markdown, onForward, onQu
     roomId,
     canPin: !!canPin,
     onQuote,
-    onEdit: (m) => setEditingId(m.id),
+    onEdit: (m) => setPendingEdit({ roomId, message: m }),
     onForward,
   })
 
@@ -128,9 +129,7 @@ export function InlineThread({ roomId, rootId, canPin, markdown, onForward, onQu
             forwardedFrom={r.forwarded_from_sender_id != null ? users.get(r.forwarded_from_sender_id) : undefined}
             quoteAuthor={r.quote?.sender_id != null ? users.get(r.quote.sender_id) : undefined}
             isInThread
-            editingId={editingId}
             isSelected={msgMenu.menu?.msg.id === r.id}
-            onClearEdit={() => setEditingId(null)}
             onQuote={onQuote}
             onQuoteJump={onQuoteJump}
             onOpenMenu={msgMenu.openMenu}

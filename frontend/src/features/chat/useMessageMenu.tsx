@@ -59,7 +59,15 @@ export function useMessageMenu({ roomId, canPin, onQuote, onOpenThread, onEdit, 
         onClick: () => { void navigator.clipboard?.writeText(msg.content ?? ''); toast('Скопировано') },
       })
     }
-    if (user?.id === msg.sender_id && msg.content != null && !isGraduated) {
+    // Править можно текст и/или вложения — стикер сам не редактируется (сервер
+    // отбивает 400 на весь стикер-message, см. docs/MESSAGES.md), поэтому пункт
+    // скрыт целиком для сообщений со стикером.
+    if (
+      user?.id === msg.sender_id &&
+      !isGraduated &&
+      msg.sticker_id == null &&
+      (msg.content != null || (msg.attachments?.length ?? msg.attachment_ids.length) > 0)
+    ) {
       items.push({ key: 'edit', label: 'Редактировать', icon: <IconEdit size={18} />, onClick: () => onEdit(msg) })
     }
     if (!isGraduated) {

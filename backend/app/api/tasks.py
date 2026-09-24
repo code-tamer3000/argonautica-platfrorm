@@ -64,7 +64,6 @@ from app.schemas.task import (
 )
 from app.services import stream as stream_service
 from app.services.graduation import assert_not_graduated, is_graduated
-from app.services.notifications import notify_task_returned
 from app.services.media import (
     load_attachable_playlist,
     presign_asset_urls,
@@ -72,6 +71,7 @@ from app.services.media import (
     resolve_submission_attachments,
     resolve_task_attachments,
 )
+from app.services.notifications import notify_task_returned
 from app.services.ratelimit import enforce_rate_limit
 from app.services.tasks import (
     GRADUATE_VISIBLE_STATUSES,

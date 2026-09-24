@@ -31,6 +31,15 @@ export interface PendingQuote {
   message: MessageOut
 }
 
+// Сообщение, «зажатое» в композере для правки (взамен прежнего инлайн-редактора в
+// ленте): текст и вложения подставляются в поле композера, отправка уходит через
+// PATCH, а не POST (см. Composer submit). roomId — тот же приём, что у PendingQuote/
+// PendingForward: композер другой комнаты не подхватывает чужую правку.
+export interface PendingEdit {
+  roomId: number
+  message: MessageOut
+}
+
 interface UiState {
   activeRoomId: number | null
   setActiveRoom: (id: number | null) => void
@@ -42,6 +51,10 @@ interface UiState {
   // Цитата, ожидающая отправки (см. PendingQuote).
   pendingQuote: PendingQuote | null
   setPendingQuote: (q: PendingQuote | null) => void
+
+  // Правка, ожидающая сохранения (см. PendingEdit).
+  pendingEdit: PendingEdit | null
+  setPendingEdit: (e: PendingEdit | null) => void
 
   // Черновик, «заряженный» в композер комнаты (напр. шапка ответа админа на
   // обращение из техподдержки). Композер той же комнаты подставляет text один раз
@@ -89,6 +102,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   pendingQuote: null,
   setPendingQuote: (q) => set({ pendingQuote: q }),
+
+  pendingEdit: null,
+  setPendingEdit: (e) => set({ pendingEdit: e }),
 
   pendingDraft: null,
   setPendingDraft: (v) => set({ pendingDraft: v }),

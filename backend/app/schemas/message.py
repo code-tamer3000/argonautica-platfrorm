@@ -132,14 +132,25 @@ class ThreadOut(BaseModel):
 
 
 class EditMessageRequest(BaseModel):
-    """Правка текста сообщения. Пустой текст недопустим (для очистки — удаление)."""
+    """Правка сообщения: текст и/или состав вложений. Оба поля опциональны и
+    независимы — присутствие поля в запросе (не его значение) решает, что менять
+    (см. `model_fields_set` в эндпоинте): отсутствующее поле остаётся как было,
+    `content: null`/`""` стирает текст, `attachment_ids: []` снимает все вложения.
+    Хотя бы одно поле должно быть передано, и результат должен нести что-то
+    (текст, стикер, вложение или ref) — иначе 400 в эндпоинте.
+    """
 
-    content: str
+    content: str | None = None
+    attachment_ids: list[int] | None = None
 
     @model_validator(mode="after")
-    def _not_blank(self) -> "EditMessageRequest":
-        if not self.content.strip():
-            raise ValueError("content must not be blank")
+    def _validate(self) -> "EditMessageRequest":
+        if self.attachment_ids is not None:
+            # Тот же дедуп, что в SendMessageRequest — message_attachments уникальна
+            # по (message_id, media_asset_id).
+            self.attachment_ids = list(dict.fromkeys(self.attachment_ids))
+            if len(self.attachment_ids) > MAX_ATTACHMENTS:
+                raise ValueError(f"At most {MAX_ATTACHMENTS} attachments per message")
         return self
 
 
