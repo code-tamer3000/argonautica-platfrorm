@@ -21,6 +21,7 @@ from uuid import uuid4
 
 import boto3
 import botocore.auth
+import pillow_heif
 from botocore.client import BaseClient, Config
 from botocore.exceptions import ClientError
 from fastapi import HTTPException, status
@@ -38,6 +39,20 @@ from app.services.rooms import assert_room_access, load_room
 from app.services.visibility import intake_visible, plan_visible
 
 logger = logging.getLogger(__name__)
+
+# Регистрирует HEIF/HEIC-декодер в Pillow глобально для процесса: после этого
+# `PIL.Image.open` сам по сигнатуре байт распознаёт и декодирует HEIC/HEIF, ровно как
+# уже умеет для JPEG/PNG/WebP — никакой отдельной ветки "если HEIC" в местах, где мы
+# читаем картинку, не нужно. Без этого iPhone-фото, которые браузер иногда шлёт под
+# видом image/jpeg (реальные байты — HEIC, ARG-143), валили thumbnail/preview
+# генерацию в PIL.UnidentifiedImageError.
+pillow_heif.register_heif_opener()
+
+# Формат, которым Pillow помечает картинку после открытия через pillow-heif —
+# используем, чтобы отличить настоящий HEIC/HEIF от файла, который просто НАЗВАН
+# .jpg/.heic, но по факту им является (или наоборот). Проверяем byte-контент через
+# Pillow, а не расширение/заявленный Content-Type.
+HEIF_PIL_FORMAT = "HEIF"
 
 # Presigned-URL для ЗАГРУЗКИ (PUT). Час, а не минуты: на медленном мобильном аплинке
 # (~3–6 Mbps) крупное видео льётся дольше 15 мин, и подпись протухала ПРЯМО ВО ВРЕМЯ
@@ -222,6 +237,50 @@ def build_preview_key(storage_key: str) -> str:
     лайтбокс), и смешивать их нельзя: бэкфиллы/уборка ходят по префиксу.
     """
     return f"{PREVIEW_PREFIX}{storage_key}.webp"
+
+
+def build_variant_key(storage_key: str) -> str:
+    """Ключ конвертированного варианта картинки: `variants/<storage_key>.jpg`.
+
+    Нужен только когда оригинал сам по себе не рендерится в браузере (HEIC/HEIF) —
+    тогда `serving_key` отдаёт этот вариант вместо `storage_key`, аналогично видео
+    (`variant_key`/`variant_mime`, ADR-024), но синхронно, без очереди воркера.
+    """
+    return f"variants/{storage_key}.jpg"
+
+
+def generate_image_variant(bucket: str, key: str) -> tuple[str | None, str | None]:
+    """Если объект на самом деле HEIC/HEIF (по байтам, не по заявленному Content-Type) —
+    сконвертировать в JPEG и вернуть `(variant_key, variant_mime)`. Для обычных
+    JPEG/PNG/WebP возвращает `(None, None)` — конвертировать нечего, оригинал и так
+    рендерится везде.
+
+    Best-effort, как и генерация превью: любая ошибка (битый файл, экзотический
+    HEIC-вариант, память) → `(None, None)`, подтверждение загрузки не падает.
+    `thumb_key`/`preview_key` от этого не зависят — их даёт `_encode_webp_thumbnail`
+    через тот же зарегистрированный HEIF-опенер независимо от этой функции.
+    """
+    from PIL import Image, ImageOps  # локальный импорт: Pillow нужен только тут
+
+    try:
+        client = _server_client()
+        obj = client.get_object(Bucket=bucket, Key=key)
+        raw = obj["Body"].read()
+        with Image.open(BytesIO(raw)) as src:
+            if src.format != HEIF_PIL_FORMAT:
+                return None, None
+            img = ImageOps.exif_transpose(src) or src
+            img = img.convert("RGB")
+            buf = BytesIO()
+            img.save(buf, format="JPEG", quality=92)
+        variant_key = build_variant_key(key)
+        client.put_object(
+            Bucket=bucket, Key=variant_key, Body=buf.getvalue(), ContentType="image/jpeg"
+        )
+        return variant_key, "image/jpeg"
+    except Exception:
+        logger.warning("HEIC variant conversion failed for %s/%s", bucket, key, exc_info=True)
+        return None, None
 
 
 def _encode_webp_thumbnail(
@@ -634,10 +693,15 @@ async def presign_asset_urls(
 
 
 def serving_key(asset: MediaAsset) -> str:
-    """Какой объект отдаём под `url`. Видео/аудио с готовым транскодом — вариант; всё
-    остальное (не video/audio, транскод не готов/провалился/легаси) — оригинал. Так
-    stale-клиент и упавший транскод всё равно получают воспроизводимый/скачиваемый
-    оригинал (docs/FILES.md «Транскод видео»/«Транскод аудио», rollout с blue-green)."""
+    """Какой объект отдаём под `url`. Видео/аудио с готовым транскодом — вариант; картинка
+    с заполненным `variant_key` — тоже вариант (конвертированный из HEIC/HEIF на confirm,
+    синхронно, см. `generate_image_variant` и ARG-143); всё остальное (не video/audio/image,
+    транскод не готов/провалился/легаси, обычная картинка без варианта) — оригинал. Так
+    stale-клиент и упавший транскод/конвертация всё равно получают воспроизводимый/
+    отображаемый оригинал (docs/FILES.md «Транскод видео»/«Транскод аудио»/«Thumbnails»,
+    rollout с blue-green)."""
+    if asset.kind == "image" and asset.variant_key:
+        return asset.variant_key
     if (
         asset.kind in ("video", "audio")
         and asset.transcode_status == "done"

@@ -44,6 +44,7 @@ from app.services.media import (
     create_playlist,
     generate_image_preview,
     generate_image_thumbnail,
+    generate_image_variant,
     presigned_get_url,
     presigned_put_url,
     remove_playlist_track,
@@ -228,6 +229,16 @@ async def confirm_upload(
         preview_key = await run_in_threadpool(
             generate_image_preview, bucket, body.storage_key, intent["mime_type"]
         )
+        # Оригинал сам по себе может оказаться HEIC/HEIF под видом image/jpeg (iPhone,
+        # ARG-143) — такое не рендерится ни в одном браузере кроме Safari/iOS. Если
+        # это так, конвертируем в JPEG и отдаём его как `url` вместо оригинала
+        # (serving_key). Для обычных JPEG/PNG/WebP — no-op, (None, None).
+        variant_key, variant_mime = await run_in_threadpool(
+            generate_image_variant, bucket, body.storage_key
+        )
+        if variant_key is not None:
+            asset.variant_key = variant_key
+            asset.variant_mime = variant_mime
         thumb_ms = (perf_counter() - _t_thumb) * 1000
     elif asset.kind == "video" and body.thumb_storage_key:
         thumb_key = await _consume_client_thumbnail(
@@ -237,7 +248,7 @@ async def confirm_upload(
         asset.thumb_key = thumb_key
     if preview_key is not None:
         asset.preview_key = preview_key
-    if thumb_key is not None or preview_key is not None:
+    if thumb_key is not None or preview_key is not None or asset.variant_key is not None:
         await session.flush()
 
     # Видео/аудио → фоновый транскод. Ставим в очередь ТОЛЬКО после успешного commit

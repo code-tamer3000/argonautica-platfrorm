@@ -418,6 +418,79 @@ async def test_image_thumbnail_and_attachment_in_feed(
     assert att["width"] == 1200 and att["height"] == 800
 
 
+async def test_heic_image_mislabeled_as_jpeg_gets_thumbnail_and_jpeg_variant(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """ARG-143: iOS иногда шлёт HEIC-фото с `File.type='image/jpeg'` — реальные байты
+    HEIC. До фикса это валило `generate_image_thumbnail`/`generate_image_preview` в
+    `PIL.UnidentifiedImageError` (thumb_url оставался None), а отдаваемый как `url`
+    оригинал не рендерился ни в одном браузере кроме Safari/iOS. После фикса Pillow
+    умеет декодировать HEIC (register_heif_opener), превью генерируются как обычно, и
+    сверх того сервер кладёт JPEG-вариант — `url` ведёт на него, а не на сырой HEIC.
+    """
+    import os
+    from io import BytesIO
+
+    from PIL import Image
+
+    owner = await make_user()
+    headers = await _headers(client, owner)
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+
+    # Шум, а не заливка: однотонная картинка сжимается HEVC-интра почти до нуля, и
+    # WebP-дериват оказался бы не легче такого "оригинала" (сервер намеренно тогда
+    # не создаёт preview_key) — см. тот же приём в test_image_preview_in_attachment_payload.
+    buf = BytesIO()
+    Image.frombytes("RGB", (1200, 800), os.urandom(1200 * 800 * 3)).save(buf, format="HEIF")
+    data = buf.getvalue()
+    assert data[4:12] == b"ftypheic" or data[4:12] == b"ftypmif1"  # действительно HEIC
+
+    ticket = (
+        await client.post(
+            "/api/media/uploads",
+            headers=headers,
+            # Заявленный тип — image/jpeg, как реально приходит с части iPhone
+            # (см. ARG-143); сервер не должен ему доверять.
+            json={"content_type": "image/jpeg", "size": len(data), "kind": "image"},
+        )
+    ).json()
+    async with httpx.AsyncClient() as real:
+        put = await real.put(
+            ticket["upload_url"], content=data, headers={"Content-Type": "image/jpeg"}
+        )
+        assert put.status_code == 200, put.text
+
+    asset = (
+        await client.post(
+            "/api/media/assets",
+            headers=headers,
+            json={"storage_key": ticket["storage_key"], "width": 1200, "height": 800},
+        )
+    ).json()
+
+    url_out = (await client.get(f"/api/media/{asset['id']}", headers=headers)).json()
+    assert url_out["thumb_url"] is not None, "thumbnail не сгенерировался — HEIC не декодировался"
+    # preview_url тут не проверяем: для шумной (нужной ради размера HEIC-оригинала)
+    # картинки WebP-дериват сам по себе может не выйти легче оригинала — тот же
+    # best-effort «не легче — не создаём», что и для обычных JPEG (не про ARG-143).
+
+    # `url` больше не сырой HEIC, а сконвертированный JPEG-вариант — открывается как
+    # обычная картинка любым Pillow/браузером.
+    async with httpx.AsyncClient() as real:
+        original = await real.get(url_out["url"])
+        assert original.status_code == 200
+        with Image.open(BytesIO(original.content)) as img:
+            assert img.format == "JPEG"
+
+        thumb = await real.get(url_out["thumb_url"])
+        assert thumb.status_code == 200
+        assert thumb.headers["content-type"] == "image/webp"
+
+
 async def test_image_preview_in_attachment_payload(
     client: AsyncClient,
     session: AsyncSession,
@@ -646,6 +719,65 @@ async def test_backfill_image_dims_fills_legacy_rows(
     attachments = await resolve_attachments(session, [message_id])
     out = attachments[message_id][0]
     assert out.width == 300 and out.height == 150
+
+
+async def test_backfill_heic_variant_fills_legacy_rows(
+    session: AsyncSession,
+    make_user: MakeUser,
+) -> None:
+    """ARG-143: легаси-строка, залитая ДО фикса — HEIC-байты лежат в MinIO под именем
+    `.jpg`, `variant_key` пуст (Pillow тогда не умел HEIC, конвертации не было).
+    Бэкофилл проходит по ней, распознаёт HEIC по байтам и проставляет `variant_key`.
+    Обычная (не HEIC) легаси-строка без `variant_key` бэкофилл не трогает.
+    """
+    from io import BytesIO
+
+    from PIL import Image
+
+    from app.services.media import _server_client
+    from scripts.backfill_heic_variant import main as run_backfill
+
+    owner = await make_user()
+
+    heic_buf = BytesIO()
+    Image.new("RGB", (400, 300), (5, 5, 5)).save(heic_buf, format="HEIF")
+    heic_key = f"test/{owner.id}-legacy.jpg"
+    _server_client().put_object(
+        Bucket="chat-media", Key=heic_key, Body=heic_buf.getvalue(), ContentType="image/jpeg"
+    )
+    heic_asset = MediaAsset(
+        bucket="chat-media", storage_key=heic_key, kind="image", mime_type="image/jpeg",
+        size=len(heic_buf.getvalue()), created_by=owner.id,
+    )
+
+    jpeg_buf = BytesIO()
+    Image.new("RGB", (400, 300), (5, 5, 5)).save(jpeg_buf, format="JPEG")
+    jpeg_key = f"test/{owner.id}-legacy-real.jpg"
+    _server_client().put_object(
+        Bucket="chat-media", Key=jpeg_key, Body=jpeg_buf.getvalue(), ContentType="image/jpeg"
+    )
+    jpeg_asset = MediaAsset(
+        bucket="chat-media", storage_key=jpeg_key, kind="image", mime_type="image/jpeg",
+        size=len(jpeg_buf.getvalue()), created_by=owner.id,
+    )
+
+    session.add_all([heic_asset, jpeg_asset])
+    await session.commit()
+    await session.refresh(heic_asset)
+    await session.refresh(jpeg_asset)
+
+    await run_backfill()
+
+    await session.refresh(heic_asset)
+    await session.refresh(jpeg_asset)
+    assert heic_asset.variant_key is not None
+    assert heic_asset.variant_mime == "image/jpeg"
+    assert jpeg_asset.variant_key is None  # обычный JPEG — конвертировать нечего
+
+    # Повторный прогон идемпотентен.
+    await run_backfill()
+    await session.refresh(heic_asset)
+    assert heic_asset.variant_key is not None
 
 
 async def test_video_poster_key_from_other_user_ignored(
