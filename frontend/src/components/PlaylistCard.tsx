@@ -3,9 +3,10 @@ import { removePlaylistTrack, updatePlaylist } from '../api/media'
 import { useAuth } from '../features/auth/AuthContext'
 import { mediaUpload } from '../lib/mediaUpload'
 import type { PlaylistOut } from '../lib/types'
+import { useOfflinePlaylists } from '../stores/offlinePlaylists'
 import { usePlayerStore } from '../stores/player'
 import { toast } from '../stores/toast'
-import { IconMusic, IconPause, IconPlay, IconTrash } from './icons'
+import { IconCheck, IconDownload, IconMusic, IconPause, IconPlay, IconTrash } from './icons'
 import { KebabMenu } from './KebabMenu'
 import styles from './playlistCard.module.css'
 
@@ -55,6 +56,18 @@ export function PlaylistCard({ playlist, onChange }: Props) {
   const activeIndex = usePlayerStore((s) => s.trackIndex)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
   const isThisPlaylist = activePlaylist?.id === local.id
+
+  // Офлайн-скачивание (ARG-145) — статус живёт в отдельном сторе, не в этом
+  // компоненте, чтобы пережить размонтирование карточки (список сообщений
+  // виртуализирован) и не тянуть IndexedDB на каждый рендер.
+  const offlineStatus = useOfflinePlaylists((s) => s.status[local.id] ?? 'idle')
+  const offlineProgress = useOfflinePlaylists((s) => s.progress[local.id])
+  useEffect(() => {
+    void useOfflinePlaylists.getState().checkStatus(local)
+    // local меняется целиком при каждом applyUpdate — проверяем заново, если
+    // состав треков сменился (трек убрали — старое «доступно офлайн» не годится).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local])
 
   function applyUpdate(updated: PlaylistOut) {
     setLocal(updated)
@@ -167,6 +180,29 @@ export function PlaylistCard({ playlist, onChange }: Props) {
           />
         )}
       </div>
+      <div className={styles.offlineRow}>
+        {offlineStatus === 'done' && (
+          <span className={styles.offlineBadge}>
+            <IconCheck size={13} /> Доступно офлайн
+          </span>
+        )}
+        {offlineStatus === 'downloading' && (
+          <span className={styles.offlineBadge}>
+            <IconDownload size={13} />
+            Скачивается{offlineProgress ? ` ${offlineProgress.done}/${offlineProgress.total}` : '…'}
+          </span>
+        )}
+        {(offlineStatus === 'idle' || offlineStatus === 'error') && (
+          <button
+            type="button"
+            className={styles.downloadBtn}
+            onClick={() => void useOfflinePlaylists.getState().download(local)}
+          >
+            <IconDownload size={13} />
+            {offlineStatus === 'error' ? 'Не вышло, повторить' : 'Скачать офлайн'}
+          </button>
+        )}
+      </div>
       <ul className={styles.tracks}>
         {local.tracks.map((track, i) => {
           const active = isThisPlaylist && activeIndex === i
@@ -176,8 +212,18 @@ export function PlaylistCard({ playlist, onChange }: Props) {
                 type="button"
                 className={`${styles.track} ${active ? styles.trackActive : ''}`}
                 onClick={() => {
-                  if (active) usePlayerStore.getState().toggle()
-                  else usePlayerStore.getState().playPlaylist(local, i)
+                  if (active) {
+                    usePlayerStore.getState().toggle()
+                    return
+                  }
+                  // Нет сети и плейлист не скачан для офлайна — presigned-URL
+                  // всё равно не загрузится; явно скажем об этом, а не будем
+                  // молча пытаться (ARG-145, «Готово, когда»).
+                  if (!navigator.onLine && offlineStatus !== 'done') {
+                    toast('Нужна сеть — плейлист не скачан для офлайна', 'error')
+                    return
+                  }
+                  usePlayerStore.getState().playPlaylist(local, i)
                 }}
               >
                 <span className={styles.trackIcon}>

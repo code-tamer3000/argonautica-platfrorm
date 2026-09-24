@@ -2,6 +2,7 @@ import { api, http } from '../../lib/apiClient'
 import { clearMediaCache } from '../../lib/mediaCache'
 import { clearTokens, getRefreshToken, setTokens } from '../../lib/tokens'
 import type { TokenPair, UserOut } from '../../lib/types'
+import { useOfflinePlaylists } from '../../stores/offlinePlaylists'
 
 export const getMe = (): Promise<UserOut> => http.get<UserOut>('/api/auth/me')
 
@@ -29,6 +30,9 @@ export async function logout(): Promise<void> {
   // иначе после выхода они остаются доступны из Cache Storage. Best-effort —
   // clearMediaCache сам глотает отсутствие Cache API и не роняет логаут.
   await clearMediaCache()
+  // Скачанные для офлайна треки плейлистов (ARG-145) — та же логика: приватное
+  // медиа, устройство общее, не переживает логаут.
+  await useOfflinePlaylists.getState().clearAll()
 }
 
 export const changePassword = (current_password: string, new_password: string): Promise<null> =>
