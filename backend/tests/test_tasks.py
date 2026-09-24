@@ -198,6 +198,32 @@ async def test_common_submissions_public_individual_private(
 # --- жизненный цикл сдачи ----------------------------------------------------
 
 
+async def test_review_rejects_accept_without_submission(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """ARG-144: accept без единой сдачи раньше проходил и вешал assignment в
+    'accepted' навсегда — та же проверка, что уже была у return."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+
+    task = await _create_task(
+        client, admin_h, type="individual", title="Пусто", assignee_ids=[user.id]
+    )
+    tracks = (
+        await client.get(f"/api/tasks/{task['id']}/submissions", headers=admin_h)
+    ).json()
+    assignment_id = tracks[0]["assignment_id"]
+    assert tracks[0]["submissions"] == []
+
+    resp = await client.post(
+        f"/api/tasks/assignments/{assignment_id}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    assert resp.status_code == 400, resp.text
+
+
 async def test_submission_lifecycle(
     client: AsyncClient, make_user: MakeUser
 ) -> None:

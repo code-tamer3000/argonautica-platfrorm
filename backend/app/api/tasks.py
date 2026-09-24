@@ -442,6 +442,9 @@ async def review_assignment(
     """Ревью сдачи. accept → 'accepted'; return → 'returned' + комментарий на
     последнюю сдачу (обязателен). Оба ставят reviewed_at. Фан-аут статуса адресату.
 
+    Оба действия требуют хотя бы одну сдачу (400, если её нет) — принять/вернуть
+    нечего, если участник ничего не отправлял.
+
     Право ревью: админ — всегда; плюс автор перекрёстной задачи (участник, выдавший
     задачу партнёру внутри пары) — по своей задаче. Приёмка/возврат перекрёстной
     задачи пересчитывает завершённость её пары.
@@ -457,20 +460,25 @@ async def review_assignment(
     if current_user.role != "admin" and not is_cross_author:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to review")
 
+    # И accept, и return требуют хотя бы одну сдачу — принять/вернуть нечего,
+    # если участник ничего не сдавал (иначе assignment зависает в 'accepted'
+    # без единой submission, как случилось на проде с задачей #73).
+    latest = await session.scalar(
+        select(TaskSubmission)
+        .where(TaskSubmission.assignment_id == assignment_id)
+        .order_by(TaskSubmission.id.desc())
+        .limit(1)
+    )
+    if latest is None:
+        verb = "accept" if body.action == "accept" else "return"
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Nothing to {verb}: no submission yet"
+        )
+
     if body.action == "accept":
         assignment.status = "accepted"
     else:
         # return: комментарий на последнюю сдачу этого назначения.
-        latest = await session.scalar(
-            select(TaskSubmission)
-            .where(TaskSubmission.assignment_id == assignment_id)
-            .order_by(TaskSubmission.id.desc())
-            .limit(1)
-        )
-        if latest is None:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "Nothing to return: no submission yet"
-            )
         assert body.comment is not None
         session.add(
             TaskComment(
@@ -610,11 +618,21 @@ async def _build_pair_out(
     members: list[PairMemberOut] = []
     for uid in member_ids:
         ct = await cross_task_of(session, pair.id, uid)
+        editable = False
+        if ct is not None:
+            has_submission = await session.scalar(
+                select(func.count())
+                .select_from(TaskSubmission)
+                .join(TaskAssignment, TaskAssignment.id == TaskSubmission.assignment_id)
+                .where(TaskAssignment.task_id == ct.id)
+            )
+            editable = not has_submission
         members.append(
             PairMemberOut(
                 user_id=uid,
                 is_meeting_organizer=(uid == pair.meeting_organizer_id),
                 cross_task_id=ct.id if ct else None,
+                cross_task_editable=editable,
             )
         )
     viewer_uid = viewer.id if viewer.id in member_ids else None
