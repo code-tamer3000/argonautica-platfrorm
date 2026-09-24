@@ -16,6 +16,7 @@ dependencies = [
     "python-multipart",
     "boto3",            # S3-клиент для MinIO (и будущего managed-S3)
     "pillow",           # серверные превью изображений (thumbnail при подтверждении загрузки)
+    "pillow-heif",      # HEIC/HEIF-опенер для Pillow — фото с iPhone шлются под видом image/jpeg
     "httpx[socks]",     # HTTP-клиент: Telegram Bot API (scripts/telegram_bot.py); socks — для прокси
     "pywebpush",        # Web Push (VAPID): нативные push-уведомления в браузер/PWA
 ]
