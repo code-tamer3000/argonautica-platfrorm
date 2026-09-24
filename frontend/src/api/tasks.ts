@@ -38,6 +38,9 @@ export interface PairMemberOut {
   user_id: number
   is_meeting_organizer: boolean
   cross_task_id: number | null
+  // Можно ли ещё отредактировать выданную задачу (нет сдач). false, если задачи
+  // ещё нет вовсе (cross_task_id === null).
+  cross_task_editable: boolean
 }
 
 export interface PairOut {

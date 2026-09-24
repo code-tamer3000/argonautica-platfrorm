@@ -108,6 +108,9 @@ class PairMemberOut(BaseModel):
     is_meeting_organizer: bool
     # Перекрёстная задача, которую ЭТОТ участник выдал партнёру (если уже выдана).
     cross_task_id: int | None = None
+    # Можно ли её ещё редактировать (PATCH .../cross-task/{id}) — пока нет ни одной
+    # сдачи. False, если задача не выдана (cross_task_id is None).
+    cross_task_editable: bool = False
 
 
 class PairOut(BaseModel):
