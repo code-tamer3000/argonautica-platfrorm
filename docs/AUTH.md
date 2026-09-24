@@ -99,3 +99,29 @@ Every read/action checks membership/role **server-side**; never trust client-sup
 - Only WSS/HTTPS. WS handshake validates the JWT (see [MESSAGES.md](MESSAGES.md)).
 - Token storage on the frontend (httpOnly-cookie + CSRF) is an **open question** — currently access in memory, refresh via the API client. See [FRONTEND.md](FRONTEND.md).
 - Rate limits (login/send/upload) in [API_CONVENTIONS.md](API_CONVENTIONS.md).
+
+## Offline session bootstrap (frontend, ARG-146)
+
+PWA is the only mobile access, and must survive a fully cold offline launch (process
+killed, network off, app reopened) without hanging on a spinner:
+
+- `AuthContext` caches the last successful `GET /me` response in IndexedDB
+  (`lib/authUserCache.ts`, store `authUser`) — one record, no TTL.
+- Bootstrap (`AuthContext.tsx`): `/me` fails with a network error (not 401) →
+  - cached `user` present → `status: 'authed'` immediately from cache, `stale: true`
+    (not confirmed by fresh server data yet), background retry of `/me` continues on a
+    5s loop until it succeeds or gets a real 401.
+  - no cached `user` (first offline launch, or cache cleared by logout) →
+    `status: 'offline'`, `AuthGuard` renders `OfflineScreen` ("Нет связи с сервером",
+    button «Повторить» wakes the retry loop early) instead of the spinner.
+- A real 401 (refresh token dead/revoked) still goes through the existing
+  `onUnauthorized` → `reset()` path immediately, regardless of any cache — the cached
+  `user` is UI-only and never substitutes for a server-side auth decision (ADR-018
+  unaffected).
+- Cache is cleared only on logout (`features/auth/api.ts::logout`, alongside
+  `mediaCache`/offline playlists — see [FILES.md](FILES.md)), same reasoning: shared
+  device, private data must not outlive the session.
+- `ConnectionBanner`/`useConnectionStatus` already key off `navigator.onLine` +
+  WS status independently of auth state, so once `AuthGuard` stops blocking the app
+  tree on this scenario, the banner shows "офлайн" for free — no separate wiring
+  needed.

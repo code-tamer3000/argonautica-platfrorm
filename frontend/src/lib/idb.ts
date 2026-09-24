@@ -11,10 +11,12 @@ const DB_NAME = 'argonautica'
 // перезагрузки, пока сообщение ещё в очереди (presigned-URL к тому моменту протух
 // бы). v4: playlistOffline — скачанные вручную байты треков плейлиста для
 // офлайн-прослушивания (ARG-145), отдельно от outboxBlobs — это входящие
-// (скачанные), а не исходящие данные, и живут дольше одной отправки. Бампаем
+// (скачанные), а не исходящие данные, и живут дольше одной отправки. v5: authUser —
+// последний успешный профиль из /api/auth/me (ARG-146), чтобы холодный офлайн-старт
+// мог отрисовать авторизованное состояние без сети вместо вечного спиннера. Бампаем
 // версию, чтобы onupgradeneeded создал новые сторы у пользователей с уже
 // существующей базой.
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 // Именa стора держим в одном месте, чтобы onupgradeneeded создал ровно их.
 export const STORE_OUTBOX = 'outbox'
@@ -32,6 +34,9 @@ export const STORE_OUTBOX_BLOBS = 'outboxBlobs'
 // Один трек может встречаться в нескольких плейлистах — храним по asset_id,
 // не по playlist_id, чтобы не скачивать один и тот же файл дважды.
 export const STORE_PLAYLIST_OFFLINE = 'playlistOffline'
+// Последний успешный профиль (`UserOut` из GET /api/auth/me): единственная
+// запись под фиксированным ключом. См. lib/authUserCache.ts.
+export const STORE_AUTH_USER = 'authUser'
 const STORES = [
   STORE_OUTBOX,
   STORE_DRAFTS,
@@ -40,6 +45,7 @@ const STORES = [
   STORE_CABIN_DRAFTS,
   STORE_OUTBOX_BLOBS,
   STORE_PLAYLIST_OFFLINE,
+  STORE_AUTH_USER,
 ] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null

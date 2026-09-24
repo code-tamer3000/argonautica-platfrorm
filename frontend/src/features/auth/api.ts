@@ -1,4 +1,5 @@
 import { api, http } from '../../lib/apiClient'
+import { clearCachedUser } from '../../lib/authUserCache'
 import { clearMediaCache } from '../../lib/mediaCache'
 import { clearTokens, getRefreshToken, setTokens } from '../../lib/tokens'
 import type { TokenPair, UserOut } from '../../lib/types'
@@ -33,6 +34,9 @@ export async function logout(): Promise<void> {
   // Скачанные для офлайна треки плейлистов (ARG-145) — та же логика: приватное
   // медиа, устройство общее, не переживает логаут.
   await useOfflinePlaylists.getState().clearAll()
+  // Закэшированный профиль (ARG-146) — без TTL, живёт до логаута; тот же общий
+  // девайс, что и выше, поэтому чужой профиль не должен пережить выход.
+  await clearCachedUser()
 }
 
 export const changePassword = (current_password: string, new_password: string): Promise<null> =>
