@@ -11,6 +11,7 @@ import { PlaylistCard } from '../../components/PlaylistCard'
 import { KebabMenu } from '../../components/KebabMenu'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Overlay'
+import { useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import { toast } from '../../stores/toast'
 import { dayLabel } from '../../lib/format'
@@ -21,7 +22,8 @@ import styles from './kb.module.css'
 export function KbViewer() {
   const { itemId } = useParams<{ itemId: string }>()
   const id = Number(itemId ?? '0')
-  const { data: item, isLoading } = useKbItem(id)
+  const { data: item, isLoading, error } = useKbItem(id)
+  const offlineFailure = useIsOfflineFailure(error)
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const navigate = useNavigate()
@@ -32,7 +34,13 @@ export function KbViewer() {
   const [deleteOpen, setDeleteOpen] = useState(false)
 
   if (isLoading) return <div className="center grow"><Spinner /></div>
-  if (!item) return <div className="center grow muted">Материал не найден</div>
+  if (!item) {
+    return (
+      <div className="center grow muted">
+        {offlineFailure ? 'Нет сети — не можем загрузить материал.' : 'Материал не найден'}
+      </div>
+    )
+  }
 
   const bodyHtml = item.body
     ? DOMPurify.sanitize(marked.parse(item.body) as string)

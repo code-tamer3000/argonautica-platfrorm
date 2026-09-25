@@ -28,6 +28,7 @@ import { Chip, type ChipKind } from '../../components/Chip'
 import { Modal } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { dateTimeMsk } from '../../lib/format'
+import { useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { toast } from '../../stores/toast'
 import { useAuth } from '../auth/AuthContext'
 import { PlaylistCard } from '../../components/PlaylistCard'
@@ -206,15 +207,31 @@ export function TaskDetail() {
   const { taskId } = useParams<{ taskId: string }>()
   const id = Number(taskId ?? '0')
   const { user } = useAuth()
-  const { data: task, isLoading, isError } = useTask(id)
+  const { data: task, isLoading, isError, error } = useTask(id)
   const { data: tracks } = useTaskSubmissions(id)
+  // «Не найдена» — это конкретный ApiError-статус (404/403) от сервера. NetworkError
+  // (запрос не долетел) или отсутствие сети сейчас — другая причина, честно
+  // говорим «нет сети», а не «задачи не существует» (ARG-151).
+  const offlineFailure = useIsOfflineFailure(error)
 
   // isError отдельно от !task: без него 403/404 (доступ закрыли задним числом,
   // напр. сменой тарифа) с retry на query держал экран на спиннере, а не на
   // «не найдена» — данных никогда не будет, ждать нечего.
-  if (isError) return <div className="center grow muted">Задача не найдена</div>
+  if (isError) {
+    return (
+      <div className="center grow muted">
+        {offlineFailure ? 'Нет сети — не можем загрузить задачу.' : 'Задача не найдена'}
+      </div>
+    )
+  }
   if (isLoading) return <div className="center grow"><Spinner /></div>
-  if (!task) return <div className="center grow muted">Задача не найдена</div>
+  if (!task) {
+    return (
+      <div className="center grow muted">
+        {offlineFailure ? 'Нет сети — не можем загрузить задачу.' : 'Задача не найдена'}
+      </div>
+    )
+  }
 
   const isAdmin = user?.role === 'admin'
   // Экспедиция пройдена: раздел остаётся историей сданного — без новых сдач и
