@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useOfflinePreviewSrc } from '../hooks/useOfflinePreviewSrc'
 import { initials } from '../lib/format'
 
 interface Props {
@@ -10,10 +11,15 @@ interface Props {
 
 export function Avatar({ name, url, size = 36, square = false }: Props) {
   const radius = square ? 'var(--radius-btn)' : '50%'
-  // Офлайн (или протухший кэш до фонового /me) картинка не долетает — вместо
-  // сломанной иконки браузера показываем инициалы. Тот же <img> не переотправит
-  // запрос сам, даже когда сеть вернётся (браузеры не ретраят упавший src) —
-  // поэтому по событию 'online' сбрасываем ошибку и даём <img> попытаться снова.
+  // Офлайн-кэш байт (ARG-152, тот же механизм, что у вложений чата — ARG-149):
+  // avatar_url сам по себе уже превью (thumb_key ≤1024px, presigned), полного
+  // оригинала как отдельной сущности нет, поэтому cacheable всегда true.
+  const resolvedUrl = useOfflinePreviewSrc(url ?? null, true)
+  // Офлайн (или протухший кэш до фонового /me) картинка не долетает и в кэше её
+  // тоже нет — вместо сломанной иконки браузера показываем инициалы. Тот же
+  // <img> не переотправит запрос сам, даже когда сеть вернётся (браузеры не
+  // ретраят упавший src) — поэтому по событию 'online' сбрасываем ошибку и
+  // даём <img> попытаться снова.
   const [broken, setBroken] = useState(false)
   useEffect(() => {
     setBroken(false)
@@ -24,10 +30,10 @@ export function Avatar({ name, url, size = 36, square = false }: Props) {
     return () => window.removeEventListener('online', onOnline)
   }, [])
 
-  if (url && !broken) {
+  if (resolvedUrl && !broken) {
     return (
       <img
-        src={url}
+        src={resolvedUrl}
         alt={name}
         width={size}
         height={size}
