@@ -1,4 +1,5 @@
 import { api, http } from '../../lib/apiClient'
+import { clearAttachmentPreviewCache } from '../../lib/attachmentPreviewCache'
 import { clearCachedUser } from '../../lib/authUserCache'
 import { clearMediaCache } from '../../lib/mediaCache'
 import { clearTokens, getRefreshToken, setTokens } from '../../lib/tokens'
@@ -34,6 +35,9 @@ export async function logout(): Promise<void> {
   // Скачанные для офлайна треки плейлистов (ARG-145) — та же логика: приватное
   // медиа, устройство общее, не переживает логаут.
   await useOfflinePlaylists.getState().clearAll()
+  // Byte-level кэш превью вложений чата (ARG-149) — та же логика: приватное медиа,
+  // устройство общее. Best-effort — не роняет логаут при недоступном IndexedDB.
+  await clearAttachmentPreviewCache()
   // Закэшированный профиль (ARG-146) — без TTL, живёт до логаута; тот же общий
   // девайс, что и выше, поэтому чужой профиль не должен пережить выход.
   await clearCachedUser()
