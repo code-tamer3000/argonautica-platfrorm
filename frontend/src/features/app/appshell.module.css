@@ -270,7 +270,13 @@
   z-index: 5;
 }
 .connReconnecting { background: var(--accent); }
-.connOffline { background: var(--blood); color: var(--color-kost-yar); }
+/* Офлайн — ожидаемое обратимое состояние, не ошибка: тёплый камень вместо
+   тревожного --blood (тот же токен, что у удаления). --stone-warm держит
+   почти одну яркость в обеих темах, поэтому текст фиксированно тёмный, а не
+   унаследованный --color-bezdna (та пара спроектирована для инвертирующихся
+   грунтов вроде --accent, не для --stone-warm). */
+.connOffline { background: var(--stone-warm); color: var(--color-bezdna); }
+:global([data-theme='light']) .connOffline { color: var(--color-kost-yar); }
 .connDot {
   width: 8px;
   height: 8px;
