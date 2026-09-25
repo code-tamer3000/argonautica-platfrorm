@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { IconChevronRight } from '../../components/icons'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { renderMarkdown } from '../../lib/markdown'
 import { toast } from '../../stores/toast'
 import styles from './support.module.css'
@@ -67,12 +68,22 @@ function FeedbackForm() {
 }
 
 function FaqSection() {
-  const { data: items, isLoading } = useFaqItems()
+  const { data: items, isLoading, isError, dataUpdatedAt } = useFaqItems()
   const [openId, setOpenId] = useState<number | null>(null)
+  const offlineEmpty = useIsOfflineEmpty({
+    isLoading,
+    isError,
+    dataUpdatedAt,
+    isEmpty: (items?.length ?? 0) === 0,
+  })
 
   if (isLoading) return <Spinner />
   if (!items || items.length === 0) {
-    return <EmptyState>Пока нет ответов на частые вопросы.</EmptyState>
+    return (
+      <EmptyState>
+        {offlineEmpty ? 'Нет сети — не можем загрузить частые вопросы.' : 'Пока нет ответов на частые вопросы.'}
+      </EmptyState>
+    )
   }
 
   return (

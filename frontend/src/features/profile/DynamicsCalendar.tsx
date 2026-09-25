@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useMyDynamicsDays } from '../../api/dynamics'
 import { fetchJournalAnchor, useJournalDays } from '../../api/messages'
 import { useRooms } from '../../api/rooms'
+import { EmptyState } from '../../components/EmptyState'
 import { Modal } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { DAY_STATUS_TEXT } from '../../lib/dynamicsStatus'
 import type { RecentDay } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -92,12 +94,15 @@ function DayDetails({ day, onClose }: { day: RecentDay; onClose: () => void }) {
 }
 
 export function DynamicsCalendar() {
-  const { data: days, isLoading } = useMyDynamicsDays()
+  const { data: days, isLoading, isError, dataUpdatedAt } = useMyDynamicsDays()
   const [openDay, setOpenDay] = useState<RecentDay | null>(null)
+  const isEmpty = (days?.length ?? 0) === 0
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty })
 
   if (isLoading) return (
     <div className="center" style={{ padding: 'var(--space-4)' }}><Spinner size={18} /></div>
   )
+  if (offlineEmpty) return <EmptyState>Нет сети — журнал Динамики не загрузился.</EmptyState>
   if (!days || days.length === 0) return null
 
   return (

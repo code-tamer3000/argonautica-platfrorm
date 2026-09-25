@@ -10,6 +10,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Lightbox } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { ApiError } from '../../lib/apiClient'
@@ -66,9 +67,11 @@ export function ArgonautDetail() {
   const createRoom = useCreateRoom()
   const setDmPeer = useUiStore((s) => s.setDmPeer)
   const numericId = Number(userId)
-  const { data, isLoading, error } = useArgonaut(numericId)
+  const { data, isLoading, error, isError, dataUpdatedAt } = useArgonaut(numericId)
   const [avatarOpen, setAvatarOpen] = useState(false)
   const isOwn = me?.id === numericId
+  const tasksEmpty = (data?.tasks.length ?? 0) === 0
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: tasksEmpty })
 
   async function handleWrite() {
     try {
@@ -152,8 +155,10 @@ export function ArgonautDetail() {
       {data.role !== 'admin' && !data.is_observer && (
         <div className={styles.tasksSection}>
           <h2 className={styles.tasksHeading}>Задачи ({data.tasks_done})</h2>
-          {data.tasks.length === 0 ? (
-            <EmptyState>Пока нет сданных задач.</EmptyState>
+          {tasksEmpty ? (
+            <EmptyState>
+              {offlineEmpty ? 'Нет сети — не можем загрузить сданные задачи.' : 'Пока нет сданных задач.'}
+            </EmptyState>
           ) : (
             <div className={styles.taskList}>
               {data.tasks.map((t) => (
