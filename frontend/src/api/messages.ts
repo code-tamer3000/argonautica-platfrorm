@@ -51,6 +51,11 @@ export interface SendBody {
   // Ссылка на материал КБ / задачу (одна на сообщение). Оба поля вместе.
   ref_kind?: RefKind
   ref_id?: number
+  // Идемпотентность повторной отправки через outbox (см. lib/outbox.ts): один и тот
+  // же UUID на всех попытках одного OutboxItem, включая ручной retry() — сервер
+  // дедуплицирует по (sender_id, room_id, client_id) и не создаёт вторую строку,
+  // если первый ответ был потерян, но сообщение уже дошло (docs/MESSAGES.md «Send»).
+  client_id?: string
 }
 
 export function useSendMessage(roomId: number) {

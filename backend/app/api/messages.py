@@ -11,6 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import Date as SqlDate
 from sqlalchemy import cast, delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
@@ -288,6 +289,7 @@ async def send_message(
     body: SendMessageRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    response: Response,
 ) -> MessageOut:
     """Отправить сообщение (текст / стикер / вложения), опционально — ответ в тред."""
     await enforce_rate_limit(
@@ -368,9 +370,33 @@ async def send_message(
         quoted_message_id=body.quoted_message_id,
         ref_kind=body.ref_kind,
         ref_id=body.ref_id,
+        client_id=body.client_id,
     )
     session.add(message)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Гонка/повтор outbox с потерянным ответом (uq_messages_sender_room_client):
+        # это уже отправленное сообщение, а не новое — вернуть существующую строку,
+        # не вставлять вторую и не слать второй message.new (docs/MESSAGES.md «Send»).
+        await session.rollback()
+        existing = (
+            await session.execute(
+                select(Message).where(
+                    Message.sender_id == current_user.id,
+                    Message.room_id == room_id,
+                    Message.client_id == body.client_id,
+                )
+            )
+        ).scalar_one()
+        resolved = await resolve_attachments(session, [existing.id])
+        playlists = await _playlists_map(session, [existing])
+        refs = await _refs_map(session, [existing], current_user)
+        quotes = await _quotes_map(session, [existing], room)
+        response.status_code = status.HTTP_200_OK  # дедуп — не плодим
+        return _to_out(
+            existing, resolved.get(existing.id, []), refs, quotes=quotes, playlists=playlists
+        )
 
     for media_asset_id in body.attachment_ids:
         session.add(
