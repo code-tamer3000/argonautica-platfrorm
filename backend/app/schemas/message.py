@@ -28,6 +28,9 @@ class SendMessageRequest(BaseModel):
     сообщение той же комнаты, ортогональная треду (не путать с reply_to_message_id,
     который означает «id корня треда»; см. docs/MESSAGES.md «Quotes»).
     ref_kind/ref_id — опциональная ссылка на материал КБ / задачу (одна на сообщение).
+    client_id — опциональный UUID от клиентского outbox для идемпотентности повторной
+    отправки (см. docs/MESSAGES.md «Send»): один и тот же на всех попытках одного
+    OutboxItem, включая ручной «Повторить».
     """
 
     content: str | None = None
@@ -40,6 +43,7 @@ class SendMessageRequest(BaseModel):
     quoted_message_id: int | None = None
     ref_kind: RefKind | None = None
     ref_id: int | None = None
+    client_id: str | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> "SendMessageRequest":

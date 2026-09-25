@@ -255,6 +255,10 @@ export function enqueue(
   optimisticQuote?: QuotedMessageOut,
 ): string {
   const cid = clientId()
+  // Идемпотентность: сервер дедуплицирует по (sender_id, room_id, client_id), тот же
+  // cid уйдёт на КАЖДОЙ попытке этого item'а (авторетрай и ручной retry() не меняют
+  // clientId) — см. docs/MESSAGES.md «Send».
+  body.client_id = cid
   const attachments: AttachmentOut[] = []
   const blobAssetIds: number[] = []
   for (const { asset, blob } of locals) {
@@ -301,6 +305,8 @@ export function enqueueMedia(
   optimisticQuote?: QuotedMessageOut,
 ): string {
   const cid = clientId()
+  // Идемпотентность: см. комментарий в enqueue() выше — тот же cid на каждой попытке.
+  body.client_id = cid
   const attachments: AttachmentOut[] = []
   const pendingUploads: PendingUploadRef[] = []
   for (const pu of uploads) {

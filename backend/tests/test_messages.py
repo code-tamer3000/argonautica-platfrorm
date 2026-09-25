@@ -1515,3 +1515,63 @@ async def test_news_quote_preview_redacts_zoom_link_for_cheap_tariff(
     quoting_item = next(m for m in resp.json() if m.get("quote") is not None)
     assert ZOOM_LINK_PLACEHOLDER in quoting_item["quote"]["preview"]
     assert "zoom.us" not in quoting_item["quote"]["preview"]
+
+
+# --- идемпотентность отправки (ARG-148) -------------------------------------
+
+
+async def test_retry_with_same_client_id_does_not_duplicate(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Повтор outbox после потерянного ответа (тот же client_id) не должен
+    создавать вторую строку в messages — регрессия на баг из прода: плохая
+    связь → «Не отправлено» → «Повторить» → дубль сообщения в переписке."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    first = await _send(
+        client, headers, room.id, content="привет", client_id="retry-1"
+    )
+    # Ретрай: то же тело, тот же client_id — сервер уже закоммитил первую попытку,
+    # второй POST должен вернуть СУЩЕСТВУЮЩЕЕ сообщение, а не вставить новое.
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "привет", "client_id": "retry-1"},
+    )
+    assert resp.status_code == 200, resp.text
+    second = resp.json()
+    assert second["id"] == first["id"]
+
+    count = (
+        await session.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.room_id == room.id, Message.client_id == "retry-1")
+        )
+    ).scalar_one()
+    assert count == 1
+
+
+async def test_different_client_id_sends_separate_messages(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Два разных сообщения (разные client_id) от одного юзера в одной комнате —
+    обычная вставка без коллизий."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    first = await _send(client, headers, room.id, content="one", client_id="a")
+    second = await _send(client, headers, room.id, content="two", client_id="b")
+    assert first["id"] != second["id"]
