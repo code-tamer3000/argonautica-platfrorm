@@ -11,6 +11,7 @@ interface Props {
   activeTasks: TaskWithStatusOut[]
   progress: ProgressOut | null
   inReview: number
+  offlineEmpty?: boolean
 }
 
 /** «сегодня» / «завтра» / «через N дней» / «срок прошёл» / «без срока» — обратный
@@ -105,7 +106,7 @@ function sortByAttention(tasks: TaskWithStatusOut[]): TaskWithStatusOut[] {
     .map(({ task }) => task)
 }
 
-export function TasksCard({ activeTasks, progress, inReview }: Props) {
+export function TasksCard({ activeTasks, progress, inReview, offlineEmpty = false }: Props) {
   const sortedTasks = sortByAttention(activeTasks)
   const footer =
     progress == null || progress.total === 0
@@ -137,7 +138,9 @@ export function TasksCard({ activeTasks, progress, inReview }: Props) {
       )}
 
       {sortedTasks.length === 0 ? (
-        <EmptyState size="inline">Все задания сданы ✦</EmptyState>
+        <EmptyState size="inline">
+          {offlineEmpty ? 'Нет сети — не можем загрузить задания.' : 'Все задания сданы ✦'}
+        </EmptyState>
       ) : (
         <div className={styles.list}>
           {sortedTasks.map((t) => (

@@ -7,6 +7,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { IconPlus, IconEdit, IconTrash, IconClose, IconAlert } from '../../components/icons'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { toast } from '../../stores/toast'
 import { useCabinOutbox } from '../../hooks/useCabinOutbox'
 import { useAutoGrow } from '../../hooks/useAutoGrow'
@@ -23,7 +24,13 @@ const KIND_OPTIONS = KINDS.map((k) => ({ value: k, label: CABIN_SECTIONS[k].titl
 export function CabinScreen() {
   const [kind, setKind] = useState<CabinKind>('diary')
   const section = CABIN_SECTIONS[kind]
-  const { data: entries, isLoading } = useCabinEntries(kind)
+  const { data: entries, isLoading, isError, dataUpdatedAt } = useCabinEntries(kind)
+  const offlineEmpty = useIsOfflineEmpty({
+    isLoading,
+    isError,
+    dataUpdatedAt,
+    isEmpty: (entries?.length ?? 0) === 0,
+  })
 
   // Оптимистичная и надёжная (переживающая офлайн/перезагрузку) отправка форм.
   useCabinOutbox()
@@ -82,7 +89,11 @@ export function CabinScreen() {
       )}
 
       {!isLoading && (entries?.length ?? 0) === 0 && editing !== 'new' && (
-        <EmptyState>Пока нет записей. Добавьте первую — заполните форму выше.</EmptyState>
+        <EmptyState>
+          {offlineEmpty
+            ? 'Нет сети — записи Каюты не персистятся офлайн, откройте позже.'
+            : 'Пока нет записей. Добавьте первую — заполните форму выше.'}
+        </EmptyState>
       )}
 
       <CabinEntryList
