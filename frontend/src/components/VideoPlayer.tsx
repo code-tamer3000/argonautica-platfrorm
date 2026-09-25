@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { resetKbVideoProgress, saveKbVideoProgress, useKbVideoProgress } from '../api/kb'
+import { useOfflinePreviewSrc } from '../hooks/useOfflinePreviewSrc'
 import { useMediaSession } from '../stores/mediaSession'
 import { ProgressRing } from './ProgressRing'
 import styles from './videoPlayer.module.css'
@@ -38,6 +39,10 @@ interface Props {
  * Пока кадр не готов, поверх показываем скелетон-плейсхолдер.
  */
 export function VideoPlayer({ src, width, height, poster, className, kbProgress }: Props) {
+  // Постер-кадр — картинка (thumb_url), офлайн-кэшируем её байты так же, как ленточный
+  // thumb (ARG-149); `<video poster>` не даёт onError для фолбэка, поэтому резолвится
+  // отдельным пробником внутри хука, не самим элементом.
+  const resolvedPoster = useOfflinePreviewSrc(poster ?? null, poster != null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const videoSessionId = useRef(`video-${++videoPlayerSeq}`)
   const [rate, setRate] = useState(1)
@@ -104,7 +109,7 @@ export function VideoPlayer({ src, width, height, poster, className, kbProgress 
         ref={videoRef}
         className={styles.video}
         src={src}
-        poster={poster ?? undefined}
+        poster={resolvedPoster ?? undefined}
         controls
         playsInline
         preload="metadata"

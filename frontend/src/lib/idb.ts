@@ -16,7 +16,11 @@ const DB_NAME = 'argonautica'
 // мог отрисовать авторизованное состояние без сети вместо вечного спиннера. Бампаем
 // версию, чтобы onupgradeneeded создал новые сторы у пользователей с уже
 // существующей базой.
-const DB_VERSION = 5
+// v6: mediaPreviewCache — байты превью вложений (thumb_url/preview_url, не
+// оригинал), сохранённые в момент реального рендера у пользователя (ARG-149):
+// обычный браузерный HTTP-кэш подтверждённо не переживает kill-процесса +
+// холодный релонч в офлайне, а SW-перехват возвращать нельзя (ADR-032).
+const DB_VERSION = 6
 
 // Именa стора держим в одном месте, чтобы onupgradeneeded создал ровно их.
 export const STORE_OUTBOX = 'outbox'
@@ -37,6 +41,10 @@ export const STORE_PLAYLIST_OFFLINE = 'playlistOffline'
 // Последний успешный профиль (`UserOut` из GET /api/auth/me): единственная
 // запись под фиксированным ключом. См. lib/authUserCache.ts.
 export const STORE_AUTH_USER = 'authUser'
+// Байты превью вложений (thumb_url/preview_url), закэшированные после реального
+// рендера у пользователя: ключ — pathname presigned-URL (стабилен между подписями,
+// см. ADR-032), значение — { blob, savedAt }. См. lib/attachmentPreviewCache.ts.
+export const STORE_MEDIA_PREVIEW = 'mediaPreviewCache'
 const STORES = [
   STORE_OUTBOX,
   STORE_DRAFTS,
@@ -46,6 +54,7 @@ const STORES = [
   STORE_OUTBOX_BLOBS,
   STORE_PLAYLIST_OFFLINE,
   STORE_AUTH_USER,
+  STORE_MEDIA_PREVIEW,
 ] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null

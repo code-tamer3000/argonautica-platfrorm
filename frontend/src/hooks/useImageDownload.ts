@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { cachePreviewBlob, getCachedPreviewUrl } from '../lib/attachmentPreviewCache'
 
 // Скачивание оригинала картинки с ПРОГРЕССОМ (для лайтбокса). Нативный <img src> не
 // даёт процента загрузки, поэтому тянем через fetch + ReadableStream: считаем принятые
@@ -6,6 +7,13 @@ import { useEffect, useRef, useState } from 'react'
 //
 // Best-effort: если сети/поток недоступны, Content-Length нет, или fetch упал —
 // откатываемся на прямой src (fallbackUrl), как раньше. Прогресс — удобство, не гейт.
+//
+// `cacheable` (ARG-149) — этот же fetch уже тянет байты целиком, так что для
+// превью-derivative'ов (preview_url) грех не сохранить их в offline-кэш заодно
+// (lib/attachmentPreviewCache.ts), без второго похода в сеть. Для оригинала
+// (`cacheable=false`, легаси-фолбэк без preview_url) не кэшируем — вне границ задачи.
+// Фолбэк при провале fetch тоже проверяет кэш первым, иначе офлайн отрисует «битую»
+// картинку по сырому presigned-URL вместо уже закэшированных байт.
 
 interface State {
   /** URL для <img>: object-URL готового blob, либо исходный (fallback / ещё грузится). */
@@ -16,7 +24,7 @@ interface State {
   loading: boolean
 }
 
-export function useImageDownload(url: string): State {
+export function useImageDownload(url: string, cacheable = false): State {
   const [state, setState] = useState<State>({ src: url, progress: null, loading: true })
   // objectURL для очистки при размонтировании/смене url.
   const objectUrlRef = useRef<string | null>(null)
@@ -33,8 +41,18 @@ export function useImageDownload(url: string): State {
       }
     }
 
+    // Сеть недоступна/подпись протухла: пробуем офлайн-кэш прежде чем сдаться на
+    // сырой presigned-URL, который в этом же сценарии и не загрузится.
     const fallback = () => {
-      if (!cancelled) setState({ src: url, progress: null, loading: false })
+      if (cancelled) return
+      if (!cacheable) {
+        setState({ src: url, progress: null, loading: false })
+        return
+      }
+      void getCachedPreviewUrl(url).then((cached) => {
+        if (cancelled) return
+        setState({ src: cached ?? url, progress: null, loading: false })
+      })
     }
 
     async function run() {
@@ -60,12 +78,13 @@ export function useImageDownload(url: string): State {
         if (cancelled) return
         const contentType = res.headers.get('Content-Type') || undefined
         const blob = new Blob(chunks as BlobPart[], { type: contentType })
+        if (cacheable) void cachePreviewBlob(url, blob)
         revoke()
         const objectUrl = URL.createObjectURL(blob)
         objectUrlRef.current = objectUrl
         setState({ src: objectUrl, progress: 1, loading: false })
       } catch {
-        fallback() // abort или сетевая ошибка — прямой src
+        fallback() // abort или сетевая ошибка — офлайн-кэш, иначе прямой src
       }
     }
     void run()
@@ -75,7 +94,7 @@ export function useImageDownload(url: string): State {
       controller.abort()
       revoke()
     }
-  }, [url])
+  }, [url, cacheable])
 
   return state
 }

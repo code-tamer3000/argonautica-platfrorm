@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Lightbox, type LightboxItem } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
+import { useOfflinePreviewSrc } from '../../hooks/useOfflinePreviewSrc'
 import type { AttachmentOut } from '../../lib/types'
 import styles from './chat.module.css'
 
@@ -25,6 +26,8 @@ export function MediaGroup({ items }: { items: AttachmentOut[] }) {
   const lightboxItems: LightboxItem[] = items.map((att) => ({
     url: att.kind === 'image' ? att.preview_url ?? att.url : att.url,
     kind: att.kind === 'video' ? 'video' : 'image',
+    // Офлайн-кэш (ARG-149) только для настоящего preview_url, не для фолбэка на url.
+    preview: att.kind === 'image' && att.preview_url != null,
   }))
 
   // Раскладка по числу плиток; всё, что выше потолка (легаси-сообщения), — общая сетка.
@@ -52,7 +55,9 @@ export function MediaGroup({ items }: { items: AttachmentOut[] }) {
 function Tile({ att, onOpen }: { att: AttachmentOut; onOpen: () => void }) {
   // Превью может не быть (легаси-запись / генерация не удалась) — тогда грузим сам
   // объект: для картинки это оригинал, для видео постера не будет вовсе.
-  const src = att.thumb_url ?? (att.kind === 'image' ? att.url : null)
+  const rawSrc = att.thumb_url ?? (att.kind === 'image' ? att.url : null)
+  // Офлайн-кэш (ARG-149) только для настоящего thumb_url, не для фолбэка на оригинал.
+  const src = useOfflinePreviewSrc(rawSrc, att.thumb_url != null)
   const processing = att.kind === 'video' && att.transcode_status === 'processing'
 
   if (processing)

@@ -57,6 +57,9 @@ export function Drawer({ title, onClose, children }: { title: string; onClose: (
 export interface LightboxItem {
   url: string
   kind: 'image' | 'video'
+  // true, если url — это preview_url (средний дериватив), не оригинал: только тогда
+  // LightboxImage кэширует байты офлайн (ARG-149, границы — не кэшировать оригинал).
+  preview?: boolean
 }
 
 /**
@@ -72,18 +75,21 @@ export interface LightboxItem {
 export function Lightbox({
   url,
   kind,
+  preview,
   items,
   index = 0,
   onClose,
 }: {
   url?: string
   kind?: 'image' | 'video'
+  // Только для одиночного url — см. LightboxItem.preview.
+  preview?: boolean
   items?: LightboxItem[]
   index?: number
   onClose: () => void
 }) {
   const list: LightboxItem[] =
-    items && items.length ? items : url ? [{ url, kind: kind ?? 'image' }] : []
+    items && items.length ? items : url ? [{ url, kind: kind ?? 'image', preview }] : []
   const [at, setAt] = useState(Math.min(Math.max(index, 0), Math.max(list.length - 1, 0)))
   const total = list.length
   const step = (delta: number) => setAt((cur) => (cur + delta + total) % total)
@@ -136,7 +142,7 @@ export function Lightbox({
       }}
     >
       {current.kind === 'image' ? (
-        <LightboxImage key={current.url} url={current.url} />
+        <LightboxImage key={current.url} url={current.url} cacheable={current.preview ?? false} />
       ) : (
         <LightboxVideo key={current.url} url={current.url} />
       )}
@@ -185,9 +191,13 @@ export function Lightbox({
  * Картинка в лайтбоксе с прогрессом скачивания оригинала: нативный <img> процента не
  * даёт, поэтому тянем через fetch+stream (useImageDownload) и рисуем полосу поверх, пока
  * грузится. Best-effort — при недоступности потока откатывается на прямой src.
+ *
+ * `cacheable` (ARG-149) — прокидывается в useImageDownload: true только когда url — это
+ * preview_url (не оригинал), тогда те же уже скачанные байты попадают в офлайн-кэш и
+ * фолбэк при неудаче сначала проверяет его.
  */
-function LightboxImage({ url }: { url: string }) {
-  const { src, progress, loading } = useImageDownload(url)
+function LightboxImage({ url, cacheable }: { url: string; cacheable: boolean }) {
+  const { src, progress, loading } = useImageDownload(url, cacheable)
   const pct = progress != null ? Math.round(progress * 100) : null
   return (
     <div className={styles.lightboxImageWrap} onClick={(e) => e.stopPropagation()}>

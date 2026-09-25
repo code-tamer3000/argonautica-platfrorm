@@ -5,6 +5,7 @@ import { Lightbox } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
 import { VideoPlayer } from '../../components/VideoPlayer'
 import { VoicePlayer } from '../../components/VoicePlayer'
+import { useOfflinePreviewSrc } from '../../hooks/useOfflinePreviewSrc'
 import { downloadFile, fileNameFromUrl, guessMediaKind } from '../../lib/mediaUpload'
 import { reportMetric } from '../../lib/metrics'
 import type { AttachmentOut, MediaKind } from '../../lib/types'
@@ -184,10 +185,13 @@ function ImageAttachment({
   height?: number | null
 }) {
   const [open, setOpen] = useState(false)
-  const feedUrl = thumbUrl ?? url // нет превью (видео старые/битые) — грузим оригинал
+  const rawFeedUrl = thumbUrl ?? url // нет превью (видео старые/битые) — грузим оригинал
   // Фолбэк на оригинал обязателен: у легаси-вложений и при неудавшейся генерации
   // preview_url = null, и просмотр должен работать как раньше.
   const lightboxUrl = previewUrl ?? url
+  // Офлайн-кэш байт (ARG-149) — только для настоящего thumb_url, не для фолбэка на
+  // оригинал (границы задачи: полноразмерный url в этот кэш не идёт).
+  const feedUrl = useOfflinePreviewSrc(rawFeedUrl, thumbUrl != null)
   // Пропорции: из метаданных вложения, а у легаси-строк без них — из самой картинки,
   // как только она декодировалась (до этого стоит коробка-плейсхолдер).
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null)
@@ -227,7 +231,7 @@ function ImageAttachment({
     >
       <img
         className={styles.attImage}
-        src={feedUrl}
+        src={feedUrl ?? rawFeedUrl}
         alt=""
         // Нативные width/height задают пропорции ещё до первого байта: браузер сам
         // считает высоту при height: auto. Вместе с заданной шириной коробки это и
@@ -237,7 +241,14 @@ function ImageAttachment({
         onClick={() => setOpen(true)}
         onLoad={onImgLoad}
       />
-      {open && <Lightbox url={lightboxUrl} kind="image" onClose={() => setOpen(false)} />}
+      {open && (
+        <Lightbox
+          url={lightboxUrl}
+          kind="image"
+          preview={previewUrl != null}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   )
 }
@@ -258,12 +269,13 @@ function VideoProcessing({
   height: number | null
 }) {
   const ratio = width && height ? width / height : undefined
+  const posterSrc = useOfflinePreviewSrc(thumbUrl, thumbUrl != null)
   return (
     <div
       className={styles.attVideoProcessing}
       style={ratio ? { aspectRatio: String(ratio) } : undefined}
     >
-      {thumbUrl && <img className={styles.attVideoPoster} src={thumbUrl} alt="" />}
+      {posterSrc && <img className={styles.attVideoPoster} src={posterSrc} alt="" />}
       <div className={styles.attVideoOverlay}>
         <Spinner size={20} />
         <span>Обработка видео…</span>
