@@ -8,6 +8,7 @@ import { IconAlert, IconCheck, IconFlame, IconMoon, IconSun, IconWaves } from '.
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { mediaUpload } from '../../lib/mediaUpload'
+import { DownloadedPlaylistsSection } from './DownloadedPlaylistsSection'
 import { DynamicsCalendar } from './DynamicsCalendar'
 import { NotificationsSection } from './NotificationsSection'
 import { SurveyGiftSection } from './SurveyGiftSection'
@@ -309,6 +310,10 @@ export function ProfileScreen() {
           )}
         </div>
       </div>
+
+      {/* Скачанные плейлисты (ARG-145/ARG-153) — что уже лежит на устройстве
+          для офлайн-прослушивания; пусто — блок не рендерится. */}
+      <DownloadedPlaylistsSection />
 
       {/* Динамика — только для участников, которые ещё в пути. У выпускника
           (graduated_at) она исчезает целиком: экспедиция пройдена, считать нечего

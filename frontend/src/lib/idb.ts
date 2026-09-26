@@ -20,7 +20,11 @@ const DB_NAME = 'argonautica'
 // оригинал), сохранённые в момент реального рендера у пользователя (ARG-149):
 // обычный браузерный HTTP-кэш подтверждённо не переживает kill-процесса +
 // холодный релонч в офлайне, а SW-перехват возвращать нельзя (ADR-032).
-const DB_VERSION = 6
+// v7: playlistOfflineMeta — снимок плейлиста (title/cover/tracks) на момент
+// скачивания (ARG-153): playlistOffline хранит только байты треков по
+// asset_id, без него нельзя перечислить, КАКИЕ плейлисты скачаны, для списка
+// в профиле.
+const DB_VERSION = 7
 
 // Именa стора держим в одном месте, чтобы onupgradeneeded создал ровно их.
 export const STORE_OUTBOX = 'outbox'
@@ -38,6 +42,9 @@ export const STORE_OUTBOX_BLOBS = 'outboxBlobs'
 // Один трек может встречаться в нескольких плейлистах — храним по asset_id,
 // не по playlist_id, чтобы не скачивать один и тот же файл дважды.
 export const STORE_PLAYLIST_OFFLINE = 'playlistOffline'
+// Снимок скачанного плейлиста (title/cover_url/tracks) для списка в профиле:
+// ключ — playlist_id. См. lib/offlinePlaylists.ts.
+export const STORE_PLAYLIST_OFFLINE_META = 'playlistOfflineMeta'
 // Последний успешный профиль (`UserOut` из GET /api/auth/me): единственная
 // запись под фиксированным ключом. См. lib/authUserCache.ts.
 export const STORE_AUTH_USER = 'authUser'
@@ -53,6 +60,7 @@ const STORES = [
   STORE_CABIN_DRAFTS,
   STORE_OUTBOX_BLOBS,
   STORE_PLAYLIST_OFFLINE,
+  STORE_PLAYLIST_OFFLINE_META,
   STORE_AUTH_USER,
   STORE_MEDIA_PREVIEW,
 ] as const
