@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMyDynamics } from '../../api/dynamics'
 import { useJournalStructure } from '../../api/journal'
 import { useMarkRead, useMessages } from '../../api/messages'
-import { useRoom, useRooms, useSetDiaryAvatar } from '../../api/rooms'
+import { useRoom, useRooms, useSetRoomAvatar } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
@@ -92,7 +92,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarFileRef = useRef<HTMLInputElement>(null)
-  const setDiaryAvatar = useSetDiaryAvatar(roomId)
+  const setDiaryAvatar = useSetRoomAvatar(roomId)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   // Сообщение, для которого открыт пикер комнаты-назначения пересылки (см. ForwardPicker).
   const [forwardingMsg, setForwardingMsg] = useState<MessageOut | null>(null)
@@ -602,6 +602,8 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           roomId={roomId}
           isOwner={room.type === 'group' && room.created_by === user?.id}
           isReadonly={room.is_readonly}
+          avatarUrl={room.avatar_url}
+          roomName={title}
           onClose={() => setShowMembers(false)}
           onOpenDm={onOpenRoom}
           onDeleted={() => {

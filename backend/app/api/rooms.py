@@ -600,11 +600,25 @@ async def update_room_avatar(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RoomOut:
-    """Обложка личного дневника: ставит/снимает только владелец. Пока — только
-    is_personal (см. docs/ROOMS.md «Personal diary rooms»)."""
+    """Обложка/аватарка комнаты. Личный дневник — только владелец (см. docs/ROOMS.md
+    «Personal diary rooms»). Группа — владелец группы или platform-admin (см. «Group
+    avatar»). Другие типы — 403.
+
+    Группа проверяется как в add_member/remove_member ниже — БЕЗ assert_room_access:
+    platform-admin управляет группой, даже не будучи её участником (нет строки
+    членства), а assert_room_access 403-ит группу без членства безусловно (нет
+    admin-обхода, в отличие от channel) — тот же admin-без-членства сценарий, что и
+    у управления составом."""
     room = await load_room(session, room_id)
-    await assert_room_access(session, room, current_user)
-    if not room.is_personal or room.created_by != current_user.id:
+    if room.is_personal:
+        await assert_room_access(session, room, current_user)
+        if room.created_by != current_user.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your diary")
+    elif room.type == "group":
+        is_admin = current_user.role == "admin"
+        if not is_admin and not await _is_room_owner(session, room_id, current_user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Owner or admin required")
+    else:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your diary")
 
     if body.avatar_media_id is not None:
