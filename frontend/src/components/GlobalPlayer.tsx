@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getOfflineTrackUrl } from '../lib/offlinePlaylists'
 import { usePlayerStore } from '../stores/player'
 import { toast } from '../stores/toast'
@@ -36,6 +36,14 @@ export function GlobalPlayer() {
   const duration = usePlayerStore((s) => s.duration)
   const expanded = usePlayerStore((s) => s.expanded)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  // Плейлист, запущенный из списка «Скачанные плейлисты» в профиле (ARG-153),
+  // приходит сюда снимком на момент скачивания — его cover_url presigned-ссылка
+  // могла протухнуть к моменту воспроизведения (та же протухающая подпись, что и
+  // у любого другого presigned-URL). Без onError-фолбэка сломанная иконка
+  // браузера так и висела бы вместо плейсхолдера дизайн-системы.
+  const [coverBroken, setCoverBroken] = useState(false)
+  useEffect(() => setCoverBroken(false), [playlist?.id])
 
   // Callback-ref, а НЕ useEffect([]): <audio> рендерится только когда есть что
   // играть, поэтому на монтировании компонента его в DOM ещё нет и эффект с
@@ -228,8 +236,8 @@ export function GlobalPlayer() {
           onClick={() => usePlayerStore.getState().setExpanded(!expanded)}
           aria-label={expanded ? 'Свернуть плеер' : 'Развернуть плеер'}
         >
-          {playlist.cover_url ? (
-            <img src={playlist.cover_url} alt="" />
+          {playlist.cover_url && !coverBroken ? (
+            <img src={playlist.cover_url} alt="" onError={() => setCoverBroken(true)} />
           ) : (
             <IconMusic size={18} />
           )}
@@ -294,8 +302,13 @@ export function GlobalPlayer() {
               <span className={styles.expandedTitle}>{playlist.title}</span>
             </div>
             <div className={styles.expandedCoverWrap}>
-              {playlist.cover_url ? (
-                <img className={styles.expandedCover} src={playlist.cover_url} alt="" />
+              {playlist.cover_url && !coverBroken ? (
+                <img
+                  className={styles.expandedCover}
+                  src={playlist.cover_url}
+                  alt=""
+                  onError={() => setCoverBroken(true)}
+                />
               ) : (
                 <div className={styles.expandedCoverPlaceholder}>
                   <IconMusic size={40} />
