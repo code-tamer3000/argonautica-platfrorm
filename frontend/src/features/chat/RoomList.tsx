@@ -7,6 +7,7 @@ import { Avatar } from '../../components/Avatar'
 import { BackButton } from '../../components/BackButton'
 import { IconChat, IconDiary, IconPin, IconPlus, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import type { PublicUserOut, RoomOut } from '../../lib/types'
 import { useUiStore } from '../../stores/ui'
 import { useNavBadges } from '../app/useNavBadges'
@@ -62,7 +63,7 @@ interface Props {
 }
 
 export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
-  const { data: rooms, isLoading } = useRooms()
+  const { data: rooms, isLoading, isError, dataUpdatedAt } = useRooms()
   const users = useUsersMap()
   const { user: me } = useAuth()
   const dmPeers = useUiStore((s) => s.dmPeers)
@@ -150,6 +151,18 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty =
     pinnedChannels.length === 0 && diaryGroups.length === 0 && otherChannels.length === 0
+  // Список комнат целиком не персистится отдельно от факта его пустоты — если
+  // rooms===undefined (офлайн, ни разу не грузился в этой сессии), chatsEmpty/
+  // channelsEmpty всё равно true (dms/groups/... считаются от `rooms ?? []`),
+  // и раньше рендер-условие `rooms && chatsEmpty` требовало rooms истинным —
+  // при undefined ничего не показывалось вообще, ни спиннера, ни текста
+  // (репортнуто руками, ARG-151).
+  const roomsOfflineEmpty = useIsOfflineEmpty({
+    isLoading,
+    isError,
+    dataUpdatedAt,
+    isEmpty: (rooms?.length ?? 0) === 0,
+  })
 
   return (
     <aside className={styles.list}>
@@ -233,8 +246,10 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
         {tab === 'chats' && (
           <>
-            {rooms && chatsEmpty && (
-              <div className="muted" style={{ padding: 16, fontSize: 14 }}>Чатов нет</div>
+            {!isLoading && chatsEmpty && (
+              <div className="muted" style={{ padding: 16, fontSize: 14 }}>
+                {roomsOfflineEmpty ? 'Нет сети — не можем загрузить чаты.' : 'Чатов нет'}
+              </div>
             )}
             {groups.length > 0 && (
               <>
@@ -253,8 +268,10 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
         {tab === 'channels' && (
           <>
-            {rooms && channelsEmpty && (
-              <div className="muted" style={{ padding: 16, fontSize: 14 }}>Дневников нет</div>
+            {!isLoading && channelsEmpty && (
+              <div className="muted" style={{ padding: 16, fontSize: 14 }}>
+                {roomsOfflineEmpty ? 'Нет сети — не можем загрузить дневники.' : 'Дневников нет'}
+              </div>
             )}
             {pinnedChannels.length > 0 && (
               <>

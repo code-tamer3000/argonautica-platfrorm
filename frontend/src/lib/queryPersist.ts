@@ -73,22 +73,47 @@ export async function restoreQueryCache(qc: QueryClient): Promise<void> {
 }
 
 // Подписка на изменения кэша с дебаунсом — пишем снимок в IndexedDB.
+//
+// Снимок МЁРЖИТСЯ поверх предыдущего, а не переписывается целиком (ARG-151,
+// «второй холодный офлайн-заход теряет то, что показал первый» — репортнуто
+// руками). Раньше фильтр требовал status==='success': стоило фоновому
+// рефетчу (маунт/фокус на restored-с-updatedAt:0 данных) словить офлайн-
+// ошибку, query переходил в status:'error' — сами данные при этом НЕ
+// стирались (query-core error-редьюсер не трогает state.data), но фильтр их
+// выбрасывал из следующего дампа, и idbSet целиком переписывал снимок без
+// них. На следующем холодном старте restoreQueryCache находил уже пустое
+// место вместо рабочего кэша. Теперь берём по data!==undefined (доживает
+// последний удачный результат, даже если самая свежая попытка провалилась),
+// и donashivaем ключи, которых сейчас нет в живом кэше (компонент
+// размонтировался и query собрал gc по gcTime) — из СТАРОГО снимка, а не
+// выбрасываем. Итог: снимок только растёт/обновляется по ключу, никогда не
+// мельчает между сессиями, пока сам не протухнет целиком (MAX_AGE_MS).
 export function persistQueryCache(qc: QueryClient): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
 
-  const dump = () => {
-    const queries = qc
-      .getQueryCache()
-      .getAll()
-      .filter((q) => q.state.status === 'success' && shouldPersist(q.queryKey))
-      .map((q) => ({ key: q.queryKey, state: { data: q.state.data } }))
-    const snap: Snapshot = { savedAt: Date.now(), queries }
+  const dump = async () => {
+    const merged = new Map<string, { key: unknown; state: { data: unknown } }>()
+
+    const prev = await idbGet<Snapshot>(STORE_QUERYCACHE, CACHE_KEY)
+    if (prev && Date.now() - prev.savedAt <= MAX_AGE_MS) {
+      for (const entry of prev.queries) {
+        if (!Array.isArray(entry.key)) continue
+        merged.set(JSON.stringify(entry.key), entry as { key: unknown; state: { data: unknown } })
+      }
+    }
+
+    for (const q of qc.getQueryCache().getAll()) {
+      if (!shouldPersist(q.queryKey) || q.state.data === undefined) continue
+      merged.set(JSON.stringify(q.queryKey), { key: q.queryKey, state: { data: q.state.data } })
+    }
+
+    const snap: Snapshot = { savedAt: Date.now(), queries: [...merged.values()] }
     void idbSet(STORE_QUERYCACHE, CACHE_KEY, snap)
   }
 
   const unsub = qc.getQueryCache().subscribe(() => {
     if (timer) clearTimeout(timer)
-    timer = setTimeout(dump, 1500)
+    timer = setTimeout(() => void dump(), 1500)
   })
 
   return () => {

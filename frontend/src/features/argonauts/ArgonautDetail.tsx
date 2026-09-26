@@ -10,7 +10,7 @@ import { EmptyState } from '../../components/EmptyState'
 import { Lightbox } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
-import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
+import { useIsOfflineEmpty, useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { ApiError } from '../../lib/apiClient'
@@ -72,6 +72,7 @@ export function ArgonautDetail() {
   const isOwn = me?.id === numericId
   const tasksEmpty = (data?.tasks.length ?? 0) === 0
   const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: tasksEmpty })
+  const profileOfflineFailure = useIsOfflineFailure(error)
 
   async function handleWrite() {
     try {
@@ -92,13 +93,28 @@ export function ArgonautDetail() {
     )
   }
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className={styles.wrap}>
         <PageHeader title="Аргонавты" />
         <div className="center grow">
           <Spinner />
         </div>
+      </div>
+    )
+  }
+
+  // isLoading settled (не вечно, см. main.tsx networkMode:'always'), но данных
+  // всё ещё нет — либо офлайн без единого удачного визита к этому профилю,
+  // либо реальная ошибка сервера. Раньше это молча падало в тот же спиннер
+  // выше и висело там навсегда, маскируя офлайн под «загружается».
+  if (!data) {
+    return (
+      <div className={styles.wrap}>
+        <PageHeader title="Аргонавты" />
+        <EmptyState size="block">
+          {profileOfflineFailure ? 'Нет сети — не можем загрузить профиль.' : 'Не удалось загрузить профиль.'}
+        </EmptyState>
       </div>
     )
   }

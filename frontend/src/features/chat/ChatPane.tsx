@@ -6,8 +6,10 @@ import { useMarkRead, useMessages } from '../../api/messages'
 import { useRoom, useRooms, useSetDiaryAvatar } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
+import { EmptyState } from '../../components/EmptyState'
 import { IconBack, IconEdit, IconPin, IconTrash, IconUsers } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import { useIsOfflineEmpty, useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { noteRoomRendered, sampleRoomResources } from '../../lib/metrics'
 import type { MessageOut } from '../../lib/types'
@@ -38,12 +40,23 @@ const subLabel = (type: string, isPersonal = false, isNews = false): string =>
 export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpenRoom?: (id: number) => void; onBack?: () => void }) {
   const { user } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { data: rooms } = useRooms()
+  const { data: rooms, isLoading: roomsLoading } = useRooms()
   const listedRoom = rooms?.find((r) => r.id === roomId)
-  // Комнаты нет в списке (админ вошёл в комнату подгруппы потока — членства нет) —
-  // дотягиваем метаданные точечным запросом, иначе ниже завис бы вечный спиннер.
-  const { data: fetchedRoom } = useRoom(roomId, !!rooms && !listedRoom)
+  // Комнаты нет в списке (админ вошёл в комнату подгруппы потока — членства нет,
+  // либо офлайн и rooms вообще не подтверждён) — дотягиваем метаданные точечным
+  // запросом. Раньше гейт был `!!rooms && !listedRoom`: если rooms целиком не
+  // загрузился (офлайн, ни разу не персистился в этой сессии — data===undefined),
+  // точечный запрос никогда не включался, и `!room` ниже висел спиннером
+  // НАВСЕГДА. Ждём именно settled (`!roomsLoading`), а не «rooms успешно
+  // загружен» — офлайн-провал rooms не должен блокировать попытку достать
+  // комнату отдельно.
+  const {
+    data: fetchedRoom,
+    isLoading: fetchedRoomLoading,
+    error: fetchedRoomError,
+  } = useRoom(roomId, !roomsLoading && !listedRoom)
   const room = listedRoom ?? fetchedRoom
+  const roomOfflineFailure = useIsOfflineFailure(fetchedRoomError)
   const users = useUsersMap()
   const dmPeers = useUiStore((s) => s.dmPeers)
   const setDmPeer = useUiStore((s) => s.setDmPeer)
@@ -62,6 +75,15 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     () => (query.data ? query.data.pages.flat().slice().reverse() : []),
     [query.data],
   )
+  // Комнату, которую ни разу не открывали онлайн (нет в персисте messages),
+  // офлайн раньше показывал как пустую ленту без единого слова — неотличимо
+  // от «переписки правда ещё нет» (репортнуто руками, ARG-151).
+  const messagesOfflineEmpty = useIsOfflineEmpty({
+    isLoading: query.isLoading,
+    isError: query.isError,
+    dataUpdatedAt: query.dataUpdatedAt,
+    isEmpty: messages.length === 0,
+  })
 
   const [threadRootId, setThreadRootId] = useState<number | null>(null)
   const [showPins, setShowPins] = useState(false)
@@ -281,10 +303,25 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [listScrolledUp, setListScrolledUp] = useState(false)
   const onScrolledUpChange = useCallback((up: boolean) => setListScrolledUp(up), [])
 
-  if (!room) {
+  if (roomsLoading || fetchedRoomLoading) {
     return (
       <div className="center grow">
         <Spinner />
+      </div>
+    )
+  }
+
+  // Оба источника (список комнат и точечный запрос) settled, но комнаты всё
+  // ещё нет — офлайн без единого удачного визита к ней (или её правда больше
+  // нет). Раньше `!room` ловил и этот случай тем же спиннером выше — он не
+  // резолвился НИКОГДА, потому что точечный запрос не включался, пока `rooms`
+  // не загрузится целиком (см. коммент у useRoom выше).
+  if (!room) {
+    return (
+      <div className="center grow">
+        <EmptyState size="block">
+          {roomOfflineFailure ? 'Нет сети — не можем загрузить чат.' : 'Чат не найден.'}
+        </EmptyState>
       </div>
     )
   }
@@ -464,6 +501,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {/* Комната подгруппы потока — голосование за общую фразу над лентой. */}
       {room.stream_node_id != null && room.stream_task_id != null && (
         <StreamRoomWidget taskId={room.stream_task_id} nodeId={room.stream_node_id} />
+      )}
+      {messagesOfflineEmpty && (
+        <div className="center muted" style={{ padding: 'var(--space-4)' }}>
+          Нет сети — история этого чата ещё не загружена.
+        </div>
       )}
       <MessageList
         key={roomId}
