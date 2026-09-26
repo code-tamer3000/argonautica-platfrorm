@@ -218,9 +218,11 @@ export function PlaylistCard({ playlist, onChange }: Props) {
                   }
                   // Нет сети и плейлист не скачан для офлайна — presigned-URL
                   // всё равно не загрузится; явно скажем об этом, а не будем
-                  // молча пытаться (ARG-145, «Готово, когда»).
+                  // молча пытаться (ARG-145, «Готово, когда»). Это ожидаемое
+                  // состояние, не сбой приложения — 'info', не тревожный 'error'
+                  // (тот же честный тон, что и ARG-150 для плашки офлайна).
                   if (!navigator.onLine && offlineStatus !== 'done') {
-                    toast('Нужна сеть — плейлист не скачан для офлайна', 'error')
+                    toast('Нужна сеть — плейлист не скачан для офлайна', 'info')
                     return
                   }
                   usePlayerStore.getState().playPlaylist(local, i)
