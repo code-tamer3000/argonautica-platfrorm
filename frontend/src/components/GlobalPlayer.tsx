@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useOfflinePreviewSrc } from '../hooks/useOfflinePreviewSrc'
 import { getOfflineTrackUrl } from '../lib/offlinePlaylists'
 import { usePlayerStore } from '../stores/player'
 import { toast } from '../stores/toast'
@@ -37,15 +38,23 @@ export function GlobalPlayer() {
   const expanded = usePlayerStore((s) => s.expanded)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Обложка плейлиста может не загрузиться на холодном старте PWA (сеть/токен
-  // ещё не готовы) — а <audio>/<img> сам запрос не повторит, даже когда сеть
-  // появится (браузеры не ретраят упавший src). Та же гонка и тот же приём, что
-  // уже чинили в Avatar.tsx (ARG-152): сбрасываем coverBroken по событию `online`,
-  // иначе плейсхолдер-иконка остаётся навсегда после одного неудачного запроса
-  // при старте — особенно заметно для плейлиста, запущенного из «Скачанных
-  // плейлистов» в профиле (ARG-153) сразу после открытия приложения.
+  // Обложка плейлиста никогда не докачивалась в offline-байты (в отличие от
+  // самих треков, см. lib/offlinePlaylists.ts::downloadPlaylist) — только
+  // presigned cover_url, который без сети не загрузится вообще, сколько ни
+  // ретрай. Тот же механизм байт-кэша, что уже чинит это для аватарок
+  // (ARG-152) и превью вложений чата (ARG-149): useOfflinePreviewSrc отдаёт
+  // сетевой url, пока он грузится, и best-effort кэширует его байты, а на
+  // сбое (offline/протухшая подпись) сама подменяет src на закэшированный
+  // blob — реальная картинка вместо плейсхолдера, если обложка когда-либо
+  // успешно открывалась на этом устройстве.
+  const resolvedCoverUrl = useOfflinePreviewSrc(playlist?.cover_url ?? null, true)
+  // Сброс именно на resolvedCoverUrl, а не на playlist.cover_url: реальный
+  // <img> падает офлайн синхронно, а useOfflinePreviewSrc подменяет src на
+  // blob асинхронно (поход в IndexedDB) — сброс на «сыром» url защёлкивал бы
+  // broken=true раньше, чем resolvedCoverUrl успевал смениться на рабочий
+  // (тот же баг, что ловили в Avatar.tsx под ARG-152).
   const [coverBroken, setCoverBroken] = useState(false)
-  useEffect(() => setCoverBroken(false), [playlist?.id])
+  useEffect(() => setCoverBroken(false), [resolvedCoverUrl])
   useEffect(() => {
     const onOnline = () => setCoverBroken(false)
     window.addEventListener('online', onOnline)
@@ -109,9 +118,7 @@ export function GlobalPlayer() {
       title: track.title,
       artist: track.artist ?? undefined,
       album: playlist.title,
-      artwork: playlist.cover_url
-        ? [{ src: playlist.cover_url, sizes: '512x512', type: 'image/jpeg' }]
-        : [],
+      artwork: resolvedCoverUrl ? [{ src: resolvedCoverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
     })
     // Каждый handler — своей try/catch: на iOS Safari 'seekto' исторически не
     // поддерживался и падение на нём обрывало бы регистрацию prev/next, которые
@@ -243,8 +250,8 @@ export function GlobalPlayer() {
           onClick={() => usePlayerStore.getState().setExpanded(!expanded)}
           aria-label={expanded ? 'Свернуть плеер' : 'Развернуть плеер'}
         >
-          {playlist.cover_url && !coverBroken ? (
-            <img src={playlist.cover_url} alt="" onError={() => setCoverBroken(true)} />
+          {resolvedCoverUrl && !coverBroken ? (
+            <img src={resolvedCoverUrl} alt="" onError={() => setCoverBroken(true)} />
           ) : (
             <IconMusic size={18} />
           )}
@@ -309,10 +316,10 @@ export function GlobalPlayer() {
               <span className={styles.expandedTitle}>{playlist.title}</span>
             </div>
             <div className={styles.expandedCoverWrap}>
-              {playlist.cover_url && !coverBroken ? (
+              {resolvedCoverUrl && !coverBroken ? (
                 <img
                   className={styles.expandedCover}
-                  src={playlist.cover_url}
+                  src={resolvedCoverUrl}
                   alt=""
                   onError={() => setCoverBroken(true)}
                 />

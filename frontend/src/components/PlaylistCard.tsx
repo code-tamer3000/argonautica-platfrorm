@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { removePlaylistTrack, updatePlaylist } from '../api/media'
 import { useAuth } from '../features/auth/AuthContext'
+import { useOfflinePreviewSrc } from '../hooks/useOfflinePreviewSrc'
 import { mediaUpload } from '../lib/mediaUpload'
 import type { PlaylistOut } from '../lib/types'
 import { useOfflinePlaylists } from '../stores/offlinePlaylists'
@@ -52,12 +53,15 @@ export function PlaylistCard({ playlist, onChange }: Props) {
   const [coverBusy, setCoverBusy] = useState(false)
   const coverFileRef = useRef<HTMLInputElement>(null)
 
-  // Обложка может не загрузиться на холодном старте PWA (сеть/токен ещё не
-  // готовы) — а <img> сам запрос не повторит, даже когда сеть появится
-  // (браузеры не ретраят упавший src). Тот же приём, что уже чинили в
-  // Avatar.tsx (ARG-152): сбрасываем coverBroken по событию `online`.
+  // Обложка никогда не докачивалась в offline-байты вместе с треками (см.
+  // lib/offlinePlaylists.ts::downloadPlaylist) — только presigned cover_url,
+  // который без сети не загрузится, сколько ни ретрай. Тот же байт-кэш, что
+  // уже чинит это для аватарок (ARG-152) и превью вложений чата (ARG-149).
+  const resolvedCoverUrl = useOfflinePreviewSrc(local.cover_url, true)
+  // Сброс именно на resolvedCoverUrl — см. тот же приём и то же обоснование в
+  // Avatar.tsx (ARG-152): useOfflinePreviewSrc подменяет src на blob асинхронно.
   const [coverBroken, setCoverBroken] = useState(false)
-  useEffect(() => setCoverBroken(false), [local.cover_url])
+  useEffect(() => setCoverBroken(false), [resolvedCoverUrl])
   useEffect(() => {
     const onOnline = () => setCoverBroken(false)
     window.addEventListener('online', onOnline)
@@ -144,8 +148,8 @@ export function PlaylistCard({ playlist, onChange }: Props) {
       />
       <div className={styles.header}>
         <div className={styles.cover}>
-          {local.cover_url && !coverBroken ? (
-            <img src={local.cover_url} alt="" onError={() => setCoverBroken(true)} />
+          {resolvedCoverUrl && !coverBroken ? (
+            <img src={resolvedCoverUrl} alt="" onError={() => setCoverBroken(true)} />
           ) : (
             <IconMusic size={20} />
           )}

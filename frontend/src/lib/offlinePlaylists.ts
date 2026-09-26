@@ -1,3 +1,4 @@
+import { cachePreviewByFetch } from './attachmentPreviewCache'
 import { idbClear, idbDelete, idbGet, idbGetAll, idbSet, STORE_PLAYLIST_OFFLINE, STORE_PLAYLIST_OFFLINE_META } from './idb'
 import type { PlaylistOut } from './types'
 
@@ -61,6 +62,15 @@ export async function downloadPlaylist(
     done += 1
     onProgress?.(done, total)
   }
+  // Обложка сама по себе не попадала в offline-байты нигде в этой функции —
+  // только presigned cover_url в реестре ниже, который без сети не загрузится
+  // вообще. До этого фикса плейсхолдер-нота была ГАРАНТИРОВАНА офлайн, даже
+  // если реальная картинка успела открыться на экране до нажатия «Скачать
+  // офлайн» (баг репортился именно так). Явно качаем и кэшируем байты здесь же
+  // — тем же byte-кэшем (lib/attachmentPreviewCache.ts, ARG-149/152), которым
+  // пользуется рендер через useOfflinePreviewSrc, — чтобы не полагаться на то,
+  // что <img> уже успешно отрендерился раньше.
+  if (playlist.cover_url) await cachePreviewByFetch(playlist.cover_url)
   // Реестр для списка «Скачанные плейлисты» в профиле (ARG-153) — сами байты
   // треков лежат по asset_id и не говорят, КАКИЕ плейлисты собраны из них.
   await idbSet(STORE_PLAYLIST_OFFLINE_META, playlist.id, { playlist, downloadedAt: Date.now() } satisfies DownloadedPlaylist)

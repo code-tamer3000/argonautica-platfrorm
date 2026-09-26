@@ -1,29 +1,33 @@
 import { useEffect, useState } from 'react'
 import { IconMusic, IconTrash } from '../../components/icons'
+import { useOfflinePreviewSrc } from '../../hooks/useOfflinePreviewSrc'
 import { usePlayerStore } from '../../stores/player'
 import { useOfflinePlaylists } from '../../stores/offlinePlaylists'
 import styles from './profile.module.css'
 
 /**
  * Обложка плейлиста из сохранённого при скачивании снимка — `cover_url` в нём
- * presigned MinIO-ссылка на момент скачивания. Она переживает сам факт
- * скачивания нормально, но на холодном старте PWA (сеть/токен ещё не готовы)
- * первый запрос может упасть — а `<img>` сам его не повторит, даже когда сеть
- * появится (браузеры не ретраят упавший src). Тот же приём и та же гонка, что
- * уже чинили в `Avatar.tsx` (ARG-152): сбрасываем `broken` по событию `online`,
- * иначе музыкальная иконка-плейсхолдер остаётся навсегда после одного неудачного
- * запроса при старте.
+ * presigned MinIO-ссылка на момент скачивания, а не скачанные байты (в отличие
+ * от самих треков, см. lib/offlinePlaylists.ts::downloadPlaylist), поэтому без
+ * сети она сама по себе не загрузится вообще — и это именно тот случай, где
+ * список нужен: пользователь открывает «Скачанные плейлисты» ОФЛАЙН. Тот же
+ * байт-кэш, что уже чинит это для аватарок (ARG-152) и превью вложений чата
+ * (ARG-149): useOfflinePreviewSrc best-effort кэширует байты при удачной
+ * загрузке и подменяет src на закэшированный blob при сбое.
  */
 function Cover({ url }: { url: string | null }) {
+  const resolvedUrl = useOfflinePreviewSrc(url, true)
+  // Сброс именно на resolvedUrl — см. тот же приём и то же обоснование в
+  // Avatar.tsx (ARG-152): useOfflinePreviewSrc подменяет src на blob асинхронно.
   const [broken, setBroken] = useState(false)
-  useEffect(() => setBroken(false), [url])
+  useEffect(() => setBroken(false), [resolvedUrl])
   useEffect(() => {
     const onOnline = () => setBroken(false)
     window.addEventListener('online', onOnline)
     return () => window.removeEventListener('online', onOnline)
   }, [])
-  if (!url || broken) return <IconMusic size={18} />
-  return <img src={url} alt="" onError={() => setBroken(true)} />
+  if (!resolvedUrl || broken) return <IconMusic size={18} />
+  return <img src={resolvedUrl} alt="" onError={() => setBroken(true)} />
 }
 
 /**
