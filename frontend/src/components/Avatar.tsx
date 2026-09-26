@@ -21,9 +21,17 @@ export function Avatar({ name, url, size = 36, square = false }: Props) {
   // ретраят упавший src) — поэтому по событию 'online' сбрасываем ошибку и
   // даём <img> попытаться снова.
   const [broken, setBroken] = useState(false)
+  // Сброс именно на resolvedUrl, а не только на исходный url-проп: реальный
+  // <img> с «сырым» presigned-URL офлайн падает СИНХРОННО и почти мгновенно
+  // (setBroken(true) вызывается сразу), а useOfflinePreviewSrc подменяет src
+  // на закэшированный blob АСИНХРОННО (через IndexedDB, это дольше одного
+  // тика) — broken успевал зафиксироваться в true ДО того, как resolvedUrl
+  // сменится на рабочий blob:, и рендер условие `resolvedUrl && !broken`
+  // навсегда оставалось ложным даже при реально закэшированных байтах
+  // (баг, из-за которого ни одна аватарка не показывалась офлайн, ARG-152).
   useEffect(() => {
     setBroken(false)
-  }, [url])
+  }, [resolvedUrl])
   useEffect(() => {
     const onOnline = () => setBroken(false)
     window.addEventListener('online', onOnline)
