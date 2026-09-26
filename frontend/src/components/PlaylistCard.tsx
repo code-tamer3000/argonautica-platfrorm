@@ -52,6 +52,18 @@ export function PlaylistCard({ playlist, onChange }: Props) {
   const [coverBusy, setCoverBusy] = useState(false)
   const coverFileRef = useRef<HTMLInputElement>(null)
 
+  // Обложка может не загрузиться на холодном старте PWA (сеть/токен ещё не
+  // готовы) — а <img> сам запрос не повторит, даже когда сеть появится
+  // (браузеры не ретраят упавший src). Тот же приём, что уже чинили в
+  // Avatar.tsx (ARG-152): сбрасываем coverBroken по событию `online`.
+  const [coverBroken, setCoverBroken] = useState(false)
+  useEffect(() => setCoverBroken(false), [local.cover_url])
+  useEffect(() => {
+    const onOnline = () => setCoverBroken(false)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
+
   const activePlaylist = usePlayerStore((s) => s.playlist)
   const activeIndex = usePlayerStore((s) => s.trackIndex)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
@@ -132,7 +144,11 @@ export function PlaylistCard({ playlist, onChange }: Props) {
       />
       <div className={styles.header}>
         <div className={styles.cover}>
-          {local.cover_url ? <img src={local.cover_url} alt="" /> : <IconMusic size={20} />}
+          {local.cover_url && !coverBroken ? (
+            <img src={local.cover_url} alt="" onError={() => setCoverBroken(true)} />
+          ) : (
+            <IconMusic size={20} />
+          )}
         </div>
         <div className={styles.headerMeta}>
           {renaming ? (

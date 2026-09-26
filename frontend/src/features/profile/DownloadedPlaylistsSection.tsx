@@ -6,14 +6,22 @@ import styles from './profile.module.css'
 
 /**
  * Обложка плейлиста из сохранённого при скачивании снимка — `cover_url` в нём
- * это presigned MinIO-ссылка на момент скачивания, а такие ссылки протухают
- * (см. docs/FILES.md, ADR-032): открыв профиль спустя время, `<img>` ловит 403
- * и без обработки ошибки показывает сломанную иконку браузера вместо плейсхолдера
- * дизайн-системы. Тот же приём, что и в `Avatar.tsx`, — свернуть на IconMusic
- * по onError.
+ * presigned MinIO-ссылка на момент скачивания. Она переживает сам факт
+ * скачивания нормально, но на холодном старте PWA (сеть/токен ещё не готовы)
+ * первый запрос может упасть — а `<img>` сам его не повторит, даже когда сеть
+ * появится (браузеры не ретраят упавший src). Тот же приём и та же гонка, что
+ * уже чинили в `Avatar.tsx` (ARG-152): сбрасываем `broken` по событию `online`,
+ * иначе музыкальная иконка-плейсхолдер остаётся навсегда после одного неудачного
+ * запроса при старте.
  */
 function Cover({ url }: { url: string | null }) {
   const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [url])
+  useEffect(() => {
+    const onOnline = () => setBroken(false)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
   if (!url || broken) return <IconMusic size={18} />
   return <img src={url} alt="" onError={() => setBroken(true)} />
 }

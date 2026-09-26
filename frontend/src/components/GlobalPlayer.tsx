@@ -37,13 +37,20 @@ export function GlobalPlayer() {
   const expanded = usePlayerStore((s) => s.expanded)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Плейлист, запущенный из списка «Скачанные плейлисты» в профиле (ARG-153),
-  // приходит сюда снимком на момент скачивания — его cover_url presigned-ссылка
-  // могла протухнуть к моменту воспроизведения (та же протухающая подпись, что и
-  // у любого другого presigned-URL). Без onError-фолбэка сломанная иконка
-  // браузера так и висела бы вместо плейсхолдера дизайн-системы.
+  // Обложка плейлиста может не загрузиться на холодном старте PWA (сеть/токен
+  // ещё не готовы) — а <audio>/<img> сам запрос не повторит, даже когда сеть
+  // появится (браузеры не ретраят упавший src). Та же гонка и тот же приём, что
+  // уже чинили в Avatar.tsx (ARG-152): сбрасываем coverBroken по событию `online`,
+  // иначе плейсхолдер-иконка остаётся навсегда после одного неудачного запроса
+  // при старте — особенно заметно для плейлиста, запущенного из «Скачанных
+  // плейлистов» в профиле (ARG-153) сразу после открытия приложения.
   const [coverBroken, setCoverBroken] = useState(false)
   useEffect(() => setCoverBroken(false), [playlist?.id])
+  useEffect(() => {
+    const onOnline = () => setCoverBroken(false)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
 
   // Callback-ref, а НЕ useEffect([]): <audio> рендерится только когда есть что
   // играть, поэтому на монтировании компонента его в DOM ещё нет и эффект с
