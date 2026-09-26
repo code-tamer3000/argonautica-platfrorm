@@ -9,7 +9,7 @@ import { Card } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { IconFlame } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
-import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
+import { useIsOfflineEmpty, useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import type { Element } from '../../lib/types'
 import { plural } from '../../lib/format'
@@ -24,7 +24,8 @@ const fmtTime = (iso: string) => format(new Date(iso), 'HH:mm')
 
 export function DashboardScreen() {
   const { user } = useAuth()
-  const { data, isLoading, isError, dataUpdatedAt } = useDashboard()
+  const { data, isLoading, isError, dataUpdatedAt, error } = useDashboard()
+  const dashboardOfflineFailure = useIsOfflineFailure(error)
   const { data: locks } = useExpeditionLocks()
   const { data: rooms } = useRooms()
   const [activeLock, setActiveLock] = useState<Element | null>(null)
@@ -67,10 +68,23 @@ export function DashboardScreen() {
     isEmpty: notificationsEmpty,
   })
 
-  if (isLoading || !data) {
+  if (isLoading) {
     return (
       <div className="center grow">
         <Spinner />
+      </div>
+    )
+  }
+
+  // isLoading settled, но данных нет — офлайн-холодный старт без единого
+  // удачного визита к /api/dashboard в этой сессии (или реальная ошибка).
+  // Раньше это молча висело в спиннере выше НАВСЕГДА.
+  if (!data) {
+    return (
+      <div className="center grow">
+        <EmptyState size="block">
+          {dashboardOfflineFailure ? 'Нет сети — не можем загрузить главную.' : 'Не удалось загрузить главную.'}
+        </EmptyState>
       </div>
     )
   }

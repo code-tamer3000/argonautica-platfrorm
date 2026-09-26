@@ -32,6 +32,20 @@ const queryClient = new QueryClient({
       // моргания нет — старые данные видны, пока приходят свежие.
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
+      // networkMode по умолчанию 'online' НЕ вызывает queryFn вообще, пока
+      // onlineManager.isOnline()===false — запрос молча уходит в fetchStatus
+      // 'paused' и НИКОГДА не становится success/error (см. query-core
+      // retryer.ts canStart/pause). На «холодном» офлайн-старте (браузер ни
+      // разу не видел сеть в этой сессии) это вешает isLoading/isPending в
+      // true НАВСЕГДА — вечный спиннер вместо честного «нет сети» (ARG-151),
+      // причём для запроса, у которого вообще нет персистнутых данных на этот
+      // конкретный queryKey. 'always' заставляет реально дёрнуть fetch — он
+      // упадёт NetworkError-ом (apiClient.ts) так же быстро, retry:1 достаточен,
+      // и query честно перейдёт в status:'error' — данные при этом НЕ теряются
+      // (query-core error-редьюсер не трогает state.data), а useIsOfflineEmpty/
+      // useIsOfflineFailure наконец получают шанс сработать вместо бесконечной
+      // паузы.
+      networkMode: 'always',
     },
   },
 })
