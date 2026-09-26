@@ -11,7 +11,7 @@
 | `group` | any participant with `can_create_groups`, invitees must be in their visible circle (owner = creator) | invited members only |
 | `channel` | admin only | all participants (implicit) |
 
-Differences are behavior in code, not schema. Group/channel have their own `avatar_url`; a dm shows the peer's avatar.
+Differences are behavior in code, not schema. Group/channel have their own `avatar_url`; a dm shows the peer's avatar. For a group, the owner or a platform-admin sets/clears it via `PATCH /api/rooms/{id}/avatar` (`{avatar_media_id: <own image asset id> | null}`) — same endpoint and asset checks as the personal-diary cover below (ARG-154); a channel's `avatar_url` has no equivalent set-endpoint yet.
 
 ## Membership & access checks
 
@@ -19,7 +19,7 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - "Is the user in the room?" depends on type:
   - `dm` / `group` → a `room_members` row exists.
   - `channel` → the user is a platform participant (rule in code).
-- Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups.
+- Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups — both the backend endpoints and the frontend UI (`MembersDrawer.tsx`, ARG-154) expose add and remove, not just remove.
 - **Group read-only mode** (`rooms.is_readonly`, ARG-142): closes the composer to everyone but `role='admin'` in a `group` room — both top-level messages and thread replies (unlike the news channel below, threads are NOT exempt). Checked in `assert_can_post` (`app/api/messages.py`), independent of `assert_can_write`/`assert_room_access` — membership, visibility and read receipts are unaffected, only posting is closed. Toggled via `PATCH /api/rooms/{room_id}/readonly` (`{is_readonly: bool}`), admin-only — even the group's own owner cannot flip it. `RoomOut.is_readonly` lets the client hide the composer (`ChatPane.tsx`) instead of leaving a dead-end send button; the server 403s the same path regardless. Reactions and editing/deleting one's own already-sent messages are unaffected — this only gates new posts.
 - `GET`/`DELETE /api/rooms/{id}` — room delete exists (see archived PROGRESS for history).
 - **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)): **no room access at all** — `assert_room_access` returns 403 for every room type, including channels and the news channel. `GET /api/rooms` returns them an **empty list**; `GET /api/rooms/personal` → 403. Chat is entirely closed for them (materials-only). `assert_can_write` stays as a redundant write-path barrier.
