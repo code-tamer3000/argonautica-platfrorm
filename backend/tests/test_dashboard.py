@@ -313,6 +313,43 @@ async def test_news_preview_strips_inline_formatting_marks(
     assert news_preview["preview"] == "жирный и курсив и подчёркнутый пост"
 
 
+async def test_news_preview_ignores_thread_replies(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Комментарий в треде под новостным постом не должен подменять собой превью
+    новости на дашборде — превью строится только из root-сообщений (ARG-104
+    комментарии — тред, а не отдельный новостной пост)."""
+    start = date.today() - timedelta(days=19)
+    intake = await get_or_create_intake(session, start)
+    admin = await make_user(role="admin", intake_id=intake.id)
+    participant = await make_user(intake_id=intake.id)
+    participant_h = await _headers(client, participant)
+
+    news = await ensure_news_channel(session, intake.id)
+    await session.commit()
+
+    root_resp = await client.post(
+        f"/api/rooms/{news.id}/messages",
+        headers=await _headers(client, admin),
+        json={"content": "новостной пост"},
+    )
+    assert root_resp.status_code == 201, root_resp.text
+    root_id = root_resp.json()["id"]
+
+    reply_resp = await client.post(
+        f"/api/rooms/{news.id}/messages",
+        headers=participant_h,
+        json={"content": "комментарий в треде", "reply_to_message_id": root_id},
+    )
+    assert reply_resp.status_code == 201, reply_resp.text
+
+    resp = await client.get("/api/dashboard", headers=participant_h)
+    assert resp.status_code == 200, resp.text
+    news_preview = resp.json()["news_preview"]
+    assert news_preview is not None
+    assert news_preview["preview"] == "новостной пост"
+
+
 async def test_news_preview_redacts_zoom_link_for_cheap_tariff(
     client: AsyncClient, make_user: MakeUser, session: AsyncSession
 ) -> None:

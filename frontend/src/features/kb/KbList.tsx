@@ -10,6 +10,7 @@ import { cardClass } from '../../components/Card'
 import { KebabMenu } from '../../components/KebabMenu'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Overlay'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import { dayLabel } from '../../lib/format'
 import type { KbItemOut } from '../../lib/types'
@@ -29,7 +30,7 @@ interface Group {
 }
 
 export function KbList() {
-  const { data, isLoading } = useKbItems()
+  const { data, isLoading, isError, dataUpdatedAt } = useKbItems()
   const { data: categories } = useKbCategories()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -47,6 +48,7 @@ export function KbList() {
       item.title.toLowerCase().includes(search.toLowerCase()) &&
       (!intakeFiltered || item.intake_id == null || item.intake_id === currentIntakeId),
   )
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: items.length === 0 })
 
   // Группируем по категориям (порядок — из sort_order категорий),
   // «Без категории» — в конце. Пустые категории не показываем.
@@ -174,7 +176,7 @@ export function KbList() {
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && items.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>
-          {search ? 'Ничего не найдено' : 'Материалов пока нет'}
+          {offlineEmpty ? 'Нет сети — база знаний не загрузилась.' : search ? 'Ничего не найдено' : 'Материалов пока нет'}
         </div>
       )}
       {groups.map((group) => (

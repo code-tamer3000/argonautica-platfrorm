@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { removePlaylistTrack, updatePlaylist } from '../api/media'
 import { useAuth } from '../features/auth/AuthContext'
+import { useOfflinePreviewSrc } from '../hooks/useOfflinePreviewSrc'
 import { mediaUpload } from '../lib/mediaUpload'
 import type { PlaylistOut } from '../lib/types'
+import { useOfflinePlaylists } from '../stores/offlinePlaylists'
 import { usePlayerStore } from '../stores/player'
 import { toast } from '../stores/toast'
-import { IconMusic, IconPause, IconPlay, IconTrash } from './icons'
+import { IconCheck, IconDownload, IconMusic, IconPause, IconPlay, IconTrash } from './icons'
 import { KebabMenu } from './KebabMenu'
 import styles from './playlistCard.module.css'
 
@@ -51,10 +53,37 @@ export function PlaylistCard({ playlist, onChange }: Props) {
   const [coverBusy, setCoverBusy] = useState(false)
   const coverFileRef = useRef<HTMLInputElement>(null)
 
+  // Обложка никогда не докачивалась в offline-байты вместе с треками (см.
+  // lib/offlinePlaylists.ts::downloadPlaylist) — только presigned cover_url,
+  // который без сети не загрузится, сколько ни ретрай. Тот же байт-кэш, что
+  // уже чинит это для аватарок (ARG-152) и превью вложений чата (ARG-149).
+  const resolvedCoverUrl = useOfflinePreviewSrc(local.cover_url, true)
+  // Сброс именно на resolvedCoverUrl — см. тот же приём и то же обоснование в
+  // Avatar.tsx (ARG-152): useOfflinePreviewSrc подменяет src на blob асинхронно.
+  const [coverBroken, setCoverBroken] = useState(false)
+  useEffect(() => setCoverBroken(false), [resolvedCoverUrl])
+  useEffect(() => {
+    const onOnline = () => setCoverBroken(false)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
+
   const activePlaylist = usePlayerStore((s) => s.playlist)
   const activeIndex = usePlayerStore((s) => s.trackIndex)
   const isPlaying = usePlayerStore((s) => s.isPlaying)
   const isThisPlaylist = activePlaylist?.id === local.id
+
+  // Офлайн-скачивание (ARG-145) — статус живёт в отдельном сторе, не в этом
+  // компоненте, чтобы пережить размонтирование карточки (список сообщений
+  // виртуализирован) и не тянуть IndexedDB на каждый рендер.
+  const offlineStatus = useOfflinePlaylists((s) => s.status[local.id] ?? 'idle')
+  const offlineProgress = useOfflinePlaylists((s) => s.progress[local.id])
+  useEffect(() => {
+    void useOfflinePlaylists.getState().checkStatus(local)
+    // local меняется целиком при каждом applyUpdate — проверяем заново, если
+    // состав треков сменился (трек убрали — старое «доступно офлайн» не годится).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [local])
 
   function applyUpdate(updated: PlaylistOut) {
     setLocal(updated)
@@ -119,7 +148,11 @@ export function PlaylistCard({ playlist, onChange }: Props) {
       />
       <div className={styles.header}>
         <div className={styles.cover}>
-          {local.cover_url ? <img src={local.cover_url} alt="" /> : <IconMusic size={20} />}
+          {resolvedCoverUrl && !coverBroken ? (
+            <img src={resolvedCoverUrl} alt="" onError={() => setCoverBroken(true)} />
+          ) : (
+            <IconMusic size={20} />
+          )}
         </div>
         <div className={styles.headerMeta}>
           {renaming ? (
@@ -167,6 +200,29 @@ export function PlaylistCard({ playlist, onChange }: Props) {
           />
         )}
       </div>
+      <div className={styles.offlineRow}>
+        {offlineStatus === 'done' && (
+          <span className={styles.offlineBadge}>
+            <IconCheck size={13} /> Доступно офлайн
+          </span>
+        )}
+        {offlineStatus === 'downloading' && (
+          <span className={styles.offlineBadge}>
+            <IconDownload size={13} />
+            Скачивается{offlineProgress ? ` ${offlineProgress.done}/${offlineProgress.total}` : '…'}
+          </span>
+        )}
+        {(offlineStatus === 'idle' || offlineStatus === 'error') && (
+          <button
+            type="button"
+            className={styles.downloadBtn}
+            onClick={() => void useOfflinePlaylists.getState().download(local)}
+          >
+            <IconDownload size={13} />
+            {offlineStatus === 'error' ? 'Не вышло, повторить' : 'Скачать офлайн'}
+          </button>
+        )}
+      </div>
       <ul className={styles.tracks}>
         {local.tracks.map((track, i) => {
           const active = isThisPlaylist && activeIndex === i
@@ -176,8 +232,20 @@ export function PlaylistCard({ playlist, onChange }: Props) {
                 type="button"
                 className={`${styles.track} ${active ? styles.trackActive : ''}`}
                 onClick={() => {
-                  if (active) usePlayerStore.getState().toggle()
-                  else usePlayerStore.getState().playPlaylist(local, i)
+                  if (active) {
+                    usePlayerStore.getState().toggle()
+                    return
+                  }
+                  // Нет сети и плейлист не скачан для офлайна — presigned-URL
+                  // всё равно не загрузится; явно скажем об этом, а не будем
+                  // молча пытаться (ARG-145, «Готово, когда»). Это ожидаемое
+                  // состояние, не сбой приложения — 'info', не тревожный 'error'
+                  // (тот же честный тон, что и ARG-150 для плашки офлайна).
+                  if (!navigator.onLine && offlineStatus !== 'done') {
+                    toast('Нужна сеть — плейлист не скачан для офлайна', 'info')
+                    return
+                  }
+                  usePlayerStore.getState().playPlaylist(local, i)
                 }}
               >
                 <span className={styles.trackIcon}>

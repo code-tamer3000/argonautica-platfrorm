@@ -37,6 +37,17 @@ class Message(Base):
             "ref_kind IS NULL OR ref_kind IN ('kb', 'task')",
             name="ck_messages_ref_kind",
         ),
+        # Идемпотентность повторной отправки (outbox retry после потерянного
+        # ответа, см. docs/MESSAGES.md «Send»): NULL никогда не конфликтует с NULL
+        # в UNIQUE (стандартное поведение SQL), поэтому прямых мутаций без
+        # client_id (тред-ответы, репост, дневник) индекс не касается.
+        Index(
+            "uq_messages_sender_room_client",
+            "sender_id",
+            "room_id",
+            "client_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -75,6 +86,10 @@ class Message(Base):
     # как «недоступна». ref_kind ∈ {'kb','task'}; оба поля вместе (CHECK выше).
     ref_kind: Mapped[str | None] = mapped_column(Text)
     ref_id: Mapped[int | None] = mapped_column(BigInteger)
+    # Идемпотентность отправки (см. uq_messages_sender_room_client ниже): UUID,
+    # который клиентский outbox несёт неизменным на всех попытках одного item'а.
+    # NULL у прямых мутаций (тред-ответы, репост, дневник) — они не через outbox.
+    client_id: Mapped[str | None] = mapped_column(Text)
     # Денормализация на корневом сообщении — «N ответов» без пересчёта.
     reply_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_reply_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

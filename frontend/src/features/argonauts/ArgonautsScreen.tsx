@@ -5,6 +5,7 @@ import { cardClass } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import { plural } from '../../lib/format'
 import { groupPreOrdered } from '../../lib/planGroups'
@@ -45,8 +46,10 @@ function argonautSectionKey(a: ArgonautOut): { id: number | null; name: string |
 }
 
 export function ArgonautsScreen() {
-  const { data, isLoading } = useArgonauts()
+  const { data, isLoading, isError, dataUpdatedAt } = useArgonauts()
   const { user: me } = useAuth()
+  const isEmpty = (data?.length ?? 0) === 0
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty })
   // Сервер уже отдал порядок: админы, участники по рангу тарифа, наблюдатели
   // хвостом (см. api/argonauts.py `_roster`) — просто режем на секции по
   // соседним элементам, как контакт-лист «начать чат».
@@ -60,8 +63,10 @@ export function ArgonautsScreen() {
           <Spinner />
         </div>
       )}
-      {!isLoading && (data?.length ?? 0) === 0 && (
-        <EmptyState size="block">Пока в потоке больше никого нет.</EmptyState>
+      {!isLoading && isEmpty && (
+        <EmptyState size="block">
+          {offlineEmpty ? 'Нет сети — не можем загрузить список участников.' : 'Пока в потоке больше никого нет.'}
+        </EmptyState>
       )}
       {!isLoading &&
         groups.map((group) => (

@@ -5,6 +5,7 @@ import { useAdminPlans } from '../../api/plans'
 import type { KbItemOut } from '../../lib/types'
 import { mediaUpload, isUploadAbort } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
+import { useUiStore } from '../../stores/ui'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
 import { PlaylistComposer } from '../../components/PlaylistComposer'
@@ -42,7 +43,12 @@ export function KbForm({ initial, onSubmit, item }: KbFormProps) {
   const [body, setBody] = useState(initial?.body ?? '')
   const [published, setPublished] = useState(initial?.published ?? false)
   const [categoryId, setCategoryId] = useState<number | null>(initial?.category_id ?? null)
-  const [intakeId, setIntakeId] = useState<number | null>(initial?.intake_id ?? null)
+  const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
+  // Новый материал по умолчанию берёт текущий активный поток админа (по аналогии
+  // с TaskForm/EventForm, ARG-104); при редактировании — сохранённое значение как есть.
+  const [intakeId, setIntakeId] = useState<number | null>(
+    initial ? (initial.intake_id ?? null) : adminCurrentIntakeId,
+  )
   const [planIds, setPlanIds] = useState<number[]>(initial?.plan_ids ?? [])
   const { data: categories = [] } = useKbCategories()
   const { data: intakes = [] } = useAdminIntakes()

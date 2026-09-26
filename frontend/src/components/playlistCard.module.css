@@ -62,6 +62,33 @@
   border-radius: var(--radius-btn);
 }
 
+/* Офлайн-скачивание (ARG-145) — узкая строка-статус между шапкой и списком треков. */
+.offlineRow {
+  display: flex;
+}
+.offlineBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+}
+.downloadBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--space-1);
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent-bright);
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  cursor: pointer;
+}
+.downloadBtn:hover { text-decoration: underline; }
+
 .tracks {
   list-style: none;
   margin: 0;

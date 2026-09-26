@@ -9,6 +9,7 @@ import { Card } from '../../components/Card'
 import { EmptyState } from '../../components/EmptyState'
 import { IconFlame } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
+import { useIsOfflineEmpty, useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
 import type { Element } from '../../lib/types'
 import { plural } from '../../lib/format'
@@ -23,7 +24,8 @@ const fmtTime = (iso: string) => format(new Date(iso), 'HH:mm')
 
 export function DashboardScreen() {
   const { user } = useAuth()
-  const { data, isLoading } = useDashboard()
+  const { data, isLoading, isError, dataUpdatedAt, error } = useDashboard()
+  const dashboardOfflineFailure = useIsOfflineFailure(error)
   const { data: locks } = useExpeditionLocks()
   const { data: rooms } = useRooms()
   const [activeLock, setActiveLock] = useState<Element | null>(null)
@@ -56,10 +58,33 @@ export function DashboardScreen() {
     !isPending && !!user && user.role !== 'admin' && !user.graduated_at && !user.is_cheap_tariff
   const { data: dyn } = useMyDynamics({ enabled: showDynamicsStats })
 
-  if (isLoading || !data) {
+  const tasksEmpty = (data?.active_tasks.length ?? 0) === 0
+  const tasksOfflineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: tasksEmpty })
+  const notificationsEmpty = (data?.notifications.length ?? 0) === 0
+  const notificationsOfflineEmpty = useIsOfflineEmpty({
+    isLoading,
+    isError,
+    dataUpdatedAt,
+    isEmpty: notificationsEmpty,
+  })
+
+  if (isLoading) {
     return (
       <div className="center grow">
         <Spinner />
+      </div>
+    )
+  }
+
+  // isLoading settled, но данных нет — офлайн-холодный старт без единого
+  // удачного визита к /api/dashboard в этой сессии (или реальная ошибка).
+  // Раньше это молча висело в спиннере выше НАВСЕГДА.
+  if (!data) {
+    return (
+      <div className="center grow">
+        <EmptyState size="block">
+          {dashboardOfflineFailure ? 'Нет сети — не можем загрузить главную.' : 'Не удалось загрузить главную.'}
+        </EmptyState>
       </div>
     )
   }
@@ -153,6 +178,7 @@ export function DashboardScreen() {
               activeTasks={data.active_tasks}
               progress={data.tasks_progress}
               inReview={data.tasks_in_review}
+              offlineEmpty={tasksOfflineEmpty}
             />
           )}
 
@@ -207,8 +233,10 @@ export function DashboardScreen() {
                 <span className={styles.cardMore}>{data.unread_notifications} новых</span>
               )}
             </div>
-            {data.notifications.length === 0 ? (
-              <EmptyState size="inline">Уведомлений пока нет.</EmptyState>
+            {notificationsEmpty ? (
+              <EmptyState size="inline">
+                {notificationsOfflineEmpty ? 'Нет сети — не можем загрузить уведомления.' : 'Уведомлений пока нет.'}
+              </EmptyState>
             ) : (
               <div className={styles.list}>
                 {data.notifications.map((n) => (

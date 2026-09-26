@@ -97,7 +97,11 @@ async def _news_preview(session: AsyncSession, current_user: User) -> NewsPrevie
         await session.execute(
             select(Message.content, Message.created_at, User.display_name)
             .join(User, User.id == Message.sender_id)
-            .where(Message.room_id == news_room_id, Message.deleted_at.is_(None))
+            .where(
+                Message.room_id == news_room_id,
+                Message.deleted_at.is_(None),
+                Message.thread_root_id.is_(None),
+            )
             .order_by(Message.id.desc())
             .limit(1)
         )

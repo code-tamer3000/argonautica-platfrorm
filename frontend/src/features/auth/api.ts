@@ -1,7 +1,10 @@
 import { api, http } from '../../lib/apiClient'
+import { clearAttachmentPreviewCache } from '../../lib/attachmentPreviewCache'
+import { clearCachedUser } from '../../lib/authUserCache'
 import { clearMediaCache } from '../../lib/mediaCache'
 import { clearTokens, getRefreshToken, setTokens } from '../../lib/tokens'
 import type { TokenPair, UserOut } from '../../lib/types'
+import { useOfflinePlaylists } from '../../stores/offlinePlaylists'
 
 export const getMe = (): Promise<UserOut> => http.get<UserOut>('/api/auth/me')
 
@@ -29,6 +32,15 @@ export async function logout(): Promise<void> {
   // иначе после выхода они остаются доступны из Cache Storage. Best-effort —
   // clearMediaCache сам глотает отсутствие Cache API и не роняет логаут.
   await clearMediaCache()
+  // Скачанные для офлайна треки плейлистов (ARG-145) — та же логика: приватное
+  // медиа, устройство общее, не переживает логаут.
+  await useOfflinePlaylists.getState().clearAll()
+  // Byte-level кэш превью вложений чата (ARG-149) — та же логика: приватное медиа,
+  // устройство общее. Best-effort — не роняет логаут при недоступном IndexedDB.
+  await clearAttachmentPreviewCache()
+  // Закэшированный профиль (ARG-146) — без TTL, живёт до логаута; тот же общий
+  // девайс, что и выше, поэтому чужой профиль не должен пережить выход.
+  await clearCachedUser()
 }
 
 export const changePassword = (current_password: string, new_password: string): Promise<null> =>

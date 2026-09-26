@@ -27,8 +27,10 @@ export default defineConfig({
       registerType: 'prompt',
       injectRegister: false,
       injectManifest: {
-        // Оболочку прекэшируем, API/WS — никогда (в самом sw.ts).
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        // Оболочку прекэшируем, API/WS — никогда (в самом sw.ts). webp — иначе
+        // /media/star.webp (StarSpark variant="icon", логин/офлайн-экран) не
+        // попадает в прекэш и не отрисовывается на холодном офлайн-старте (ARG-146).
+        globPatterns: ['**/*.{js,css,html,svg,png,webp,ico,woff2}'],
       },
       manifest: {
         name: 'Аргонавтика',

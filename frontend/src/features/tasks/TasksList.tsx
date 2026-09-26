@@ -27,6 +27,7 @@ import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { Modal } from '../../components/Overlay'
 import { toast } from '../../stores/toast'
 import { dayLabel } from '../../lib/format'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { useUiStore } from '../../stores/ui'
 import { TaskForm, TYPE_LABEL, type TaskFormValues } from './TaskForm'
 import styles from './tasks.module.css'
@@ -219,7 +220,7 @@ function CollapsibleSection({
 }
 
 export function TasksList() {
-  const { data, isLoading } = useTasks()
+  const { data, isLoading, isError, dataUpdatedAt } = useTasks()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   // «Текущая экспедиция» (ARG-104): для admin этот экран не гейтится сервером
@@ -231,6 +232,7 @@ export function TasksList() {
   const intakeFiltered = isAdmin && currentIntakeId != null
 
   const allItems = data?.items ?? []
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: allItems.length === 0 })
   const items = intakeFiltered
     ? allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
     : allItems
@@ -386,7 +388,9 @@ export function TasksList() {
 
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && allItems.length === 0 && (
-        <div className="center muted" style={{ padding: 40 }}>Задач пока нет</div>
+        <div className="center muted" style={{ padding: 40 }}>
+          {offlineEmpty ? 'Нет сети — не можем загрузить задачи.' : 'Задач пока нет'}
+        </div>
       )}
       {!isLoading && allItems.length > 0 && items.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>В этом потоке задач нет</div>

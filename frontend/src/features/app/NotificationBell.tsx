@@ -4,6 +4,7 @@ import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
 import { IconAlert, IconBell } from '../../components/icons'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { timeHM } from '../../lib/format'
 import type { NotificationKind, NotificationOut } from '../../lib/types'
 import { useOpenNotification } from './useOpenNotification'
@@ -55,7 +56,7 @@ const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
 }
 
 export function NotificationBell() {
-  const { data } = useNotifications()
+  const { data, isLoading, isError, dataUpdatedAt } = useNotifications()
   const markRead = useMarkNotificationsRead()
   const users = useUsersMap()
   const openTarget = useOpenNotification()
@@ -74,6 +75,7 @@ export function NotificationBell() {
 
   const items = data?.items ?? []
   const unread = data?.unread_count ?? 0
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: items.length === 0 })
 
   function onItem(n: NotificationOut) {
     markRead.mutate(n.id)
@@ -105,7 +107,9 @@ export function NotificationBell() {
             )}
           </div>
           <div className={styles.panelList}>
-            {items.length === 0 && <EmptyState>Пока пусто</EmptyState>}
+            {items.length === 0 && (
+              <EmptyState>{offlineEmpty ? 'Нет сети — не можем загрузить уведомления.' : 'Пока пусто'}</EmptyState>
+            )}
             {items.map((n) => {
               const system = n.actor_id == null
               const title = system

@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useOfflinePreviewSrc } from '../hooks/useOfflinePreviewSrc'
+import { getOfflineTrackUrl } from '../lib/offlinePlaylists'
 import { usePlayerStore } from '../stores/player'
+import { toast } from '../stores/toast'
 import styles from './globalPlayer.module.css'
 import {
   IconChevronDown,
@@ -35,6 +38,29 @@ export function GlobalPlayer() {
   const expanded = usePlayerStore((s) => s.expanded)
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
+  // Обложка плейлиста никогда не докачивалась в offline-байты (в отличие от
+  // самих треков, см. lib/offlinePlaylists.ts::downloadPlaylist) — только
+  // presigned cover_url, который без сети не загрузится вообще, сколько ни
+  // ретрай. Тот же механизм байт-кэша, что уже чинит это для аватарок
+  // (ARG-152) и превью вложений чата (ARG-149): useOfflinePreviewSrc отдаёт
+  // сетевой url, пока он грузится, и best-effort кэширует его байты, а на
+  // сбое (offline/протухшая подпись) сама подменяет src на закэшированный
+  // blob — реальная картинка вместо плейсхолдера, если обложка когда-либо
+  // успешно открывалась на этом устройстве.
+  const resolvedCoverUrl = useOfflinePreviewSrc(playlist?.cover_url ?? null, true)
+  // Сброс именно на resolvedCoverUrl, а не на playlist.cover_url: реальный
+  // <img> падает офлайн синхронно, а useOfflinePreviewSrc подменяет src на
+  // blob асинхронно (поход в IndexedDB) — сброс на «сыром» url защёлкивал бы
+  // broken=true раньше, чем resolvedCoverUrl успевал смениться на рабочий
+  // (тот же баг, что ловили в Avatar.tsx под ARG-152).
+  const [coverBroken, setCoverBroken] = useState(false)
+  useEffect(() => setCoverBroken(false), [resolvedCoverUrl])
+  useEffect(() => {
+    const onOnline = () => setCoverBroken(false)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
+
   // Callback-ref, а НЕ useEffect([]): <audio> рендерится только когда есть что
   // играть, поэтому на монтировании компонента его в DOM ещё нет и эффект с
   // пустыми deps записывал в стор null — навсегда. Из-за этого toggle() молча
@@ -59,14 +85,25 @@ export function GlobalPlayer() {
 
   // Смена трека (в т.ч. первый запуск плейлиста) — подставить src и, если нужно,
   // запустить воспроизведение. Стор уже выставил isPlaying=true к этому моменту.
+  // Источник — сначала локально скачанный для офлайна блоб (ARG-145), иначе как
+  // раньше presigned-URL; проверка асинхронная (поход в IndexedDB), поэтому
+  // отменяем результат, если трек успел смениться ещё раз, пока ждали ответ.
   useEffect(() => {
     const el = audioRef.current
     if (!el || !track) return
-    if (el.src !== track.url) {
-      el.src = track.url
-      el.currentTime = 0
+    let cancelled = false
+    void getOfflineTrackUrl(track.asset_id).then((offlineUrl) => {
+      if (cancelled) return
+      const src = offlineUrl ?? track.url
+      if (el.src !== src) {
+        el.src = src
+        el.currentTime = 0
+      }
+      if (usePlayerStore.getState().isPlaying) void el.play()
+    })
+    return () => {
+      cancelled = true
     }
-    if (isPlaying) void el.play()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.asset_id])
 
@@ -81,9 +118,7 @@ export function GlobalPlayer() {
       title: track.title,
       artist: track.artist ?? undefined,
       album: playlist.title,
-      artwork: playlist.cover_url
-        ? [{ src: playlist.cover_url, sizes: '512x512', type: 'image/jpeg' }]
-        : [],
+      artwork: resolvedCoverUrl ? [{ src: resolvedCoverUrl, sizes: '512x512', type: 'image/jpeg' }] : [],
     })
     // Каждый handler — своей try/catch: на iOS Safari 'seekto' исторически не
     // поддерживался и падение на нём обрывало бы регистрацию prev/next, которые
@@ -174,6 +209,16 @@ export function GlobalPlayer() {
         // показанную позицию неподвижной (см. stores/player.ts::seek).
         onSeeked={(e) => store()._onSeeked(e.currentTarget.currentTime)}
         onEnded={() => store()._onEnded()}
+        // Трек не скачан для офлайна и сети нет — presigned-URL не загрузится.
+        // Без этого браузер просто молча стопорится на текущем треке (см. «Готово,
+        // когда» в ARG-145: офлайн-плейлист без сети должен явно сказать об этом).
+        onError={() => {
+          if (!navigator.onLine) {
+            // Ожидаемое состояние (нет сети + не скачано), не сбой — 'info',
+            // не тревожный 'error' (тот же честный тон, что и ARG-150).
+            toast('Нужна сеть — этот плейлист не скачан для офлайна', 'info')
+          }
+        }}
       />
       <div className={styles.bar}>
         {/* Перемотка прямо в мини-баре, не только в развёрнутом виде — тонкий range
@@ -205,8 +250,8 @@ export function GlobalPlayer() {
           onClick={() => usePlayerStore.getState().setExpanded(!expanded)}
           aria-label={expanded ? 'Свернуть плеер' : 'Развернуть плеер'}
         >
-          {playlist.cover_url ? (
-            <img src={playlist.cover_url} alt="" />
+          {resolvedCoverUrl && !coverBroken ? (
+            <img src={resolvedCoverUrl} alt="" onError={() => setCoverBroken(true)} />
           ) : (
             <IconMusic size={18} />
           )}
@@ -271,8 +316,13 @@ export function GlobalPlayer() {
               <span className={styles.expandedTitle}>{playlist.title}</span>
             </div>
             <div className={styles.expandedCoverWrap}>
-              {playlist.cover_url ? (
-                <img className={styles.expandedCover} src={playlist.cover_url} alt="" />
+              {resolvedCoverUrl && !coverBroken ? (
+                <img
+                  className={styles.expandedCover}
+                  src={resolvedCoverUrl}
+                  alt=""
+                  onError={() => setCoverBroken(true)}
+                />
               ) : (
                 <div className={styles.expandedCoverPlaceholder}>
                   <IconMusic size={40} />

@@ -13,8 +13,40 @@ const CACHE_KEY = 'v1'
 // Не поднимаем протухший кэш: если снимку больше суток — игнорируем.
 const MAX_AGE_MS = 24 * 60 * 60 * 1000
 
-// Какие запросы персистим — по первому сегменту queryKey.
-const PERSIST_KEYS = new Set(['rooms', 'users', 'stickers', 'stickerpacks', 'messages'])
+// Какие запросы персистим — по первому сегменту queryKey. 'dashboard' (ARG-146) —
+// иначе холодный офлайн-старт разлочил только Рубку, а домашняя «Круг Экспедиции»
+// всё равно висела на спиннере: /api/dashboard — один запрос текущего юзера
+// (экспедиция/дневник/задачи/уведомления/новость-превью), тот же уровень
+// приватности, что у уже персистимых rooms/messages.
+// 'kb'/'tasks'/'dynamics'/'notifications' (ARG-147) — те же холодные офлайн-грабли
+// для КБ/Задач/Динамики/Уведомлений: данные лежат в кэше Query до перезапуска
+// процесса, но без персиста экран всё равно показывал пустое/загрузочное
+// состояние. Новости отдельного ключа не требуют — открытая новость это обычная
+// комната/сообщения (is_news), уже покрыта 'rooms'/'messages'. Каюта — исключение,
+// см. «Границы» ARG-147: единственный раздел с настоящей приватностью, гейт
+// устройства не шифрует IndexedDB, персист туда не добавляем.
+// 'media' — presigned-URL для вложений, резолвимых по assetId (`useMediaUrl`,
+// `api/media.ts`), а не приходящих инлайном в сообщении: путь КБ (Attachment
+// без `attachment`, только `assetId`). Без этого ключа сам JSON с URL не
+// переживал офлайн, и вложение висело на «загрузка…» даже когда материал КБ
+// был открыт заранее — тот же класс бага, что чинил ARG-147, просто для ещё
+// одного query-префикса. 'argonauts' — ростер и профиль-страница участника
+// (`api/argonauts.ts`) вообще не персистились: список найден по факту при
+// разборе бага с картинками, не про сами картинки.
+const PERSIST_KEYS = new Set([
+  'rooms',
+  'users',
+  'stickers',
+  'stickerpacks',
+  'messages',
+  'dashboard',
+  'kb',
+  'tasks',
+  'dynamics',
+  'notifications',
+  'media',
+  'argonauts',
+])
 
 interface Snapshot {
   savedAt: number
@@ -41,22 +73,47 @@ export async function restoreQueryCache(qc: QueryClient): Promise<void> {
 }
 
 // Подписка на изменения кэша с дебаунсом — пишем снимок в IndexedDB.
+//
+// Снимок МЁРЖИТСЯ поверх предыдущего, а не переписывается целиком (ARG-151,
+// «второй холодный офлайн-заход теряет то, что показал первый» — репортнуто
+// руками). Раньше фильтр требовал status==='success': стоило фоновому
+// рефетчу (маунт/фокус на restored-с-updatedAt:0 данных) словить офлайн-
+// ошибку, query переходил в status:'error' — сами данные при этом НЕ
+// стирались (query-core error-редьюсер не трогает state.data), но фильтр их
+// выбрасывал из следующего дампа, и idbSet целиком переписывал снимок без
+// них. На следующем холодном старте restoreQueryCache находил уже пустое
+// место вместо рабочего кэша. Теперь берём по data!==undefined (доживает
+// последний удачный результат, даже если самая свежая попытка провалилась),
+// и donashivaем ключи, которых сейчас нет в живом кэше (компонент
+// размонтировался и query собрал gc по gcTime) — из СТАРОГО снимка, а не
+// выбрасываем. Итог: снимок только растёт/обновляется по ключу, никогда не
+// мельчает между сессиями, пока сам не протухнет целиком (MAX_AGE_MS).
 export function persistQueryCache(qc: QueryClient): () => void {
   let timer: ReturnType<typeof setTimeout> | null = null
 
-  const dump = () => {
-    const queries = qc
-      .getQueryCache()
-      .getAll()
-      .filter((q) => q.state.status === 'success' && shouldPersist(q.queryKey))
-      .map((q) => ({ key: q.queryKey, state: { data: q.state.data } }))
-    const snap: Snapshot = { savedAt: Date.now(), queries }
+  const dump = async () => {
+    const merged = new Map<string, { key: unknown; state: { data: unknown } }>()
+
+    const prev = await idbGet<Snapshot>(STORE_QUERYCACHE, CACHE_KEY)
+    if (prev && Date.now() - prev.savedAt <= MAX_AGE_MS) {
+      for (const entry of prev.queries) {
+        if (!Array.isArray(entry.key)) continue
+        merged.set(JSON.stringify(entry.key), entry as { key: unknown; state: { data: unknown } })
+      }
+    }
+
+    for (const q of qc.getQueryCache().getAll()) {
+      if (!shouldPersist(q.queryKey) || q.state.data === undefined) continue
+      merged.set(JSON.stringify(q.queryKey), { key: q.queryKey, state: { data: q.state.data } })
+    }
+
+    const snap: Snapshot = { savedAt: Date.now(), queries: [...merged.values()] }
     void idbSet(STORE_QUERYCACHE, CACHE_KEY, snap)
   }
 
   const unsub = qc.getQueryCache().subscribe(() => {
     if (timer) clearTimeout(timer)
-    timer = setTimeout(dump, 1500)
+    timer = setTimeout(() => void dump(), 1500)
   })
 
   return () => {

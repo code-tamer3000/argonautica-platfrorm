@@ -1,6 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useEditMessage } from '../../api/messages'
 import { useToggleReaction } from '../../api/reactions'
 import { useStickerMap } from '../../api/stickers'
 import { useUsersByUsername } from '../../api/users'
@@ -12,6 +11,7 @@ import { renderMessageText } from '../../lib/messageText'
 import { discard as outboxDiscard, retry as outboxRetry } from '../../lib/outbox'
 import type { MessageOut, PublicUserOut, QuoteKind, QuotedMessageOut } from '../../lib/types'
 import { useAuth } from '../auth/AuthContext'
+import { useUiStore } from '../../stores/ui'
 import { PlaylistCard } from '../../components/PlaylistCard'
 import { Attachment } from './Attachment'
 import { MediaGroup } from './MediaGroup'
@@ -42,12 +42,10 @@ interface Props {
   // участники ведут ежедневные записи с оформлением). Личные чаты, группы и
   // новости — простой текст. См. lib/markdown.ts / lib/messageText.tsx.
   markdown?: boolean
-  editingId?: number | null
   isSelected?: boolean
   isHighlighted?: boolean
   // Тред этого сообщения сейчас развёрнут инлайн под ним (см. InlineThread).
   threadOpen?: boolean
-  onClearEdit?: () => void
   onToggleThread?: (rootId: number) => void
   // Клик по плашке цитаты внутри сообщения → скролл/подсветка оригинала.
   onQuoteJump?: (quote: QuotedMessageOut) => void
@@ -71,18 +69,15 @@ function MessageItemInner({
   quoteAuthor,
   isInThread,
   markdown,
-  editingId,
   isSelected,
   isHighlighted,
   threadOpen,
-  onClearEdit,
   onToggleThread,
   onQuoteJump,
   onQuote,
   onOpenMenu,
 }: Props) {
   const stickerMap = useStickerMap()
-  const editMutation = useEditMessage(msg.room_id)
   const toggleReaction = useToggleReaction(msg.room_id)
   const { user } = useAuth()
   // Выпускник реакцию поставить не может — тот же барьер, что и на остальную
@@ -92,24 +87,10 @@ function MessageItemInner({
   const navigate = useNavigate()
   const mentionUsers = useUsersByUsername()
 
-  const [editText, setEditText] = useState(msg.content ?? '')
-  const editRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    if (editingId === msg.id) setEditText(msg.content ?? '')
-  }, [editingId, msg.id, msg.content])
-
-  // Поле редактирования растёт под объём текста (в пределах max-height из CSS), чтобы
-  // большое сообщение было видно целиком без постоянного скролла вверх-вниз.
-  useLayoutEffect(() => {
-    if (editingId !== msg.id) return
-    const el = editRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    // border-box: добавляем бордеры (offsetHeight - clientHeight), иначе поле ниже
-    // контента и скроллбар появляется раньше упора в max-height.
-    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`
-  }, [editText, editingId, msg.id])
+  // Сообщение сейчас «зажато» в композере для правки (см. stores/ui.ts PendingEdit) —
+  // подсвечиваем бабл тем же приёмом, что isSelected (открытое меню), но саму правку
+  // ведёт композер внизу, здесь только визуальный маркер.
+  const isEditing = useUiStore((s) => s.pendingEdit?.message.id === msg.id)
 
   const name = author?.display_name ?? `Участник #${msg.sender_id}`
   const forwardedName =
@@ -170,7 +151,6 @@ function MessageItemInner({
     return { tiles, loose: list.filter((att) => !tileIds.has(att.asset_id)) }
   }, [msg.attachments])
 
-  const isEditing = editingId === msg.id
   // Оптимистичное (ещё не отправленное) сообщение из outbox: приглушаем и не даём
   // открыть меню действий — редактировать/удалять нечего, id временный.
   const outbox = msg._outbox
@@ -179,7 +159,7 @@ function MessageItemInner({
   const msgClass = [
     styles.msg,
     continuation ? styles.msgContinuation : '',
-    isSelected ? styles.msgSelected : '',
+    (isSelected || isEditing) ? styles.msgSelected : '',
     isHighlighted ? styles.msgHighlighted : '',
     outbox ? styles.msgPending : '',
   ].filter(Boolean).join(' ')
@@ -187,7 +167,7 @@ function MessageItemInner({
   return (
     <div
       className={msgClass}
-      data-selected={isSelected || undefined}
+      data-selected={isSelected || isEditing || undefined}
       // Цель свайпа влево (useSwipeToReply.ts): хук делегирует слушатели на
       // скролл-контейнер ленты (работает и для ответов треда — они рендерятся
       // внутри того же контейнера) и ищет узел сдвига/id по этим атрибутам (по
@@ -198,12 +178,12 @@ function MessageItemInner({
       data-outbox={outbox ? 'true' : undefined}
       onClick={(e) => {
         e.stopPropagation()
-        if (!isEditing && !outbox) onOpenMenu?.(msg, e.currentTarget.getBoundingClientRect())
+        if (!outbox) onOpenMenu?.(msg, e.currentTarget.getBoundingClientRect())
       }}
     >
       {/* Кнопка ↩ на hover (десктоп) — та же цитата, что пункт меню и свайп влево
           на тач. @media (hover: none) в CSS прячет её на устройствах без указателя. */}
-      {onQuote && !isEditing && !outbox && (
+      {onQuote && !outbox && (
         <button
           type="button"
           className={styles.quoteHoverBtn}
@@ -264,33 +244,7 @@ function MessageItemInner({
           </button>
         )}
 
-        {isEditing ? (
-          <div className={styles.editRow}>
-            <textarea
-              ref={editRef}
-              className={styles.editInput}
-              value={editText}
-              autoFocus
-              onChange={e => setEditText(e.target.value)}
-              onClick={(e) => e.stopPropagation()}
-            />
-            <div className={styles.editActions}>
-              <button
-                onClick={() => {
-                  if (!editText.trim()) return
-                  editMutation.mutate(
-                    { id: msg.id, content: editText.trim() },
-                    { onSuccess: () => onClearEdit?.() },
-                  )
-                }}
-              >
-                Сохранить
-              </button>
-              <button onClick={() => onClearEdit?.()}>Отмена</button>
-            </div>
-          </div>
-        ) : (
-          <>
+        <>
             {(msg.attachments?.length ?? msg.attachment_ids.length) > 0 && (
               // Клики по вложениям (play/seek/скорость видео, аудио-плеер, лайтбокс,
               // «Скачать») остаются внутри плеера и не всплывают до onClick пузыря —
@@ -376,8 +330,7 @@ function MessageItemInner({
               disabled={!canReact}
               onToggle={() => toggleReaction.mutate(msg)}
             />
-          </>
-        )}
+        </>
 
         {msg.edited_at && (
           <div className={styles.msgMeta}>изменено</div>

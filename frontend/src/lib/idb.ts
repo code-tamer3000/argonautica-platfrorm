@@ -9,9 +9,22 @@ const DB_NAME = 'argonautica'
 // v2: добавлены cabinOutbox/cabinDrafts. v3: outboxBlobs — байты вложений
 // (аудио/файлы) отправляемого сообщения, чтобы превью в ленте не пропадало после
 // перезагрузки, пока сообщение ещё в очереди (presigned-URL к тому моменту протух
-// бы). Бампаем версию, чтобы onupgradeneeded создал новые сторы у пользователей с
-// уже существующей базой.
-const DB_VERSION = 3
+// бы). v4: playlistOffline — скачанные вручную байты треков плейлиста для
+// офлайн-прослушивания (ARG-145), отдельно от outboxBlobs — это входящие
+// (скачанные), а не исходящие данные, и живут дольше одной отправки. v5: authUser —
+// последний успешный профиль из /api/auth/me (ARG-146), чтобы холодный офлайн-старт
+// мог отрисовать авторизованное состояние без сети вместо вечного спиннера. Бампаем
+// версию, чтобы onupgradeneeded создал новые сторы у пользователей с уже
+// существующей базой.
+// v6: mediaPreviewCache — байты превью вложений (thumb_url/preview_url, не
+// оригинал), сохранённые в момент реального рендера у пользователя (ARG-149):
+// обычный браузерный HTTP-кэш подтверждённо не переживает kill-процесса +
+// холодный релонч в офлайне, а SW-перехват возвращать нельзя (ADR-032).
+// v7: playlistOfflineMeta — снимок плейлиста (title/cover/tracks) на момент
+// скачивания (ARG-153): playlistOffline хранит только байты треков по
+// asset_id, без него нельзя перечислить, КАКИЕ плейлисты скачаны, для списка
+// в профиле.
+const DB_VERSION = 7
 
 // Именa стора держим в одном месте, чтобы onupgradeneeded создал ровно их.
 export const STORE_OUTBOX = 'outbox'
@@ -25,6 +38,20 @@ export const STORE_CABIN_DRAFTS = 'cabinDrafts'
 // Держим отдельно от самого outbox-item, чтобы гидрация очереди (idbGetAll по
 // STORE_OUTBOX) не тащила мегабайты медиа в память без нужды.
 export const STORE_OUTBOX_BLOBS = 'outboxBlobs'
+// Скачанные для офлайна байты треков плейлиста: ключ media_asset_id → Blob.
+// Один трек может встречаться в нескольких плейлистах — храним по asset_id,
+// не по playlist_id, чтобы не скачивать один и тот же файл дважды.
+export const STORE_PLAYLIST_OFFLINE = 'playlistOffline'
+// Снимок скачанного плейлиста (title/cover_url/tracks) для списка в профиле:
+// ключ — playlist_id. См. lib/offlinePlaylists.ts.
+export const STORE_PLAYLIST_OFFLINE_META = 'playlistOfflineMeta'
+// Последний успешный профиль (`UserOut` из GET /api/auth/me): единственная
+// запись под фиксированным ключом. См. lib/authUserCache.ts.
+export const STORE_AUTH_USER = 'authUser'
+// Байты превью вложений (thumb_url/preview_url), закэшированные после реального
+// рендера у пользователя: ключ — pathname presigned-URL (стабилен между подписями,
+// см. ADR-032), значение — { blob, savedAt }. См. lib/attachmentPreviewCache.ts.
+export const STORE_MEDIA_PREVIEW = 'mediaPreviewCache'
 const STORES = [
   STORE_OUTBOX,
   STORE_DRAFTS,
@@ -32,6 +59,10 @@ const STORES = [
   STORE_CABIN_OUTBOX,
   STORE_CABIN_DRAFTS,
   STORE_OUTBOX_BLOBS,
+  STORE_PLAYLIST_OFFLINE,
+  STORE_PLAYLIST_OFFLINE_META,
+  STORE_AUTH_USER,
+  STORE_MEDIA_PREVIEW,
 ] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
@@ -86,6 +117,12 @@ export function idbSet(store: string, key: IDBValidKey, value: unknown): Promise
 
 export function idbDelete(store: string, key: IDBValidKey): Promise<void> {
   return tx<undefined>(store, 'readwrite', (s) => s.delete(key))
+    .then(() => undefined)
+    .catch(() => undefined)
+}
+
+export function idbClear(store: string): Promise<void> {
+  return tx<undefined>(store, 'readwrite', (s) => s.clear())
     .then(() => undefined)
     .catch(() => undefined)
 }

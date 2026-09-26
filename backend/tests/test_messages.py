@@ -484,7 +484,7 @@ async def test_edit_sticker_only_message_rejected(
         headers=headers,
         json={"content": "now text"},
     )
-    assert resp.status_code == 400  # править нечего — нет текста
+    assert resp.status_code == 400  # стикер-сообщение не редактируется целиком
 
 
 async def test_edit_deleted_message_404(
@@ -519,13 +519,207 @@ async def test_edit_blank_content_rejected(
     await add_membership(room.id, owner.id, "owner")
     headers = await _headers(client, owner)
 
+    # Пустой текст сам по себе допустим (можно стереть текст, оставив вложения) —
+    # но здесь у сообщения кроме текста ничего нет, и его стирание оставило бы
+    # сообщение вовсе без контента: 400 с бизнес-уровня, а не 422 от pydantic
+    # (в отличие от send, edit не может провалидировать это на схеме — решение
+    # зависит от текущего состояния сообщения в БД).
     msg = await _send(client, headers, room.id, content="keep")
     resp = await client.patch(
         f"/api/rooms/{room.id}/messages/{msg['id']}",
         headers=headers,
         json={"content": "   "},
     )
-    assert resp.status_code == 422  # пустой текст не проходит валидацию
+    assert resp.status_code == 400
+
+
+async def test_edit_nothing_rejected(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    msg = await _send(client, headers, room.id, content="keep")
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}", headers=headers, json={}
+    )
+    assert resp.status_code == 400  # ни content, ни attachment_ids не переданы
+
+
+async def test_edit_attachments_add_and_remove(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    def make_asset(key: str) -> MediaAsset:
+        return MediaAsset(
+            bucket="chat-media",
+            storage_key=key,
+            kind="image",
+            mime_type="image/png",
+            size=10,
+            created_by=owner.id,
+        )
+
+    a1, a2, a3 = make_asset("1.png"), make_asset("2.png"), make_asset("3.png")
+    session.add_all([a1, a2, a3])
+    await session.commit()
+
+    msg = await _send(client, headers, room.id, content="pic", attachment_ids=[a1.id, a2.id])
+    assert set(msg["attachment_ids"]) == {a1.id, a2.id}
+
+    # Убрать одно, добавить другое — не трогая text.
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"attachment_ids": [a2.id, a3.id]},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert set(body["attachment_ids"]) == {a2.id, a3.id}
+    assert body["content"] == "pic"  # content не передан — не тронут
+
+    remaining = (
+        await session.execute(
+            select(MessageAttachment.media_asset_id).where(
+                MessageAttachment.message_id == msg["id"]
+            )
+        )
+    ).scalars().all()
+    assert set(remaining) == {a2.id, a3.id}
+
+
+async def test_edit_attachment_only_message_now_allowed(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    asset = MediaAsset(
+        bucket="chat-media",
+        storage_key="only.png",
+        kind="image",
+        mime_type="image/png",
+        size=10,
+        created_by=owner.id,
+    )
+    session.add(asset)
+    await session.commit()
+
+    msg = await _send(client, headers, room.id, attachment_ids=[asset.id])
+    assert msg["content"] is None
+
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"content": "now has text"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["content"] == "now has text"
+    assert resp.json()["attachment_ids"] == [asset.id]  # вложение не тронуто
+
+
+async def test_edit_attachment_foreign_asset_rejected(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    other = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    foreign_asset = MediaAsset(
+        bucket="chat-media",
+        storage_key="foreign.png",
+        kind="image",
+        mime_type="image/png",
+        size=10,
+        created_by=other.id,
+    )
+    session.add(foreign_asset)
+    await session.commit()
+
+    msg = await _send(client, headers, room.id, content="mine")
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"attachment_ids": [foreign_asset.id]},
+    )
+    assert resp.status_code == 404  # анти-IDOR — чужой asset нельзя подставить
+
+
+async def test_edit_removing_only_attachment_without_text_rejected(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    asset = MediaAsset(
+        bucket="chat-media",
+        storage_key="alone.png",
+        kind="image",
+        mime_type="image/png",
+        size=10,
+        created_by=owner.id,
+    )
+    session.add(asset)
+    await session.commit()
+
+    msg = await _send(client, headers, room.id, attachment_ids=[asset.id])
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"attachment_ids": []},
+    )
+    assert resp.status_code == 400  # сообщение осталось бы вовсе без контента
+
+
+async def test_edit_too_many_attachments_rejected(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    msg = await _send(client, headers, room.id, content="pic")
+    resp = await client.patch(
+        f"/api/rooms/{room.id}/messages/{msg['id']}",
+        headers=headers,
+        json={"attachment_ids": list(range(1, 8))},
+    )
+    assert resp.status_code == 422  # > MAX_ATTACHMENTS, та же схемная валидация, что у send
 
 
 # --- репост в новостной канал ----------------------------------------------
@@ -1321,3 +1515,63 @@ async def test_news_quote_preview_redacts_zoom_link_for_cheap_tariff(
     quoting_item = next(m for m in resp.json() if m.get("quote") is not None)
     assert ZOOM_LINK_PLACEHOLDER in quoting_item["quote"]["preview"]
     assert "zoom.us" not in quoting_item["quote"]["preview"]
+
+
+# --- идемпотентность отправки (ARG-148) -------------------------------------
+
+
+async def test_retry_with_same_client_id_does_not_duplicate(
+    client: AsyncClient,
+    session: AsyncSession,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Повтор outbox после потерянного ответа (тот же client_id) не должен
+    создавать вторую строку в messages — регрессия на баг из прода: плохая
+    связь → «Не отправлено» → «Повторить» → дубль сообщения в переписке."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    first = await _send(
+        client, headers, room.id, content="привет", client_id="retry-1"
+    )
+    # Ретрай: то же тело, тот же client_id — сервер уже закоммитил первую попытку,
+    # второй POST должен вернуть СУЩЕСТВУЮЩЕЕ сообщение, а не вставить новое.
+    resp = await client.post(
+        f"/api/rooms/{room.id}/messages",
+        headers=headers,
+        json={"content": "привет", "client_id": "retry-1"},
+    )
+    assert resp.status_code == 200, resp.text
+    second = resp.json()
+    assert second["id"] == first["id"]
+
+    count = (
+        await session.execute(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.room_id == room.id, Message.client_id == "retry-1")
+        )
+    ).scalar_one()
+    assert count == 1
+
+
+async def test_different_client_id_sends_separate_messages(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    """Два разных сообщения (разные client_id) от одного юзера в одной комнате —
+    обычная вставка без коллизий."""
+    owner = await make_user()
+    room = await make_room(created_by=owner.id)
+    await add_membership(room.id, owner.id, "owner")
+    headers = await _headers(client, owner)
+
+    first = await _send(client, headers, room.id, content="one", client_id="a")
+    second = await _send(client, headers, room.id, content="two", client_id="b")
+    assert first["id"] != second["id"]
