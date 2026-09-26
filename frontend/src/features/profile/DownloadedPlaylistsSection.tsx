@@ -1,8 +1,22 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { IconMusic, IconTrash } from '../../components/icons'
 import { usePlayerStore } from '../../stores/player'
 import { useOfflinePlaylists } from '../../stores/offlinePlaylists'
 import styles from './profile.module.css'
+
+/**
+ * Обложка плейлиста из сохранённого при скачивании снимка — `cover_url` в нём
+ * это presigned MinIO-ссылка на момент скачивания, а такие ссылки протухают
+ * (см. docs/FILES.md, ADR-032): открыв профиль спустя время, `<img>` ловит 403
+ * и без обработки ошибки показывает сломанную иконку браузера вместо плейсхолдера
+ * дизайн-системы. Тот же приём, что и в `Avatar.tsx`, — свернуть на IconMusic
+ * по onError.
+ */
+function Cover({ url }: { url: string | null }) {
+  const [broken, setBroken] = useState(false)
+  if (!url || broken) return <IconMusic size={18} />
+  return <img src={url} alt="" onError={() => setBroken(true)} />
+}
 
 /**
  * Список плейлистов, скачанных для офлайна (ARG-145), между «О себе» и
@@ -32,7 +46,7 @@ export function DownloadedPlaylistsSection() {
             onClick={() => usePlayerStore.getState().playPlaylist(playlist, 0)}
           >
             <span className={styles.playlistCover}>
-              {playlist.cover_url ? <img src={playlist.cover_url} alt="" /> : <IconMusic size={18} />}
+              <Cover url={playlist.cover_url} />
             </span>
             <span className={styles.playlistMeta}>
               <span className={styles.playlistTitle}>{playlist.title}</span>
