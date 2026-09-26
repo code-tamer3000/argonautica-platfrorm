@@ -22,6 +22,7 @@ import {
   useDeleteCalendarEvent,
 } from '../../api/calendar'
 import { useAuth } from '../auth/AuthContext'
+import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { Spinner } from '../../components/Spinner'
 import { Modal } from '../../components/Overlay'
 import { Button } from '../../components/Button'
@@ -61,10 +62,21 @@ export function CalendarView() {
     [gridStart, gridEnd],
   )
 
-  const { data, isLoading } = useCalendarEvents(
+  const { data, isLoading, isError, dataUpdatedAt } = useCalendarEvents(
     gridStart.toISOString(),
     gridEnd.toISOString(),
   )
+  // Календарь не персистится (queryPersist.ts) — офлайн без данных ни разу не
+  // подтверждённых сетью на этот месяц надо честно назвать «нет сети», а не
+  // «в этот день событий нет» (это относится ко всему видимому месяцу, а не к
+  // конкретному дню — если события В МЕСЯЦЕ есть, выбранный пустой день —
+  // обычная пустота, а не офлайн).
+  const monthOfflineEmpty = useIsOfflineEmpty({
+    isLoading,
+    isError,
+    dataUpdatedAt,
+    isEmpty: (data?.length ?? 0) === 0,
+  })
 
   const createEvent = useCreateCalendarEvent()
   const updateEvent = useUpdateCalendarEvent()
@@ -222,7 +234,7 @@ export function CalendarView() {
         {isLoading && <div className="center" style={{ padding: 24 }}><Spinner /></div>}
         {!isLoading && selectedEvents.length === 0 && (
           <div className="muted" style={{ padding: 'var(--space-3) 0' }}>
-            В этот день событий нет
+            {monthOfflineEmpty ? 'Нет сети — не можем загрузить события.' : 'В этот день событий нет'}
           </div>
         )}
         <div className={styles.eventList}>
