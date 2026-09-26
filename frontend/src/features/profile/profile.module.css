@@ -603,3 +603,100 @@
   font-size: var(--text-label-md);
   color: var(--blood-bright);
 }
+
+/* ── Скачанные плейлисты (ARG-153) ── */
+.playlistsCard {
+  background: var(--bg-surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.playlistsTitle {
+  font-family: var(--font-t1);
+  font-size: 18px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.playlistRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.playlistPlayBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.playlistCover {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-btn);
+  background: var(--bg-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  color: var(--text-ghost);
+}
+
+.playlistCover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.playlistMeta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.playlistTitle {
+  font-family: var(--font-t3);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlistCount {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+}
+
+.playlistRemoveBtn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: none;
+  color: var(--text-ghost);
+  cursor: pointer;
+  border-radius: var(--radius-btn);
+}
+
+.playlistRemoveBtn:hover {
+  color: var(--blood-bright);
+  background: var(--bg-deep);
+}
