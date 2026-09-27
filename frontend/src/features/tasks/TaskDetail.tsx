@@ -234,8 +234,9 @@ export function TaskDetail() {
   }
 
   const isAdmin = user?.role === 'admin'
-  // Экспедиция пройдена: раздел остаётся историей сданного — без новых сдач и
-  // комментариев (бэкенд закрывает те же пути 403).
+  // Экспедиция пройдена: новые сдачи закрыты, КРОМЕ дозадачи — задание, ещё не
+  // сданное/возвращённое на момент выпуска, остаётся доступным для сдачи
+  // бессрочно (ARG-157, `GRADUATE_BACKFILLABLE_STATUSES` на бэкенде).
   const isGraduated = !!user?.graduated_at
   const bodyHtml = task.body ? DOMPurify.sanitize(marked.parse(task.body) as string) : ''
 
@@ -251,6 +252,10 @@ export function TaskDetail() {
     ? list
     : list.filter((t) => t.user_id === user?.id || task.type === 'common')
   const myTrack = list.find((t) => t.user_id === user?.id) ?? null
+  // ARG-157: у выпускника композер открыт, только пока его назначение ещё
+  // assigned/returned — как только он доздал (submitted/accepted), задание
+  // закрывается на запись так же, как обычное сданное.
+  const canBackfill = myTrack?.status === 'assigned' || myTrack?.status === 'returned'
 
   // Возвращённую работу уже показываем прямо в композере (ReturnedFeedback, ниже,
   // рядом с формой пересдачи) — не дублируем тот же трек ещё раз в общем списке.
@@ -338,8 +343,11 @@ export function TaskDetail() {
           {/* Возвращена — комментарий проверяющего и предыдущая сдача прямо тут,
               рядом с формой пересдачи, а не где-то ниже среди всех треков. */}
           {showsOwnReturnedAbove && myTrack && <ReturnedFeedback track={myTrack} />}
-          {/* Выпускник свою сдачу видит, но дослать/переслать уже не может. */}
-          {!isGraduated && <TaskComposer taskId={id} status={myTrack?.status} />}
+          {/* Выпускник дозадаёт, пока назначение assigned/returned (ARG-157) —
+              дальше, как и активный участник после сдачи, видит только статус. */}
+          {(!isGraduated || canBackfill) && (
+            <TaskComposer taskId={id} status={myTrack?.status} />
+          )}
         </section>
       )}
 
@@ -373,7 +381,9 @@ function ReturnedFeedback({ track }: { track: TaskTrackOut }) {
   return (
     <div className={styles.returnedPanel}>
       <div className={styles.returnedPanelTitle}>Комментарий проверяющего</div>
-      <SubmissionComments submissionId={latest.id} />
+      {/* track.status === 'returned' здесь всегда (precondition showsOwnReturnedAbove) —
+          та же дозадаваемая ветка, что и у выпускника (ARG-157), писать можно. */}
+      <SubmissionComments submissionId={latest.id} canComment />
       <details className={styles.returnedPrev}>
         <summary className={styles.returnedPrevSummary}>
           Твоя предыдущая сдача · {dateTimeMsk(latest.created_at)}
@@ -475,6 +485,7 @@ export function TrackCard({
   defaultCollapsed?: boolean
 }) {
   const users = useUsersMap()
+  const { user } = useAuth()
   const review = useReview()
   const [comment, setComment] = useState('')
   const [returnOpen, setReturnOpen] = useState(false)
@@ -482,6 +493,10 @@ export function TrackCard({
   const [collapsed, setCollapsed] = useState(defaultCollapsed)
   const submitter = users.get(track.user_id)
   const name = submitter?.display_name ?? `Участник #${track.user_id}`
+  // ARG-157: у выпускника комментарии открыты, только пока ЭТОТ трек ещё
+  // дозадаётся (assigned/returned) — тот же принцип, что и у композера сдачи.
+  const canComment =
+    !user?.graduated_at || track.status === 'assigned' || track.status === 'returned'
 
   function accept() {
     if (review.isPending) return
@@ -542,7 +557,7 @@ export function TrackCard({
             <div className={styles.emptyNote}>Нет сдач.</div>
           )}
           {track.submissions.map((sub) => (
-            <SubmissionBlock key={sub.id} sub={sub} name={name} />
+            <SubmissionBlock key={sub.id} sub={sub} name={name} canComment={canComment} />
           ))}
 
           {isAdmin && track.status === 'accepted' && (
@@ -597,9 +612,11 @@ export function TrackCard({
 function SubmissionBlock({
   sub,
   name,
+  canComment,
 }: {
   sub: SubmissionOut
   name: string
+  canComment: boolean
 }) {
   const bodyHtml = sub.body ? DOMPurify.sanitize(marked.parse(sub.body) as string) : ''
   return (
@@ -618,12 +635,18 @@ function SubmissionBlock({
           ))}
         </div>
       )}
-      <SubmissionComments submissionId={sub.id} />
+      <SubmissionComments submissionId={sub.id} canComment={canComment} />
     </div>
   )
 }
 
-function SubmissionComments({ submissionId }: { submissionId: number }) {
+function SubmissionComments({
+  submissionId,
+  canComment,
+}: {
+  submissionId: number
+  canComment: boolean
+}) {
   const { data: comments } = useSubmissionComments(submissionId)
   const users = useUsersMap()
   const { user } = useAuth()
@@ -655,11 +678,10 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
   }
 
   const list = comments ?? []
-  const isGraduated = !!user?.graduated_at
 
   return (
     <div className={styles.comments}>
-      {!isGraduated && (
+      {canComment && (
       <div className={styles.commentForm}>
         <textarea
           className={styles.commentInput}
@@ -688,7 +710,7 @@ function SubmissionComments({ submissionId }: { submissionId: number }) {
         {list.map((c) => {
           const author = users.get(c.author_id)
           const authorName = author?.display_name ?? `Участник #${c.author_id}`
-          const canDelete = !isGraduated && (c.author_id === user?.id || user?.role === 'admin')
+          const canDelete = canComment && (c.author_id === user?.id || user?.role === 'admin')
           return (
             <li key={c.id} className={styles.commentItem}>
               <Avatar name={authorName} url={author?.avatar_url} size={28} />
