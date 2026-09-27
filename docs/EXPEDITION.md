@@ -231,6 +231,20 @@ gaining a second near-duplicate function.
 the frontend tells the two apart by comparing today's real date against
 `expedition.stages[0].air_date`, not from a second backend field.
 
+**Graduate's rail slot (ARG-157):** `journal_locked` is already `true` for a graduate
+(`is_graduated(current_user)`), so `DashboardScreen.tsx` replaces the whole journal
+card with `ExpeditionArtifactCard.tsx` when `user.graduated_at` is set — a download
+button for the same gift PDF as `/profile` (`useSurveyForm`/`useSurveyGift`, no new
+endpoint), not a variant of the journal card. The rest of the rail (tasks, events,
+notifications) is untouched.
+
+**Artifact gate (ARG-159):** the card reads `artifact_gate` off `GET /api/dashboard`
+(`ArtifactGateOut`, see [SURVEY.md](SURVEY.md) "Artifact gate: required tasks") — while
+`gate.available` is `false` it renders the still-pending required tasks (each linking
+to `/tasks/{id}`) instead of the download button. `gate` is `null` for a non-graduate,
+and `{available: true, pending_tasks: []}` for a graduate whose поток has no required
+tasks set — same download-button behavior as before ARG-159 in both cases.
+
 ## Realtime invalidation
 
 No new WS event kinds. `useRealtime` invalidates the dashboard query on the same events
@@ -275,7 +289,10 @@ participant's lock — view only.
 - `app/api/dashboard.py` — the aggregate endpoint.
 - `frontend/src/features/dashboard/` — `moon.ts` (real lunar phase, pure), `wheelGeometry.ts`
   (stage/day → SVG angle, pure, including `sectorFramePath`/`elementSectorSpan`),
-  `ExpeditionWheel.tsx`, `LockDialog.tsx`, `DashboardScreen.tsx`.
+  `ExpeditionWheel.tsx`, `LockDialog.tsx`, `DashboardScreen.tsx`,
+  `ExpeditionArtifactCard.tsx` (graduate's rail slot, ARG-157).
+- `frontend/src/features/app/GraduationPopup.tsx` — first-login-after-graduation popup
+  (ARG-157), same dismiss pattern as `WelcomePopup.tsx`/`LimboPopup.tsx`.
 - `frontend/src/components/YinYang.tsx` — the Taiji mark, shared with
   `features/genkeys/GeneKeysWheel.tsx` (extracted from that feature during the visual
   rewrite; both wheels render the same mark).

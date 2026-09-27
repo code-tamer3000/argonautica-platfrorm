@@ -11,6 +11,7 @@ import { wsClient } from '../../lib/wsClient'
 import { useUiStore } from '../../stores/ui'
 import { ConnectionBanner } from './ConnectionBanner'
 import { NotificationBell } from './NotificationBell'
+import { GraduationPopup } from './GraduationPopup'
 import { LimboPopup } from './LimboPopup'
 import { WelcomePopup } from './WelcomePopup'
 import { ProfileMenu } from './ProfileMenu'
@@ -230,6 +231,7 @@ export function AppShell() {
       </div>
       {!isObserver && <WelcomePopup />}
       {!isObserver && <LimboPopup />}
+      {!isObserver && <GraduationPopup />}
       <GlobalPlayer />
       <Toasts />
     </div>

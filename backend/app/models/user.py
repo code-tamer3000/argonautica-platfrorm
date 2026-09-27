@@ -79,6 +79,17 @@ class User(Base):
     # Задачи схлопываются до сданных, вся Рубка переходит в режим «только чтение»
     # (см. app/services/graduation.py).
     graduated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Клуб «Факел» (ARG-54): постоянный ручной тумблер, не связан с оплатой/подпиской.
+    # Виден только выпустившимся (graduated_at не NULL); включает/выключает админ
+    # per-user в /admin (см. app/services/torch.py). Не самоочищается при снятии
+    # graduated_at — такого пути в продукте нет (экспедиция необратима).
+    torch_unlocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # Отметка «подал заявку» (ARG-158): проставляется первым кликом по кнопке
+    # «Подать заявку» на гейте, не сбрасывается тумблером — история заявки не
+    # пересматривается, это только сигнал админу в /admin/torch.
+    torch_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Подарок за анкету: персональная PDF-книга пути. Загружает админ в панели.
     survey_gift_asset_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("media_assets.id")

@@ -39,6 +39,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   admin: 'Уведомление от администрации',
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
+  survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {

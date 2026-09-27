@@ -7,7 +7,11 @@ Author assigns work; participants submit; admin reviews. A task is **common** (`
 
 > **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)) have no access to Задачи at all: the whole `/api/tasks` router is behind `require_participant` → 403.
 
-> **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) keep the section as an archive of what they handed in: `list_tasks` and `assert_task_visible` narrow it to tasks whose own assignment is `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES` in `services/tasks.py`) — `returned`/`assigned` and untouched common tasks disappear, since they can no longer be worked on. Writing is closed too: new submissions, submission comments, review of a cross-task and every stream write → 403. `attention_count` is 0 and progress X/Y is counted over the submitted tasks only, so the denominator never points at tasks they cannot see.
+> **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)) keep the section as an archive of what they handed in, plus a one-time chance to catch up on what they didn't: `list_tasks` and `assert_task_visible` narrow it to tasks whose own assignment is `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES`) **or** still `assigned`/`returned` (`GRADUATE_BACKFILLABLE_STATUSES`, both in `services/tasks.py`) — an untouched common task (no `task_assignments` row at all) still disappears, since there was never anything assigned to catch up on. Writing stays open only for that backfillable slice: `create_submission`/`create_submission_comment` call `assert_can_write_or_backfill` instead of the blanket `assert_not_graduated` — once the graduate submits, the assignment leaves `GRADUATE_BACKFILLABLE_STATUSES` and both close again, same as any other graduated task; no deadline or window beyond that (ARG-157). Review of a cross-task by a graduated author is still fully closed (`assert_not_graduated` unchanged in `review_assignment`) — backfill is about finishing your own work, not judging someone else's. `attention_count` is still 0 and progress X/Y is still counted over the submitted-only denominator (`_graduate_progress`) — a backfillable task doesn't move the badge or the progress bar, only the list and the ability to act on it.
+
+> **`tasks.required_for_graduation`** (common tasks only, `PATCH /api/tasks/{id}`,
+> 400 on a non-common task): admin-picked tasks that gate the expedition artifact card
+> on the dashboard — see [SURVEY.md](SURVEY.md) "Artifact gate: required tasks" (ARG-159).
 
 ## Isolation by intake and plan (ARG-96)
 

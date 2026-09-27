@@ -100,13 +100,13 @@
   line-height: 1.5;
 }
 
-.counter {
-  align-self: flex-end;
+/* Подсказка под полем после неудачной отправки — не тревожный красный, спокойный
+   приглушённый тон: анкету всё равно нужно досдать, пугать не за чем. */
+.fieldError {
   font-family: var(--font-t4);
   font-size: var(--text-label-md);
   color: var(--text-muted);
 }
-.counterShort { color: var(--blood-bright); }
 
 /* Множественный выбор — «таблетки», отмеченные заливаются золотом. */
 .choices {

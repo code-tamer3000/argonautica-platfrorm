@@ -55,6 +55,8 @@ interface Props {
   onQuote?: (msg: MessageOut) => void
   // Тап по сообщению → открыть контекстное меню действий (позиция = rect сообщения).
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
+  // См. useMessageMenu.Options.torchScope — та же оговорка про реакции.
+  torchScope?: boolean
 }
 
 // memo: лента перерисовывается на каждое realtime-событие комнаты (typing/presence/
@@ -76,14 +78,16 @@ function MessageItemInner({
   onQuoteJump,
   onQuote,
   onOpenMenu,
+  torchScope,
 }: Props) {
   const stickerMap = useStickerMap()
   const toggleReaction = useToggleReaction(msg.room_id)
   const { user } = useAuth()
   // Выпускник реакцию поставить не может — тот же барьер, что и на остальную
-  // запись (см. isGraduated в useMessageMenu.tsx). Наблюдатель сюда не попадает:
-  // чат для него закрыт целиком на уровне assert_room_access.
-  const canReact = !user?.graduated_at
+  // запись (см. isGraduated в useMessageMenu.tsx), с тем же torch_scope-исключением.
+  // Наблюдатель сюда не попадает: чат для него закрыт целиком на уровне
+  // assert_room_access.
+  const canReact = !user?.graduated_at || torchScope
   const navigate = useNavigate()
   const mentionUsers = useUsersByUsername()
 

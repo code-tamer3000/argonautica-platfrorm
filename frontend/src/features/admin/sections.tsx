@@ -12,6 +12,7 @@ import { AdminReview } from './AdminReview'
 import { AdminStickers } from './AdminStickers'
 import { AdminSurvey } from './AdminSurvey'
 import { AdminTasks } from './AdminTasks'
+import { AdminTorch } from './AdminTorch'
 import { AdminUsers } from './AdminUsers'
 
 export type AdminGroupKey = 'intake' | 'progress' | 'support'
@@ -43,6 +44,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { path: 'journal', label: 'Дневник', group: 'progress', Component: AdminJournal },
   { path: 'calendar', label: 'Календарь', group: 'progress', Component: AdminCalendar },
   { path: 'cabin', label: 'Каюта', group: 'progress', Component: AdminCabin },
+  { path: 'torch', label: 'Факел', group: 'progress', Component: AdminTorch },
   { path: 'feedback', label: 'Обращения', group: 'support', Component: AdminFeedback },
   { path: 'faq', label: 'FAQ', group: 'support', Component: AdminFaq },
   { path: 'broadcast', label: 'Рассылка', group: 'support', Component: AdminBroadcast },

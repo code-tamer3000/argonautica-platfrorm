@@ -11,7 +11,7 @@
 | `group` | any participant with `can_create_groups`, invitees must be in their visible circle (owner = creator) | invited members only |
 | `channel` | admin only | all participants (implicit) |
 
-Differences are behavior in code, not schema. Group/channel have their own `avatar_url`; a dm shows the peer's avatar.
+Differences are behavior in code, not schema. Group/channel have their own `avatar_url`; a dm shows the peer's avatar. For a group, the owner or a platform-admin sets/clears it via `PATCH /api/rooms/{id}/avatar` (`{avatar_media_id: <own image asset id> | null}`) — same endpoint and asset checks as the personal-diary cover below (ARG-154); a channel's `avatar_url` has no equivalent set-endpoint yet.
 
 ## Membership & access checks
 
@@ -19,11 +19,24 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - "Is the user in the room?" depends on type:
   - `dm` / `group` → a `room_members` row exists.
   - `channel` → the user is a platform participant (rule in code).
-- Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups.
+- Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups — both the backend endpoints and the frontend UI (`MembersDrawer.tsx`, ARG-154) expose add and remove, not just remove.
 - **Group read-only mode** (`rooms.is_readonly`, ARG-142): closes the composer to everyone but `role='admin'` in a `group` room — both top-level messages and thread replies (unlike the news channel below, threads are NOT exempt). Checked in `assert_can_post` (`app/api/messages.py`), independent of `assert_can_write`/`assert_room_access` — membership, visibility and read receipts are unaffected, only posting is closed. Toggled via `PATCH /api/rooms/{room_id}/readonly` (`{is_readonly: bool}`), admin-only — even the group's own owner cannot flip it. `RoomOut.is_readonly` lets the client hide the composer (`ChatPane.tsx`) instead of leaving a dead-end send button; the server 403s the same path regardless. Reactions and editing/deleting one's own already-sent messages are unaffected — this only gates new posts.
 - `GET`/`DELETE /api/rooms/{id}` — room delete exists (see archived PROGRESS for history).
 - **Observers** (`users.is_observer`, see [AUTH.md](AUTH.md)): **no room access at all** — `assert_room_access` returns 403 for every room type, including channels and the news channel. `GET /api/rooms` returns them an **empty list**; `GET /api/rooms/personal` → 403. Chat is entirely closed for them (materials-only). `assert_can_write` stays as a redundant write-path barrier.
-- **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)): rooms stay fully readable (list, history, personal diary), but every write path is closed by `assert_can_write` → 403. The «Новый чат»/«Группа» buttons are hidden for them — a room they cannot write in is a dead end.
+- **Graduates** (`users.graduated_at`, see [SURVEY.md](SURVEY.md)): rooms stay fully readable (list, history, personal diary), but every write path is closed by `assert_can_write` → 403. The «Новый чат»/«Группа» buttons are hidden for them in Рубка — a room they cannot write in is a dead end. **Exception: the whole «Факел» section** (`room.torch_scope`, ARG-54) — being graduated is the entry condition for it, not a reason to close it; `assert_can_write` skips the graduation check there, and its own «Новый чат»/«Группа» buttons stay enabled. See "Клуб «Факел»" below.
+- **Клуб «Факел»** (`rooms.torch_scope`/`is_torch`, ARG-54) — its own section
+  (`tab='torch'` in `ChatLayout`/`RoomList`), not a Рубка sub-tab: `torch_scope`
+  marks every room that belongs to it (the platform-wide singleton club room,
+  `is_torch`, plus any dm/group members create INSIDE the section) and is what
+  `RoomList.tsx` filters on to keep the two sections' room lists mutually
+  exclusive — Рубка never shows a `torch_scope` room, «Факел» shows only them.
+  The singleton room's own membership is server-managed (an admin flips
+  `users.torch_unlocked` in `/admin/torch`, `grant_torch_access`/
+  `revoke_torch_access`, `app/services/torch.py`) — but dm/groups created
+  *inside* the section are ordinary self-service `POST /api/rooms`/
+  `POST /api/rooms/{id}/members` with `torch=true`, just gated by a different
+  contact-visibility rule (club members + any admin, not the tariff-rank
+  cascade — see [TORCH.md](TORCH.md)).
 - **Cohort not started yet** (`today < intake.starts_on`, ARG-106): the whole Рубка (`/chats`, `/diaries` — `ChatLayout`) is replaced client-side with a "N days until start" placeholder, **except the news channel** (`rooms.is_news`) — reachable via the «Новости» nav item (`/news` → `NewsRedirect`), since the welcome popup content is itself a news post and must stay readable during the wait. Opening it this way still hides the room list/Чаты·Дневники switcher around it (`ChatLayout.hideRoomList`, set by `routes.tsx`'s `withCohortGate` when the open room is news) — it would only dead-end back into the same placeholder for every other room. Frontend-only — no backend gate, since it's the participant's own not-yet-relevant content, not another user's (unlike the Observer 403 above). See [DATA_MODEL.md](DATA_MODEL.md) "Cohort-pending gate".
 
 ## List ordering

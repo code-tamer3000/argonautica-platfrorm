@@ -37,6 +37,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | diary_public | BOOLEAN | NOT NULL, default false | only meaningful with `role='admin'`: shows this admin's personal diary to participants of their own intake (admin diaries hidden from participants by default). See [AUTH.md](AUTH.md), [ROOMS.md](ROOMS.md) |
 | survey_required | BOOLEAN | NOT NULL, default false | exit survey pending → whole platform gated. Cleared on submit. See [SURVEY.md](SURVEY.md) |
 | graduated_at | TIMESTAMPTZ | NULL | экспедиция пройдена: set on survey submit, never cleared. Dynamics hidden, Tasks collapse to submitted, Рубка read-only. See [SURVEY.md](SURVEY.md) |
+| torch_unlocked | BOOLEAN | NOT NULL, default false | Клуб «Факел» (ARG-54): permanent manual gate, independent of billing — admin flips it per user. See [TORCH.md](TORCH.md) |
 | survey_gift_asset_id | BIGINT | FK media_assets, NULL | personal PDF book handed out after the survey |
 | intake_id | BIGINT | FK intakes, NULL | cohort the user belongs to; drives the Dynamics 28-day window start. Mandatory in `POST /api/admin/users`; column stays nullable for historical rows (expand/contract) |
 | plan_id | BIGINT | FK plans, NULL | tariff the participant signed up under (intake bot, [INTAKE_BOT.md](INTAKE_BOT.md)). Optional — manual admin provisioning doesn't require a plan. Changeable after the fact via `PATCH /api/admin/users/{id}` (e.g. a punitive downgrade) — see [ROOMS.md](ROOMS.md) "Tariff change cleanup" for what does and doesn't need cleanup when it changes |
@@ -241,6 +242,8 @@ One entity for three space types; differences are behavior in code, not structur
 | created_at | TIMESTAMPTZ | NOT NULL | |
 | is_personal | BOOLEAN | NOT NULL, default false | personal diary room (Dynamics). See [DYNAMICS.md](DYNAMICS.md) |
 | is_news | BOOLEAN | NOT NULL, default false | news channel; one per intake (`uq_rooms_news_per_intake` on `intake_id`, ARG-104 — was a platform-wide singleton before); top posts admin-only |
+| is_torch | BOOLEAN | NOT NULL, default false | Клуб «Факел» (ARG-54): platform-wide singleton group room (`uq_rooms_torch_singleton`, no per-intake partitioning, unlike `is_news`). See [TORCH.md](TORCH.md) |
+| torch_scope | BOOLEAN | NOT NULL, default false | Клуб «Факел», part 2: room belongs to the «Факел» SECTION — set on the singleton (`is_torch`) room AND on any dm/group created inside the section. Drives the mutually-exclusive Рубка/Факел room-list split client-side, and the graduation write-exemption server-side. See [TORCH.md](TORCH.md) |
 | intake_id | BIGINT | FK intakes, NULL | channel-only isolation by intake (ARG-96); NULL = cross-intake. Ignored for dm/group/personal/news |
 
 **room_plans** — channel-only isolation by plan (ARG-96), many-to-many. PK (`room_id`, `plan_id`); FKs to rooms, plans.
@@ -522,8 +525,8 @@ Bell feed + native push source. Domain data in Postgres (history, reload, web-pu
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
 | user_id | BIGINT | FK users, NOT NULL | recipient |
-| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'mention'` \| `'cabin_granted'` \| `'admin'` \| `'task_comment'` (reserved, not generated yet) \| `'task_returned'` (+ legacy `'journal_missed'`, no longer generated) |
-| room_id | BIGINT | FK rooms, NULL | NULL for `cabin_granted`/`admin`/`task_comment`/`task_returned` |
+| kind | TEXT | NOT NULL, CHECK | `'dm'` \| `'reply'` \| `'news'` \| `'mention'` \| `'cabin_granted'` \| `'admin'` \| `'task_comment'` (reserved, not generated yet) \| `'task_returned'` \| `'survey_submitted'` (+ legacy `'journal_missed'`, no longer generated) |
+| room_id | BIGINT | FK rooms, NULL | NULL for `cabin_granted`/`admin`/`task_comment`/`task_returned`/`survey_submitted` |
 | message_id | BIGINT | FK messages, NULL | NULL for system kinds |
 | actor_id | BIGINT | FK users, NULL | NULL for system kinds |
 | task_id | BIGINT | FK tasks, NULL | set for `task_comment`/`task_returned` — navigation target (`/tasks/{task_id}`) |
@@ -587,6 +590,16 @@ Exit survey of the expedition, one row per participant. Questions live in code
 | answers | JSONB | NOT NULL | `{question_key: answer}`, shape depends on question kind |
 | publish_consent | BOOLEAN | NOT NULL, default false | may the testimonial be shown publicly with the author's name |
 | created_at | TIMESTAMPTZ | NOT NULL | |
+
+## torch_settings
+Клуб «Факел» (ARG-54): one shared row (`id=1`, `CHECK (id = 1)`) — the single stub
+text shown to graduated users whose `torch_unlocked` is still false. See [TORCH.md](TORCH.md).
+
+| Field | Type | Constraints | Notes |
+|---|---|---|---|
+| id | BIGINT | PK, CHECK `id = 1` | singleton |
+| stub_text | TEXT | NOT NULL | one shared text for everyone, admin-editable |
+| updated_at | TIMESTAMPTZ | NOT NULL | |
 
 ## cabin_entries
 Каюта (private psych journaling). Form fields per subkind live in JSONB `data`. Hard delete. See [CABIN.md](CABIN.md).

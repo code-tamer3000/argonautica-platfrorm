@@ -17,7 +17,10 @@ import { NewChatModal } from './NewChatModal'
 import { NewGroupModal } from './NewGroupModal'
 import { groupDiariesByPlan, roomAvatarUrl, roomSubLabel, roomTitle } from './util'
 
-export type Tab = 'chats' | 'channels'
+// 'torch' — раздел «Факел» (ARG-54, часть 2): своя dm/группа-лента, не таб
+// внутри Рубки (см. ChatLayout.basePathFor, routes.tsx). Здесь используется
+// только для переиспользования этого же компонента списка/рендера комнат.
+export type Tab = 'chats' | 'channels' | 'torch'
 
 interface RoomButtonProps {
   r: RoomOut
@@ -113,8 +116,23 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
     const pinned: RoomOut[] = []
     if (mine) pinned.push(mine)
 
-    let dms = filtered.filter((r) => r.type === 'dm')
-    let groups = filtered.filter((r) => r.type === 'group')
+    // Раздел «Факел» (torch_scope) и Рубка показывают dm/группы взаимоисключающе:
+    // Рубка — только СВОИ (не относящиеся к Факелу), Факел — только его.
+    //
+    // Исключение (ARG-158): пока тумблер `torch_unlocked` ещё не включён (и мы
+    // не admin), раздел «Факел» самому пользователю недоступен — withTorchGate
+    // на маршруте `/torch*` показывает заглушку вместо ленты. Значит torch_scope
+    // DM, созданный кнопкой «Подать заявку» ДО тумблера, нигде не появится в
+    // списке — виден только сразу после клика по прямой ссылке `/chats/{id}`, а
+    // после перезахода теряется из вида (хотя писать в него по-прежнему можно).
+    // Показываем такие комнаты в Рубке, пока раздел «Факел» самому пользователю
+    // не открыт — после включения тумблера тот же чат обнаружится в «Факеле» и
+    // пропадёт из Рубки, обычная логика ниже строго исключающая.
+    const torchLocked = !isAdmin && !me?.torch_unlocked
+    const inTorchTab = (r: RoomOut) =>
+      !!r.torch_scope && (tab === 'torch' || (tab === 'chats' && torchLocked))
+    let dms = filtered.filter((r) => r.type === 'dm' && (tab === 'torch' ? inTorchTab(r) : !r.torch_scope || inTorchTab(r)))
+    let groups = filtered.filter((r) => r.type === 'group' && (tab === 'torch' ? inTorchTab(r) : !r.torch_scope || inTorchTab(r)))
     if (applyIntakeFilter) {
       // dm/group не несут intake_id на самой комнате (гейтятся явным членством,
       // не потоком, см. docs/ROOMS.md) — но admin здесь смотрит на них с точки
@@ -146,7 +164,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       diaryGroups: groupDiariesByPlan(otherPersonal, plans, isAdmin),
       otherChannels: otherRegular,
     }
-  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers, plans])
+  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers, plans, tab])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty =
@@ -166,39 +184,45 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
   return (
     <aside className={styles.list}>
-      <div className={styles.tabs}>
-        {/* Один общий индикатор, «пробегающий» между вкладками Чаты↔Дневники.
-            Вкладок ровно две (по 50%), поэтому X = 0% или 100% ширины глайдера. */}
-        <span
-          className={styles.tabGlider}
-          style={{ transform: `translateX(${tab === 'chats' ? '0%' : '100%'})` }}
-          aria-hidden
-        />
-        <button
-          className={`${styles.tab} ${tab === 'chats' ? styles.tabActive : ''}`}
-          onClick={() => onTabChange('chats')}
-        >
-          <IconChat size={16} /> Чаты
-          {badges.chats > 0 && <span className={styles.tabBadge}>{badges.chats > 99 ? '99+' : badges.chats}</span>}
-        </button>
-        <button
-          className={`${styles.tab} ${tab === 'channels' ? styles.tabActive : ''}`}
-          onClick={() => onTabChange('channels')}
-        >
-          <IconDiary size={16} /> Дневники
-          {badges.channels > 0 && <span className={styles.tabBadge}>{badges.channels > 99 ? '99+' : badges.channels}</span>}
-        </button>
-      </div>
+      {/* Раздел «Факел» — отдельная секция, не таб внутри Рубки: переключателя
+          Чаты↔Дневники здесь нет (см. ChatLayout.basePathFor, routes.tsx). */}
+      {tab !== 'torch' && (
+        <div className={styles.tabs}>
+          {/* Один общий индикатор, «пробегающий» между вкладками Чаты↔Дневники.
+              Вкладок ровно две (по 50%), поэтому X = 0% или 100% ширины глайдера. */}
+          <span
+            className={styles.tabGlider}
+            style={{ transform: `translateX(${tab === 'chats' ? '0%' : '100%'})` }}
+            aria-hidden
+          />
+          <button
+            className={`${styles.tab} ${tab === 'chats' ? styles.tabActive : ''}`}
+            onClick={() => onTabChange('chats')}
+          >
+            <IconChat size={16} /> Чаты
+            {badges.chats > 0 && <span className={styles.tabBadge}>{badges.chats > 99 ? '99+' : badges.chats}</span>}
+          </button>
+          <button
+            className={`${styles.tab} ${tab === 'channels' ? styles.tabActive : ''}`}
+            onClick={() => onTabChange('channels')}
+          >
+            <IconDiary size={16} /> Дневники
+            {badges.channels > 0 && <span className={styles.tabBadge}>{badges.channels > 99 ? '99+' : badges.channels}</span>}
+          </button>
+        </div>
+      )}
 
       <div className={styles.listHead}>
-        {/* Выпускнику новые чаты/группы не заводим: писать в них он всё равно
-            не сможет (Рубка у него только на чтение). */}
-        {tab === 'chats' && !me?.graduated_at && (
+        {/* Выпускнику в Рубке новые чаты/группы не заводим: писать в них он всё
+            равно не сможет (Рубка у него только на чтение) — в «Факеле» же это
+            и есть смысл раздела, поэтому там кнопки всегда доступны (право уже
+            проверено выше — на этот таб попадают только допущенные). */}
+        {((tab === 'chats' && !me?.graduated_at) || tab === 'torch') && (
           <div className={styles.headActions}>
             <button className={styles.headBtn} onClick={() => setModal('chat')}>
               <IconPlus size={16} /> Новый чат
             </button>
-            {me?.can_create_groups && (
+            {(tab === 'torch' || me?.can_create_groups) && (
               <button className={styles.headBtn} onClick={() => setModal('group')}>
                 <IconUsers size={16} /> Группа
               </button>
@@ -220,6 +244,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
       {modal === 'chat' && (
         <NewChatModal
+          torch={tab === 'torch'}
           onClose={() => setModal(null)}
           onOpenDm={(id) => {
             setModal(null)
@@ -229,6 +254,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       )}
       {modal === 'group' && (
         <NewGroupModal
+          torch={tab === 'torch'}
           onClose={() => setModal(null)}
           onCreated={(id) => {
             setModal(null)
@@ -244,11 +270,15 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
           </div>
         )}
 
-        {tab === 'chats' && (
+        {(tab === 'chats' || tab === 'torch') && (
           <>
             {!isLoading && chatsEmpty && (
               <div className="muted" style={{ padding: 16, fontSize: 14 }}>
-                {roomsOfflineEmpty ? 'Нет сети — не можем загрузить чаты.' : 'Чатов нет'}
+                {roomsOfflineEmpty
+                  ? 'Нет сети — не можем загрузить чаты.'
+                  : tab === 'torch'
+                    ? 'В клубе пока нет чатов'
+                    : 'Чатов нет'}
               </div>
             )}
             {groups.length > 0 && (

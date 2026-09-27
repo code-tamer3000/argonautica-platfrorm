@@ -76,6 +76,14 @@ from app.schemas.task import (
     TaskLibraryListOut,
     TaskOut,
 )
+from app.schemas.torch import (
+    TorchAdminCandidateOut,
+    TorchAdminUpdateRequest,
+    TorchGrantRequest,
+    TorchOverviewOut,
+    TorchRowOut,
+    TorchStubUpdateRequest,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -98,6 +106,11 @@ from app.services.tasks import (
     participant_count,
     published_where,
     sync_task_calendar_event,
+)
+from app.services.torch import (
+    get_or_create_torch_settings,
+    grant_torch_access,
+    revoke_torch_access,
 )
 from app.services.users import avatar_url
 from app.services.visibility import CHEAP_TARIFF_NAME
@@ -993,6 +1006,7 @@ async def list_task_library(
                 total_recipients=total_recipients,
                 source_task_id=t.source_task_id,
                 published_intake_ids=published_intakes.get(root, []),
+                required_for_graduation=t.required_for_graduation,
             )
         )
     return TaskLibraryListOut(items=items)
@@ -1269,12 +1283,15 @@ async def survey_overview(
     """Кому показана анкета, кто её сдал и что ответил — одной таблицей.
 
     Форму отдаём вместе со строками: админка подписывает ответы по канону, а не
-    по своей копии вопросов.
+    по своей копии вопросов. Тариф/поток денормализуем сюда же (тот же приём,
+    что и `list_users`) — админка фильтрует и группирует без второго запроса.
     """
     rows = (
         await session.execute(
-            select(User, SurveyResponse)
+            select(User, SurveyResponse, Intake.starts_on, Plan.name)
             .outerjoin(SurveyResponse, SurveyResponse.user_id == User.id)
+            .outerjoin(Intake, Intake.id == User.intake_id)
+            .outerjoin(Plan, Plan.id == User.plan_id)
             .where(User.role != "admin")
             .order_by(User.display_name)
         )
@@ -1292,8 +1309,12 @@ async def survey_overview(
             gift_asset_id=user.survey_gift_asset_id,
             answers=response.answers if response else None,
             version=response.version if response else None,
+            plan_id=user.plan_id,
+            plan_name=plan_name,
+            intake_id=user.intake_id,
+            intake_starts_on=starts_on,
         )
-        for user, response in rows
+        for user, response, starts_on, plan_name in rows
     ]
     return SurveyOverviewOut(
         form=question_form(),
@@ -1363,4 +1384,107 @@ async def set_survey_gift(
         if asset is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
     user.survey_gift_asset_id = body.media_asset_id
+    await session.flush()
+
+
+# --- клуб «Факел» (ARG-54) ----------------------------------------------
+
+
+@router.get("/torch", response_model=TorchOverviewOut)
+async def torch_overview(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TorchOverviewOut:
+    """Выпустившиеся участники и их тумблер + текущий текст заглушки.
+
+    Только выпустившиеся (`graduated_at` не NULL) — до выпуска пункт меню
+    вообще скрыт, включать тумблер раньше некому.
+    """
+    users = (
+        await session.execute(
+            select(User)
+            .where(User.role != "admin", User.graduated_at.is_not(None))
+            .order_by(User.display_name)
+        )
+    ).scalars().all()
+    admins = (
+        await session.execute(
+            select(User).where(User.role == "admin").order_by(User.display_name)
+        )
+    ).scalars().all()
+    settings = await get_or_create_torch_settings(session)
+    return TorchOverviewOut(
+        rows=[
+            TorchRowOut(
+                user_id=user.id,
+                username=user.username,
+                display_name=user.display_name,
+                torch_unlocked=user.torch_unlocked,
+                torch_applied_at=user.torch_applied_at,
+            )
+            for user in users
+        ],
+        stub_text=settings.stub_text,
+        admin_user_id=settings.admin_user_id,
+        admin_candidates=[
+            TorchAdminCandidateOut(user_id=a.id, display_name=a.display_name) for a in admins
+        ],
+    )
+
+
+@router.post("/torch/grant", status_code=status.HTTP_204_NO_CONTENT)
+async def grant_torch(
+    body: TorchGrantRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Открыть клуб перечисленным выпускникам: тумблер + членство в общей комнате."""
+    users = (
+        await session.execute(
+            select(User).where(
+                User.id.in_(body.user_ids),
+                User.role != "admin",
+                User.graduated_at.is_not(None),
+            )
+        )
+    ).scalars().all()
+    for user in users:
+        await grant_torch_access(session, user)
+
+
+@router.delete("/torch/grant/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_torch(
+    user_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Закрыть клуб: снять тумблер и убрать из комнаты (историю не трогаем)."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    await revoke_torch_access(session, user)
+
+
+@router.patch("/torch/stub", status_code=status.HTTP_204_NO_CONTENT)
+async def update_torch_stub(
+    body: TorchStubUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Обновить общий текст заглушки (один на всех закрытых)."""
+    settings = await get_or_create_torch_settings(session)
+    settings.stub_text = body.stub_text
+    await session.flush()
+
+
+@router.patch("/torch/admin", status_code=status.HTTP_204_NO_CONTENT)
+async def update_torch_admin(
+    body: TorchAdminUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Назначить администратора Факела (ARG-158) — с кем сводит кнопка «Подать
+    заявку» на гейте. `admin_user_id: null` снимает назначение (кнопка на гейте
+    пропадает)."""
+    if body.admin_user_id is not None:
+        admin = await session.get(User, body.admin_user_id)
+        if admin is None or admin.role != "admin":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Admin user not found")
+    settings = await get_or_create_torch_settings(session)
+    settings.admin_user_id = body.admin_user_id
     await session.flush()

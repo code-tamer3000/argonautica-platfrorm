@@ -8,6 +8,7 @@ import {
   IconCalendar,
   IconChat,
   IconDiary,
+  IconFlame,
   IconGenkeys,
   IconMoon,
   IconNews,
@@ -32,6 +33,7 @@ import { ProfileScreen } from '../profile/ProfileScreen'
 import { ArgonautsScreen } from '../argonauts/ArgonautsScreen'
 import { ArgonautDetail } from '../argonauts/ArgonautDetail'
 import { SupportScreen } from '../support/SupportScreen'
+import { TorchLocked } from './TorchLocked'
 import type { NavBadges } from './useNavBadges'
 import { useAccessContext, type Access } from './RequireAccess'
 
@@ -119,6 +121,20 @@ function NewsRedirect() {
   return <Navigate to={`/${segment}/${news.id}`} replace />
 }
 
+// «/torch» — отдельный раздел (ARG-54, часть 2: своя лента чатов, не таб
+// внутри Рубки, см. ChatLayout/RoomList tab='torch'), а не редирект в одну
+// комнату — клуб теперь это dm/группы между выпускниками, не только singleton
+// чат. Пока тумблер выключен (и мы не админ) — общая заглушка вместо раздела.
+function withTorchGate(makeComponent: () => ReactNode) {
+  return function TorchGated() {
+    const { user } = useAuth()
+    const { isAdmin } = useAccessContext()
+    const unlocked = isAdmin || !!user?.torch_unlocked
+    if (!unlocked) return <TorchLocked />
+    return makeComponent()
+  }
+}
+
 // id открытой комнаты из /chats/:id или /diaries/:id, иначе null.
 const openRoomIdFrom = (pathname: string): number | null => {
   const m = /^\/(?:chats|diaries)\/(\d+)$/.exec(pathname)
@@ -184,14 +200,26 @@ export const routes: RouteEntry[] = [
     children: [{ path: '/argonauts/:userId', Component: withCohortGate(() => <ArgonautDetail />) }],
   },
   {
+    path: '/torch',
+    label: 'Факел',
+    icon: IconFlame,
+    access: { kind: 'torchAccess' },
+    Component: withTorchGate(() => <ChatLayout tab="torch" />),
+    children: [{ path: '/torch/:roomId', Component: withTorchGate(() => <ChatLayout tab="torch" />) }],
+  },
+  {
     path: '/chats',
     label: 'Рубка',
     icon: IconChat,
     access: { kind: 'observerBlocked' },
     badgeKey: 'rubka',
-    isNavActive: ({ pathname, newsRoomId }) =>
-      (pathname.startsWith('/chats') || pathname.startsWith('/diaries')) &&
-      !(newsRoomId != null && openRoomIdFrom(pathname) === newsRoomId),
+    isNavActive: ({ pathname, newsRoomId }) => {
+      const openId = openRoomIdFrom(pathname)
+      return (
+        (pathname.startsWith('/chats') || pathname.startsWith('/diaries')) &&
+        !(newsRoomId != null && openId === newsRoomId)
+      )
+    },
     Component: withCohortGate(({ newsOnly }) => <ChatLayout tab="chats" hideRoomList={newsOnly} />),
     children: [
       {

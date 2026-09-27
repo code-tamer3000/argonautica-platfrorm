@@ -62,6 +62,9 @@ export interface UserOut {
   // Экспедиция пройдена (анкета сдана): Динамика скрыта, в Задачах только сданное,
   // Рубка — только чтение. Ставится сервером один раз и не снимается.
   graduated_at: string | null
+  // Клуб «Факел» (ARG-54): ручной тумблер админа, независимый от graduated_at —
+  // выпуск открывает пункт меню, тумблер открывает содержимое и чат.
+  torch_unlocked: boolean
   settings: Record<string, unknown>
   // Набор участника (ARG-106): дата старта — гейт Рубки/Календаря; текст — поп-ап
   // при первом входе. Оба null у бесхозного участника или у набора без текста.
@@ -150,6 +153,12 @@ export interface RoomOut {
   unread_count: number
   is_personal: boolean
   is_news: boolean
+  // Singleton-комната клуба «Факел» (ARG-54) — клиент находит её по этому флагу.
+  is_torch: boolean
+  // Комната относится к разделу «Факел» (сама singleton-комната клуба ИЛИ
+  // dm/группа, созданная внутри раздела) — по нему список чатов Рубки исключает
+  // такие комнаты, а список Факела показывает только их. См. docs/TORCH.md.
+  torch_scope: boolean
   // Только group: композер закрыт всем, кроме admin (ARG-142) — прячем композер,
   // сервер 403-ит тот же путь независимо от этого поля.
   is_readonly: boolean
@@ -641,6 +650,7 @@ export type NotificationKind =
   | 'admin'
   | 'task_comment'
   | 'task_returned'
+  | 'survey_submitted'
 
 export interface NotificationOut {
   id: number

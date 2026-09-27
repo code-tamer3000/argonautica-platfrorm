@@ -37,9 +37,41 @@ but the path is over. Rules live in one place, `app/services/graduation.py`
   The admin keeps the row in `/admin/dynamics` — frozen as of the graduation day
   (`_calc_stats(..., today=graduated_on)`), badged «Прошёл Экспедицию», sorted last
   and excluded from the summary counters. See [DYNAMICS.md](DYNAMICS.md).
-- **Tasks collapse to what was submitted**: only tasks whose own assignment is
-  `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES`); new submissions, comments,
-  reviews and stream writes → 403. See [TASKS.md](TASKS.md).
+- **Tasks collapse to what was submitted, plus a one-time chance to catch up**:
+  visible tasks are `submitted`/`accepted` (`GRADUATE_VISIBLE_STATUSES`) or still
+  `assigned`/`returned` (`GRADUATE_BACKFILLABLE_STATUSES`, ARG-157) — the latter can
+  still be submitted/commented on once, then close for good; review of someone
+  else's cross-task and every other stream write stay → 403. See [TASKS.md](TASKS.md).
+- **A first-login popup after submitting** (`GraduationPopup.tsx`, `settings.graduation_popup_dismissed`,
+  same dismiss pattern as `WelcomePopup`/`LimboPopup`) points at the backfillable
+  tasks, the gift PDF, and the newly-opened «Факел». On the dashboard, the graduate's
+  Dynamics widget slot is replaced by `ExpeditionArtifactCard.tsx` — a download button
+  for the gift PDF once the artifact gate (below) is open, or a list of what's still
+  missing while it isn't — see [EXPEDITION.md](EXPEDITION.md).
+
+### Artifact gate: required tasks (ARG-159)
+
+An admin can make specific **common** tasks of a поток mandatory for the expedition
+artifact: `tasks.required_for_graduation` (`PATCH /api/tasks/{id}`, editable only in
+the «Обязательные задания» tab of `/admin/survey`, common tasks only — 400 otherwise).
+No task marked required for a поток → behavior unchanged, the artifact opens right on
+`graduated_at` as before.
+
+At the moment of submitting the survey, the currently-required task ids for the
+participant's поток are **snapshotted** into `survey_responses.required_task_ids`
+(`services/tasks.py::required_graduation_task_ids`, only among published tasks) —
+admin edits to the required set after that moment are not retroactive for people who
+already graduated. A task is "done" only once its assignment is `accepted`, not just
+`submitted`. `services/tasks.py::artifact_gate_for` computes, for a graduate, whether
+the artifact is open and — if not — the still-pending required tasks (title + id); a
+required task that gets soft-deleted later drops out of the pending list rather than
+blocking the gate forever. Surfaced as `artifact_gate` on `GET /api/dashboard`, `null`
+for a non-graduate.
+
+Deleted/soft-deleted or intake-mismatched tasks are simply excluded — the gate never
+blocks on something the participant can no longer act on. The gate doesn't touch
+`GraduationPopup` or `POST/GET /api/survey`'s own gift flow — it's a separate read on
+top of `graduated_at`, not a new lock on submitting the survey itself.
 - **Рубка becomes read-only**: full history everywhere (DMs, diary, channels), no
   writing — `assert_can_write` refuses with `GRADUATED_MESSAGE`, WS `typing` is
   dropped, and the composer is replaced by the «Аргонавт, ты прошёл Экспедицию»
@@ -62,10 +94,13 @@ Changing the question set means bumping `SURVEY_VERSION`; old answers stay reada
 under their own version, no data migration.
 
 One page, all questions in a row — no steps, no scales, no ratings: the survey asks
-people to tell it in their own words. 9 questions: что изменилось · поворотная точка ·
-форматы ведения дневника · стихии (множественный выбор + почему) · «слишком/не
-хватило» · открытость дневника · где сыпался ритм · платформа и что чинить ·
-отзыв для публикации.
+people to tell it in their own words. Current canon (v2, second stream): 8 questions —
+что изменилось · поворотная точка · форматы ведения дневника · стихии (множественный
+выбор + почему) · «слишком/не хватило» · геймификация Платформы · платформа и что
+чинить · отзыв для публикации. v1 (first stream) had 9: two of these — «открытость
+дневника видит когорта» and «где сыпался ритм» — were dropped and merged into the v2
+gamification question; old v1 answers stay stored and readable under their own
+`version`, just not re-rendered under the current canon's keys.
 
 Question kinds and the shape of their answer in `answers` JSONB:
 
@@ -88,7 +123,7 @@ User (`/api/survey`, all on `get_current_user`):
 | Endpoint | Behavior |
 |---|---|
 | `GET /me` | Form canon + `completed_at`, `required`, `gift_available` |
-| `POST ` | Submit. Validates, writes `survey_responses`, clears `survey_required`, sets `graduated_at`. Second attempt → 409 (and repairs both flags) |
+| `POST ` | Submit. Validates, writes `survey_responses`, clears `survey_required`, sets `graduated_at`, notifies admins (`survey_submitted`, burst-collapsed — see [NOTIFICATIONS.md](NOTIFICATIONS.md)). Second attempt → 409 (and repairs both flags) |
 | `GET /gift` | Presigned link to the personal book. 403 before submitting, 404 if no book is attached yet |
 
 The gift URL is signed directly via `presigned_get_url(..., download_name=...)`,
@@ -100,16 +135,44 @@ Admin (`/api/admin`, whole router under `require_admin`):
 
 | Endpoint | Behavior |
 |---|---|
-| `GET /survey` | Form + one row per non-admin: invited / completed_at / publish_consent / has_gift / answers, plus counters |
+| `GET /survey` | Form + one row per non-admin: invited / completed_at / publish_consent / has_gift / answers / plan_id+plan_name / intake_id+intake_starts_on, plus counters |
 | `POST /survey/invite` | `{user_ids}` → raise the flag in bulk. Skips people who already submitted (they would hit 409 and stay locked out) and admins |
 | `DELETE /survey/invite/{user_id}` | Drop the flag without waiting for an answer |
 | `PATCH /survey/gift/{user_id}` | `{media_asset_id}` — attach the book, `null` detaches |
 
 ## Admin flow
 
-`/admin/survey` has two tabs: «Кому показать» (participant list with checkboxes,
-search, status badges) and «Ответы» (cards per participant, questions labelled from
-the canon).
+`/admin/survey` has three tabs: «Кому показать» (participant list with checkboxes,
+status badges), «Ответы» (questions labelled from the canon, two view modes), and
+«Обязательные задания» (ARG-159, `RequiredTasksPanel` — a поток picker plus a
+checkbox list of that поток's published common tasks, backed by the same
+`GET /api/admin/tasks?intake_id=&type=common&state=published` the «База заданий» hub
+uses; toggling reuses `PATCH /api/tasks/{id}`, not a bespoke endpoint).
+No name/username search — it went unused and was dropped.
+
+Both tabs share the same поток + тариф filters (`SurveyFilters`). Поток is a plain
+`<select>`, defaulting to the active intake. Тариф is a multi-select checkbox group
+tucked behind a small dropdown button (`PlanFilterDropdown`, same click-outside-closes
+idiom as `components/KebabMenu.tsx`) rather than sitting exposed on the page — several
+tariffs can be checked at once. The dropdown sorts the cheapest tariff (`Plan.is_cheap`,
+e.g. «Наблюдатель») to the bottom — same convention as the contacts roster
+(`app/api/users.py::list_contacts`) — since almost nobody on it ever submits.
+«Выбрать всех в тарифе» (invite tab only, enabled once at least one тариф is checked)
+bulk-selects everyone matching the current filters who hasn't submitted yet, alongside
+the existing «Выбрать всех несдавших».
+
+«Ответы» has two view modes: «по человеку» and «по вопросу».
+
+«По человеку» starts fully collapsed — one row per participant showing just the name;
+clicking «Развернуть» opens their full answer card, and each individual question inside
+that card can be collapsed/expanded on its own (`PersonAnswers`/`PersonAnswerBody`) —
+useful for skimming past answers already read without losing the rest of the card.
+
+«По вопросу» is one block per question with every participant's answer to it — reading
+all answers to a single question across the whole stream without scrolling past
+unrelated ones. Its block does NOT reuse `.listItem` (a row-flex layout) — it has its
+own standalone box styling, since combining a row-flex class with the column layout
+these blocks need broke the layout.
 
 Books are uploaded through the ordinary presigned media flow (`mediaUpload`, kind
 `file`). Uploading a batch matches each file to a participant by filename

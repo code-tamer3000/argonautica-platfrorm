@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useMyDynamics } from '../../api/dynamics'
 import { useJournalStructure } from '../../api/journal'
 import { useMarkRead, useMessages } from '../../api/messages'
-import { useRoom, useRooms, useSetDiaryAvatar } from '../../api/rooms'
+import { useRoom, useRooms, useSetRoomAvatar } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
@@ -92,7 +92,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarFileRef = useRef<HTMLInputElement>(null)
-  const setDiaryAvatar = useSetDiaryAvatar(roomId)
+  const setDiaryAvatar = useSetRoomAvatar(roomId)
   const [highlightedMsgId, setHighlightedMsgId] = useState<number | null>(null)
   // Сообщение, для которого открыт пикер комнаты-назначения пересылки (см. ForwardPicker).
   const [forwardingMsg, setForwardingMsg] = useState<MessageOut | null>(null)
@@ -165,6 +165,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const msgMenu = useMessageMenu({
     roomId,
     canPin: !!canPin,
+    torchScope: !!room?.torch_scope,
     onQuote: handleQuote,
     onOpenThread: (msg) => setThreadRootId(msg.id),
     onEdit: (msg) => setPendingEdit({ roomId, message: msg }),
@@ -352,8 +353,11 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const isJournalTargetRoom = structure?.chat_room_id
     ? room.id === structure.chat_room_id && !isAdmin
     : isOwnPersonal
-  // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403).
-  const isGraduated = !!user?.graduated_at
+  // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403),
+  // КРОМЕ раздела «Факел» (ARG-54) целиком — и его singleton-чата, и dm/групп,
+  // созданных внутри раздела (torch_scope) — там выпуск это условие входа, а не
+  // причина закрыть композер (см. assert_can_write, app/services/rooms.py).
+  const isGraduated = !!user?.graduated_at && !room.torch_scope
   // Окно набора закрыто (ARG-96): дневник — архив только для чтения, форму
   // отправки прячем (бэкенд 403-ит тот же путь). Запрос — для своей целевой комнаты.
   const { data: myDyn } = useMyDynamics({ enabled: isJournalTargetRoom })
@@ -520,6 +524,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         highlightedMsgId={highlightedMsgId}
         expandedThreadId={threadRootId}
         canPin={canPin}
+        torchScope={!!room.torch_scope}
         // Каналы-дневники («Дневник» / «Личный дневник») рендерят текст как markdown —
         // там ведут ежедневные записи с оформлением. Новостной канал (тоже channel) и
         // личные чаты/группы — простой текст.
@@ -602,6 +607,9 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           roomId={roomId}
           isOwner={room.type === 'group' && room.created_by === user?.id}
           isReadonly={room.is_readonly}
+          avatarUrl={room.avatar_url}
+          roomName={title}
+          torchScope={room.torch_scope}
           onClose={() => setShowMembers(false)}
           onOpenDm={onOpenRoom}
           onDeleted={() => {
@@ -618,6 +626,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
             setShowProfile(false)
             onOpenRoom?.(id)
           }}
+          torch={room.torch_scope}
         />
       )}
       {forwardingMsg && (

@@ -3,7 +3,7 @@ import { useMarkNotificationsRead, useNotifications } from '../../api/notificati
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
-import { IconAlert, IconBell } from '../../components/icons'
+import { IconAlert, IconBell, IconCheck } from '../../components/icons'
 import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { timeHM } from '../../lib/format'
 import type { NotificationKind, NotificationOut } from '../../lib/types'
@@ -19,6 +19,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   admin: '',
   task_comment: '',
   task_returned: '',
+  survey_submitted: '',
 }
 
 // Склонение «N сообщений» для схлопнутого DM-бёрста (group_count > 1).
@@ -30,9 +31,21 @@ function messagesWord(n: number): string {
   return 'сообщений'
 }
 
+// Склонение «N анкет» для схлопнутого survey-бёрста (group_count > 1).
+function surveysWord(n: number): string {
+  const mod10 = n % 10
+  const mod100 = n % 100
+  if (mod10 === 1 && mod100 !== 11) return 'новая анкета'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'новые анкеты'
+  return 'новых анкет'
+}
+
 function kindLabel(n: NotificationOut): string {
   if (n.kind === 'dm' && n.group_count > 1) {
     return `написал(а) вам ${n.group_count} ${messagesWord(n.group_count)}`
+  }
+  if (n.kind === 'survey_submitted') {
+    return n.group_count > 1 ? `${n.group_count} ${surveysWord(n.group_count)}` : 'сдал(а) анкету'
   }
   return KIND_LABEL[n.kind]
 }
@@ -46,6 +59,7 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   admin: 'Уведомление от администрации',
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
+  survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
@@ -53,6 +67,7 @@ const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   cabin_granted: 'Каюта',
   task_comment: 'Задачи',
   task_returned: 'Задачи',
+  survey_submitted: 'Анкета',
 }
 
 export function NotificationBell() {
@@ -124,7 +139,13 @@ export function NotificationBell() {
                   onClick={() => onItem(n)}
                 >
                   {system ? (
-                    <span className={styles.systemIcon}><IconAlert size={20} /></span>
+                    <span className={styles.systemIcon}>
+                      {n.kind === 'survey_submitted' ? (
+                        <IconCheck size={20} />
+                      ) : (
+                        <IconAlert size={20} />
+                      )}
+                    </span>
                   ) : (
                     <Avatar name={n.actor_name ?? '?'} url={users.get(n.actor_id!)?.avatar_url} size={34} />
                   )}

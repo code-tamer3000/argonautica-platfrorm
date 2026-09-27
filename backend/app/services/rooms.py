@@ -26,6 +26,7 @@ from app.services.visibility import (
 )
 
 NEWS_CHANNEL_NAME = "Новости"
+TORCH_ROOM_NAME = "Факел"
 
 
 async def load_room(session: AsyncSession, room_id: int) -> Room:
@@ -63,6 +64,12 @@ async def assert_room_access(
     оверсайта (написать/подсмотреть обсуждение), хотя членом узла не является.
     Строку членства ему НЕ заводим — комната не всплывает в его общем списке чатов,
     вход только по кнопке на карточке узла (build_stream_out отдаёт админу room_id).
+
+    Тот же приём — клуб «Факел» (`room.is_torch`, ARG-54): пункт меню виден
+    ЛЮБОМУ админу всегда (см. docs/TORCH.md), а не только тому, кто оказался
+    членом комнаты (владелец — только первый найденный на момент создания,
+    `ensure_torch_room`). Без этой ветки остальные админы получали бы 403 по
+    прямому клику на пункт меню.
 
     Наблюдатель (is_observer) НЕ имеет доступа ни к одной комнате — включая каналы и
     новостной канал. Его разделы — только материалы (База знаний, Генные замки).
@@ -107,10 +114,8 @@ async def assert_room_access(
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         return membership
     if membership is None:
-        if (
-            user.role == "admin"
-            and room.type == "group"
-            and await is_stream_node_room(session, room.id)
+        if user.role == "admin" and room.type == "group" and (
+            room.is_torch or await is_stream_node_room(session, room.id)
         ):
             return None
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
@@ -223,13 +228,21 @@ async def assert_can_write(session: AsyncSession, room: Room, user: User) -> Non
     (см. app/services/graduation.py).
 
     Односторонний dm с админом (ARG-110, часть B) — та же 403-граница, не только
-    фронтовая маскировка композера (см. dm_write_allowed)."""
+    фронтовая маскировка композера (см. dm_write_allowed).
+
+    Раздел «Факел» (`room.torch_scope`, ARG-54) — единственное исключение из
+    «выпускник не пишет»: выпуск (`graduated_at`) — это как раз условие входа
+    в клуб, а не причина его закрыть. Исключение шире одной singleton-комнаты
+    (`is_torch`) — оно же покрывает dm/группы, созданные внутри самого раздела
+    (`torch_scope`, не self-service вне него). Членство (кто именно попал внутрь)
+    гейтится отдельно через `room_members`/`torch_unlocked`, не здесь."""
     if user.is_observer:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Observer mode: this section is read-only for you",
         )
-    assert_not_graduated(user)
+    if not room.torch_scope:
+        assert_not_graduated(user)
     if not await dm_write_allowed(session, room, user):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -237,11 +250,32 @@ async def assert_can_write(session: AsyncSession, room: Room, user: User) -> Non
         )
 
 
-async def assert_peer_visible(session: AsyncSession, current_user: User, peer: User) -> None:
+def assert_torch_peer_visible(peer: User) -> None:
+    """Круг видимости внутри «Факела» (ARG-54, часть 2): любой член клуба
+    (`torch_unlocked`) ИЛИ любой админ — без рангового каскада тарифов, тот
+    вообще не имеет смысла после выпуска (см. docs/TORCH.md). Не путать с
+    `contact_visible`/`cohort_plan_ranks` — это намеренно параллельное,
+    более широкое правило, не сужение общего."""
+    if not (peer.role == "admin" or peer.torch_unlocked):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "User is outside the club's visible circle"
+        )
+
+
+async def assert_peer_visible(
+    session: AsyncSession, current_user: User, peer: User, *, torch: bool = False
+) -> None:
     """Точечная проверка на POST /api/rooms (dm/group-invite, ARG-110, часть A):
     peer/приглашаемый должен входить в видимый для current_user круг — та же
     функция, что и GET /api/users/contacts (не дублируем правило). Admin
-    неограничен (полный оверсайт, как везде в сервисе)."""
+    неограничен (полный оверсайт, как везде в сервисе).
+
+    `torch=True` — создание/пополнение внутри раздела «Факел» (ARG-54): совсем
+    другое правило видимости (см. `assert_torch_peer_visible`), не сужение
+    обычного рангового каскада."""
+    if torch:
+        assert_torch_peer_visible(peer)
+        return
     if current_user.role == "admin":
         return
     ranks = await cohort_plan_ranks(session, current_user.intake_id)
@@ -310,6 +344,124 @@ async def ensure_news_channel(session: AsyncSession, intake_id: int) -> Room | N
                 select(Room).where(Room.is_news.is_(True), Room.intake_id == intake_id)
             )
         ).scalar_one_or_none()
+    return room
+
+
+def dm_key_for(a: int, b: int) -> str:
+    """Канонический ключ пары для дедупа личных чатов: 'minId:maxId'."""
+    lo, hi = sorted((a, b))
+    return f"{lo}:{hi}"
+
+
+async def get_or_create_dm(
+    session: AsyncSession, current: User, peer_id: int | None, *, torch: bool = False
+) -> tuple[Room, bool]:
+    """Создать личный чат или вернуть существующий по `dm_key` (ARG-110/ARG-158).
+
+    Общая логика для `POST /api/rooms` (обычный self-service DM/`torch=true`
+    изнутри раздела «Факел») и `POST /api/torch/apply` (заявка с гейта, до
+    тумблера — см. app/api/torch.py, там свой контроль доступа вместо
+    self-service проверки на торч, которую этот путь намеренно обходит).
+    Возвращает `(room, created)` — вызывающая сторона решает код ответа.
+    """
+    if peer_id is None or peer_id == current.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valid peer_id required for dm")
+    peer = await session.get(User, peer_id)
+    if peer is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Peer user not found")
+    await assert_peer_visible(session, current, peer, torch=torch)
+
+    dm_key = dm_key_for(current.id, peer_id)
+    existing = (
+        await session.execute(select(Room).where(Room.dm_key == dm_key))
+    ).scalar_one_or_none()
+    if existing is not None:
+        # dm_key переживает смену тарифа: понижение подчищает членство одной из
+        # сторон (resync_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
+        # change cleanup"), а комнату — нет. Без восстановления здесь возврат
+        # тарифа не возвращал бы старую переписку: dm_key находил бы ту же
+        # комнату и просто отдавал её «как есть», без строки членства — тот же
+        # 403 на чтение и невозможность написать, что и до отката. Membership
+        # чинится симметрично для обеих сторон — так же, как при первом
+        # создании ниже, `assert_peer_visible` уже проверил видимость current.
+        for uid in (current.id, peer_id):
+            if await session.get(RoomMember, (existing.id, uid)) is None:
+                session.add(RoomMember(room_id=existing.id, user_id=uid, role_in_room="member"))
+        # dm_key уникален по паре — второй отдельной комнаты для того же пира
+        # внутри «Факела» завести нельзя (см. docs/TORCH.md): редкий случай, когда
+        # два выпускника уже переписывались до выпуска и решили открыть тот же
+        # диалог из «Факела» — существующая переписка переезжает в раздел «Факел»
+        # целиком (только повышаем, никогда не понижаем обратно), а не дублируется
+        # второй комнатой. С этого момента она пропадает из списка Рубки (клиент
+        # фильтрует по torch_scope) — история не теряется, просто меняет раздел.
+        if torch and not existing.torch_scope:
+            existing.torch_scope = True
+        await session.flush()
+        return existing, False
+
+    room = Room(type="dm", dm_key=dm_key, created_by=current.id, torch_scope=torch)
+    session.add(room)
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Гонка: кто-то создал тот же dm параллельно — вернуть существующую.
+        await session.rollback()
+        existing = (
+            await session.execute(select(Room).where(Room.dm_key == dm_key))
+        ).scalar_one()
+        return existing, False
+
+    session.add_all(
+        [
+            RoomMember(room_id=room.id, user_id=current.id, role_in_room="member"),
+            RoomMember(room_id=room.id, user_id=peer_id, role_in_room="member"),
+        ]
+    )
+    await session.flush()
+    return room, True
+
+
+async def ensure_torch_room(session: AsyncSession) -> Room | None:
+    """Гарантировать существование group-комнаты клуба «Факел» (ARG-54).
+
+    В отличие от `ensure_news_channel`, это ОДНА комната на всю платформу, не
+    на intake — клуб кросс-поточный по конструкции (выпускники разных потоков
+    оказываются в одном сообществе). Тот же приём: ленивое создание,
+    `created_by` = первый admin, гонка при создании ловится через частичный
+    уникальный индекс `uq_rooms_torch_singleton` (`WHERE is_torch`, без
+    партиционирования по intake_id — сравни с новостным каналом).
+    """
+    existing = (
+        await session.execute(select(Room).where(Room.is_torch.is_(True)))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    admin_id = (
+        await session.execute(
+            select(User.id).where(User.role == "admin").order_by(User.id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if admin_id is None:
+        return None  # некому владеть — создадим при следующем вызове
+
+    room = Room(
+        type="group",
+        name=TORCH_ROOM_NAME,
+        is_torch=True,
+        torch_scope=True,
+        created_by=admin_id,
+    )
+    session.add(room)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        return (
+            await session.execute(select(Room).where(Room.is_torch.is_(True)))
+        ).scalar_one_or_none()
+    session.add(RoomMember(room_id=room.id, user_id=admin_id, role_in_room="owner"))
+    await session.flush()
     return room
 
 

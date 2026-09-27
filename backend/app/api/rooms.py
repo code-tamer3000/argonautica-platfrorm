@@ -8,7 +8,6 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import and_, delete, exists, false, func, or_, select, union, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import CompoundSelect
@@ -38,6 +37,7 @@ from app.services.rooms import (
     assert_peer_visible,
     assert_room_access,
     dm_write_allowed,
+    get_or_create_dm,
     load_room,
 )
 from app.services.visibility import (
@@ -50,12 +50,6 @@ from app.services.visibility import (
 )
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
-
-
-def _dm_key(a: int, b: int) -> str:
-    """Канонический ключ пары для дедупа личных чатов: 'minId:maxId'."""
-    lo, hi = sorted((a, b))
-    return f"{lo}:{hi}"
 
 
 async def _assert_intake_exists(session: AsyncSession, intake_id: int | None) -> None:
@@ -131,56 +125,15 @@ def _owner_plan_label(
 
 
 async def _create_dm(
-    session: AsyncSession, current: User, peer_id: int | None, response: Response
+    session: AsyncSession,
+    current: User,
+    peer_id: int | None,
+    response: Response,
+    *,
+    torch: bool = False,
 ) -> Room:
-    if peer_id is None or peer_id == current.id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valid peer_id required for dm")
-    peer = await session.get(User, peer_id)
-    if peer is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Peer user not found")
-    await assert_peer_visible(session, current, peer)
-
-    dm_key = _dm_key(current.id, peer_id)
-    existing = (
-        await session.execute(select(Room).where(Room.dm_key == dm_key))
-    ).scalar_one_or_none()
-    if existing is not None:
-        # dm_key переживает смену тарифа: понижение подчищает членство одной из
-        # сторон (resync_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
-        # change cleanup"), а комнату — нет. Без восстановления здесь возврат
-        # тарифа не возвращал бы старую переписку: dm_key находил бы ту же
-        # комнату и просто отдавал её «как есть», без строки членства — тот же
-        # 403 на чтение и невозможность написать, что и до отката. Membership
-        # чинится симметрично для обеих сторон — так же, как при первом
-        # создании ниже, `assert_peer_visible` уже проверил видимость current.
-        for uid in (current.id, peer_id):
-            if await session.get(RoomMember, (existing.id, uid)) is None:
-                session.add(RoomMember(room_id=existing.id, user_id=uid, role_in_room="member"))
-        await session.flush()
-        response.status_code = status.HTTP_200_OK  # дедуп — не плодим
-        return existing
-
-    room = Room(type="dm", dm_key=dm_key, created_by=current.id)
-    session.add(room)
-    try:
-        await session.flush()
-    except IntegrityError:
-        # Гонка: кто-то создал тот же dm параллельно — вернуть существующую.
-        await session.rollback()
-        existing = (
-            await session.execute(select(Room).where(Room.dm_key == dm_key))
-        ).scalar_one()
-        response.status_code = status.HTTP_200_OK
-        return existing
-
-    session.add_all(
-        [
-            RoomMember(room_id=room.id, user_id=current.id, role_in_room="member"),
-            RoomMember(room_id=room.id, user_id=peer_id, role_in_room="member"),
-        ]
-    )
-    await session.flush()
-    response.status_code = status.HTTP_201_CREATED
+    room, created = await get_or_create_dm(session, current, peer_id, torch=torch)
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return room
 
 
@@ -192,19 +145,34 @@ async def create_room(
     response: Response,
 ) -> Room | RoomOut:
     """Создать комнату. Правила доступа зависят от типа (см. модуль)."""
+    if body.torch and not (current_user.role == "admin" or current_user.torch_unlocked):
+        # Раздел «Факел» — своё право на создание (dm И группа), не
+        # can_create_groups (та настройка про обычные группы Рубки, админ может
+        # её отнять независимо от клуба) и не видимость пира — сам инициатор
+        # обязан быть внутри раздела, иначе замкнутый (`torch_unlocked=false`)
+        # выпускник мог бы завести чат клуба раньше, чем ему его открыли.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Torch club is not open for you")
+
     if body.type == "dm":
-        return await _create_dm(session, current_user, body.peer_id, response)
+        return await _create_dm(
+            session, current_user, body.peer_id, response, torch=body.torch
+        )
 
     # group/channel требуют имя.
     if not body.name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
 
     if body.type == "group":
-        if not current_user.can_create_groups:
+        if not body.torch and not current_user.can_create_groups:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "Not allowed to create groups"
             )
-        room = Room(type="group", name=body.name, created_by=current_user.id)
+        room = Room(
+            type="group",
+            name=body.name,
+            created_by=current_user.id,
+            torch_scope=body.torch,
+        )
         session.add(room)
         await session.flush()
         # Создатель группы — owner.
@@ -285,7 +253,11 @@ async def list_rooms(
     # комнат намеренно всегда NULL, см. diary_visible/ARG-112).
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
-        channel_clause = Room.type == "channel"
+        # Клуб «Факел» (`Room.is_torch`, ARG-54) — singleton group-комната, но
+        # видна админу всегда, как канал: не у каждого админа есть строка
+        # членства (владелец — только первый найденный на момент создания, см.
+        # ensure_torch_room), а пункт меню обещает доступ любому админу.
+        channel_clause = or_(Room.type == "channel", Room.is_torch)
     else:
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.
@@ -474,8 +446,11 @@ async def list_rooms(
             for uid, plan_id, plan_name, role in owner_rows.all()
         }
 
-    # Обложки личных дневников — батчем, одним вызовом на весь список.
-    avatar_map = await _presign_room_avatars(session, [r for r in rooms if r.is_personal])
+    # Обложки личных дневников и аватарки групп — батчем, одним вызовом на весь список
+    # (обе используют avatar_media_id, ARG-154 добавила его и группам).
+    avatar_map = await _presign_room_avatars(
+        session, [r for r in rooms if r.is_personal or r.type == "group"]
+    )
 
     out: list[RoomOut] = []
     for room in rooms:
@@ -493,6 +468,8 @@ async def list_rooms(
             item.owner_plan_id, item.owner_plan_name = owner_plan_map.get(
                 room.created_by, (None, None)
             )
+            item.avatar_url = avatar_map.get(room.id)
+        elif room.type == "group":
             item.avatar_url = avatar_map.get(room.id)
         out.append(item)
     return out
@@ -525,6 +502,9 @@ async def get_room(
         owner = owner_row.first()
         if owner is not None:
             item.owner_plan_id, item.owner_plan_name = _owner_plan_label(*owner)
+        signed = await _presign_room_avatars(session, [room])
+        item.avatar_url = signed.get(room.id)
+    elif room.type == "group":
         signed = await _presign_room_avatars(session, [room])
         item.avatar_url = signed.get(room.id)
     last_read = (membership.last_read_message_id or 0) if membership else 0
@@ -600,11 +580,25 @@ async def update_room_avatar(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> RoomOut:
-    """Обложка личного дневника: ставит/снимает только владелец. Пока — только
-    is_personal (см. docs/ROOMS.md «Personal diary rooms»)."""
+    """Обложка/аватарка комнаты. Личный дневник — только владелец (см. docs/ROOMS.md
+    «Personal diary rooms»). Группа — владелец группы или platform-admin (см. «Group
+    avatar»). Другие типы — 403.
+
+    Группа проверяется как в add_member/remove_member ниже — БЕЗ assert_room_access:
+    platform-admin управляет группой, даже не будучи её участником (нет строки
+    членства), а assert_room_access 403-ит группу без членства безусловно (нет
+    admin-обхода, в отличие от channel) — тот же admin-без-членства сценарий, что и
+    у управления составом."""
     room = await load_room(session, room_id)
-    await assert_room_access(session, room, current_user)
-    if not room.is_personal or room.created_by != current_user.id:
+    if room.is_personal:
+        await assert_room_access(session, room, current_user)
+        if room.created_by != current_user.id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your diary")
+    elif room.type == "group":
+        is_admin = current_user.role == "admin"
+        if not is_admin and not await _is_room_owner(session, room_id, current_user.id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Owner or admin required")
+    else:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your diary")
 
     if body.avatar_media_id is not None:
@@ -694,7 +688,7 @@ async def add_member(
     response: Response,
 ) -> RoomMember:
     """Добавить участника. Можно owner группы или platform-admin. Идемпотентно."""
-    await _load_group(session, room_id)
+    room = await _load_group(session, room_id)
 
     is_admin = current_user.role == "admin"
     if not is_admin and not await _is_room_owner(session, room_id, current_user.id):
@@ -703,7 +697,9 @@ async def add_member(
     target = await session.get(User, body.user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-    await assert_peer_visible(session, current_user, target)
+    # Круг видимости зависит от того, чья это группа — Рубки или «Факела»
+    # (см. assert_peer_visible/assert_torch_peer_visible).
+    await assert_peer_visible(session, current_user, target, torch=room.torch_scope)
 
     existing = await session.get(RoomMember, (room_id, body.user_id))
     if existing is not None:

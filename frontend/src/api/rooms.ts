@@ -23,6 +23,9 @@ export interface CreateRoomBody {
   type: RoomType
   name?: string
   peer_id?: number
+  // Создание внутри раздела «Факел» (ARG-54, часть 2) — другой круг видимости
+  // приглашаемого на бэке, см. docs/TORCH.md.
+  torch?: boolean
 }
 
 export function useCreateRoom() {
@@ -97,9 +100,10 @@ export function usePersonalChannel(enabled = true) {
   })
 }
 
-// Обложка личного дневника: владелец ставит/снимает (avatar_media_id — свой image-ассет,
-// null снимает). Инвалидируем все выдачи, где встречается avatar_url этой комнаты.
-export function useSetDiaryAvatar(roomId: number) {
+// Обложка комнаты: для личного дневника — только владелец, для группы — владелец
+// группы или platform-admin (ARG-154), см. docs/ROOMS.md. `avatar_media_id` — свой
+// image-ассет, null снимает. Инвалидируем все выдачи, где встречается avatar_url этой комнаты.
+export function useSetRoomAvatar(roomId: number) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (avatarMediaId: number | null) =>

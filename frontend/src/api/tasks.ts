@@ -265,6 +265,9 @@ export interface TaskUpdateBody {
   is_draft?: boolean
   intake_id?: number | null
   plan_ids?: number[]
+  // ARG-159: не передан — не трогаем; true/false — сделать обязательным/снять
+  // для получения артефакта экспедиции. Только для общих заданий.
+  required_for_graduation?: boolean
 }
 
 // Префикс ключа базы заданий (features/admin/AdminTasks) — эти хуки общие с
@@ -623,6 +626,8 @@ export interface TaskLibraryItemOut {
   // Потоки, на которые семейство этой задачи уже переиздано — не даём выбрать
   // их повторно в модалке переиздания.
   published_intake_ids: number[]
+  // ARG-159: обязательна ли задача для получения артефакта экспедиции.
+  required_for_graduation: boolean
 }
 
 export interface TaskLibraryListOut {

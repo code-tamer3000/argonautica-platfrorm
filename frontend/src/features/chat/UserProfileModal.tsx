@@ -14,12 +14,14 @@ interface Props {
   onClose: () => void
   // Открыть DM с этим пользователем (создаёт/находит комнату и выбирает её).
   onOpenDm?: (roomId: number) => void
+  // Dm создаётся внутри раздела «Факел» (ARG-54, часть 2) — см. docs/TORCH.md.
+  torch?: boolean
 }
 
 const roleLabel = (role: string): string =>
   role === 'admin' ? 'Администратор' : 'Участник'
 
-export function UserProfileModal({ profile, onClose, onOpenDm }: Props) {
+export function UserProfileModal({ profile, onClose, onOpenDm, torch = false }: Props) {
   const { user: me } = useAuth()
   const createRoom = useCreateRoom()
   const setDmPeer = useUiStore((s) => s.setDmPeer)
@@ -27,7 +29,7 @@ export function UserProfileModal({ profile, onClose, onOpenDm }: Props) {
 
   async function handleWrite() {
     try {
-      const room = await createRoom.mutateAsync({ type: 'dm', peer_id: profile.id })
+      const room = await createRoom.mutateAsync({ type: 'dm', peer_id: profile.id, torch })
       setDmPeer(room.id, profile.id)
       onOpenDm?.(room.id)
       onClose()

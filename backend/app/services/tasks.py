@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calendar import CalendarEvent, CalendarEventPlan
+from app.models.survey import SurveyResponse
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -28,17 +29,24 @@ from app.models.task import (
     TaskSubmission,
 )
 from app.models.user import User
+from app.schemas.expedition import ArtifactGateOut, PendingGraduationTaskOut
 from app.services import stream as stream_service
-from app.services.graduation import is_graduated
+from app.services.graduation import GRADUATED_MESSAGE, is_graduated
 from app.services.visibility import intake_visible, plan_visibility_clause, plan_visible
 from app.ws.pubsub import publish_user_event
 
 logger = logging.getLogger(__name__)
 
-# Что остаётся в разделе «Задачи» у выпускника (`graduated_at`): только то, что он
-# успел сдать. 'returned' сюда не входит — доработать он уже не может, висящая
-# карточка была бы тупиком; 'assigned' тем более.
+# Что остаётся в разделе «Задачи» у выпускника (`graduated_at`) без права дозадачи:
+# то, что он успел сдать.
 GRADUATE_VISIBLE_STATUSES = ("submitted", "accepted")
+
+# Задания, которые выпускник не успел сдать (или которые вернули на доработку) —
+# остаются видимыми и доступными для сдачи/комментария бессрочно (ARG-157:
+# «доздать» задание после экспедиции). Задача, которую участник вообще не открывал
+# до выпуска (нет строки task_assignments), доступной не становится — только уже
+# назначенные.
+GRADUATE_BACKFILLABLE_STATUSES = ("assigned", "returned")
 
 
 def _effective_plan_id(user: User) -> int | None:
@@ -113,7 +121,8 @@ async def assert_task_visible(
     `_effective_plan_id`: в Междумирье, см. services/limbo.py, это прошлый тариф,
     не текущий дешёвый), КРОМЕ уже сданной/принятой самим юзером — та остаётся
     видна независимо от тарифа (GRADUATE_VISIBLE_STATUSES, тот же список что и у
-    выпускника ниже); admin → всё; выпускник → только свои сданные задачи. Иначе:
+    выпускника ниже); admin → всё; выпускник → свои сданные задачи плюс те, что
+    можно доздать (GRADUATE_BACKFILLABLE_STATUSES, ARG-157). Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
     - pair → юзер состоит в одной из пар этого задания (task_pair_members);
@@ -122,15 +131,18 @@ async def assert_task_visible(
     if user.role == "admin":
         return
     if is_graduated(user):
-        # Экспедиция пройдена: видны только сданные задачи, независимо от типа.
-        submitted = await session.scalar(
+        # Экспедиция пройдена: видны сданные задачи плюс те, что ещё можно доздать
+        # (назначены/возвращены — ARG-157), независимо от типа.
+        visible = await session.scalar(
             select(TaskAssignment.id).where(
                 TaskAssignment.task_id == task.id,
                 TaskAssignment.user_id == user.id,
-                TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+                TaskAssignment.status.in_(
+                    GRADUATE_VISIBLE_STATUSES + GRADUATE_BACKFILLABLE_STATUSES
+                ),
             )
         )
-        if submitted is None:
+        if visible is None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
     # Отложенная публикация (база заданий): запланированная задача не существует
@@ -184,6 +196,19 @@ async def assert_task_visible(
     )
     if assignment is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+
+
+def assert_can_write_or_backfill(user: User, assignment: TaskAssignment | None) -> None:
+    """Пишущее действие по своему назначению: обычный запрет градации, но с
+    исключением (ARG-157) — выпускник может доздать задание, которое ещё не
+    сдано/возвращено (`GRADUATE_BACKFILLABLE_STATUSES`). Как только оно уходит в
+    'submitted', дальше запрет действует как обычно — это одноразовая дозадача,
+    а не постоянно открытая запись."""
+    if not is_graduated(user):
+        return
+    if assignment is not None and assignment.status in GRADUATE_BACKFILLABLE_STATUSES:
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, GRADUATED_MESSAGE)
 
 
 # --- пары (взаимное обучение) -----------------------------------------------
@@ -816,3 +841,76 @@ async def late_submissions_count(session: AsyncSession, user: User) -> int:
             select(func.count()).select_from(TaskAssignment).where(*filters)
         )
     ) or 0
+
+
+# --- Артефакт экспедиции: гейт по обязательным заданиям (ARG-159) --------
+
+
+async def required_graduation_task_ids(session: AsyncSession, user: User) -> list[int]:
+    """Общие задания, отмеченные админом обязательными для артефакта
+    (`Task.required_for_graduation`), СРЕДИ ТЕХ, что участнику вообще видны по
+    потоку+тарифу (`_visible_common_where`, ARG-96) — задача, ограниченная
+    тарифом, которого у выпускника нет, не должна становиться вечным тупиком.
+    Снимается снимком в `survey_responses.required_task_ids` в момент сдачи
+    анкеты."""
+    where = (
+        *_visible_common_where(user),
+        Task.deleted_at.is_(None),
+        Task.required_for_graduation.is_(True),
+    )
+    return list((await session.execute(select(Task.id).where(*where))).scalars().all())
+
+
+async def artifact_gate_for(session: AsyncSession, user: User) -> ArtifactGateOut | None:
+    """Доступен ли артефакт экспедиции выпускнику прямо сейчас (ARG-159).
+
+    None — не выпускник, гейта нет вовсе. Список обязательных заданий читаем из
+    снимка на анкете (`SurveyResponse.required_task_ids`), а не пересчитываем по
+    текущим меткам `Task.required_for_graduation` — правки админа после выпуска
+    участника на него не влияют. Задание, отмеченное обязательным и затем
+    удалённое, из списка выпадает и артефакт больше не блокирует — заблокировать
+    выпускника навсегда несуществующей задачей было бы тупиком без выхода.
+    """
+    if not is_graduated(user):
+        return None
+    response = (
+        await session.execute(
+            select(SurveyResponse).where(SurveyResponse.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    required_ids = response.required_task_ids if response else []
+    if not required_ids:
+        return ArtifactGateOut(available=True, pending_tasks=[])
+
+    accepted_ids = set(
+        (
+            await session.execute(
+                select(TaskAssignment.task_id).where(
+                    TaskAssignment.user_id == user.id,
+                    TaskAssignment.task_id.in_(required_ids),
+                    TaskAssignment.status == "accepted",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pending_ids = [tid for tid in required_ids if tid not in accepted_ids]
+    if not pending_ids:
+        return ArtifactGateOut(available=True, pending_tasks=[])
+
+    titles = dict(
+        (
+            await session.execute(
+                select(Task.id, Task.title).where(
+                    Task.id.in_(pending_ids), Task.deleted_at.is_(None)
+                )
+            )
+        ).all()
+    )
+    pending = [
+        PendingGraduationTaskOut(id=tid, title=titles[tid])
+        for tid in pending_ids
+        if tid in titles
+    ]
+    return ArtifactGateOut(available=len(pending) == 0, pending_tasks=pending)

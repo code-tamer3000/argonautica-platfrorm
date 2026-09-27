@@ -29,6 +29,7 @@ from app.api.stickers import router as stickers_router
 from app.api.stream import router as stream_router
 from app.api.survey import router as survey_router
 from app.api.tasks import router as tasks_router
+from app.api.torch import router as torch_router
 from app.api.users import router as users_router
 from app.core.metrics import render_prometheus
 from app.core.observability import ObservabilityMiddleware
@@ -36,7 +37,8 @@ from app.core.redis import close_redis, redis_client
 from app.db.session import SessionLocal
 from app.models.intake import Intake
 from app.services.media import ensure_buckets
-from app.services.rooms import ensure_news_channel
+from app.services.rooms import ensure_news_channel, ensure_torch_room
+from app.services.torch import get_or_create_torch_settings
 from app.ws.chat import router as ws_router
 from app.ws.pubsub import ensure_listener_started, stop_listener
 
@@ -45,6 +47,7 @@ from app.ws.pubsub import ensure_listener_started, stop_listener
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Проверяем доступность Redis на старте (fail-fast), создаём бакеты MinIO,
     # гарантируем новостной канал каждого потока (ARG-104 — больше не singleton),
+    # комнату клуба «Факел» (ARG-54, singleton на всю платформу) и её настройки,
     # поднимаем pub/sub-слушателя реалтайма; на остановке — гасим его и закрываем пул.
     await redis_client.ping()
     await run_in_threadpool(ensure_buckets)
@@ -52,6 +55,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         intake_ids = (await session.execute(select(Intake.id))).scalars().all()
         for intake_id in intake_ids:
             await ensure_news_channel(session, intake_id)
+        await ensure_torch_room(session)
+        await get_or_create_torch_settings(session)
         await session.commit()
     await ensure_listener_started()
     try:
@@ -92,6 +97,7 @@ app.include_router(push_router)
 app.include_router(stream_router)
 app.include_router(survey_router)
 app.include_router(tasks_router)
+app.include_router(torch_router)
 app.include_router(ws_router)
 
 

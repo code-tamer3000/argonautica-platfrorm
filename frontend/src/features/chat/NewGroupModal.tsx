@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { addRoomMember, useCreateRoom } from '../../api/rooms'
+import { useTorchContacts } from '../../api/torch'
 import { useContacts } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
@@ -14,14 +15,21 @@ import styles from './chat.module.css'
 interface Props {
   onClose: () => void
   onCreated: (roomId: number) => void
+  // Группа создаётся внутри раздела «Факел» (ARG-54, часть 2) — другие контакты
+  // и другой круг видимости на бэке. См. docs/TORCH.md.
+  torch?: boolean
 }
 
-export function NewGroupModal({ onClose, onCreated }: Props) {
+export function NewGroupModal({ onClose, onCreated, torch = false }: Props) {
   const { user: me } = useAuth()
   const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const { data: users, isLoading } = useContacts(
+  const { data: regularContacts, isLoading: regularLoading } = useContacts(
     me?.role === 'admin' ? adminCurrentIntakeId : undefined,
+    !torch,
   )
+  const { data: torchContacts, isLoading: torchLoading } = useTorchContacts(torch)
+  const users = torch ? torchContacts : regularContacts
+  const isLoading = torch ? torchLoading : regularLoading
   const createRoom = useCreateRoom()
   const [name, setName] = useState('')
   const [q, setQ] = useState('')
@@ -89,7 +97,7 @@ export function NewGroupModal({ onClose, onCreated }: Props) {
     }
     setSubmitting(true)
     try {
-      const room = await createRoom.mutateAsync({ type: 'group', name: trimmed })
+      const room = await createRoom.mutateAsync({ type: 'group', name: trimmed, torch })
       // Добавляем выбранных участников (создатель уже owner на бэке).
       for (const userId of selected) {
         try {

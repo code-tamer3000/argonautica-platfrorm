@@ -63,6 +63,10 @@ export interface SurveyRow {
   gift_asset_id: number | null
   answers: SurveyAnswers | null
   version: number | null
+  plan_id: number | null
+  plan_name: string | null
+  intake_id: number | null
+  intake_starts_on: string | null
 }
 
 export interface SurveyOverview {

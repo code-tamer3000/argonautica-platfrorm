@@ -18,7 +18,8 @@ interface Props {
   hideRoomList?: boolean
 }
 
-const basePathFor = (tab: Tab) => (tab === 'chats' ? '/chats' : '/diaries')
+const basePathFor = (tab: Tab) =>
+  tab === 'chats' ? '/chats' : tab === 'torch' ? '/torch' : '/diaries'
 
 export function ChatLayout({ tab, hideRoomList }: Props) {
   const { roomId: roomIdParam } = useParams<{ roomId?: string }>()

@@ -13,6 +13,7 @@ import { useIsOfflineEmpty, useIsOfflineFailure } from '../../hooks/useOfflineEm
 import { useAuth } from '../auth/AuthContext'
 import type { Element } from '../../lib/types'
 import { plural } from '../../lib/format'
+import { ExpeditionArtifactCard } from './ExpeditionArtifactCard'
 import { ExpeditionWheel } from './ExpeditionWheel'
 import { LockDialog } from './LockDialog'
 import { TasksCard } from './TasksCard'
@@ -121,7 +122,12 @@ export function DashboardScreen() {
         </section>
 
         <section className={styles.rail} aria-label="Что сейчас">
-          {!isPending && data.journal && (
+          {/* ARG-157: у выпускника на месте виджета Дневника — карточка артефакта
+              (писать в дневник больше нельзя, journal_locked это уже отражает). */}
+          {!isPending && user?.graduated_at && (
+            <ExpeditionArtifactCard gate={data.artifact_gate} />
+          )}
+          {!isPending && !user?.graduated_at && data.journal && (
             <Card className={styles.today} accent>
               <div className={styles.cardHead}>
                 <h3>Сегодня</h3>

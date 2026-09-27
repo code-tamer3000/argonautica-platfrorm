@@ -153,3 +153,37 @@
 .planGroupHead { display: flex; align-items: baseline; gap: var(--space-2); margin-bottom: var(--space-2); }
 .planGroupTitle { font-family: var(--font-t4); font-size: 0.75rem; text-transform: uppercase; letter-spacing: var(--ls-label-sm); color: var(--text-secondary); }
 .planGroupCount { font-size: 0.7rem; color: var(--text-secondary); background: var(--divider); border-radius: 9999px; padding: 1px var(--space-2); }
+
+/* Анкета: строка фильтров (поток + тариф) в один ряд. */
+.filterRow { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: flex-end; }
+.filterRow .formRow { flex: 1 1 200px; min-width: 160px; }
+.filterRow .input { max-width: none; }
+
+/* Тариф — кнопка со счётчиком открывает панель чекбоксов, не занимает экран сама. */
+.filterDropdown { position: relative; }
+.filterDropdownTrigger { width: 100%; text-align: left; background: var(--bg); border: 1px solid var(--divider); border-radius: var(--radius-btn); padding: var(--space-2) var(--space-3); color: var(--text-primary); font-size: var(--text-ui); cursor: pointer; box-sizing: border-box; }
+.filterDropdownTrigger:hover { border-color: var(--accent); }
+.filterDropdownPanel { position: absolute; top: calc(100% + var(--space-2)); left: 0; z-index: 20; min-width: 260px; max-width: 90vw; background: var(--bg-surface); border: 1px solid var(--divider); border-radius: var(--radius-card); padding: var(--space-3); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+
+/* Анкета, вид «по человеку»: строка сворачивается до имени, разворот — карточка. */
+.answerPerson { display: flex; flex-direction: column; align-items: stretch; background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); overflow: hidden; }
+.answerPersonHead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); width: 100%; padding: var(--space-4); background: transparent; border: none; cursor: pointer; text-align: left; }
+.answerPersonHead:hover { background: var(--divider); }
+.answerCard { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
+.answerQA { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-3); border-top: 1px solid var(--divider); }
+.answerQA:first-of-type { padding-top: 0; border-top: none; }
+.answerQuestionToggle { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); width: 100%; background: transparent; border: none; padding: 0; cursor: pointer; text-align: left; }
+.answerQuestion { font-family: var(--font-t4); font-size: 0.75rem; color: var(--text-secondary); }
+.answerText { font-size: var(--text-ui); color: var(--text-primary); white-space: pre-wrap; }
+/* Реюз стиля разворота карточки Динамики (dynamics.module.css .expandBtn) — тот же приём «Свернуть»/«Развернуть» текстом. */
+.expandBtn { flex: none; font-size: var(--text-label-md); color: var(--text-muted); }
+.answerPersonHead:hover .expandBtn,
+.answerQuestionToggle:hover .expandBtn { color: var(--accent); }
+
+/* Анкета, вид «по вопросу»: один вопрос — все ответы под ним. Своя рамка/фон, а не
+   комбинация с .listItem — совмещение row-flex .listItem с column-flex здесь и
+   разъезжало вёрстку. */
+.answerGroup { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); background: var(--bg-surface); border-radius: var(--radius-card); border: 1px solid var(--divider); }
+.answerGroupTitle { font-family: var(--font-t4); font-size: var(--text-ui); font-weight: 600; color: var(--text-primary); margin: 0; }
+.answerGroupRow { display: flex; flex-direction: column; gap: var(--space-1); padding-top: var(--space-3); border-top: 1px solid var(--divider); }
+.answerGroupRow:first-of-type { padding-top: 0; border-top: none; }

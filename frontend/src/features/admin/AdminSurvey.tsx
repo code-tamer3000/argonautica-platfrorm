@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   useAdminSurvey,
   useCancelSurveyInvite,
@@ -8,16 +8,42 @@ import {
   type SurveyQuestion,
   type SurveyRow,
 } from '../../api/survey'
+import { useAdminIntakes } from '../../api/admin'
+import { useAdminPlans } from '../../api/plans'
+import { useAdminTaskLibrary, useUpdateTask } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { PageHeader } from '../../components/PageHeader'
+import { Segmented } from '../../components/Segmented'
 import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
-import cabin from '../cabin/cabin.module.css'
 import styles from './admin.module.css'
 
-type Tab = 'invite' | 'answers'
+type Tab = 'invite' | 'answers' | 'required'
+type AnswerView = 'byPerson' | 'byQuestion'
+/** Ключ тарифа в чекбокс-фильтре: id тарифа либо 'none' — держатель без тарифа. */
+type PlanKey = number | 'none'
+type IntakeFilter = number | 'all'
+
+/** Пустой набор — фильтр не сужен, показываем все тарифы (как раньше «Все тарифы»). */
+function matchesPlan(row: SurveyRow, selected: Set<PlanKey>): boolean {
+  if (selected.size === 0) return true
+  return selected.has(row.plan_id ?? 'none')
+}
+
+function matchesIntake(row: SurveyRow, filter: IntakeFilter): boolean {
+  return filter === 'all' || row.intake_id === filter
+}
+
+/** `YYYY-MM-DD` → «2 июня 2026» — та же дата, что и в фильтре набора AdminUsers. */
+function formatIntakeDate(startsOn: string): string {
+  return new Date(`${startsOn}T00:00:00`).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
 
 function formatDatetime(iso: string): string {
   try {
@@ -51,7 +77,11 @@ function renderAnswer(q: SurveyQuestion, a: SurveyAnswer): string {
  */
 export function AdminSurvey() {
   const [tab, setTab] = useState<Tab>('invite')
-  const [q, setQ] = useState('')
+  const [answerView, setAnswerView] = useState<AnswerView>('byPerson')
+  // null — фильтр не трогали: по умолчанию активный поток, тот же приём, что в
+  // AdminUsers/AdminDynamics («Наборы приходят свежими сверху»).
+  const [intakeFilter, setIntakeFilter] = useState<IntakeFilter | null>(null)
+  const [planFilter, setPlanFilter] = useState<Set<PlanKey>>(new Set())
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [uploading, setUploading] = useState<number | null>(null)
   // Скрытый input на всю таблицу: помним, для кого выбираем файл.
@@ -59,20 +89,37 @@ export function AdminSurvey() {
   const targetRef = useRef<number | null>(null)
 
   const { data, isLoading } = useAdminSurvey()
+  const { data: intakes = [] } = useAdminIntakes()
+  const { data: plansRaw = [] } = useAdminPlans()
   const invite = useInviteSurvey()
   const cancelInvite = useCancelSurveyInvite()
   const setGift = useSetSurveyGift()
 
+  // Наборы приходят свежими сверху: активный — тот, что стартует последним.
+  const activeIntake = intakes[0]
+  const selectedIntake: IntakeFilter = intakeFilter ?? activeIntake?.id ?? 'all'
+
+  // Самый дешёвый тариф («Наблюдатель») почти никогда не сдаёт анкету — не даём
+  // ему занимать верх списка, тот же приём, что и в ростере контактов (`is_cheap`).
+  const plans = useMemo(
+    () => plansRaw.slice().sort((a, b) => Number(a.is_cheap) - Number(b.is_cheap)),
+    [plansRaw],
+  )
+
   const rows = useMemo(() => data?.rows ?? [], [data])
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    if (!needle) return rows
-    return rows.filter(
-      (r) =>
-        r.display_name.toLowerCase().includes(needle) ||
-        r.username.toLowerCase().includes(needle),
-    )
-  }, [rows, q])
+  const filtered = useMemo(
+    () => rows.filter((r) => matchesIntake(r, selectedIntake) && matchesPlan(r, planFilter)),
+    [rows, selectedIntake, planFilter],
+  )
+
+  function togglePlan(key: PlanKey) {
+    setPlanFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   function toggle(userId: number) {
     setPicked((prev) => {
@@ -89,6 +136,12 @@ export function AdminSurvey() {
     setPicked((prev) =>
       candidates.every((id) => prev.has(id)) ? new Set() : new Set(candidates),
     )
+  }
+
+  function selectAllInPlan() {
+    if (planFilter.size === 0) return
+    const candidates = filtered.filter((r) => !r.completed_at).map((r) => r.user_id)
+    setPicked((prev) => new Set([...prev, ...candidates]))
   }
 
   function handleInvite() {
@@ -159,28 +212,22 @@ export function AdminSurvey() {
         </span>
       </PageHeader>
 
-      <div className={cabin.segmented} role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'invite'}
-          className={tab === 'invite' ? cabin.segActive : cabin.seg}
-          onClick={() => setTab('invite')}
-        >
-          Кому показать
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'answers'}
-          className={tab === 'answers' ? cabin.segActive : cabin.seg}
-          onClick={() => setTab('answers')}
-        >
-          Ответы ({data.completed_count})
-        </button>
-      </div>
+      <Segmented
+        options={[
+          { value: 'invite', label: 'Кому показать' },
+          { value: 'answers', label: `Ответы (${data.completed_count})` },
+          { value: 'required', label: 'Обязательные задания' },
+        ]}
+        value={tab}
+        onChange={setTab}
+        label="Раздел анкеты"
+      />
 
-      {tab === 'invite' ? (
+      {tab === 'required' && (
+        <RequiredTasksPanel intakes={intakes} activeIntake={activeIntake} />
+      )}
+
+      {tab !== 'required' && (tab === 'invite' ? (
         <>
           <p className={styles.listDescription}>
             Отмеченным участникам платформа закроется анкетой до тех пор, пока они её
@@ -189,16 +236,27 @@ export function AdminSurvey() {
             выбрать пачкой, они разложатся по именам).
           </p>
 
-          <input
-            className={styles.input}
-            placeholder="Поиск по имени или username"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+          <SurveyFilters
+            idPrefix="invite"
+            intakes={intakes}
+            activeIntake={activeIntake}
+            selectedIntake={selectedIntake}
+            onIntakeChange={setIntakeFilter}
+            plans={plans}
+            planFilter={planFilter}
+            onTogglePlan={togglePlan}
           />
 
           <div className={styles.listActions}>
             <Button variant="outline" onClick={toggleAll}>
               Выбрать всех несдавших
+            </Button>
+            <Button
+              variant="outline"
+              disabled={planFilter.size === 0}
+              onClick={selectAllInPlan}
+            >
+              Выбрать всех в тарифе
             </Button>
             <Button
               variant="gold"
@@ -277,45 +335,312 @@ export function AdminSurvey() {
           </div>
         </>
       ) : (
-        <div className={styles.list}>
-          {rows.filter((r) => r.completed_at).length === 0 ? (
-            <p className={styles.mediaEmpty}>Пока никто не заполнил анкету.</p>
+        <>
+          <SurveyFilters
+            idPrefix="answers"
+            intakes={intakes}
+            activeIntake={activeIntake}
+            selectedIntake={selectedIntake}
+            onIntakeChange={setIntakeFilter}
+            plans={plans}
+            planFilter={planFilter}
+            onTogglePlan={togglePlan}
+          />
+
+          <Segmented
+            options={[
+              { value: 'byPerson', label: 'По человеку' },
+              { value: 'byQuestion', label: 'По вопросу' },
+            ]}
+            value={answerView}
+            onChange={setAnswerView}
+            label="Вид ответов"
+          />
+
+          {answerView === 'byPerson' ? (
+            <div className={styles.list}>
+              {filtered.filter((r) => r.completed_at).length === 0 ? (
+                <p className={styles.mediaEmpty}>Никто из отфильтрованных пока не заполнил анкету.</p>
+              ) : (
+                filtered
+                  .filter((r) => r.completed_at)
+                  .map((r) => <PersonAnswers key={r.user_id} row={r} questions={questions} />)
+              )}
+            </div>
           ) : (
-            rows
-              .filter((r) => r.completed_at)
-              .map((r) => <AnswerCard key={r.user_id} row={r} questions={questions} />)
+            <div className={styles.list}>
+              {questions.map((question) => {
+                const answered = filtered.filter(
+                  (r) => r.completed_at && r.answers?.[question.key],
+                )
+                if (answered.length === 0) return null
+                return (
+                  <div className={styles.answerGroup} key={question.key}>
+                    <h3 className={styles.answerGroupTitle}>{question.title}</h3>
+                    {answered.map((r) => (
+                      <div className={styles.answerGroupRow} key={r.user_id}>
+                        <span className={styles.listMeta}>{r.display_name}</span>
+                        <div className={styles.answerText}>
+                          {renderAnswer(question, r.answers![question.key])}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
           )}
-        </div>
-      )}
+        </>
+      ))}
     </div>
   )
 }
 
-function AnswerCard({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
+/**
+ * Строка участника в «по человеку» — свёрнута по умолчанию (только имя), разворот
+ * показывает полные ответы; каждый ответ внутри можно свернуть отдельно.
+ */
+function PersonAnswers({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className={styles.listItem} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-      <span className={styles.listMeta}>
-        {row.display_name} · @{row.username} ·{' '}
-        {row.completed_at ? formatDatetime(row.completed_at) : ''}
-        {row.publish_consent && (
-          <>
-            {' '}
-            <Badge tone="accent">Разрешил публикацию</Badge>
-          </>
-        )}
-      </span>
-      {questions.map((q) => {
-        const a = row.answers?.[q.key]
-        if (!a) return null
+    <div className={styles.answerPerson}>
+      <button type="button" className={styles.answerPersonHead} onClick={() => setOpen((v) => !v)}>
+        <span className={styles.listMeta}>
+          {row.display_name} · @{row.username} ·{' '}
+          {row.completed_at ? formatDatetime(row.completed_at) : ''}
+          {row.publish_consent && (
+            <>
+              {' '}
+              <Badge tone="accent">Разрешил публикацию</Badge>
+            </>
+          )}
+        </span>
+        <span className={styles.expandBtn}>{open ? 'Свернуть' : 'Развернуть'}</span>
+      </button>
+      {open && <PersonAnswerBody row={row} questions={questions} />}
+    </div>
+  )
+}
+
+function PersonAnswerBody({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
+  // Ответы, у которых нет данных, не заводят строку — сворачивать нечего.
+  const answered = questions.filter((q) => row.answers?.[q.key])
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  function toggle(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  return (
+    <div className={styles.answerCard}>
+      {answered.map((q) => {
+        const isCollapsed = collapsed.has(q.key)
         return (
-          <div key={q.key} style={{ marginTop: 'var(--space-3)' }}>
-            <div className={styles.listMeta}>{q.title}</div>
-            <div className={styles.listDescription} style={{ whiteSpace: 'pre-wrap' }}>
-              {renderAnswer(q, a)}
-            </div>
+          <div className={styles.answerQA} key={q.key}>
+            <button
+              type="button"
+              className={styles.answerQuestionToggle}
+              onClick={() => toggle(q.key)}
+            >
+              <span className={styles.answerQuestion}>{q.title}</span>
+              <span className={styles.expandBtn}>{isCollapsed ? 'Развернуть' : 'Свернуть'}</span>
+            </button>
+            {!isCollapsed && (
+              <div className={styles.answerText}>{renderAnswer(q, row.answers![q.key])}</div>
+            )}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * ARG-159: какие общие задания потока обязательны для получения артефакта
+ * экспедиции. Список фиксируется снимком на момент сдачи анкеты — правки
+ * здесь не ретроактивны для уже выпустившихся участников.
+ */
+function RequiredTasksPanel({
+  intakes,
+  activeIntake,
+}: {
+  intakes: { id: number; starts_on: string }[]
+  activeIntake: { id: number } | undefined
+}) {
+  const [intakeId, setIntakeId] = useState<number | null>(null)
+  const selected = intakeId ?? activeIntake?.id ?? intakes[0]?.id ?? null
+
+  const { data, isLoading } = useAdminTaskLibrary(
+    selected != null
+      ? { intakeId: selected, type: 'common', state: 'published' }
+      : undefined,
+  )
+  const updateTask = useUpdateTask()
+
+  if (selected == null) {
+    return <p className={styles.listDescription}>Пока нет ни одного потока.</p>
+  }
+
+  const items = data?.items ?? []
+
+  return (
+    <>
+      <p className={styles.listDescription}>
+        Пока хотя бы одна из отмеченных задач у выпускника не принята, на главной у
+        него вместо артефакта — список того, что нужно доделать. Ничего не отмечено —
+        артефакт доступен сразу после сдачи анкеты, как раньше.
+      </p>
+
+      <div className={styles.formRow}>
+        <label htmlFor="required_intake">Поток</label>
+        <select
+          id="required_intake"
+          className={styles.input}
+          value={String(selected)}
+          onChange={(e) => setIntakeId(Number(e.target.value))}
+        >
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {formatIntakeDate(intake.starts_on)}
+              {intake.id === activeIntake?.id ? ' — активный' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading ? (
+        <Spinner />
+      ) : items.length === 0 ? (
+        <p className={styles.mediaEmpty}>В этом потоке нет опубликованных общих заданий.</p>
+      ) : (
+        <div className={styles.list}>
+          {items.map((t) => (
+            <div className={styles.listItem} key={t.id}>
+              <label className={styles.checkRow}>
+                <input
+                  type="checkbox"
+                  checked={t.required_for_graduation}
+                  disabled={updateTask.isPending}
+                  onChange={(e) =>
+                    updateTask.mutate({ id: t.id, required_for_graduation: e.target.checked })
+                  }
+                />
+                <span>{t.title}</span>
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+/** Фильтры анкеты: поток — select, тариф — выпадающий чекбокс-список (не занимает
+ * весь экран, тот же приём, что кебаб-меню, только с чекбоксами внутри). */
+function SurveyFilters({
+  idPrefix,
+  intakes,
+  activeIntake,
+  selectedIntake,
+  onIntakeChange,
+  plans,
+  planFilter,
+  onTogglePlan,
+}: {
+  idPrefix: string
+  intakes: { id: number; starts_on: string }[]
+  activeIntake: { id: number } | undefined
+  selectedIntake: IntakeFilter
+  onIntakeChange: (v: IntakeFilter) => void
+  plans: { id: number; name: string }[]
+  planFilter: Set<PlanKey>
+  onTogglePlan: (key: PlanKey) => void
+}) {
+  return (
+    <div className={styles.filterRow}>
+      <div className={styles.formRow}>
+        <label htmlFor={`${idPrefix}_intake`}>Поток</label>
+        <select
+          id={`${idPrefix}_intake`}
+          className={styles.input}
+          value={String(selectedIntake)}
+          onChange={(e) => onIntakeChange(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+        >
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {formatIntakeDate(intake.starts_on)}
+              {intake.id === activeIntake?.id ? ' — активный' : ''}
+            </option>
+          ))}
+          <option value="all">Все потоки</option>
+        </select>
+      </div>
+      <PlanFilterDropdown plans={plans} selected={planFilter} onToggle={onTogglePlan} />
+    </div>
+  )
+}
+
+/** Тариф — не select (тарифов может быть несколько сразу отмечено), но и не ряд
+ * чекбоксов прямо на экране: кнопка со счётчиком открывает панель, клик вне закрывает
+ * (тот же приём, что в components/KebabMenu.tsx). */
+function PlanFilterDropdown({
+  plans,
+  selected,
+  onToggle,
+}: {
+  plans: { id: number; name: string }[]
+  selected: Set<PlanKey>
+  onToggle: (key: PlanKey) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div className={styles.formRow}>
+      <label>Тариф</label>
+      <div className={styles.filterDropdown} ref={ref}>
+        <button type="button" className={styles.filterDropdownTrigger} onClick={() => setOpen((v) => !v)}>
+          {selected.size > 0 ? `Выбрано: ${selected.size}` : 'Все тарифы'}
+        </button>
+        {open && (
+          <div className={styles.filterDropdownPanel} role="menu">
+            <div className={styles.checkRow}>
+              {plans.map((plan) => (
+                <label key={plan.id} className={styles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(plan.id)}
+                    onChange={() => onToggle(plan.id)}
+                  />
+                  {plan.name}
+                </label>
+              ))}
+              <label className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={selected.has('none')}
+                  onChange={() => onToggle('none')}
+                />
+                Без тарифа
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
