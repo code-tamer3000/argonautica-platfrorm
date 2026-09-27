@@ -95,11 +95,6 @@ from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
 from app.services.survey_form import question_form
-from app.services.torch import (
-    get_or_create_torch_settings,
-    grant_torch_access,
-    revoke_torch_access,
-)
 from app.services.tasks import (
     clone_task,
     family_published_intake_ids,
@@ -109,6 +104,11 @@ from app.services.tasks import (
     participant_count,
     published_where,
     sync_task_calendar_event,
+)
+from app.services.torch import (
+    get_or_create_torch_settings,
+    grant_torch_access,
+    revoke_torch_access,
 )
 from app.services.users import avatar_url
 from app.services.visibility import CHEAP_TARIFF_NAME
