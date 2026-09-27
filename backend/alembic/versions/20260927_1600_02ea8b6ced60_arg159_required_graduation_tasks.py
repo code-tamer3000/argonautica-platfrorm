@@ -1,7 +1,7 @@
 """arg159: required tasks for expedition artifact
 
 Revision ID: 02ea8b6ced60
-Revises: b2d1c27ea500
+Revises: 3fa0cc35c661
 Create Date: 2026-09-27 16:00:00.000000
 
 Артефакт экспедиции открывается только после сдачи обязательных заданий,
@@ -24,7 +24,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = '02ea8b6ced60'
-down_revision: str | None = 'b2d1c27ea500'
+down_revision: str | None = '3fa0cc35c661'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
