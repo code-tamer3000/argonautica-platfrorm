@@ -42,29 +42,34 @@ function saveDraft(draft: Draft): void {
 
 /**
  * Ошибки формы — те же правила, что и на бэкенде (`validate_answers`), чтобы
- * человек не отправлял анкету в 422. Пустой массив — можно отправлять.
+ * человек не отправлял анкету в 422. По ключу вопроса — подсказка рисуется
+ * прямо под конкретным полем, а не общим списком; отдельный ключ `${key}:comment`
+ * для поля отписки у multi-вопроса. Пустой объект — можно отправлять.
  */
-function formErrors(questions: SurveyQuestion[], answers: SurveyAnswers): string[] {
-  const errors: string[] = []
+function formErrors(
+  questions: SurveyQuestion[],
+  answers: SurveyAnswers,
+): Record<string, string> {
+  const errors: Record<string, string> = {}
   for (const q of questions) {
     const a = answers[q.key]
     if (q.kind === 'multi') {
       if (q.required && !(a?.choices ?? []).length) {
-        errors.push(`«${q.title}» — отметь хотя бы один вариант`)
+        errors[q.key] = 'Отметь хотя бы один вариант'
         continue
       }
       if (q.comment_required && (a?.choices ?? []).length && !(a?.comment ?? '').trim()) {
-        errors.push(`«${q.comment_title ?? q.title}» — без ответа`)
+        errors[`${q.key}:comment`] = 'Это поле пропущено'
       }
       continue
     }
     const text = (a?.text ?? '').trim()
     if (!text) {
-      if (q.required) errors.push(`«${q.title}» — без ответа`)
+      if (q.required) errors[q.key] = 'Это поле пропущено'
       continue
     }
     if (q.required && text.length < q.min_length) {
-      errors.push(`«${q.title}» — минимум ${q.min_length} символов`)
+      errors[q.key] = `Напиши ещё немного — нужно минимум ${q.min_length} символов`
     }
   }
   return errors
@@ -98,9 +103,11 @@ interface QuestionProps {
   q: SurveyQuestion
   answer: SurveyAnswer | undefined
   onChange: (patch: SurveyAnswer) => void
+  /** Подсказка под полем — только после неудачной попытки отправки, не «на лету». */
+  error?: string
 }
 
-function MultiInput({ q, answer, onChange }: QuestionProps) {
+function MultiInput({ q, answer, onChange, error }: QuestionProps) {
   const chosen = answer?.choices ?? []
   return (
     <div className={styles.choices}>
@@ -122,13 +129,13 @@ function MultiInput({ q, answer, onChange }: QuestionProps) {
           </button>
         )
       })}
+      {error && <span className={styles.fieldError}>{error}</span>}
     </div>
   )
 }
 
-function TextInput({ q, answer, onChange }: QuestionProps) {
+function TextInput({ q, answer, onChange, error }: QuestionProps) {
   const text = answer?.text ?? ''
-  const short = q.required && q.min_length > 0 && text.trim().length < q.min_length
   return (
     <>
       <textarea
@@ -138,16 +145,18 @@ function TextInput({ q, answer, onChange }: QuestionProps) {
         placeholder={q.placeholder ?? ''}
         onChange={(e) => onChange({ text: e.target.value })}
       />
-      {q.required && q.min_length > 0 && (
-        <span className={`${styles.counter} ${short ? styles.counterShort : ''}`}>
-          {text.trim().length} / {q.min_length} символов минимум
-        </span>
-      )}
+      {error && <span className={styles.fieldError}>{error}</span>}
     </>
   )
 }
 
-function QuestionField({ q, answer, onChange }: QuestionProps) {
+function QuestionField({
+  q,
+  answer,
+  onChange,
+  error,
+  commentError,
+}: QuestionProps & { commentError?: string }) {
   const patch = useCallback(
     (next: SurveyAnswer) => onChange({ ...answer, ...next }),
     [answer, onChange],
@@ -160,9 +169,9 @@ function QuestionField({ q, answer, onChange }: QuestionProps) {
       </span>
       {q.hint && <span className={styles.qHint}>{q.hint}</span>}
       {q.kind === 'multi' ? (
-        <MultiInput q={q} answer={answer} onChange={patch} />
+        <MultiInput q={q} answer={answer} onChange={patch} error={error} />
       ) : (
-        <TextInput q={q} answer={answer} onChange={patch} />
+        <TextInput q={q} answer={answer} onChange={patch} error={error} />
       )}
       {q.comment_title && (
         <>
@@ -176,6 +185,7 @@ function QuestionField({ q, answer, onChange }: QuestionProps) {
             maxLength={q.max_length}
             onChange={(e) => patch({ comment: e.target.value })}
           />
+          {commentError && <span className={styles.fieldError}>{commentError}</span>}
         </>
       )}
     </div>
@@ -198,7 +208,10 @@ export function SurveyScreen() {
   const [answers, setAnswers] = useState<SurveyAnswers>(initial.answers)
   const [consent, setConsent] = useState(initial.consent)
   const [started, setStarted] = useState(false)
-  const [errors, setErrors] = useState<string[]>([])
+  // По ключу вопроса — рисуется под конкретным полем, появляется только после
+  // неудачной попытки отправки (не «на лету», пока человек ещё печатает).
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
   const [giftReady, setGiftReady] = useState(false)
 
@@ -228,10 +241,12 @@ export function SurveyScreen() {
   async function onSubmit() {
     if (!form) return
     const problems = formErrors(form.questions, answers)
-    if (problems.length) {
-      setErrors(problems)
+    if (Object.keys(problems).length) {
+      setFieldErrors(problems)
+      setSubmitError(null)
       return
     }
+    setFieldErrors({})
     try {
       // Шлём только ключи текущего канона: в черновике из localStorage могут
       // лежать ответы на вопросы, которых в форме уже нет (её переделали между
@@ -249,7 +264,7 @@ export function SurveyScreen() {
       // Флаг снят на сервере — обновляем профиль, иначе гейт вернётся при перезагрузке.
       await refreshMe()
     } catch (err) {
-      setErrors([submitErrorText(err)])
+      setSubmitError(submitErrorText(err))
     }
   }
 
@@ -284,6 +299,8 @@ export function SurveyScreen() {
               q={q}
               answer={answers[q.key]}
               onChange={(patch) => setAnswer(q.key, patch)}
+              error={fieldErrors[q.key]}
+              commentError={fieldErrors[`${q.key}:comment`]}
             />
           ))}
         </div>
@@ -300,11 +317,10 @@ export function SurveyScreen() {
           {form.consent_label}
         </label>
 
-        {errors.map((e) => (
-          <div key={e} className={styles.error}>
-            {e}
-          </div>
-        ))}
+        {Object.keys(fieldErrors).length > 0 && (
+          <div className={styles.fieldError}>Проверь отмеченные поля выше</div>
+        )}
+        {submitError && <div className={styles.error}>{submitError}</div>}
 
         <div className={styles.actions}>
           <Button
