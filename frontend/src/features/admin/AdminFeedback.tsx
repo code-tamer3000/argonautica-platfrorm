@@ -4,12 +4,12 @@ import { useFeedbackList, useResolveFeedback } from '../../api/feedback'
 import { useCreateRoom } from '../../api/rooms'
 import type { FeedbackKind, FeedbackOut } from '../../lib/types'
 import { Button } from '../../components/Button'
+import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
 import { PageHeader } from '../../components/PageHeader'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
-import cabin from '../cabin/cabin.module.css'
 import styles from './admin.module.css'
 
 const KIND_LABEL: Record<FeedbackKind, string> = {
@@ -101,26 +101,15 @@ export function AdminFeedback() {
         )}
       </PageHeader>
 
-      <div className={cabin.segmented} role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'active'}
-          className={tab === 'active' ? cabin.segActive : cabin.seg}
-          onClick={() => setTab('active')}
-        >
-          Активные
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'done'}
-          className={tab === 'done' ? cabin.segActive : cabin.seg}
-          onClick={() => setTab('done')}
-        >
-          Завершённые
-        </button>
-      </div>
+      <Segmented
+        options={[
+          { value: 'active', label: 'Активные' },
+          { value: 'done', label: 'Завершённые' },
+        ]}
+        value={tab}
+        onChange={setTab}
+        label="Раздел обращений"
+      />
 
       {items.length === 0 ? (
         <p className={styles.mediaEmpty}>

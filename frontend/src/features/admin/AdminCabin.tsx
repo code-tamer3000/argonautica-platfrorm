@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAdminCabinEntries, useAdminCabinUsers } from '../../api/cabin'
 import { Avatar } from '../../components/Avatar'
 import { PageHeader } from '../../components/PageHeader'
+import { Segmented } from '../../components/Segmented'
 import { Spinner } from '../../components/Spinner'
 import type { CabinKind } from '../../lib/types'
 import { CABIN_SECTIONS } from '../cabin/cabinFields'
@@ -80,20 +81,12 @@ function UserEntries({ userId }: { userId: number }) {
 
   return (
     <>
-      <div className={cabin.segmented} role="tablist">
-        {KINDS.map((k) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={kind === k}
-            className={kind === k ? cabin.segActive : cabin.seg}
-            onClick={() => setKind(k)}
-          >
-            {CABIN_SECTIONS[k].title}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        options={KINDS.map((k) => ({ value: k, label: CABIN_SECTIONS[k].title }))}
+        value={kind}
+        onChange={setKind}
+        label="Раздел Каюты"
+      />
       <p className={cabin.subtitle}>{section.subtitle}</p>
 
       {isLoading && (

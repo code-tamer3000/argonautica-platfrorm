@@ -4,7 +4,7 @@
 сериализованными (`question_form()`), поэтому форма отдаётся `dict`, а не типом
 на каждый вид вопроса: канон меняется чаще, чем контракт эндпоинта.
 """
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -56,6 +56,12 @@ class SurveyRowOut(BaseModel):
     gift_asset_id: int | None
     answers: dict[str, Any] | None
     version: int | None
+    # Тариф/поток — денормализованы сюда, чтобы админка фильтровала и группировала
+    # без отдельного запроса (тот же приём, что и AdminUserOut).
+    plan_id: int | None
+    plan_name: str | None
+    intake_id: int | None
+    intake_starts_on: date | None
 
 
 class SurveyOverviewOut(BaseModel):

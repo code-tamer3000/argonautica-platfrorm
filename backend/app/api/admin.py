@@ -1280,12 +1280,15 @@ async def survey_overview(
     """Кому показана анкета, кто её сдал и что ответил — одной таблицей.
 
     Форму отдаём вместе со строками: админка подписывает ответы по канону, а не
-    по своей копии вопросов.
+    по своей копии вопросов. Тариф/поток денормализуем сюда же (тот же приём,
+    что и `list_users`) — админка фильтрует и группирует без второго запроса.
     """
     rows = (
         await session.execute(
-            select(User, SurveyResponse)
+            select(User, SurveyResponse, Intake.starts_on, Plan.name)
             .outerjoin(SurveyResponse, SurveyResponse.user_id == User.id)
+            .outerjoin(Intake, Intake.id == User.intake_id)
+            .outerjoin(Plan, Plan.id == User.plan_id)
             .where(User.role != "admin")
             .order_by(User.display_name)
         )
@@ -1303,8 +1306,12 @@ async def survey_overview(
             gift_asset_id=user.survey_gift_asset_id,
             answers=response.answers if response else None,
             version=response.version if response else None,
+            plan_id=user.plan_id,
+            plan_name=plan_name,
+            intake_id=user.intake_id,
+            intake_starts_on=starts_on,
         )
-        for user, response in rows
+        for user, response, starts_on, plan_name in rows
     ]
     return SurveyOverviewOut(
         form=question_form(),
