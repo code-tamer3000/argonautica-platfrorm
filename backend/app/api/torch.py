@@ -7,6 +7,7 @@
 `/api/rooms`/`/api/users` нет: текст заглушки для тех, у кого `torch_unlocked=False`,
 и контакт-лист раздела (свой круг видимости, не рангового каскада тарифов).
 """
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -16,9 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
 from app.models.user import User
-from app.schemas.torch import TorchStubOut
+from app.schemas.torch import TorchApplyOut, TorchStubOut
 from app.schemas.user import PublicUserOut
 from app.services.media import presign_asset_urls
+from app.services.rooms import get_or_create_dm
 from app.services.torch import get_or_create_torch_settings
 from app.services.users import avatar_url
 
@@ -39,7 +41,31 @@ async def get_torch_stub(
     """Текст заглушки для закрытого клуба — та же видимость, что у пункта меню."""
     _require_torch_access(current_user)
     settings = await get_or_create_torch_settings(session)
-    return TorchStubOut(stub_text=settings.stub_text)
+    return TorchStubOut(stub_text=settings.stub_text, apply_admin_id=settings.admin_user_id)
+
+
+@router.post("/apply", response_model=TorchApplyOut)
+async def apply_to_torch(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TorchApplyOut:
+    """Кнопка «Подать заявку» на гейте (ARG-158): открыть/создать `torch_scope`
+    DM с назначенным админом Факела и отметить пользователя как подавшего
+    заявку. Обходит self-service проверку `torch=true` в `POST /api/rooms`
+    (та требует уже открытого тумблера) — именно для того, чтобы дать написать
+    ДО тумблера, это весь смысл кнопки. `torch_scope=true` обязателен: обычный
+    DM был бы недоступен для записи выпускнику (см. assert_can_write)."""
+    _require_torch_access(current_user)
+    settings = await get_or_create_torch_settings(session)
+    if settings.admin_user_id is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Torch admin not configured")
+    room, _created = await get_or_create_dm(
+        session, current_user, settings.admin_user_id, torch=True
+    )
+    if current_user.torch_applied_at is None:
+        current_user.torch_applied_at = datetime.now(UTC)
+    await session.flush()
+    return TorchApplyOut(room_id=room.id)
 
 
 @router.get("/contacts", response_model=list[PublicUserOut])

@@ -7,15 +7,24 @@ export interface TorchRow {
   username: string
   display_name: string
   torch_unlocked: boolean
+  torch_applied_at: string | null
+}
+
+export interface TorchAdminCandidate {
+  user_id: number
+  display_name: string
 }
 
 export interface TorchOverview {
   rows: TorchRow[]
   stub_text: string
+  admin_user_id: number | null
+  admin_candidates: TorchAdminCandidate[]
 }
 
 export interface TorchStub {
   stub_text: string
+  apply_admin_id: number | null
 }
 
 export const torchStubKey = ['torch', 'stub'] as const
@@ -79,5 +88,27 @@ export function useUpdateTorchStub() {
     mutationFn: (stubText: string) =>
       http.patch<null>('/api/admin/torch/stub', { stub_text: stubText }),
     onSuccess: () => qc.invalidateQueries({ queryKey: adminTorchKey }),
+  })
+}
+
+/** Назначить (или снять, `null`) администратора Факела — с кем сводит кнопка
+ * «Подать заявку» на гейте. */
+export function useUpdateTorchAdmin() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (adminUserId: number | null) =>
+      http.patch<null>('/api/admin/torch/admin', { admin_user_id: adminUserId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: adminTorchKey }),
+  })
+}
+
+export interface TorchApply {
+  room_id: number
+}
+
+/** Кнопка «Подать заявку» на гейте: открыть/создать DM с назначенным админом. */
+export function useApplyToTorch() {
+  return useMutation({
+    mutationFn: () => http.post<TorchApply>('/api/torch/apply', {}),
   })
 }

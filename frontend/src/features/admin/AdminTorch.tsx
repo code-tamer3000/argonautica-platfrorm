@@ -3,6 +3,7 @@ import {
   useAdminTorch,
   useGrantTorch,
   useRevokeTorch,
+  useUpdateTorchAdmin,
   useUpdateTorchStub,
 } from '../../api/torch'
 import { Button } from '../../components/Button'
@@ -28,6 +29,7 @@ export function AdminTorch() {
   const grant = useGrantTorch()
   const revoke = useRevokeTorch()
   const updateStub = useUpdateTorchStub()
+  const updateAdmin = useUpdateTorchAdmin()
 
   useEffect(() => {
     if (data) setStubDraft(data.stub_text)
@@ -79,6 +81,14 @@ export function AdminTorch() {
     })
   }
 
+  function handleAdminChange(value: string) {
+    updateAdmin.mutate(value === '' ? null : Number(value), {
+      onSuccess: () => toast('Администратор Факела сохранён'),
+      onError: (err: unknown) =>
+        toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+    })
+  }
+
   if (isLoading || !data) {
     return (
       <div className={styles.page}>
@@ -100,6 +110,26 @@ export function AdminTorch() {
         выпустившийся видит только текст заглушки ниже; включение добавляет его в
         общий чат клуба.
       </p>
+
+      <div className={styles.listItem} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+        <label className={styles.listMeta} htmlFor="torch-admin">
+          Администратор Факела (с ним сводит кнопка «Подать заявку» на гейте)
+        </label>
+        <select
+          id="torch-admin"
+          className={styles.input}
+          value={data.admin_user_id ?? ''}
+          disabled={updateAdmin.isPending}
+          onChange={(e) => handleAdminChange(e.target.value)}
+        >
+          <option value="">Не назначен — кнопки на гейте не будет</option>
+          {data.admin_candidates.map((a) => (
+            <option key={a.user_id} value={a.user_id}>
+              {a.display_name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <div className={styles.listItem} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
         <label className={styles.listMeta} htmlFor="torch-stub">
@@ -164,6 +194,7 @@ export function AdminTorch() {
                 </label>
               </div>
               <div className={styles.listActions}>
+                {r.torch_applied_at && <Badge tone="neutral">Подал заявку</Badge>}
                 <Badge tone={r.torch_unlocked ? 'accent' : 'neutral'}>
                   {r.torch_unlocked ? 'Клуб открыт' : 'Заглушка'}
                 </Badge>
