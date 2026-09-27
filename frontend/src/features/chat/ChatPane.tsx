@@ -352,8 +352,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const isJournalTargetRoom = structure?.chat_room_id
     ? room.id === structure.chat_room_id && !isAdmin
     : isOwnPersonal
-  // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403).
-  const isGraduated = !!user?.graduated_at
+  // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403),
+  // КРОМЕ клуба «Факел» (ARG-54) — там выпуск это условие входа, а не причина
+  // закрыть композер (см. assert_can_write, app/services/rooms.py).
+  const isGraduated = !!user?.graduated_at && !room.is_torch
   // Окно набора закрыто (ARG-96): дневник — архив только для чтения, форму
   // отправки прячем (бэкенд 403-ит тот же путь). Запрос — для своей целевой комнаты.
   const { data: myDyn } = useMyDynamics({ enabled: isJournalTargetRoom })

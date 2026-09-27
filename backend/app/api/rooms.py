@@ -285,7 +285,11 @@ async def list_rooms(
     # комнат намеренно всегда NULL, см. diary_visible/ARG-112).
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
-        channel_clause = Room.type == "channel"
+        # Клуб «Факел» (`Room.is_torch`, ARG-54) — singleton group-комната, но
+        # видна админу всегда, как канал: не у каждого админа есть строка
+        # членства (владелец — только первый найденный на момент создания, см.
+        # ensure_torch_room), а пункт меню обещает доступ любому админу.
+        channel_clause = or_(Room.type == "channel", Room.is_torch)
     else:
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.

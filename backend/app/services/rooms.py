@@ -26,6 +26,7 @@ from app.services.visibility import (
 )
 
 NEWS_CHANNEL_NAME = "Новости"
+TORCH_ROOM_NAME = "Факел"
 
 
 async def load_room(session: AsyncSession, room_id: int) -> Room:
@@ -63,6 +64,12 @@ async def assert_room_access(
     оверсайта (написать/подсмотреть обсуждение), хотя членом узла не является.
     Строку членства ему НЕ заводим — комната не всплывает в его общем списке чатов,
     вход только по кнопке на карточке узла (build_stream_out отдаёт админу room_id).
+
+    Тот же приём — клуб «Факел» (`room.is_torch`, ARG-54): пункт меню виден
+    ЛЮБОМУ админу всегда (см. docs/TORCH.md), а не только тому, кто оказался
+    членом комнаты (владелец — только первый найденный на момент создания,
+    `ensure_torch_room`). Без этой ветки остальные админы получали бы 403 по
+    прямому клику на пункт меню.
 
     Наблюдатель (is_observer) НЕ имеет доступа ни к одной комнате — включая каналы и
     новостной канал. Его разделы — только материалы (База знаний, Генные замки).
@@ -107,10 +114,8 @@ async def assert_room_access(
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
         return membership
     if membership is None:
-        if (
-            user.role == "admin"
-            and room.type == "group"
-            and await is_stream_node_room(session, room.id)
+        if user.role == "admin" and room.type == "group" and (
+            room.is_torch or await is_stream_node_room(session, room.id)
         ):
             return None
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
@@ -223,13 +228,20 @@ async def assert_can_write(session: AsyncSession, room: Room, user: User) -> Non
     (см. app/services/graduation.py).
 
     Односторонний dm с админом (ARG-110, часть B) — та же 403-граница, не только
-    фронтовая маскировка композера (см. dm_write_allowed)."""
+    фронтовая маскировка композера (см. dm_write_allowed).
+
+    Клуб «Факел» (`room.is_torch`, ARG-54) — единственное исключение из
+    «выпускник не пишет»: выпуск (`graduated_at`) — это как раз условие входа
+    в клуб, а не причина его закрыть. Членство (кто именно попал внутрь)
+    гейтится отдельно через `torch_unlocked` в assert_room_access/`room_members`,
+    не здесь."""
     if user.is_observer:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Observer mode: this section is read-only for you",
         )
-    assert_not_graduated(user)
+    if not room.is_torch:
+        assert_not_graduated(user)
     if not await dm_write_allowed(session, room, user):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -310,6 +322,49 @@ async def ensure_news_channel(session: AsyncSession, intake_id: int) -> Room | N
                 select(Room).where(Room.is_news.is_(True), Room.intake_id == intake_id)
             )
         ).scalar_one_or_none()
+    return room
+
+
+async def ensure_torch_room(session: AsyncSession) -> Room | None:
+    """Гарантировать существование group-комнаты клуба «Факел» (ARG-54).
+
+    В отличие от `ensure_news_channel`, это ОДНА комната на всю платформу, не
+    на intake — клуб кросс-поточный по конструкции (выпускники разных потоков
+    оказываются в одном сообществе). Тот же приём: ленивое создание,
+    `created_by` = первый admin, гонка при создании ловится через частичный
+    уникальный индекс `uq_rooms_torch_singleton` (`WHERE is_torch`, без
+    партиционирования по intake_id — сравни с новостным каналом).
+    """
+    existing = (
+        await session.execute(select(Room).where(Room.is_torch.is_(True)))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    admin_id = (
+        await session.execute(
+            select(User.id).where(User.role == "admin").order_by(User.id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if admin_id is None:
+        return None  # некому владеть — создадим при следующем вызове
+
+    room = Room(
+        type="group",
+        name=TORCH_ROOM_NAME,
+        is_torch=True,
+        created_by=admin_id,
+    )
+    session.add(room)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        return (
+            await session.execute(select(Room).where(Room.is_torch.is_(True)))
+        ).scalar_one_or_none()
+    session.add(RoomMember(room_id=room.id, user_id=admin_id, role_in_room="owner"))
+    await session.flush()
     return room
 
 

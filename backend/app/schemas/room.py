@@ -64,6 +64,9 @@ class RoomOut(BaseModel):
     unread_count: int = 0
     is_personal: bool = False
     is_news: bool = False
+    # Singleton-комната клуба «Факел» (ARG-54) — клиент находит её среди списка
+    # комнат по этому флагу, как is_news (см. docs/ROOMS.md).
+    is_torch: bool = False
     # Только group: композер закрыт всем, кроме admin (ARG-142). Фронт скрывает
     # композер по этому полю; сервер 403-ит тот же путь независимо от него
     # (assert_can_post), см. docs/ROOMS.md.
