@@ -76,6 +76,12 @@ from app.schemas.task import (
     TaskLibraryListOut,
     TaskOut,
 )
+from app.schemas.torch import (
+    TorchGrantRequest,
+    TorchOverviewOut,
+    TorchRowOut,
+    TorchStubUpdateRequest,
+)
 from app.schemas.user import (
     AdminCreateUserRequest,
     AdminCreateUserResponse,
@@ -89,6 +95,11 @@ from app.services.notifications import broadcast_admin, notify_cabin_granted
 from app.services.notify_prefs import resolved_prefs
 from app.services.rooms import resync_dm_memberships_after_plan_change
 from app.services.survey_form import question_form
+from app.services.torch import (
+    get_or_create_torch_settings,
+    grant_torch_access,
+    revoke_torch_access,
+)
 from app.services.tasks import (
     clone_task,
     family_published_intake_ids,
@@ -1363,4 +1374,80 @@ async def set_survey_gift(
         if asset is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Media asset not found")
     user.survey_gift_asset_id = body.media_asset_id
+    await session.flush()
+
+
+# --- клуб «Факел» (ARG-54) ----------------------------------------------
+
+
+@router.get("/torch", response_model=TorchOverviewOut)
+async def torch_overview(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TorchOverviewOut:
+    """Выпустившиеся участники и их тумблер + текущий текст заглушки.
+
+    Только выпустившиеся (`graduated_at` не NULL) — до выпуска пункт меню
+    вообще скрыт, включать тумблер раньше некому.
+    """
+    users = (
+        await session.execute(
+            select(User)
+            .where(User.role != "admin", User.graduated_at.is_not(None))
+            .order_by(User.display_name)
+        )
+    ).scalars().all()
+    settings = await get_or_create_torch_settings(session)
+    return TorchOverviewOut(
+        rows=[
+            TorchRowOut(
+                user_id=user.id,
+                username=user.username,
+                display_name=user.display_name,
+                torch_unlocked=user.torch_unlocked,
+            )
+            for user in users
+        ],
+        stub_text=settings.stub_text,
+    )
+
+
+@router.post("/torch/grant", status_code=status.HTTP_204_NO_CONTENT)
+async def grant_torch(
+    body: TorchGrantRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Открыть клуб перечисленным выпускникам: тумблер + членство в общей комнате."""
+    users = (
+        await session.execute(
+            select(User).where(
+                User.id.in_(body.user_ids),
+                User.role != "admin",
+                User.graduated_at.is_not(None),
+            )
+        )
+    ).scalars().all()
+    for user in users:
+        await grant_torch_access(session, user)
+
+
+@router.delete("/torch/grant/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_torch(
+    user_id: int,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Закрыть клуб: снять тумблер и убрать из комнаты (историю не трогаем)."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    await revoke_torch_access(session, user)
+
+
+@router.patch("/torch/stub", status_code=status.HTTP_204_NO_CONTENT)
+async def update_torch_stub(
+    body: TorchStubUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Обновить общий текст заглушки (один на всех закрытых)."""
+    settings = await get_or_create_torch_settings(session)
+    settings.stub_text = body.stub_text
     await session.flush()

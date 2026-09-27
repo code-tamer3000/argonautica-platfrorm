@@ -68,6 +68,13 @@ class Room(Base):
     is_readonly: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Клуб «Факел» (ARG-54): singleton group-комната на всю платформу (в отличие от
+    # is_news — та уникальна ПО ПОТОКУ). Кросс-поточная по конструкции, как и
+    # новостной канал. Членство серверное (grant/revoke), не self-service —
+    # см. app/services/torch.py.
+    is_torch: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class RoomPlan(Base):

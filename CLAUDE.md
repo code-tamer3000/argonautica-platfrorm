@@ -66,6 +66,7 @@ Hard rules:
 | docs/TASKS.md              | tasks: common/individual, assignments, submissions, review |
 | docs/LIMBO.md              | Междумирье: 5-day grace period after a paid→cheapest tariff downgrade |
 | docs/CABIN.md              | каюта: 3 subkinds, JSONB data, access grant, admin view   |
+| docs/TORCH.md              | клуб «Факел»: ручной гейт torch_unlocked, singleton-комната, заглушка, admin |
 | docs/DYNAMICS.md           | daily-homework journal (28 days), pardons, credits, stats |
 | docs/NOTIFICATIONS.md      | bell feed: kinds, generation, realtime delivery           |
 | docs/SUPPORT.md            | feedback (bug/improvement) + FAQ                          |

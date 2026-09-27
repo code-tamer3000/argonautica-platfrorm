@@ -14,6 +14,7 @@ export type Access =
   | { kind: 'requiresCabinGrant' }
   | { kind: 'adminOnly' }
   | { kind: 'rosterAccess' }
+  | { kind: 'torchAccess' }
 
 export interface AccessContext {
   isObserver: boolean
@@ -23,6 +24,10 @@ export interface AccessContext {
   // держателю самого дешёвого тарифа раздел закрыт целиком — две независимые
   // группы с урезанным доступом (см. is_cheap_tariff на бэке).
   canRoster: boolean
+  // Клуб «Факел» (ARG-54): пункт меню виден выпустившимся (независимо от
+  // torch_unlocked — тумблер решает, что внутри: заглушка или чат) и админу
+  // всегда, даже без собственного graduated_at.
+  canTorch: boolean
 }
 
 export function useAccessContext(): AccessContext {
@@ -34,6 +39,7 @@ export function useAccessContext(): AccessContext {
     canCabin: !isObserver && (!!user?.can_access_cabin || user?.role === 'admin'),
     isAdmin: user?.role === 'admin',
     canRoster: !isObserver && !user?.is_cheap_tariff,
+    canTorch: user?.role === 'admin' || !!user?.graduated_at,
   }
 }
 
@@ -49,6 +55,8 @@ export function isRouteVisible(access: Access, ctx: AccessContext): boolean {
       return ctx.isAdmin
     case 'rosterAccess':
       return ctx.canRoster
+    case 'torchAccess':
+      return ctx.canTorch
   }
 }
 
