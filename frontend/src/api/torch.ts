@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
+import type { PublicUserOut } from '../lib/types'
 
 export interface TorchRow {
   user_id: number
@@ -53,6 +54,21 @@ export function useRevokeTorch() {
   return useMutation({
     mutationFn: (userId: number) => http.del<null>(`/api/admin/torch/grant/${userId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: adminTorchKey }),
+  })
+}
+
+export const torchContactsKey = ['torch', 'contacts'] as const
+
+/**
+ * Контакты ВНУТРИ раздела «Факел» (ARG-54, часть 2) — члены клуба + любые
+ * админы, без рангового каскада тарифов обычного `useContacts`. Не путать с
+ * ним: это параллельный, более широкий круг видимости.
+ */
+export function useTorchContacts(enabled: boolean) {
+  return useQuery({
+    queryKey: torchContactsKey,
+    queryFn: () => http.get<PublicUserOut[]>('/api/torch/contacts'),
+    enabled,
   })
 }
 

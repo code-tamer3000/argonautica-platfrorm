@@ -39,9 +39,6 @@ export function AppShell() {
       : undefined
     return (preferred ?? rooms?.find((r) => r.is_news))?.id ?? null
   }, [rooms, accessCtx.isAdmin, currentIntakeId])
-  // «/torch» резолвится в /chats/:id (см. TorchGate в routes.tsx) — тот же приём,
-  // что newsRoomId выше, singleton-комната на всю платформу, не на поток.
-  const torchRoomId = useMemo(() => rooms?.find((r) => r.is_torch)?.id ?? null, [rooms])
 
   // Дефолт «текущей экспедиции» для admin — последний поток, не «Все экспедиции»
   // (было null → сбивало: Задачи/КБ/Чаты/Дневники сразу показывали весь массив
@@ -190,7 +187,7 @@ export function AppShell() {
               </>
             )
             if (cfg.isNavActive) {
-              const active = cfg.isNavActive({ pathname: location.pathname, newsRoomId, torchRoomId })
+              const active = cfg.isNavActive({ pathname: location.pathname, newsRoomId })
               return (
                 <Link
                   key={cfg.path}

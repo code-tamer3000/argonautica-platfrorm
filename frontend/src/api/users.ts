@@ -43,7 +43,7 @@ export function useUsersByUsername(): Map<string, number> {
  * `intakeId` имеет смысл только для admin (сессионный фильтр `adminCurrentIntakeId`
  * из AdminLayout) — участнику сервер его молча игнорирует.
  */
-export function useContacts(intakeId?: number | null) {
+export function useContacts(intakeId?: number | null, enabled = true) {
   return useQuery({
     queryKey: [...usersKey, 'contacts', intakeId ?? null] as const,
     queryFn: () =>
@@ -51,5 +51,6 @@ export function useContacts(intakeId?: number | null) {
         intakeId != null ? `/api/users/contacts?intake_id=${intakeId}` : '/api/users/contacts',
       ),
     staleTime: 60_000,
+    enabled,
   })
 }

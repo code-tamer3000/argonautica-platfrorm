@@ -121,21 +121,18 @@ function NewsRedirect() {
   return <Navigate to={`/${segment}/${news.id}`} replace />
 }
 
-// «/torch» резолвит комнату клуба (ARG-54): если тумблер выключен (и мы не
-// админ), показываем общую заглушку вместо чата — комнаты может даже не быть,
-// пока ни одному выпускнику не открывали клуб (ensure_torch_room на бэке
-// создаёт её лениво/на старте, но искать её смысла нет, пока входить всё равно
-// нельзя). Тот же приём, что NewsRedirect, но с явной веткой «закрыто».
-function TorchGate() {
-  const { user } = useAuth()
-  const { isAdmin } = useAccessContext()
-  const { data: rooms } = useRooms()
-  const unlocked = isAdmin || !!user?.torch_unlocked
-  if (!unlocked) return <TorchLocked />
-  if (!rooms) return <div className="center grow"><Spinner /></div>
-  const torch = rooms.find((r) => r.is_torch)
-  if (!torch) return <TorchLocked />
-  return <Navigate to={`/chats/${torch.id}`} replace />
+// «/torch» — отдельный раздел (ARG-54, часть 2: своя лента чатов, не таб
+// внутри Рубки, см. ChatLayout/RoomList tab='torch'), а не редирект в одну
+// комнату — клуб теперь это dm/группы между выпускниками, не только singleton
+// чат. Пока тумблер выключен (и мы не админ) — общая заглушка вместо раздела.
+function withTorchGate(makeComponent: () => ReactNode) {
+  return function TorchGated() {
+    const { user } = useAuth()
+    const { isAdmin } = useAccessContext()
+    const unlocked = isAdmin || !!user?.torch_unlocked
+    if (!unlocked) return <TorchLocked />
+    return makeComponent()
+  }
 }
 
 // id открытой комнаты из /chats/:id или /diaries/:id, иначе null.
@@ -150,9 +147,6 @@ export interface NavActiveContext {
   // или /diaries/:id, и без этого её адрес неотличим от обычной комнаты того
   // же раздела: подсвечивались бы одновременно «Рубка»/«Дневники» и «Новости».
   newsRoomId: number | null
-  // Та же история для «/torch» → /chats/:id (см. TorchGate) — иначе открытый
-  // чат клуба подсвечивал бы «Рубку» вместо «Факела».
-  torchRoomId: number | null
 }
 
 export interface RouteChild {
@@ -206,17 +200,24 @@ export const routes: RouteEntry[] = [
     children: [{ path: '/argonauts/:userId', Component: withCohortGate(() => <ArgonautDetail />) }],
   },
   {
+    path: '/torch',
+    label: 'Факел',
+    icon: IconFlame,
+    access: { kind: 'torchAccess' },
+    Component: withTorchGate(() => <ChatLayout tab="torch" />),
+    children: [{ path: '/torch/:roomId', Component: withTorchGate(() => <ChatLayout tab="torch" />) }],
+  },
+  {
     path: '/chats',
     label: 'Рубка',
     icon: IconChat,
     access: { kind: 'observerBlocked' },
     badgeKey: 'rubka',
-    isNavActive: ({ pathname, newsRoomId, torchRoomId }) => {
+    isNavActive: ({ pathname, newsRoomId }) => {
       const openId = openRoomIdFrom(pathname)
       return (
         (pathname.startsWith('/chats') || pathname.startsWith('/diaries')) &&
-        !(newsRoomId != null && openId === newsRoomId) &&
-        !(torchRoomId != null && openId === torchRoomId)
+        !(newsRoomId != null && openId === newsRoomId)
       )
     },
     Component: withCohortGate(({ newsOnly }) => <ChatLayout tab="chats" hideRoomList={newsOnly} />),
@@ -285,15 +286,6 @@ export const routes: RouteEntry[] = [
     icon: IconDiary,
     access: { kind: 'requiresCabinGrant' },
     Component: CabinScreen,
-  },
-  {
-    path: '/torch',
-    label: 'Факел',
-    icon: IconFlame,
-    access: { kind: 'torchAccess' },
-    isNavActive: ({ pathname, torchRoomId }) =>
-      pathname === '/torch' || (torchRoomId != null && openRoomIdFrom(pathname) === torchRoomId),
-    Component: TorchGate,
   },
   {
     path: '/profile',

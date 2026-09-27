@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTorchContacts } from '../../api/torch'
 import { useContacts } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Modal } from '../../components/Overlay'
@@ -13,16 +14,23 @@ import styles from './chat.module.css'
 interface Props {
   onClose: () => void
   onOpenDm: (roomId: number) => void
+  // Открыт из раздела «Факел» (ARG-54, часть 2) — контакты другие: члены клуба
+  // + любые админы, без рангового каскада тарифов (см. useTorchContacts).
+  torch?: boolean
 }
 
-export function NewChatModal({ onClose, onOpenDm }: Props) {
+export function NewChatModal({ onClose, onOpenDm, torch = false }: Props) {
   const { user: me } = useAuth()
   // Админ листает контакты выбранного потока (сессионный фильтр AdminLayout, не
   // новое ограничение) — участнику сервер параметр молча игнорирует (ARG-110).
   const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const { data: users, isLoading } = useContacts(
+  const { data: regularContacts, isLoading: regularLoading } = useContacts(
     me?.role === 'admin' ? adminCurrentIntakeId : undefined,
+    !torch,
   )
+  const { data: torchContacts, isLoading: torchLoading } = useTorchContacts(torch)
+  const users = torch ? torchContacts : regularContacts
+  const isLoading = torch ? torchLoading : regularLoading
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState<PublicUserOut | null>(null)
 
@@ -50,6 +58,7 @@ export function NewChatModal({ onClose, onOpenDm }: Props) {
         profile={picked}
         onClose={() => setPicked(null)}
         onOpenDm={onOpenDm}
+        torch={torch}
       />
     )
   }

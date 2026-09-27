@@ -24,6 +24,9 @@ interface Props {
   isReadonly?: boolean
   avatarUrl?: string | null
   roomName?: string
+  // Группа раздела «Факел» (ARG-54, часть 2) — добавление новых участников
+  // идёт по кругу видимости клуба, не рангового каскада тарифов Рубки.
+  torchScope?: boolean
   onClose: () => void
   onOpenDm?: (roomId: number) => void
   onDeleted?: () => void
@@ -35,6 +38,7 @@ export function MembersDrawer({
   isReadonly,
   avatarUrl,
   roomName,
+  torchScope,
   onClose,
   onOpenDm,
   onDeleted,
@@ -308,6 +312,7 @@ export function MembersDrawer({
             onClose()
             onOpenDm?.(id)
           }}
+          torch={torchScope}
         />
       )}
 
@@ -315,6 +320,7 @@ export function MembersDrawer({
         <AddMemberModal
           roomId={roomId}
           existingMemberIds={existingMemberIds}
+          torch={torchScope}
           onClose={() => setShowAdd(false)}
         />
       )}
