@@ -62,10 +62,13 @@ Changing the question set means bumping `SURVEY_VERSION`; old answers stay reada
 under their own version, no data migration.
 
 One page, all questions in a row — no steps, no scales, no ratings: the survey asks
-people to tell it in their own words. 9 questions: что изменилось · поворотная точка ·
-форматы ведения дневника · стихии (множественный выбор + почему) · «слишком/не
-хватило» · открытость дневника · где сыпался ритм · платформа и что чинить ·
-отзыв для публикации.
+people to tell it in their own words. Current canon (v2, second stream): 8 questions —
+что изменилось · поворотная точка · форматы ведения дневника · стихии (множественный
+выбор + почему) · «слишком/не хватило» · геймификация Платформы · платформа и что
+чинить · отзыв для публикации. v1 (first stream) had 9: two of these — «открытость
+дневника видит когорта» and «где сыпался ритм» — were dropped and merged into the v2
+gamification question; old v1 answers stay stored and readable under their own
+`version`, just not re-rendered under the current canon's keys.
 
 Question kinds and the shape of their answer in `answers` JSONB:
 
@@ -100,7 +103,7 @@ Admin (`/api/admin`, whole router under `require_admin`):
 
 | Endpoint | Behavior |
 |---|---|
-| `GET /survey` | Form + one row per non-admin: invited / completed_at / publish_consent / has_gift / answers, plus counters |
+| `GET /survey` | Form + one row per non-admin: invited / completed_at / publish_consent / has_gift / answers / plan_id+plan_name / intake_id+intake_starts_on, plus counters |
 | `POST /survey/invite` | `{user_ids}` → raise the flag in bulk. Skips people who already submitted (they would hit 409 and stay locked out) and admins |
 | `DELETE /survey/invite/{user_id}` | Drop the flag without waiting for an answer |
 | `PATCH /survey/gift/{user_id}` | `{media_asset_id}` — attach the book, `null` detaches |
@@ -108,8 +111,20 @@ Admin (`/api/admin`, whole router under `require_admin`):
 ## Admin flow
 
 `/admin/survey` has two tabs: «Кому показать» (participant list with checkboxes,
-search, status badges) and «Ответы» (cards per participant, questions labelled from
-the canon).
+search, status badges) and «Ответы» (questions labelled from the canon, two view
+modes).
+
+Both tabs share the same search + поток + тариф filters. The тариф `<select>`
+sorts the cheapest tariff (`Plan.is_cheap`, e.g. «Наблюдатель») to the bottom —
+same convention as the contacts roster (`app/api/users.py::list_contacts`) — since
+almost nobody on it ever submits. «Выбрать всех в тарифе» (invite tab only, enabled
+once a тариф filter is picked) bulk-selects everyone matching the current filters
+who hasn't submitted yet, alongside the existing «Выбрать всех несдавших».
+
+«Ответы» has two view modes: «по человеку» (one card per participant, all their
+answers) and «по вопросу» (one block per question, every participant's answer to
+it) — the latter makes it possible to read all answers to a single question across
+the whole stream without scrolling through unrelated ones.
 
 Books are uploaded through the ordinary presigned media flow (`mediaUpload`, kind
 `file`). Uploading a batch matches each file to a participant by filename

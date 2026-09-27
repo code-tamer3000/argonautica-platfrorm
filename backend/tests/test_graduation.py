@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.plan import Plan
 from app.models.survey import SurveyResponse
 from app.models.user import User
 from app.services.graduation import GRADUATED_MESSAGE
@@ -96,6 +97,48 @@ async def test_submitted_before_release_gets_graduated_on_retry(
         )
     ).scalar_one()
     assert user.graduated_at == stored.created_at  # берём дату самой сдачи
+
+
+async def test_unknown_answer_key_rejected(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Вопрос удалён из канона (v1 -> v2, openness/rhythm_breaks) — старый ключ
+    в ответе больше не принимается, а не тихо игнорируется."""
+    user = await make_user()
+    user.survey_required = True
+
+    answers = _valid_answers()
+    answers["openness"] = {"text": "Старый вопрос из v1."}
+
+    resp = await client.post(
+        "/api/survey",
+        headers=await _headers(client, user),
+        json={"answers": answers, "publish_consent": False},
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_admin_survey_overview_includes_plan_and_intake(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """GET /api/admin/survey денормализует тариф/поток на строку (ARG survey revamp)."""
+    plan = Plan(name="Тестовый тариф", price=9000, description="", is_active=True)
+    session.add(plan)
+    await session.commit()
+
+    admin = await make_user(role="admin")
+    participant = await make_user(plan_id=plan.id)
+    await session.commit()
+
+    headers = await _headers(client, admin)
+    resp = await client.get("/api/admin/survey", headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    row = next(r for r in resp.json()["rows"] if r["user_id"] == participant.id)
+    assert row["plan_id"] == plan.id
+    assert row["plan_name"] == "Тестовый тариф"
+    assert row["intake_id"] == participant.intake_id
+    assert row["intake_starts_on"] is not None
 
 
 # --- Динамика ----------------------------------------------------------------
