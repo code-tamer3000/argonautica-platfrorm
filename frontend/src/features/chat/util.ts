@@ -41,7 +41,8 @@ export const roomSubLabel = (room: RoomOut): string =>
  * всё равно перепроверит то же самое авторитетно при самой пересылке.
  */
 export function canPostTopLevel(room: RoomOut, user: UserOut | null | undefined): boolean {
-  if (!user || user.graduated_at) return false
+  if (!user) return false
+  if (user.graduated_at && !room.torch_scope) return false
   if (room.dm_write_locked) return false
   if (room.is_personal && room.created_by !== user.id) return false
   if (room.is_news && user.role !== 'admin') return false

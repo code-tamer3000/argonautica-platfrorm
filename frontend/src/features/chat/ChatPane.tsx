@@ -165,6 +165,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const msgMenu = useMessageMenu({
     roomId,
     canPin: !!canPin,
+    torchScope: !!room.torch_scope,
     onQuote: handleQuote,
     onOpenThread: (msg) => setThreadRootId(msg.id),
     onEdit: (msg) => setPendingEdit({ roomId, message: msg }),
@@ -523,6 +524,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
         highlightedMsgId={highlightedMsgId}
         expandedThreadId={threadRootId}
         canPin={canPin}
+        torchScope={!!room.torch_scope}
         // Каналы-дневники («Дневник» / «Личный дневник») рендерят текст как markdown —
         // там ведут ежедневные записи с оформлением. Новостной канал (тоже channel) и
         // личные чаты/группы — простой текст.

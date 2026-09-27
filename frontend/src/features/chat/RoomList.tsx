@@ -118,8 +118,21 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
 
     // Раздел «Факел» (torch_scope) и Рубка показывают dm/группы взаимоисключающе:
     // Рубка — только СВОИ (не относящиеся к Факелу), Факел — только его.
-    let dms = filtered.filter((r) => r.type === 'dm' && !!r.torch_scope === (tab === 'torch'))
-    let groups = filtered.filter((r) => r.type === 'group' && !!r.torch_scope === (tab === 'torch'))
+    //
+    // Исключение (ARG-158): пока тумблер `torch_unlocked` ещё не включён (и мы
+    // не admin), раздел «Факел» самому пользователю недоступен — withTorchGate
+    // на маршруте `/torch*` показывает заглушку вместо ленты. Значит torch_scope
+    // DM, созданный кнопкой «Подать заявку» ДО тумблера, нигде не появится в
+    // списке — виден только сразу после клика по прямой ссылке `/chats/{id}`, а
+    // после перезахода теряется из вида (хотя писать в него по-прежнему можно).
+    // Показываем такие комнаты в Рубке, пока раздел «Факел» самому пользователю
+    // не открыт — после включения тумблера тот же чат обнаружится в «Факеле» и
+    // пропадёт из Рубки, обычная логика ниже строго исключающая.
+    const torchLocked = !isAdmin && !me?.torch_unlocked
+    const inTorchTab = (r: RoomOut) =>
+      !!r.torch_scope && (tab === 'torch' || (tab === 'chats' && torchLocked))
+    let dms = filtered.filter((r) => r.type === 'dm' && (tab === 'torch' ? inTorchTab(r) : !r.torch_scope || inTorchTab(r)))
+    let groups = filtered.filter((r) => r.type === 'group' && (tab === 'torch' ? inTorchTab(r) : !r.torch_scope || inTorchTab(r)))
     if (applyIntakeFilter) {
       // dm/group не несут intake_id на самой комнате (гейтятся явным членством,
       // не потоком, см. docs/ROOMS.md) — но admin здесь смотрит на них с точки

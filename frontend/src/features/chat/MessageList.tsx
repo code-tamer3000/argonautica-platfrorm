@@ -30,6 +30,9 @@ interface Props {
   // Корень, чей тред развёрнут прямо в ленте (аккордеон под сообщением). null → все свёрнуты.
   expandedThreadId?: number | null
   canPin?: boolean
+  // Раздел «Факел» (ARG-158) — пробрасывается дальше в InlineThread (свой
+  // независимый useMessageMenu), см. пояснение в useMessageMenu.Options.
+  torchScope?: boolean
   // Канал-дневник → текст сообщений рендерится как markdown (см. MessageItem).
   markdown?: boolean
   onToggleThread?: (rootId: number) => void
@@ -54,7 +57,7 @@ interface Props {
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, selectedMsgId, highlightedMsgId,
-    expandedThreadId, canPin, markdown, onToggleThread, onForward,
+    expandedThreadId, canPin, torchScope, markdown, onToggleThread, onForward,
     onQuote, onQuoteJump, onOpenMenu, onAtBottomChange, onScrolledUpChange,
     onSwipeReply, swipeEnabled = true },
   ref,
@@ -209,12 +212,14 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               onQuote={onQuote}
               onQuoteJump={onQuoteJump}
               onOpenMenu={onOpenMenu}
+              torchScope={torchScope}
             />
             {expandedThreadId === m.id && (
               <InlineThread
                 roomId={roomId}
                 rootId={m.id}
                 canPin={canPin}
+                torchScope={torchScope}
                 markdown={markdown}
                 onForward={onForward}
                 onQuote={onQuote}

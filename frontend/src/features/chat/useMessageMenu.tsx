@@ -15,6 +15,13 @@ import type { MenuItem } from './MessageActionsMenu'
 interface Options {
   roomId: number
   canPin: boolean
+  // Раздел «Факел» (ARG-54/ARG-158) — единственное исключение из «выпускник
+  // только читает», см. assert_can_write на бэкенде: torch_scope-комната
+  // пишется независимо от graduated_at. Без этого флага чат с админом Факела,
+  // открытый до тумблера (`torch_scope=true` DM), вёл бы себя как read-only
+  // Рубка — можно отправить сообщение (см. ChatPane.isGraduated), но нельзя
+  // ответить/закрепить/переслать/поставить реакцию через это меню.
+  torchScope: boolean
   // «Ответить» = цитата (Telegram-style, не тред — см. docs/MESSAGES.md «Quotes»).
   // undefined → пункт не показываем.
   onQuote?: (msg: MessageOut) => void
@@ -29,7 +36,9 @@ interface Options {
 
 // Общая логика контекстного меню сообщения для ленты и треда. Видимость пунктов
 // зеркалит правила бэкенда: править — только автор текста; удалять — автор или admin.
-export function useMessageMenu({ roomId, canPin, onQuote, onOpenThread, onEdit, onForward }: Options) {
+export function useMessageMenu({
+  roomId, canPin, torchScope, onQuote, onOpenThread, onEdit, onForward,
+}: Options) {
   const { user } = useAuth()
   const navigate = useNavigate()
   const pin = usePin(roomId)
@@ -42,8 +51,9 @@ export function useMessageMenu({ roomId, canPin, onQuote, onOpenThread, onEdit, 
 
   // Выпускник (graduated_at) в Рубке только читает: из меню остаётся копирование,
   // всё пишущее (ответ/цитата/правка/закреп/репост/удаление) убрано — бэкенд их
-  // и так отбивает 403 (см. services/graduation.py).
-  const isGraduated = !!user?.graduated_at
+  // и так отбивает 403 (см. services/graduation.py). torch_scope — исключение
+  // (см. Options.torchScope выше).
+  const isGraduated = !!user?.graduated_at && !torchScope
 
   function buildItems(msg: MessageOut): MenuItem[] {
     const items: MenuItem[] = []
