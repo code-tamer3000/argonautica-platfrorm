@@ -41,8 +41,8 @@ router = APIRouter(
 )
 
 # Сколько строк показывать в каждой карточке — экран, не полный список раздела.
+# Задачи без лимита — см. активные ниже.
 UPCOMING_EVENTS_LIMIT = 3
-ACTIVE_TASKS_LIMIT = 5
 NOTIFICATIONS_LIMIT = 5
 # Незавершённые статусы (не 'accepted'); common без назначения — my_status is None.
 ACTIVE_TASK_STATUSES: tuple[str | None, ...] = (None, "assigned", "returned")
@@ -145,9 +145,12 @@ async def get_dashboard(
             journal_today_done = today_status == "today_closed"
         journal_locked = is_graduated(current_user) or window_closed_on is not None
         task_list = await list_tasks(current_user, session)
+        # Без обрезки по количеству: у выпускника список «надо доздать»
+        # (ARG-157) может быть длиннее старого лимита в 5 — прятать часть
+        # долга участнику неправильно, он должен видеть его целиком.
         active_tasks = [
             t for t in task_list.items if t.my_status in ACTIVE_TASK_STATUSES
-        ][:ACTIVE_TASKS_LIMIT]
+        ]
         tasks_progress = task_list.progress
         tasks_in_review = sum(1 for t in task_list.items if t.my_status == "submitted")
 

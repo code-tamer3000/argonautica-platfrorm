@@ -138,13 +138,23 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       // не потоком, см. docs/ROOMS.md) — но admin здесь смотрит на них с точки
       // зрения «что относится к этой экспедиции», поэтому резолвим поток стороны:
       // для dm — собеседник, для группы — создатель.
+      //
+      // torch_scope — исключение: «Факел» кросс-поточный по конструкции
+      // (docs/TORCH.md — выпускники разных потоков в одном сообществе), и
+      // singleton-чат клуба физически создаёт ОДИН конкретный админ — фильтр
+      // по «текущей экспедиции» административного селектора вырезал бы его для
+      // всех, чей выбранный поток не совпал с потоком именно этого админа
+      // (баг, найденный на проде 2026-09-27: комната есть в API, но пропадает
+      // из «Факела», как только у смотрящего выбрана НЕ та экспедиция).
       dms = dms.filter((r) => {
+        if (r.torch_scope) return true
         const peerId = dmPeers[r.id] ?? r.peer_id
         if (peerId == null) return true
         const peerIntakeId = adminUsers.get(peerId)?.intake_id
         return peerIntakeId == null || peerIntakeId === currentIntakeId
       })
       groups = groups.filter((r) => {
+        if (r.torch_scope) return true
         const ownerIntakeId = adminUsers.get(r.created_by)?.intake_id
         return ownerIntakeId == null || ownerIntakeId === currentIntakeId
       })
