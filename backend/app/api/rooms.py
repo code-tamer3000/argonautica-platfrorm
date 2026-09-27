@@ -131,14 +131,19 @@ def _owner_plan_label(
 
 
 async def _create_dm(
-    session: AsyncSession, current: User, peer_id: int | None, response: Response
+    session: AsyncSession,
+    current: User,
+    peer_id: int | None,
+    response: Response,
+    *,
+    torch: bool = False,
 ) -> Room:
     if peer_id is None or peer_id == current.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valid peer_id required for dm")
     peer = await session.get(User, peer_id)
     if peer is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Peer user not found")
-    await assert_peer_visible(session, current, peer)
+    await assert_peer_visible(session, current, peer, torch=torch)
 
     dm_key = _dm_key(current.id, peer_id)
     existing = (
@@ -156,11 +161,20 @@ async def _create_dm(
         for uid in (current.id, peer_id):
             if await session.get(RoomMember, (existing.id, uid)) is None:
                 session.add(RoomMember(room_id=existing.id, user_id=uid, role_in_room="member"))
+        # dm_key уникален по паре — второй отдельной комнаты для того же пира
+        # внутри «Факела» завести нельзя (см. docs/TORCH.md): редкий случай, когда
+        # два выпускника уже переписывались до выпуска и решили открыть тот же
+        # диалог из «Факела» — существующая переписка переезжает в раздел «Факел»
+        # целиком (только повышаем, никогда не понижаем обратно), а не дублируется
+        # второй комнатой. С этого момента она пропадает из списка Рубки (клиент
+        # фильтрует по torch_scope) — история не теряется, просто меняет раздел.
+        if torch and not existing.torch_scope:
+            existing.torch_scope = True
         await session.flush()
         response.status_code = status.HTTP_200_OK  # дедуп — не плодим
         return existing
 
-    room = Room(type="dm", dm_key=dm_key, created_by=current.id)
+    room = Room(type="dm", dm_key=dm_key, created_by=current.id, torch_scope=torch)
     session.add(room)
     try:
         await session.flush()
@@ -192,19 +206,34 @@ async def create_room(
     response: Response,
 ) -> Room | RoomOut:
     """Создать комнату. Правила доступа зависят от типа (см. модуль)."""
+    if body.torch and not (current_user.role == "admin" or current_user.torch_unlocked):
+        # Раздел «Факел» — своё право на создание (dm И группа), не
+        # can_create_groups (та настройка про обычные группы Рубки, админ может
+        # её отнять независимо от клуба) и не видимость пира — сам инициатор
+        # обязан быть внутри раздела, иначе замкнутый (`torch_unlocked=false`)
+        # выпускник мог бы завести чат клуба раньше, чем ему его открыли.
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Torch club is not open for you")
+
     if body.type == "dm":
-        return await _create_dm(session, current_user, body.peer_id, response)
+        return await _create_dm(
+            session, current_user, body.peer_id, response, torch=body.torch
+        )
 
     # group/channel требуют имя.
     if not body.name:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
 
     if body.type == "group":
-        if not current_user.can_create_groups:
+        if not body.torch and not current_user.can_create_groups:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "Not allowed to create groups"
             )
-        room = Room(type="group", name=body.name, created_by=current_user.id)
+        room = Room(
+            type="group",
+            name=body.name,
+            created_by=current_user.id,
+            torch_scope=body.torch,
+        )
         session.add(room)
         await session.flush()
         # Создатель группы — owner.
@@ -720,7 +749,7 @@ async def add_member(
     response: Response,
 ) -> RoomMember:
     """Добавить участника. Можно owner группы или platform-admin. Идемпотентно."""
-    await _load_group(session, room_id)
+    room = await _load_group(session, room_id)
 
     is_admin = current_user.role == "admin"
     if not is_admin and not await _is_room_owner(session, room_id, current_user.id):
@@ -729,7 +758,9 @@ async def add_member(
     target = await session.get(User, body.user_id)
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
-    await assert_peer_visible(session, current_user, target)
+    # Круг видимости зависит от того, чья это группа — Рубки или «Факела»
+    # (см. assert_peer_visible/assert_torch_peer_visible).
+    await assert_peer_visible(session, current_user, target, torch=room.torch_scope)
 
     existing = await session.get(RoomMember, (room_id, body.user_id))
     if existing is not None:

@@ -243,6 +243,7 @@ One entity for three space types; differences are behavior in code, not structur
 | is_personal | BOOLEAN | NOT NULL, default false | personal diary room (Dynamics). See [DYNAMICS.md](DYNAMICS.md) |
 | is_news | BOOLEAN | NOT NULL, default false | news channel; one per intake (`uq_rooms_news_per_intake` on `intake_id`, ARG-104 — was a platform-wide singleton before); top posts admin-only |
 | is_torch | BOOLEAN | NOT NULL, default false | Клуб «Факел» (ARG-54): platform-wide singleton group room (`uq_rooms_torch_singleton`, no per-intake partitioning, unlike `is_news`). See [TORCH.md](TORCH.md) |
+| torch_scope | BOOLEAN | NOT NULL, default false | Клуб «Факел», part 2: room belongs to the «Факел» SECTION — set on the singleton (`is_torch`) room AND on any dm/group created inside the section. Drives the mutually-exclusive Рубка/Факел room-list split client-side, and the graduation write-exemption server-side. See [TORCH.md](TORCH.md) |
 | intake_id | BIGINT | FK intakes, NULL | channel-only isolation by intake (ARG-96); NULL = cross-intake. Ignored for dm/group/personal/news |
 
 **room_plans** — channel-only isolation by plan (ARG-96), many-to-many. PK (`room_id`, `plan_id`); FKs to rooms, plans.

@@ -23,6 +23,9 @@ export interface CreateRoomBody {
   type: RoomType
   name?: string
   peer_id?: number
+  // Создание внутри раздела «Факел» (ARG-54, часть 2) — другой круг видимости
+  // приглашаемого на бэке, см. docs/TORCH.md.
+  torch?: boolean
 }
 
 export function useCreateRoom() {

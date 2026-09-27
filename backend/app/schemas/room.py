@@ -19,6 +19,10 @@ class CreateRoomRequest(BaseModel):
     peer_id: int | None = None
     intake_id: int | None = None
     plan_ids: list[int] = []
+    # dm/group, создаваемые внутри раздела «Факел» (ARG-54, часть 2): другой круг
+    # видимости приглашаемого (`assert_torch_peer_visible`) и `rooms.torch_scope=True`
+    # на результате. Игнорируется для type='channel'. См. docs/TORCH.md.
+    torch: bool = False
 
 
 class UpdateChannelRequest(BaseModel):
@@ -67,6 +71,11 @@ class RoomOut(BaseModel):
     # Singleton-комната клуба «Факел» (ARG-54) — клиент находит её среди списка
     # комнат по этому флагу, как is_news (см. docs/ROOMS.md).
     is_torch: bool = False
+    # Комната относится к разделу «Факел» — либо это сама singleton-комната
+    # клуба (тогда is_torch тоже true), либо dm/группа, созданная внутри раздела.
+    # Клиент фильтрует по этому полю список чатов и Рубки (исключая), и Факела
+    # (включая) — см. docs/TORCH.md.
+    torch_scope: bool = False
     # Только group: композер закрыт всем, кроме admin (ARG-142). Фронт скрывает
     # композер по этому полю; сервер 403-ит тот же путь независимо от него
     # (assert_can_post), см. docs/ROOMS.md.

@@ -353,9 +353,10 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
     ? room.id === structure.chat_room_id && !isAdmin
     : isOwnPersonal
   // Выпускник: вся Рубка — только чтение (бэкенд закрывает те же пути 403),
-  // КРОМЕ клуба «Факел» (ARG-54) — там выпуск это условие входа, а не причина
-  // закрыть композер (см. assert_can_write, app/services/rooms.py).
-  const isGraduated = !!user?.graduated_at && !room.is_torch
+  // КРОМЕ раздела «Факел» (ARG-54) целиком — и его singleton-чата, и dm/групп,
+  // созданных внутри раздела (torch_scope) — там выпуск это условие входа, а не
+  // причина закрыть композер (см. assert_can_write, app/services/rooms.py).
+  const isGraduated = !!user?.graduated_at && !room.torch_scope
   // Окно набора закрыто (ARG-96): дневник — архив только для чтения, форму
   // отправки прячем (бэкенд 403-ит тот же путь). Запрос — для своей целевой комнаты.
   const { data: myDyn } = useMyDynamics({ enabled: isJournalTargetRoom })
@@ -606,6 +607,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
           isReadonly={room.is_readonly}
           avatarUrl={room.avatar_url}
           roomName={title}
+          torchScope={room.torch_scope}
           onClose={() => setShowMembers(false)}
           onOpenDm={onOpenRoom}
           onDeleted={() => {
@@ -622,6 +624,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
             setShowProfile(false)
             onOpenRoom?.(id)
           }}
+          torch={room.torch_scope}
         />
       )}
       {forwardingMsg && (

@@ -230,17 +230,18 @@ async def assert_can_write(session: AsyncSession, room: Room, user: User) -> Non
     Односторонний dm с админом (ARG-110, часть B) — та же 403-граница, не только
     фронтовая маскировка композера (см. dm_write_allowed).
 
-    Клуб «Факел» (`room.is_torch`, ARG-54) — единственное исключение из
+    Раздел «Факел» (`room.torch_scope`, ARG-54) — единственное исключение из
     «выпускник не пишет»: выпуск (`graduated_at`) — это как раз условие входа
-    в клуб, а не причина его закрыть. Членство (кто именно попал внутрь)
-    гейтится отдельно через `torch_unlocked` в assert_room_access/`room_members`,
-    не здесь."""
+    в клуб, а не причина его закрыть. Исключение шире одной singleton-комнаты
+    (`is_torch`) — оно же покрывает dm/группы, созданные внутри самого раздела
+    (`torch_scope`, не self-service вне него). Членство (кто именно попал внутрь)
+    гейтится отдельно через `room_members`/`torch_unlocked`, не здесь."""
     if user.is_observer:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Observer mode: this section is read-only for you",
         )
-    if not room.is_torch:
+    if not room.torch_scope:
         assert_not_graduated(user)
     if not await dm_write_allowed(session, room, user):
         raise HTTPException(
@@ -249,11 +250,32 @@ async def assert_can_write(session: AsyncSession, room: Room, user: User) -> Non
         )
 
 
-async def assert_peer_visible(session: AsyncSession, current_user: User, peer: User) -> None:
+def assert_torch_peer_visible(peer: User) -> None:
+    """Круг видимости внутри «Факела» (ARG-54, часть 2): любой член клуба
+    (`torch_unlocked`) ИЛИ любой админ — без рангового каскада тарифов, тот
+    вообще не имеет смысла после выпуска (см. docs/TORCH.md). Не путать с
+    `contact_visible`/`cohort_plan_ranks` — это намеренно параллельное,
+    более широкое правило, не сужение общего."""
+    if not (peer.role == "admin" or peer.torch_unlocked):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "User is outside the club's visible circle"
+        )
+
+
+async def assert_peer_visible(
+    session: AsyncSession, current_user: User, peer: User, *, torch: bool = False
+) -> None:
     """Точечная проверка на POST /api/rooms (dm/group-invite, ARG-110, часть A):
     peer/приглашаемый должен входить в видимый для current_user круг — та же
     функция, что и GET /api/users/contacts (не дублируем правило). Admin
-    неограничен (полный оверсайт, как везде в сервисе)."""
+    неограничен (полный оверсайт, как везде в сервисе).
+
+    `torch=True` — создание/пополнение внутри раздела «Факел» (ARG-54): совсем
+    другое правило видимости (см. `assert_torch_peer_visible`), не сужение
+    обычного рангового каскада."""
+    if torch:
+        assert_torch_peer_visible(peer)
+        return
     if current_user.role == "admin":
         return
     ranks = await cohort_plan_ranks(session, current_user.intake_id)
@@ -353,6 +375,7 @@ async def ensure_torch_room(session: AsyncSession) -> Room | None:
         type="group",
         name=TORCH_ROOM_NAME,
         is_torch=True,
+        torch_scope=True,
         created_by=admin_id,
     )
     session.add(room)

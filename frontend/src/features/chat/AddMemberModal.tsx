@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useAddMember } from '../../api/rooms'
+import { useTorchContacts } from '../../api/torch'
 import { useContacts } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Modal } from '../../components/Overlay'
@@ -13,17 +14,25 @@ import styles from './chat.module.css'
 interface Props {
   roomId: number
   existingMemberIds: Set<number>
+  // Группа раздела «Факел» (ARG-54, часть 2) — другой источник контактов и круг
+  // видимости на бэке (`assert_torch_peer_visible`, выводится сервером из
+  // `rooms.torch_scope` — этот проп только выбирает правильный список кандидатов).
+  torch?: boolean
   onClose: () => void
 }
 
 // Один клик — один участник (POST /rooms/{id}/members идемпотентен, но добавление
 // пачкой за раз в эту задачу не входит, см. «Границы» ARG-154).
-export function AddMemberModal({ roomId, existingMemberIds, onClose }: Props) {
+export function AddMemberModal({ roomId, existingMemberIds, torch = false, onClose }: Props) {
   const { user: me } = useAuth()
   const adminCurrentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const { data: users, isLoading } = useContacts(
+  const { data: regularContacts, isLoading: regularLoading } = useContacts(
     me?.role === 'admin' ? adminCurrentIntakeId : undefined,
+    !torch,
   )
+  const { data: torchContacts, isLoading: torchLoading } = useTorchContacts(torch)
+  const users = torch ? torchContacts : regularContacts
+  const isLoading = torch ? torchLoading : regularLoading
   const addMember = useAddMember(roomId)
   const [q, setQ] = useState('')
   const [pendingId, setPendingId] = useState<number | null>(null)
