@@ -24,6 +24,7 @@ from app.services.survey_form import (
     question_form,
     validate_answers,
 )
+from app.services.tasks import required_graduation_task_ids
 
 router = APIRouter(prefix="/api/survey", tags=["survey"])
 
@@ -78,12 +79,16 @@ async def submit_survey(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
         ) from exc
 
+    # ARG-159: снимок обязательных для артефакта заданий текущего потока —
+    # ФИКСИРУЕТСЯ на момент сдачи, правки админа после выпуска не ретроактивны.
+    required_task_ids = await required_graduation_task_ids(session, current_user)
     session.add(
         SurveyResponse(
             user_id=current_user.id,
             version=SURVEY_VERSION,
             answers=answers,
             publish_consent=body.publish_consent,
+            required_task_ids=required_task_ids,
         )
     )
     current_user.survey_required = False

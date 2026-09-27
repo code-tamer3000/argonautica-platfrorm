@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.calendar import CalendarEvent, CalendarEventPlan
+from app.models.survey import SurveyResponse
 from app.models.task import (
     Task,
     TaskAssignment,
@@ -28,6 +29,7 @@ from app.models.task import (
     TaskSubmission,
 )
 from app.models.user import User
+from app.schemas.expedition import ArtifactGateOut, PendingGraduationTaskOut
 from app.services import stream as stream_service
 from app.services.graduation import GRADUATED_MESSAGE, is_graduated
 from app.services.visibility import intake_visible, plan_visibility_clause, plan_visible
@@ -839,3 +841,76 @@ async def late_submissions_count(session: AsyncSession, user: User) -> int:
             select(func.count()).select_from(TaskAssignment).where(*filters)
         )
     ) or 0
+
+
+# --- Артефакт экспедиции: гейт по обязательным заданиям (ARG-159) --------
+
+
+async def required_graduation_task_ids(session: AsyncSession, user: User) -> list[int]:
+    """Общие задания, отмеченные админом обязательными для артефакта
+    (`Task.required_for_graduation`), СРЕДИ ТЕХ, что участнику вообще видны по
+    потоку+тарифу (`_visible_common_where`, ARG-96) — задача, ограниченная
+    тарифом, которого у выпускника нет, не должна становиться вечным тупиком.
+    Снимается снимком в `survey_responses.required_task_ids` в момент сдачи
+    анкеты."""
+    where = (
+        *_visible_common_where(user),
+        Task.deleted_at.is_(None),
+        Task.required_for_graduation.is_(True),
+    )
+    return list((await session.execute(select(Task.id).where(*where))).scalars().all())
+
+
+async def artifact_gate_for(session: AsyncSession, user: User) -> ArtifactGateOut | None:
+    """Доступен ли артефакт экспедиции выпускнику прямо сейчас (ARG-159).
+
+    None — не выпускник, гейта нет вовсе. Список обязательных заданий читаем из
+    снимка на анкете (`SurveyResponse.required_task_ids`), а не пересчитываем по
+    текущим меткам `Task.required_for_graduation` — правки админа после выпуска
+    участника на него не влияют. Задание, отмеченное обязательным и затем
+    удалённое, из списка выпадает и артефакт больше не блокирует — заблокировать
+    выпускника навсегда несуществующей задачей было бы тупиком без выхода.
+    """
+    if not is_graduated(user):
+        return None
+    response = (
+        await session.execute(
+            select(SurveyResponse).where(SurveyResponse.user_id == user.id)
+        )
+    ).scalar_one_or_none()
+    required_ids = response.required_task_ids if response else []
+    if not required_ids:
+        return ArtifactGateOut(available=True, pending_tasks=[])
+
+    accepted_ids = set(
+        (
+            await session.execute(
+                select(TaskAssignment.task_id).where(
+                    TaskAssignment.user_id == user.id,
+                    TaskAssignment.task_id.in_(required_ids),
+                    TaskAssignment.status == "accepted",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pending_ids = [tid for tid in required_ids if tid not in accepted_ids]
+    if not pending_ids:
+        return ArtifactGateOut(available=True, pending_tasks=[])
+
+    titles = dict(
+        (
+            await session.execute(
+                select(Task.id, Task.title).where(
+                    Task.id.in_(pending_ids), Task.deleted_at.is_(None)
+                )
+            )
+        ).all()
+    )
+    pending = [
+        PendingGraduationTaskOut(id=tid, title=titles[tid])
+        for tid in pending_ids
+        if tid in titles
+    ]
+    return ArtifactGateOut(available=len(pending) == 0, pending_tasks=pending)

@@ -1006,6 +1006,7 @@ async def list_task_library(
                 total_recipients=total_recipients,
                 source_task_id=t.source_task_id,
                 published_intake_ids=published_intakes.get(root, []),
+                required_for_graduation=t.required_for_graduation,
             )
         )
     return TaskLibraryListOut(items=items)

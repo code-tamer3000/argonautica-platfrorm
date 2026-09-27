@@ -12,6 +12,17 @@ import type { ProgressOut, TaskWithStatusOut } from './tasks'
 // Композиция полей нескольких доменов — как и на бэкенде (schemas/expedition.py),
 // держим DashboardOut рядом с эндпоинтом, а не в lib/types.ts (там TaskWithStatusOut
 // не виден без обратной зависимости types.ts → api/tasks.ts).
+export interface PendingGraduationTask {
+  id: number
+  title: string
+}
+
+/** ARG-159: гейт артефакта экспедиции по обязательным заданиям. */
+export interface ArtifactGate {
+  available: boolean
+  pending_tasks: PendingGraduationTask[]
+}
+
 export interface DashboardOut {
   expedition: ExpeditionOut | null // null — нет потока/расписания (напр. админ)
   journal: JournalStructure | null
@@ -24,6 +35,9 @@ export interface DashboardOut {
   notifications: NotificationOut[]
   unread_notifications: number
   news_preview: NewsPreviewOut | null
+  // null — не выпускник. У выпускника: доступен ли артефакт прямо сейчас, и
+  // если нет — какие обязательные задания ещё не приняты (ARG-159).
+  artifact_gate: ArtifactGate | null
 }
 
 export const dashboardKey = ['dashboard'] as const

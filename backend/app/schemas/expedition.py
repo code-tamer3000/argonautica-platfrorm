@@ -102,6 +102,23 @@ class NewsPreviewOut(BaseModel):
     created_at: datetime
 
 
+class PendingGraduationTaskOut(BaseModel):
+    """Одна недостающая обязательная задача — строка в списке «надо доделать»."""
+
+    id: int
+    title: str
+
+
+class ArtifactGateOut(BaseModel):
+    """ARG-159: доступен ли артефакт экспедиции выпускнику прямо сейчас.
+
+    `pending_tasks` пусто, если гейта нет (админ не выбрал обязательных заданий
+    для потока) или все они уже приняты (`accepted`)."""
+
+    available: bool
+    pending_tasks: list[PendingGraduationTaskOut]
+
+
 class DashboardOut(BaseModel):
     """Один агрегат для стартового экрана — вместо семи запросов на первом же
     рендере после логина (там, где меряется LCP клиентским RUM). Все поля собраны
@@ -124,3 +141,6 @@ class DashboardOut(BaseModel):
     notifications: list[NotificationOut]
     unread_notifications: int
     news_preview: NewsPreviewOut | None
+    # ARG-159: только для выпускника (иначе None) — доступен ли артефакт прямо
+    # сейчас, и если нет — какие обязательные задания ещё не приняты.
+    artifact_gate: ArtifactGateOut | None

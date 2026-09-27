@@ -30,6 +30,7 @@ from app.schemas.task import ProgressOut, TaskWithStatusOut
 from app.services.expedition import circle_day_number
 from app.services.graduation import is_graduated
 from app.services.redaction import redact_zoom_links
+from app.services.tasks import artifact_gate_for
 from app.services.text_marks import strip_inline_marks
 from app.services.visibility import is_cheap_tariff
 
@@ -153,6 +154,7 @@ async def get_dashboard(
     events = await list_events(current_user, session, from_=datetime.now(UTC))
     notifications = await list_notifications(current_user, session, limit=NOTIFICATIONS_LIMIT)
     news = await _news_preview(session, current_user)
+    artifact_gate = await artifact_gate_for(session, current_user)
 
     return DashboardOut(
         expedition=expedition,
@@ -166,4 +168,5 @@ async def get_dashboard(
         notifications=notifications.items,
         unread_notifications=notifications.unread_count,
         news_preview=news,
+        artifact_gate=artifact_gate,
     )

@@ -78,6 +78,9 @@ class TaskUpdate(BaseModel):
     playlist_id: int | None = None
     intake_id: int | None = None
     plan_ids: list[int] | None = None
+    # ARG-159: не передан — не трогаем; true/false — сделать обязательным/снять
+    # для получения артефакта экспедиции. Только для type='common' (400 иначе).
+    required_for_graduation: bool | None = None
 
 
 class TaskOut(BaseModel):
@@ -99,6 +102,7 @@ class TaskOut(BaseModel):
     intake_id: int | None = None
     plan_ids: list[int] = []
     source_task_id: int | None = None
+    required_for_graduation: bool = False
 
 
 class PairMemberOut(BaseModel):
@@ -440,6 +444,8 @@ class TaskLibraryItemOut(BaseModel):
     # Потоки, на которые семейство этой задачи (корень + все клоны) уже
     # переиздано — чтобы UI не давал переиздать дважды на один поток.
     published_intake_ids: list[int] = []
+    # ARG-159: обязательна ли задача для получения артефакта экспедиции.
+    required_for_graduation: bool = False
 
 
 class TaskLibraryListOut(BaseModel):

@@ -106,6 +106,12 @@ class Task(Base):
     source_task_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("tasks.id")
     )
+    # ARG-159: задача обязательна для получения артефакта экспедиции. Только для
+    # type='common' — набор проверяется в app/services/graduation.py и снимается
+    # снимком в survey_responses.required_task_ids в момент сдачи анкеты.
+    required_for_graduation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class TaskPlan(Base):

@@ -45,8 +45,33 @@ but the path is over. Rules live in one place, `app/services/graduation.py`
 - **A first-login popup after submitting** (`GraduationPopup.tsx`, `settings.graduation_popup_dismissed`,
   same dismiss pattern as `WelcomePopup`/`LimboPopup`) points at the backfillable
   tasks, the gift PDF, and the newly-opened «Факел». On the dashboard, the graduate's
-  Dynamics widget slot is replaced outright by a download button for the same gift
-  PDF (`ExpeditionArtifactCard.tsx`) — see [EXPEDITION.md](EXPEDITION.md).
+  Dynamics widget slot is replaced by `ExpeditionArtifactCard.tsx` — a download button
+  for the gift PDF once the artifact gate (below) is open, or a list of what's still
+  missing while it isn't — see [EXPEDITION.md](EXPEDITION.md).
+
+### Artifact gate: required tasks (ARG-159)
+
+An admin can make specific **common** tasks of a поток mandatory for the expedition
+artifact: `tasks.required_for_graduation` (`PATCH /api/tasks/{id}`, editable only in
+the «Обязательные задания» tab of `/admin/survey`, common tasks only — 400 otherwise).
+No task marked required for a поток → behavior unchanged, the artifact opens right on
+`graduated_at` as before.
+
+At the moment of submitting the survey, the currently-required task ids for the
+participant's поток are **snapshotted** into `survey_responses.required_task_ids`
+(`services/tasks.py::required_graduation_task_ids`, only among published tasks) —
+admin edits to the required set after that moment are not retroactive for people who
+already graduated. A task is "done" only once its assignment is `accepted`, not just
+`submitted`. `services/tasks.py::artifact_gate_for` computes, for a graduate, whether
+the artifact is open and — if not — the still-pending required tasks (title + id); a
+required task that gets soft-deleted later drops out of the pending list rather than
+blocking the gate forever. Surfaced as `artifact_gate` on `GET /api/dashboard`, `null`
+for a non-graduate.
+
+Deleted/soft-deleted or intake-mismatched tasks are simply excluded — the gate never
+blocks on something the participant can no longer act on. The gate doesn't touch
+`GraduationPopup` or `POST/GET /api/survey`'s own gift flow — it's a separate read on
+top of `graduated_at`, not a new lock on submitting the survey itself.
 - **Рубка becomes read-only**: full history everywhere (DMs, diary, channels), no
   writing — `assert_can_write` refuses with `GRADUATED_MESSAGE`, WS `typing` is
   dropped, and the composer is replaced by the «Аргонавт, ты прошёл Экспедицию»
@@ -117,8 +142,12 @@ Admin (`/api/admin`, whole router under `require_admin`):
 
 ## Admin flow
 
-`/admin/survey` has two tabs: «Кому показать» (participant list with checkboxes,
-status badges) and «Ответы» (questions labelled from the canon, two view modes).
+`/admin/survey` has three tabs: «Кому показать» (participant list with checkboxes,
+status badges), «Ответы» (questions labelled from the canon, two view modes), and
+«Обязательные задания» (ARG-159, `RequiredTasksPanel` — a поток picker plus a
+checkbox list of that поток's published common tasks, backed by the same
+`GET /api/admin/tasks?intake_id=&type=common&state=published` the «База заданий» hub
+uses; toggling reuses `PATCH /api/tasks/{id}`, not a bespoke endpoint).
 No name/username search — it went unused and was dropped.
 
 Both tabs share the same поток + тариф filters (`SurveyFilters`). Поток is a plain

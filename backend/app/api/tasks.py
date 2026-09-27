@@ -109,7 +109,15 @@ router = APIRouter(
 )
 
 # Поля, которые admin вправе править через PATCH.
-_PATCHABLE_FIELDS = {"title", "body", "deadline_at", "kb_item_id", "intake_id", "publish_at"}
+_PATCHABLE_FIELDS = {
+    "title",
+    "body",
+    "deadline_at",
+    "kb_item_id",
+    "intake_id",
+    "publish_at",
+    "required_for_graduation",
+}
 
 
 async def _assert_kb_item_exists(session: AsyncSession, kb_item_id: int | None) -> None:
@@ -356,6 +364,11 @@ async def update_task(
         await _assert_kb_item_exists(session, changes["kb_item_id"])
     if "intake_id" in changes:
         await _assert_intake_exists(session, changes["intake_id"])
+    if changes.get("required_for_graduation") and task.type != "common":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Only common tasks can be required for the expedition artifact",
+        )
     if "plan_ids" in changes and changes["plan_ids"] is not None:
         await _assert_plans_exist(session, changes["plan_ids"])
         await _set_task_plans(session, task.id, changes["plan_ids"])
@@ -414,6 +427,7 @@ async def update_task(
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
         source_task_id=task.source_task_id,
+        required_for_graduation=task.required_for_graduation,
     )
 
 

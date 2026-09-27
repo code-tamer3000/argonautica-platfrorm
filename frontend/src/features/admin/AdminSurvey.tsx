@@ -10,6 +10,7 @@ import {
 } from '../../api/survey'
 import { useAdminIntakes } from '../../api/admin'
 import { useAdminPlans } from '../../api/plans'
+import { useAdminTaskLibrary, useUpdateTask } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { Spinner } from '../../components/Spinner'
 import { Badge } from '../../components/Badge'
@@ -19,7 +20,7 @@ import { mediaUpload } from '../../lib/mediaUpload'
 import { toast } from '../../stores/toast'
 import styles from './admin.module.css'
 
-type Tab = 'invite' | 'answers'
+type Tab = 'invite' | 'answers' | 'required'
 type AnswerView = 'byPerson' | 'byQuestion'
 /** Ключ тарифа в чекбокс-фильтре: id тарифа либо 'none' — держатель без тарифа. */
 type PlanKey = number | 'none'
@@ -215,13 +216,18 @@ export function AdminSurvey() {
         options={[
           { value: 'invite', label: 'Кому показать' },
           { value: 'answers', label: `Ответы (${data.completed_count})` },
+          { value: 'required', label: 'Обязательные задания' },
         ]}
         value={tab}
         onChange={setTab}
         label="Раздел анкеты"
       />
 
-      {tab === 'invite' ? (
+      {tab === 'required' && (
+        <RequiredTasksPanel intakes={intakes} activeIntake={activeIntake} />
+      )}
+
+      {tab !== 'required' && (tab === 'invite' ? (
         <>
           <p className={styles.listDescription}>
             Отмеченным участникам платформа закроется анкетой до тех пор, пока они её
@@ -385,7 +391,7 @@ export function AdminSurvey() {
             </div>
           )}
         </>
-      )}
+      ))}
     </div>
   )
 }
@@ -451,6 +457,86 @@ function PersonAnswerBody({ row, questions }: { row: SurveyRow; questions: Surve
         )
       })}
     </div>
+  )
+}
+
+/**
+ * ARG-159: какие общие задания потока обязательны для получения артефакта
+ * экспедиции. Список фиксируется снимком на момент сдачи анкеты — правки
+ * здесь не ретроактивны для уже выпустившихся участников.
+ */
+function RequiredTasksPanel({
+  intakes,
+  activeIntake,
+}: {
+  intakes: { id: number; starts_on: string }[]
+  activeIntake: { id: number } | undefined
+}) {
+  const [intakeId, setIntakeId] = useState<number | null>(null)
+  const selected = intakeId ?? activeIntake?.id ?? intakes[0]?.id ?? null
+
+  const { data, isLoading } = useAdminTaskLibrary(
+    selected != null
+      ? { intakeId: selected, type: 'common', state: 'published' }
+      : undefined,
+  )
+  const updateTask = useUpdateTask()
+
+  if (selected == null) {
+    return <p className={styles.listDescription}>Пока нет ни одного потока.</p>
+  }
+
+  const items = data?.items ?? []
+
+  return (
+    <>
+      <p className={styles.listDescription}>
+        Пока хотя бы одна из отмеченных задач у выпускника не принята, на главной у
+        него вместо артефакта — список того, что нужно доделать. Ничего не отмечено —
+        артефакт доступен сразу после сдачи анкеты, как раньше.
+      </p>
+
+      <div className={styles.formRow}>
+        <label htmlFor="required_intake">Поток</label>
+        <select
+          id="required_intake"
+          className={styles.input}
+          value={String(selected)}
+          onChange={(e) => setIntakeId(Number(e.target.value))}
+        >
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {formatIntakeDate(intake.starts_on)}
+              {intake.id === activeIntake?.id ? ' — активный' : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {isLoading ? (
+        <Spinner />
+      ) : items.length === 0 ? (
+        <p className={styles.mediaEmpty}>В этом потоке нет опубликованных общих заданий.</p>
+      ) : (
+        <div className={styles.list}>
+          {items.map((t) => (
+            <div className={styles.listItem} key={t.id}>
+              <label className={styles.checkRow}>
+                <input
+                  type="checkbox"
+                  checked={t.required_for_graduation}
+                  disabled={updateTask.isPending}
+                  onChange={(e) =>
+                    updateTask.mutate({ id: t.id, required_for_graduation: e.target.checked })
+                  }
+                />
+                <span>{t.title}</span>
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   )
 }
 
