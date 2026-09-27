@@ -124,7 +124,9 @@ export function DashboardScreen() {
         <section className={styles.rail} aria-label="Что сейчас">
           {/* ARG-157: у выпускника на месте виджета Дневника — карточка артефакта
               (писать в дневник больше нельзя, journal_locked это уже отражает). */}
-          {!isPending && user?.graduated_at && <ExpeditionArtifactCard />}
+          {!isPending && user?.graduated_at && (
+            <ExpeditionArtifactCard gate={data.artifact_gate} />
+          )}
           {!isPending && !user?.graduated_at && data.journal && (
             <Card className={styles.today} accent>
               <div className={styles.cardHead}>

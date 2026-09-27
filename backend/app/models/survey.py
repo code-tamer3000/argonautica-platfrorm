@@ -33,6 +33,12 @@ class SurveyResponse(Base):
     publish_consent: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # ARG-159: снимок id обязательных для артефакта общих заданий потока на
+    # момент сдачи анкеты — правки списка админом позже на уже выпустившихся
+    # не влияют. Пустой список = гейта нет, артефакт доступен сразу.
+    required_task_ids: Mapped[list[int]] = mapped_column(
+        JSONB, nullable=False, server_default="[]"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

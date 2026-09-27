@@ -238,6 +238,13 @@ button for the same gift PDF as `/profile` (`useSurveyForm`/`useSurveyGift`, no 
 endpoint), not a variant of the journal card. The rest of the rail (tasks, events,
 notifications) is untouched.
 
+**Artifact gate (ARG-159):** the card reads `artifact_gate` off `GET /api/dashboard`
+(`ArtifactGateOut`, see [SURVEY.md](SURVEY.md) "Artifact gate: required tasks") — while
+`gate.available` is `false` it renders the still-pending required tasks (each linking
+to `/tasks/{id}`) instead of the download button. `gate` is `null` for a non-graduate,
+and `{available: true, pending_tasks: []}` for a graduate whose поток has no required
+tasks set — same download-button behavior as before ARG-159 in both cases.
+
 ## Realtime invalidation
 
 No new WS event kinds. `useRealtime` invalidates the dashboard query on the same events
