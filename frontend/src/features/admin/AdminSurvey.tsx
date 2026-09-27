@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   useAdminSurvey,
   useCancelSurveyInvite,
@@ -77,7 +77,6 @@ function renderAnswer(q: SurveyQuestion, a: SurveyAnswer): string {
 export function AdminSurvey() {
   const [tab, setTab] = useState<Tab>('invite')
   const [answerView, setAnswerView] = useState<AnswerView>('byPerson')
-  const [q, setQ] = useState('')
   // null — фильтр не трогали: по умолчанию активный поток, тот же приём, что в
   // AdminUsers/AdminDynamics («Наборы приходят свежими сверху»).
   const [intakeFilter, setIntakeFilter] = useState<IntakeFilter | null>(null)
@@ -107,17 +106,10 @@ export function AdminSurvey() {
   )
 
   const rows = useMemo(() => data?.rows ?? [], [data])
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase()
-    return rows.filter(
-      (r) =>
-        matchesIntake(r, selectedIntake) &&
-        matchesPlan(r, planFilter) &&
-        (!needle ||
-          r.display_name.toLowerCase().includes(needle) ||
-          r.username.toLowerCase().includes(needle)),
-    )
-  }, [rows, q, selectedIntake, planFilter])
+  const filtered = useMemo(
+    () => rows.filter((r) => matchesIntake(r, selectedIntake) && matchesPlan(r, planFilter)),
+    [rows, selectedIntake, planFilter],
+  )
 
   function togglePlan(key: PlanKey) {
     setPlanFilter((prev) => {
@@ -238,60 +230,16 @@ export function AdminSurvey() {
             выбрать пачкой, они разложатся по именам).
           </p>
 
-          <div className={styles.filterRow}>
-            <div className={styles.formRow}>
-              <label htmlFor="survey_search">Поиск</label>
-              <input
-                id="survey_search"
-                className={styles.input}
-                placeholder="По имени или username"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
-            <div className={styles.formRow}>
-              <label htmlFor="survey_intake">Поток</label>
-              <select
-                id="survey_intake"
-                className={styles.input}
-                value={String(selectedIntake)}
-                onChange={(e) =>
-                  setIntakeFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
-                }
-              >
-                {intakes.map((intake) => (
-                  <option key={intake.id} value={intake.id}>
-                    {formatIntakeDate(intake.starts_on)}
-                    {intake.id === activeIntake?.id ? ' — активный' : ''}
-                  </option>
-                ))}
-                <option value="all">Все потоки</option>
-              </select>
-            </div>
-            <div className={styles.formRow}>
-              <label>Тариф</label>
-              <div className={styles.checkRow}>
-                {plans.map((plan) => (
-                  <label key={plan.id} className={styles.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={planFilter.has(plan.id)}
-                      onChange={() => togglePlan(plan.id)}
-                    />
-                    {plan.name}
-                  </label>
-                ))}
-                <label className={styles.checkLabel}>
-                  <input
-                    type="checkbox"
-                    checked={planFilter.has('none')}
-                    onChange={() => togglePlan('none')}
-                  />
-                  Без тарифа
-                </label>
-              </div>
-            </div>
-          </div>
+          <SurveyFilters
+            idPrefix="invite"
+            intakes={intakes}
+            activeIntake={activeIntake}
+            selectedIntake={selectedIntake}
+            onIntakeChange={setIntakeFilter}
+            plans={plans}
+            planFilter={planFilter}
+            onTogglePlan={togglePlan}
+          />
 
           <div className={styles.listActions}>
             <Button variant="outline" onClick={toggleAll}>
@@ -382,60 +330,16 @@ export function AdminSurvey() {
         </>
       ) : (
         <>
-          <div className={styles.filterRow}>
-            <div className={styles.formRow}>
-              <label htmlFor="answers_search">Поиск</label>
-              <input
-                id="answers_search"
-                className={styles.input}
-                placeholder="По имени или username"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-            </div>
-            <div className={styles.formRow}>
-              <label htmlFor="answers_intake">Поток</label>
-              <select
-                id="answers_intake"
-                className={styles.input}
-                value={String(selectedIntake)}
-                onChange={(e) =>
-                  setIntakeFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
-                }
-              >
-                {intakes.map((intake) => (
-                  <option key={intake.id} value={intake.id}>
-                    {formatIntakeDate(intake.starts_on)}
-                    {intake.id === activeIntake?.id ? ' — активный' : ''}
-                  </option>
-                ))}
-                <option value="all">Все потоки</option>
-              </select>
-            </div>
-            <div className={styles.formRow}>
-              <label>Тариф</label>
-              <div className={styles.checkRow}>
-                {plans.map((plan) => (
-                  <label key={plan.id} className={styles.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={planFilter.has(plan.id)}
-                      onChange={() => togglePlan(plan.id)}
-                    />
-                    {plan.name}
-                  </label>
-                ))}
-                <label className={styles.checkLabel}>
-                  <input
-                    type="checkbox"
-                    checked={planFilter.has('none')}
-                    onChange={() => togglePlan('none')}
-                  />
-                  Без тарифа
-                </label>
-              </div>
-            </div>
-          </div>
+          <SurveyFilters
+            idPrefix="answers"
+            intakes={intakes}
+            activeIntake={activeIntake}
+            selectedIntake={selectedIntake}
+            onIntakeChange={setIntakeFilter}
+            plans={plans}
+            planFilter={planFilter}
+            onTogglePlan={togglePlan}
+          />
 
           <Segmented
             options={[
@@ -454,7 +358,7 @@ export function AdminSurvey() {
               ) : (
                 filtered
                   .filter((r) => r.completed_at)
-                  .map((r) => <AnswerCard key={r.user_id} row={r} questions={questions} />)
+                  .map((r) => <PersonAnswers key={r.user_id} row={r} questions={questions} />)
               )}
             </div>
           ) : (
@@ -465,7 +369,7 @@ export function AdminSurvey() {
                 )
                 if (answered.length === 0) return null
                 return (
-                  <div className={`${styles.listItem} ${styles.answerGroup}`} key={question.key}>
+                  <div className={styles.answerGroup} key={question.key}>
                     <h3 className={styles.answerGroupTitle}>{question.title}</h3>
                     {answered.map((r) => (
                       <div className={styles.answerGroupRow} key={r.user_id}>
@@ -486,29 +390,171 @@ export function AdminSurvey() {
   )
 }
 
-function AnswerCard({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
+/**
+ * Строка участника в «по человеку» — свёрнута по умолчанию (только имя), разворот
+ * показывает полные ответы; каждый ответ внутри можно свернуть отдельно.
+ */
+function PersonAnswers({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className={`${styles.listItem} ${styles.answerCard}`}>
-      <span className={styles.listMeta}>
-        {row.display_name} · @{row.username} ·{' '}
-        {row.completed_at ? formatDatetime(row.completed_at) : ''}
-        {row.publish_consent && (
-          <>
-            {' '}
-            <Badge tone="accent">Разрешил публикацию</Badge>
-          </>
-        )}
-      </span>
-      {questions.map((q) => {
-        const a = row.answers?.[q.key]
-        if (!a) return null
+    <div className={styles.answerPerson}>
+      <button type="button" className={styles.answerPersonHead} onClick={() => setOpen((v) => !v)}>
+        <span className={styles.listMeta}>
+          {row.display_name} · @{row.username} ·{' '}
+          {row.completed_at ? formatDatetime(row.completed_at) : ''}
+          {row.publish_consent && (
+            <>
+              {' '}
+              <Badge tone="accent">Разрешил публикацию</Badge>
+            </>
+          )}
+        </span>
+        <span className={styles.expandBtn}>{open ? 'Свернуть' : 'Развернуть'}</span>
+      </button>
+      {open && <PersonAnswerBody row={row} questions={questions} />}
+    </div>
+  )
+}
+
+function PersonAnswerBody({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
+  // Ответы, у которых нет данных, не заводят строку — сворачивать нечего.
+  const answered = questions.filter((q) => row.answers?.[q.key])
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  function toggle(key: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  return (
+    <div className={styles.answerCard}>
+      {answered.map((q) => {
+        const isCollapsed = collapsed.has(q.key)
         return (
           <div className={styles.answerQA} key={q.key}>
-            <div className={styles.answerQuestion}>{q.title}</div>
-            <div className={styles.answerText}>{renderAnswer(q, a)}</div>
+            <button
+              type="button"
+              className={styles.answerQuestionToggle}
+              onClick={() => toggle(q.key)}
+            >
+              <span className={styles.answerQuestion}>{q.title}</span>
+              <span className={styles.expandBtn}>{isCollapsed ? 'Развернуть' : 'Свернуть'}</span>
+            </button>
+            {!isCollapsed && (
+              <div className={styles.answerText}>{renderAnswer(q, row.answers![q.key])}</div>
+            )}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** Фильтры анкеты: поток — select, тариф — выпадающий чекбокс-список (не занимает
+ * весь экран, тот же приём, что кебаб-меню, только с чекбоксами внутри). */
+function SurveyFilters({
+  idPrefix,
+  intakes,
+  activeIntake,
+  selectedIntake,
+  onIntakeChange,
+  plans,
+  planFilter,
+  onTogglePlan,
+}: {
+  idPrefix: string
+  intakes: { id: number; starts_on: string }[]
+  activeIntake: { id: number } | undefined
+  selectedIntake: IntakeFilter
+  onIntakeChange: (v: IntakeFilter) => void
+  plans: { id: number; name: string }[]
+  planFilter: Set<PlanKey>
+  onTogglePlan: (key: PlanKey) => void
+}) {
+  return (
+    <div className={styles.filterRow}>
+      <div className={styles.formRow}>
+        <label htmlFor={`${idPrefix}_intake`}>Поток</label>
+        <select
+          id={`${idPrefix}_intake`}
+          className={styles.input}
+          value={String(selectedIntake)}
+          onChange={(e) => onIntakeChange(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+        >
+          {intakes.map((intake) => (
+            <option key={intake.id} value={intake.id}>
+              {formatIntakeDate(intake.starts_on)}
+              {intake.id === activeIntake?.id ? ' — активный' : ''}
+            </option>
+          ))}
+          <option value="all">Все потоки</option>
+        </select>
+      </div>
+      <PlanFilterDropdown plans={plans} selected={planFilter} onToggle={onTogglePlan} />
+    </div>
+  )
+}
+
+/** Тариф — не select (тарифов может быть несколько сразу отмечено), но и не ряд
+ * чекбоксов прямо на экране: кнопка со счётчиком открывает панель, клик вне закрывает
+ * (тот же приём, что в components/KebabMenu.tsx). */
+function PlanFilterDropdown({
+  plans,
+  selected,
+  onToggle,
+}: {
+  plans: { id: number; name: string }[]
+  selected: Set<PlanKey>
+  onToggle: (key: PlanKey) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <div className={styles.formRow}>
+      <label>Тариф</label>
+      <div className={styles.filterDropdown} ref={ref}>
+        <button type="button" className={styles.filterDropdownTrigger} onClick={() => setOpen((v) => !v)}>
+          {selected.size > 0 ? `Выбрано: ${selected.size}` : 'Все тарифы'}
+        </button>
+        {open && (
+          <div className={styles.filterDropdownPanel} role="menu">
+            <div className={styles.checkRow}>
+              {plans.map((plan) => (
+                <label key={plan.id} className={styles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={selected.has(plan.id)}
+                    onChange={() => onToggle(plan.id)}
+                  />
+                  {plan.name}
+                </label>
+              ))}
+              <label className={styles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={selected.has('none')}
+                  onChange={() => onToggle('none')}
+                />
+                Без тарифа
+              </label>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

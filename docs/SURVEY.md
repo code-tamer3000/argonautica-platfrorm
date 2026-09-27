@@ -111,20 +111,32 @@ Admin (`/api/admin`, whole router under `require_admin`):
 ## Admin flow
 
 `/admin/survey` has two tabs: «Кому показать» (participant list with checkboxes,
-search, status badges) and «Ответы» (questions labelled from the canon, two view
-modes).
+status badges) and «Ответы» (questions labelled from the canon, two view modes).
+No name/username search — it went unused and was dropped.
 
-Both tabs share the same search + поток + тариф filters. The тариф `<select>`
-sorts the cheapest tariff (`Plan.is_cheap`, e.g. «Наблюдатель») to the bottom —
-same convention as the contacts roster (`app/api/users.py::list_contacts`) — since
-almost nobody on it ever submits. «Выбрать всех в тарифе» (invite tab only, enabled
-once a тариф filter is picked) bulk-selects everyone matching the current filters
-who hasn't submitted yet, alongside the existing «Выбрать всех несдавших».
+Both tabs share the same поток + тариф filters (`SurveyFilters`). Поток is a plain
+`<select>`, defaulting to the active intake. Тариф is a multi-select checkbox group
+tucked behind a small dropdown button (`PlanFilterDropdown`, same click-outside-closes
+idiom as `components/KebabMenu.tsx`) rather than sitting exposed on the page — several
+tariffs can be checked at once. The dropdown sorts the cheapest tariff (`Plan.is_cheap`,
+e.g. «Наблюдатель») to the bottom — same convention as the contacts roster
+(`app/api/users.py::list_contacts`) — since almost nobody on it ever submits.
+«Выбрать всех в тарифе» (invite tab only, enabled once at least one тариф is checked)
+bulk-selects everyone matching the current filters who hasn't submitted yet, alongside
+the existing «Выбрать всех несдавших».
 
-«Ответы» has two view modes: «по человеку» (one card per participant, all their
-answers) and «по вопросу» (one block per question, every participant's answer to
-it) — the latter makes it possible to read all answers to a single question across
-the whole stream without scrolling through unrelated ones.
+«Ответы» has two view modes: «по человеку» and «по вопросу».
+
+«По человеку» starts fully collapsed — one row per participant showing just the name;
+clicking «Развернуть» opens their full answer card, and each individual question inside
+that card can be collapsed/expanded on its own (`PersonAnswers`/`PersonAnswerBody`) —
+useful for skimming past answers already read without losing the rest of the card.
+
+«По вопросу» is one block per question with every participant's answer to it — reading
+all answers to a single question across the whole stream without scrolling past
+unrelated ones. Its block does NOT reuse `.listItem` (a row-flex layout) — it has its
+own standalone box styling, since combining a row-flex class with the column layout
+these blocks need broke the layout.
 
 Books are uploaded through the ordinary presigned media flow (`mediaUpload`, kind
 `file`). Uploading a batch matches each file to a participant by filename
