@@ -3,7 +3,7 @@ import { useMarkNotificationsRead, useNotifications } from '../../api/notificati
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
-import { IconAlert, IconBell } from '../../components/icons'
+import { IconAlert, IconBell, IconNotice } from '../../components/icons'
 import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { timeHM } from '../../lib/format'
 import type { NotificationKind, NotificationOut } from '../../lib/types'
@@ -139,7 +139,13 @@ export function NotificationBell() {
                   onClick={() => onItem(n)}
                 >
                   {system ? (
-                    <span className={styles.systemIcon}><IconAlert size={20} /></span>
+                    <span className={styles.systemIcon}>
+                      {n.kind === 'survey_submitted' ? (
+                        <IconNotice size={20} />
+                      ) : (
+                        <IconAlert size={20} />
+                      )}
+                    </span>
                   ) : (
                     <Avatar name={n.actor_name ?? '?'} url={users.get(n.actor_id!)?.avatar_url} size={34} />
                   )}
