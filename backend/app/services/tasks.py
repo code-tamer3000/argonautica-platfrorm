@@ -29,16 +29,22 @@ from app.models.task import (
 )
 from app.models.user import User
 from app.services import stream as stream_service
-from app.services.graduation import is_graduated
+from app.services.graduation import GRADUATED_MESSAGE, is_graduated
 from app.services.visibility import intake_visible, plan_visibility_clause, plan_visible
 from app.ws.pubsub import publish_user_event
 
 logger = logging.getLogger(__name__)
 
-# Что остаётся в разделе «Задачи» у выпускника (`graduated_at`): только то, что он
-# успел сдать. 'returned' сюда не входит — доработать он уже не может, висящая
-# карточка была бы тупиком; 'assigned' тем более.
+# Что остаётся в разделе «Задачи» у выпускника (`graduated_at`) без права дозадачи:
+# то, что он успел сдать.
 GRADUATE_VISIBLE_STATUSES = ("submitted", "accepted")
+
+# Задания, которые выпускник не успел сдать (или которые вернули на доработку) —
+# остаются видимыми и доступными для сдачи/комментария бессрочно (ARG-157:
+# «доздать» задание после экспедиции). Задача, которую участник вообще не открывал
+# до выпуска (нет строки task_assignments), доступной не становится — только уже
+# назначенные.
+GRADUATE_BACKFILLABLE_STATUSES = ("assigned", "returned")
 
 
 def _effective_plan_id(user: User) -> int | None:
@@ -113,7 +119,8 @@ async def assert_task_visible(
     `_effective_plan_id`: в Междумирье, см. services/limbo.py, это прошлый тариф,
     не текущий дешёвый), КРОМЕ уже сданной/принятой самим юзером — та остаётся
     видна независимо от тарифа (GRADUATE_VISIBLE_STATUSES, тот же список что и у
-    выпускника ниже); admin → всё; выпускник → только свои сданные задачи. Иначе:
+    выпускника ниже); admin → всё; выпускник → свои сданные задачи плюс те, что
+    можно доздать (GRADUATE_BACKFILLABLE_STATUSES, ARG-157). Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
     - pair → юзер состоит в одной из пар этого задания (task_pair_members);
@@ -122,15 +129,18 @@ async def assert_task_visible(
     if user.role == "admin":
         return
     if is_graduated(user):
-        # Экспедиция пройдена: видны только сданные задачи, независимо от типа.
-        submitted = await session.scalar(
+        # Экспедиция пройдена: видны сданные задачи плюс те, что ещё можно доздать
+        # (назначены/возвращены — ARG-157), независимо от типа.
+        visible = await session.scalar(
             select(TaskAssignment.id).where(
                 TaskAssignment.task_id == task.id,
                 TaskAssignment.user_id == user.id,
-                TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+                TaskAssignment.status.in_(
+                    GRADUATE_VISIBLE_STATUSES + GRADUATE_BACKFILLABLE_STATUSES
+                ),
             )
         )
-        if submitted is None:
+        if visible is None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         return
     # Отложенная публикация (база заданий): запланированная задача не существует
@@ -184,6 +194,19 @@ async def assert_task_visible(
     )
     if assignment is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+
+
+def assert_can_write_or_backfill(user: User, assignment: TaskAssignment | None) -> None:
+    """Пишущее действие по своему назначению: обычный запрет градации, но с
+    исключением (ARG-157) — выпускник может доздать задание, которое ещё не
+    сдано/возвращено (`GRADUATE_BACKFILLABLE_STATUSES`). Как только оно уходит в
+    'submitted', дальше запрет действует как обычно — это одноразовая дозадача,
+    а не постоянно открытая запись."""
+    if not is_graduated(user):
+        return
+    if assignment is not None and assignment.status in GRADUATE_BACKFILLABLE_STATUSES:
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, GRADUATED_MESSAGE)
 
 
 # --- пары (взаимное обучение) -----------------------------------------------

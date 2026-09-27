@@ -74,8 +74,10 @@ from app.services.media import (
 from app.services.notifications import notify_task_returned
 from app.services.ratelimit import enforce_rate_limit
 from app.services.tasks import (
+    GRADUATE_BACKFILLABLE_STATUSES,
     GRADUATE_VISIBLE_STATUSES,
     _visible_common_where,
+    assert_can_write_or_backfill,
     assert_pair_member,
     assert_task_visible,
     attention_count,
@@ -546,12 +548,17 @@ async def create_submission_comment(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TaskComment:
-    """Комментарий под сдачей. Право = видимость задачи (individual — адресат/админ)."""
-    assert_not_graduated(current_user)  # выпускник свои сдачи читает, но не дописывает
+    """Комментарий под сдачей. Право = видимость задачи (individual — адресат/админ).
+
+    Выпускник свои УЖЕ СДАННЫЕ задачи комментировать не может (как и раньше); на
+    задании, которое ещё доздаёт (ARG-157, `assert_can_write_or_backfill`),
+    комментарий разрешён — тот же track, по которому идёт дозадача.
+    """
     await enforce_rate_limit(
         f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
     )
-    _, task = await _load_visible_submission(session, submission_id, current_user)
+    _, assignment, task = await _load_visible_submission(session, submission_id, current_user)
+    assert_can_write_or_backfill(current_user, assignment)
 
     comment = TaskComment(
         submission_id=submission_id,
@@ -963,15 +970,17 @@ async def list_tasks(
     # Видимые задачи: админ видит ВСЕ неудалённые (он модератор и автор — иначе
     # созданная им individual-задача, где он не адресат, выпала бы из его списка).
     # Участник: common ∪ (individual, где у него есть назначение).
-    # Выпускник: экспедиция пройдена — в разделе остаются только задачи, которые он
-    # успел сдать (см. GRADUATE_VISIBLE_STATUSES); всё остальное для него закрыто и
-    # в assert_task_visible.
+    # Выпускник: экспедиция пройдена — в разделе остаются задачи, которые он успел
+    # сдать, плюс те, что ещё можно доздать (GRADUATE_BACKFILLABLE_STATUSES,
+    # ARG-157); всё остальное для него закрыто и в assert_task_visible.
     where: list[ColumnElement[bool]] = [Task.deleted_at.is_(None)]
     if current_user.role != "admin":
         if is_graduated(current_user):
             my_submitted = select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == current_user.id,
-                TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+                TaskAssignment.status.in_(
+                    GRADUATE_VISIBLE_STATUSES + GRADUATE_BACKFILLABLE_STATUSES
+                ),
             )
             where.append(Task.id.in_(my_submitted))
         else:
@@ -1239,14 +1248,18 @@ async def create_submission(
 ) -> SubmissionOut:
     """Сдать задачу: текст и/или свои вложения. Ставит назначение в 'submitted',
     late=True если дедлайн прошёл и это первая сдача трека. Фан-аут submission.new.
+
+    Выпускник (`graduated_at`) обычно больше не сдаёт — исключение: задание,
+    которое на момент выпуска осталось 'assigned'/'returned', можно доздать
+    один раз (ARG-157, `assert_can_write_or_backfill`).
     """
-    assert_not_graduated(current_user)  # экспедиция пройдена — новых сдач нет
     await enforce_rate_limit(
         f"rl:send:{current_user.id}", settings.rate_limit_send_per_minute
     )
     task = await load_task(session, task_id)
     await assert_task_visible(session, task, current_user)
     assignment = await get_or_create_assignment(session, task, current_user)
+    assert_can_write_or_backfill(current_user, assignment)
 
     if body.attachment_ids:
         # Прикрепить можно только свои ассеты (нельзя подставить чужой id — IDOR).
@@ -1507,8 +1520,9 @@ async def _track_out(
 
 async def _load_visible_submission(
     session: AsyncSession, submission_id: int, user: User
-) -> tuple[TaskSubmission, Task]:
-    """Загрузить сдачу и её задачу, проверив видимость задачи для юзера (анти-IDOR)."""
+) -> tuple[TaskSubmission, TaskAssignment, Task]:
+    """Загрузить сдачу, её назначение и задачу, проверив видимость задачи для юзера
+    (анти-IDOR)."""
     submission = await session.get(TaskSubmission, submission_id)
     if submission is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
@@ -1517,4 +1531,4 @@ async def _load_visible_submission(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Submission not found")
     task = await load_task(session, assignment.task_id)
     await assert_task_visible(session, task, user)
-    return submission, task
+    return submission, assignment, task

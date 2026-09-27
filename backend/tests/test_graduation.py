@@ -1,8 +1,9 @@
 """Экспедиция пройдена (users.graduated_at): что остаётся выпускнику.
 
 Флаг ставит отправка выпускной анкеты. После него: Динамика закрыта (403), в
-Задачах видны только сданные задачи, Рубка целиком «только чтение» — история
-читается, писать нельзя. См. docs/SURVEY.md, app/services/graduation.py.
+Задачах видны сданные задачи плюс те, что ещё можно доздать (ARG-157 —
+assigned/returned на момент выпуска), Рубка целиком «только чтение» — история
+читается, писать нельзя. См. docs/SURVEY.md, docs/TASKS.md, app/services/graduation.py.
 """
 from datetime import UTC, datetime
 
@@ -232,9 +233,10 @@ async def test_admin_still_sees_graduate_in_dynamics(
 # --- Задачи ------------------------------------------------------------------
 
 
-async def test_graduate_sees_only_submitted_tasks(
+async def test_graduate_sees_submitted_and_backfillable_tasks(
     client: AsyncClient, make_user: MakeUser, session: AsyncSession
 ) -> None:
+    """ARG-157: assigned/returned остаются видимы (дозадача), untouched common — нет."""
     admin = await make_user(role="admin")
     user = await make_user()
     admin_h = await _headers(client, admin)
@@ -243,10 +245,10 @@ async def test_graduate_sees_only_submitted_tasks(
     submitted = await _create_task(
         client, admin_h, type="individual", title="Сдана", assignee_ids=[user.id]
     )
-    untouched = await _create_task(
-        client, admin_h, type="individual", title="Не начата", assignee_ids=[user.id]
+    assigned = await _create_task(
+        client, admin_h, type="individual", title="Ещё не сдана", assignee_ids=[user.id]
     )
-    common = await _create_task(client, admin_h, type="common", title="Общая")
+    untouched_common = await _create_task(client, admin_h, type="common", title="Общая")
 
     resp = await client.post(
         f"/api/tasks/{submitted['id']}/submissions", headers=user_h, json={"body": "готово"}
@@ -255,7 +257,7 @@ async def test_graduate_sees_only_submitted_tasks(
 
     # До выпуска видны все три.
     ids_before = {t["id"] for t in (await client.get("/api/tasks", headers=user_h)).json()["items"]}
-    assert {submitted["id"], untouched["id"], common["id"]} <= ids_before
+    assert {submitted["id"], assigned["id"], untouched_common["id"]} <= ids_before
 
     user.graduated_at = datetime.now(UTC)
     await session.commit()
@@ -263,24 +265,25 @@ async def test_graduate_sees_only_submitted_tasks(
     listed = (await client.get("/api/tasks", headers=user_h)).json()
     ids_after = {t["id"] for t in listed["items"]}
     assert submitted["id"] in ids_after
-    assert untouched["id"] not in ids_after
-    assert common["id"] not in ids_after
-    # Бейдж пуст, прогресс считается по сданным.
-    assert listed["attention_count"] == 0
-    assert listed["progress"]["total"] == len(listed["items"])
+    assert assigned["id"] in ids_after  # ещё не сдана, но назначена — можно доздать
+    assert untouched_common["id"] not in ids_after  # никогда не открывал — остаётся закрыта
 
-    # Прямая ссылка на невидимую задачу — 403, на свою сданную — 200.
-    assert (
-        await client.get(f"/api/tasks/{untouched['id']}", headers=user_h)
-    ).status_code == 403
+    # Прямая ссылка: на сдаваемую и на дозадаваемую — 200, на никогда не открытую — 403.
     assert (
         await client.get(f"/api/tasks/{submitted['id']}", headers=user_h)
     ).status_code == 200
+    assert (
+        await client.get(f"/api/tasks/{assigned['id']}", headers=user_h)
+    ).status_code == 200
+    assert (
+        await client.get(f"/api/tasks/{untouched_common['id']}", headers=user_h)
+    ).status_code == 403
 
 
-async def test_graduate_cannot_submit_or_comment(
+async def test_graduate_cannot_resubmit_or_comment_already_submitted(
     client: AsyncClient, make_user: MakeUser, session: AsyncSession
 ) -> None:
+    """Задание, уже сданное ДО выпуска, — тупик как и раньше: не пересдать, не прокомментировать."""
     admin = await make_user(role="admin")
     user = await make_user()
     admin_h = await _headers(client, admin)
@@ -310,6 +313,87 @@ async def test_graduate_cannot_submit_or_comment(
         json={"body": "ещё мысль"},
     )
     assert comment.status_code == 403
+
+
+async def test_graduate_can_backfill_assigned_task(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-157: задание, назначенное, но не сданное к моменту выпуска, можно доздать."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    task = await _create_task(
+        client, admin_h, type="individual", title="Не успел", assignee_ids=[user.id]
+    )
+
+    user.graduated_at = datetime.now(UTC)
+    await session.commit()
+
+    resp = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "доздал"}
+    )
+    assert resp.status_code == 201, resp.text
+
+    # Один раз доздал — задание ушло в 'submitted', дальше снова закрыто (и сдача,
+    # и комментарий — комментировать уже сданное выпускник по-прежнему не может).
+    again = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "ещё раз"}
+    )
+    assert again.status_code == 403
+    assert again.json()["detail"] == GRADUATED_MESSAGE
+
+    comment = await client.post(
+        f"/api/tasks/submissions/{resp.json()['id']}/comments",
+        headers=user_h,
+        json={"body": "уточнение"},
+    )
+    assert comment.status_code == 403
+
+
+async def test_graduate_can_backfill_returned_task(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-157: задание, вернутое на доработку и не пересданное к выпуску, тоже дозадаётся —
+    и пока оно ещё 'returned' (до пересдачи), по нему можно и прокомментировать."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    task = await _create_task(
+        client, admin_h, type="individual", title="Вернули", assignee_ids=[user.id]
+    )
+    first = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "черновик"}
+    )
+    assert first.status_code == 201, first.text
+    assignment_id = first.json()["assignment_id"]
+    first_submission_id = first.json()["id"]
+
+    returned = await client.post(
+        f"/api/tasks/assignments/{assignment_id}/review",
+        headers=admin_h,
+        json={"action": "return", "comment": "доработай"},
+    )
+    assert returned.status_code == 200, returned.text
+
+    user.graduated_at = datetime.now(UTC)
+    await session.commit()
+
+    # Ещё 'returned' — комментарий на старую сдачу разрешён (уточнить, что доработать).
+    comment = await client.post(
+        f"/api/tasks/submissions/{first_submission_id}/comments",
+        headers=user_h,
+        json={"body": "уточнение"},
+    )
+    assert comment.status_code == 201, comment.text
+
+    resp = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "доработал"}
+    )
+    assert resp.status_code == 201, resp.text
 
 
 # --- Рубка -------------------------------------------------------------------
