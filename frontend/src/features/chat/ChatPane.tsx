@@ -165,7 +165,7 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
   const msgMenu = useMessageMenu({
     roomId,
     canPin: !!canPin,
-    torchScope: !!room.torch_scope,
+    torchScope: !!room?.torch_scope,
     onQuote: handleQuote,
     onOpenThread: (msg) => setThreadRootId(msg.id),
     onEdit: (msg) => setPendingEdit({ roomId, message: msg }),
