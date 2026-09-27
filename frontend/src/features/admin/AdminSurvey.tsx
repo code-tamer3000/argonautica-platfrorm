@@ -21,13 +21,14 @@ import styles from './admin.module.css'
 
 type Tab = 'invite' | 'answers'
 type AnswerView = 'byPerson' | 'byQuestion'
-type PlanFilter = number | 'all' | 'none'
+/** Ключ тарифа в чекбокс-фильтре: id тарифа либо 'none' — держатель без тарифа. */
+type PlanKey = number | 'none'
 type IntakeFilter = number | 'all'
 
-function matchesPlan(row: SurveyRow, filter: PlanFilter): boolean {
-  if (filter === 'all') return true
-  if (filter === 'none') return row.plan_id === null
-  return row.plan_id === filter
+/** Пустой набор — фильтр не сужен, показываем все тарифы (как раньше «Все тарифы»). */
+function matchesPlan(row: SurveyRow, selected: Set<PlanKey>): boolean {
+  if (selected.size === 0) return true
+  return selected.has(row.plan_id ?? 'none')
 }
 
 function matchesIntake(row: SurveyRow, filter: IntakeFilter): boolean {
@@ -77,8 +78,10 @@ export function AdminSurvey() {
   const [tab, setTab] = useState<Tab>('invite')
   const [answerView, setAnswerView] = useState<AnswerView>('byPerson')
   const [q, setQ] = useState('')
-  const [intakeFilter, setIntakeFilter] = useState<IntakeFilter>('all')
-  const [planFilter, setPlanFilter] = useState<PlanFilter>('all')
+  // null — фильтр не трогали: по умолчанию активный поток, тот же приём, что в
+  // AdminUsers/AdminDynamics («Наборы приходят свежими сверху»).
+  const [intakeFilter, setIntakeFilter] = useState<IntakeFilter | null>(null)
+  const [planFilter, setPlanFilter] = useState<Set<PlanKey>>(new Set())
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [uploading, setUploading] = useState<number | null>(null)
   // Скрытый input на всю таблицу: помним, для кого выбираем файл.
@@ -92,6 +95,10 @@ export function AdminSurvey() {
   const cancelInvite = useCancelSurveyInvite()
   const setGift = useSetSurveyGift()
 
+  // Наборы приходят свежими сверху: активный — тот, что стартует последним.
+  const activeIntake = intakes[0]
+  const selectedIntake: IntakeFilter = intakeFilter ?? activeIntake?.id ?? 'all'
+
   // Самый дешёвый тариф («Наблюдатель») почти никогда не сдаёт анкету — не даём
   // ему занимать верх списка, тот же приём, что и в ростере контактов (`is_cheap`).
   const plans = useMemo(
@@ -104,13 +111,22 @@ export function AdminSurvey() {
     const needle = q.trim().toLowerCase()
     return rows.filter(
       (r) =>
-        matchesIntake(r, intakeFilter) &&
+        matchesIntake(r, selectedIntake) &&
         matchesPlan(r, planFilter) &&
         (!needle ||
           r.display_name.toLowerCase().includes(needle) ||
           r.username.toLowerCase().includes(needle)),
     )
-  }, [rows, q, intakeFilter, planFilter])
+  }, [rows, q, selectedIntake, planFilter])
+
+  function togglePlan(key: PlanKey) {
+    setPlanFilter((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   function toggle(userId: number) {
     setPicked((prev) => {
@@ -130,7 +146,7 @@ export function AdminSurvey() {
   }
 
   function selectAllInPlan() {
-    if (planFilter === 'all') return
+    if (planFilter.size === 0) return
     const candidates = filtered.filter((r) => !r.completed_at).map((r) => r.user_id)
     setPicked((prev) => new Set([...prev, ...candidates]))
   }
@@ -238,41 +254,42 @@ export function AdminSurvey() {
               <select
                 id="survey_intake"
                 className={styles.input}
-                value={String(intakeFilter)}
+                value={String(selectedIntake)}
                 onChange={(e) =>
                   setIntakeFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
                 }
               >
-                <option value="all">Все потоки</option>
                 {intakes.map((intake) => (
                   <option key={intake.id} value={intake.id}>
                     {formatIntakeDate(intake.starts_on)}
+                    {intake.id === activeIntake?.id ? ' — активный' : ''}
                   </option>
                 ))}
+                <option value="all">Все потоки</option>
               </select>
             </div>
             <div className={styles.formRow}>
-              <label htmlFor="survey_plan">Тариф</label>
-              <select
-                id="survey_plan"
-                className={styles.input}
-                value={String(planFilter)}
-                onChange={(e) =>
-                  setPlanFilter(
-                    e.target.value === 'all' || e.target.value === 'none'
-                      ? (e.target.value as PlanFilter)
-                      : Number(e.target.value),
-                  )
-                }
-              >
-                <option value="all">Все тарифы</option>
+              <label>Тариф</label>
+              <div className={styles.checkRow}>
                 {plans.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
+                  <label key={plan.id} className={styles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={planFilter.has(plan.id)}
+                      onChange={() => togglePlan(plan.id)}
+                    />
                     {plan.name}
-                  </option>
+                  </label>
                 ))}
-                <option value="none">Без тарифа</option>
-              </select>
+                <label className={styles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={planFilter.has('none')}
+                    onChange={() => togglePlan('none')}
+                  />
+                  Без тарифа
+                </label>
+              </div>
             </div>
           </div>
 
@@ -282,7 +299,7 @@ export function AdminSurvey() {
             </Button>
             <Button
               variant="outline"
-              disabled={planFilter === 'all'}
+              disabled={planFilter.size === 0}
               onClick={selectAllInPlan}
             >
               Выбрать всех в тарифе
@@ -381,41 +398,42 @@ export function AdminSurvey() {
               <select
                 id="answers_intake"
                 className={styles.input}
-                value={String(intakeFilter)}
+                value={String(selectedIntake)}
                 onChange={(e) =>
                   setIntakeFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))
                 }
               >
-                <option value="all">Все потоки</option>
                 {intakes.map((intake) => (
                   <option key={intake.id} value={intake.id}>
                     {formatIntakeDate(intake.starts_on)}
+                    {intake.id === activeIntake?.id ? ' — активный' : ''}
                   </option>
                 ))}
+                <option value="all">Все потоки</option>
               </select>
             </div>
             <div className={styles.formRow}>
-              <label htmlFor="answers_plan">Тариф</label>
-              <select
-                id="answers_plan"
-                className={styles.input}
-                value={String(planFilter)}
-                onChange={(e) =>
-                  setPlanFilter(
-                    e.target.value === 'all' || e.target.value === 'none'
-                      ? (e.target.value as PlanFilter)
-                      : Number(e.target.value),
-                  )
-                }
-              >
-                <option value="all">Все тарифы</option>
+              <label>Тариф</label>
+              <div className={styles.checkRow}>
                 {plans.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
+                  <label key={plan.id} className={styles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={planFilter.has(plan.id)}
+                      onChange={() => togglePlan(plan.id)}
+                    />
                     {plan.name}
-                  </option>
+                  </label>
                 ))}
-                <option value="none">Без тарифа</option>
-              </select>
+                <label className={styles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={planFilter.has('none')}
+                    onChange={() => togglePlan('none')}
+                  />
+                  Без тарифа
+                </label>
+              </div>
             </div>
           </div>
 
