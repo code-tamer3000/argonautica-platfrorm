@@ -91,7 +91,7 @@ User (`/api/survey`, all on `get_current_user`):
 | Endpoint | Behavior |
 |---|---|
 | `GET /me` | Form canon + `completed_at`, `required`, `gift_available` |
-| `POST ` | Submit. Validates, writes `survey_responses`, clears `survey_required`, sets `graduated_at`. Second attempt → 409 (and repairs both flags) |
+| `POST ` | Submit. Validates, writes `survey_responses`, clears `survey_required`, sets `graduated_at`, notifies admins (`survey_submitted`, burst-collapsed — see [NOTIFICATIONS.md](NOTIFICATIONS.md)). Second attempt → 409 (and repairs both flags) |
 | `GET /gift` | Presigned link to the personal book. 403 before submitting, 404 if no book is attached yet |
 
 The gift URL is signed directly via `presigned_get_url(..., download_name=...)`,

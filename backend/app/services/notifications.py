@@ -431,3 +431,86 @@ async def notify_task_returned(
         logger.exception(
             "Failed to create task_returned notification for user %s", user_id
         )
+
+
+async def notify_survey_submitted(session: AsyncSession, submitter_name: str) -> None:
+    """Уведомить всех админов, что участник сдал выпускную анкету.
+
+    Бёрст без привязки к actor_id/room_id (в отличие от DM): пока у админа висит
+    непрочитанная строка `survey_submitted`, следующая сдача просто растит её
+    `group_count`, а не заводит новую — несколько анкет подряд стакаются в одно
+    «N новых анкет» вместо N отдельных уведомлений. Системное уведомление
+    (room/message/actor пусты), клик ведёт в /admin/survey. Ошибку логируем и
+    глотаем, чтобы не ронять сам сабмит анкеты.
+    """
+    try:
+        admins = (
+            await session.execute(
+                select(User.id, User.settings).where(User.role == "admin")
+            )
+        ).all()
+        if not admins:
+            return
+        admin_ids = [uid for uid, _ in admins]
+        settings_by_uid = dict(admins)
+
+        existing_rows = (
+            (
+                await session.execute(
+                    select(Notification).where(
+                        Notification.user_id.in_(admin_ids),
+                        Notification.kind == "survey_submitted",
+                        Notification.read_at.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        existing_by_uid = {row.user_id: row for row in existing_rows}
+
+        new_rows: list[Notification] = []
+        updated_rows: list[Notification] = []
+        for uid in admin_ids:
+            existing = existing_by_uid.get(uid)
+            if existing is not None:
+                existing.group_count += 1
+                existing.created_at = func.now()
+                updated_rows.append(existing)
+            else:
+                new_rows.append(Notification(user_id=uid, kind="survey_submitted"))
+        session.add_all(new_rows)
+        await session.flush()
+
+        for row in new_rows + updated_rows:
+            await session.refresh(row)
+            out = NotificationOut(
+                id=row.id,
+                kind="survey_submitted",
+                room_id=None,
+                message_id=None,
+                actor_id=None,
+                actor_name=None,
+                preview=None,
+                ref_date=None,
+                group_count=row.group_count,
+                created_at=row.created_at,
+                read_at=row.read_at,
+            )
+            notif_event = ws_schemas.notification_new_event(out)
+            after_commit(session, _notif_hook(row.user_id, notif_event))
+            if push_allowed(settings_by_uid.get(row.user_id), "survey_submitted"):
+                title = (
+                    "Новая анкета"
+                    if row.group_count == 1
+                    else f"Новых анкет: {row.group_count}"
+                )
+                payload = push_service.build_payload(
+                    title=title,
+                    body=submitter_name,
+                    url="/admin/survey",
+                    tag="survey-submitted",
+                )
+                after_commit(session, _push_hook(row.user_id, payload))
+    except Exception:
+        logger.exception("Failed to create survey_submitted notifications")

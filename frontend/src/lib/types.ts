@@ -650,6 +650,7 @@ export type NotificationKind =
   | 'admin'
   | 'task_comment'
   | 'task_returned'
+  | 'survey_submitted'
 
 export interface NotificationOut {
   id: number

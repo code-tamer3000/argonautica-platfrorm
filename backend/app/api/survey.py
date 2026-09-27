@@ -18,6 +18,7 @@ from app.models.survey import SurveyResponse
 from app.models.user import User
 from app.schemas.survey import SurveyFormOut, SurveyGiftOut, SurveySubmit
 from app.services.media import PRESIGN_GET_EXPIRES, presigned_get_url
+from app.services.notifications import notify_survey_submitted
 from app.services.survey_form import (
     SURVEY_VERSION,
     question_form,
@@ -91,6 +92,7 @@ async def submit_survey(
     # (см. app/services/graduation.py).
     current_user.graduated_at = datetime.now(UTC)
     await session.flush()
+    await notify_survey_submitted(session, current_user.display_name)
     return {"gift_available": current_user.survey_gift_asset_id is not None}
 
 

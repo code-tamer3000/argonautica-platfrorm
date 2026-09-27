@@ -11,6 +11,8 @@ export function useOpenNotification() {
     (n: { kind: NotificationKind; room_id: number | null; task_id?: number | null }) => {
       if (n.kind === 'cabin_granted') {
         navigate('/cabin')
+      } else if (n.kind === 'survey_submitted') {
+        navigate('/admin/survey')
       } else if (n.kind === 'news') {
         navigate('/news')
       } else if ((n.kind === 'task_returned' || n.kind === 'task_comment') && n.task_id != null) {
