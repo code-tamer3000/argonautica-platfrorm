@@ -347,6 +347,80 @@ async def ensure_news_channel(session: AsyncSession, intake_id: int) -> Room | N
     return room
 
 
+def dm_key_for(a: int, b: int) -> str:
+    """Канонический ключ пары для дедупа личных чатов: 'minId:maxId'."""
+    lo, hi = sorted((a, b))
+    return f"{lo}:{hi}"
+
+
+async def get_or_create_dm(
+    session: AsyncSession, current: User, peer_id: int | None, *, torch: bool = False
+) -> tuple[Room, bool]:
+    """Создать личный чат или вернуть существующий по `dm_key` (ARG-110/ARG-158).
+
+    Общая логика для `POST /api/rooms` (обычный self-service DM/`torch=true`
+    изнутри раздела «Факел») и `POST /api/torch/apply` (заявка с гейта, до
+    тумблера — см. app/api/torch.py, там свой контроль доступа вместо
+    self-service проверки на торч, которую этот путь намеренно обходит).
+    Возвращает `(room, created)` — вызывающая сторона решает код ответа.
+    """
+    if peer_id is None or peer_id == current.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Valid peer_id required for dm")
+    peer = await session.get(User, peer_id)
+    if peer is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Peer user not found")
+    await assert_peer_visible(session, current, peer, torch=torch)
+
+    dm_key = dm_key_for(current.id, peer_id)
+    existing = (
+        await session.execute(select(Room).where(Room.dm_key == dm_key))
+    ).scalar_one_or_none()
+    if existing is not None:
+        # dm_key переживает смену тарифа: понижение подчищает членство одной из
+        # сторон (resync_dm_memberships_after_plan_change, см. ROOMS.md "Tariff
+        # change cleanup"), а комнату — нет. Без восстановления здесь возврат
+        # тарифа не возвращал бы старую переписку: dm_key находил бы ту же
+        # комнату и просто отдавал её «как есть», без строки членства — тот же
+        # 403 на чтение и невозможность написать, что и до отката. Membership
+        # чинится симметрично для обеих сторон — так же, как при первом
+        # создании ниже, `assert_peer_visible` уже проверил видимость current.
+        for uid in (current.id, peer_id):
+            if await session.get(RoomMember, (existing.id, uid)) is None:
+                session.add(RoomMember(room_id=existing.id, user_id=uid, role_in_room="member"))
+        # dm_key уникален по паре — второй отдельной комнаты для того же пира
+        # внутри «Факела» завести нельзя (см. docs/TORCH.md): редкий случай, когда
+        # два выпускника уже переписывались до выпуска и решили открыть тот же
+        # диалог из «Факела» — существующая переписка переезжает в раздел «Факел»
+        # целиком (только повышаем, никогда не понижаем обратно), а не дублируется
+        # второй комнатой. С этого момента она пропадает из списка Рубки (клиент
+        # фильтрует по torch_scope) — история не теряется, просто меняет раздел.
+        if torch and not existing.torch_scope:
+            existing.torch_scope = True
+        await session.flush()
+        return existing, False
+
+    room = Room(type="dm", dm_key=dm_key, created_by=current.id, torch_scope=torch)
+    session.add(room)
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Гонка: кто-то создал тот же dm параллельно — вернуть существующую.
+        await session.rollback()
+        existing = (
+            await session.execute(select(Room).where(Room.dm_key == dm_key))
+        ).scalar_one()
+        return existing, False
+
+    session.add_all(
+        [
+            RoomMember(room_id=room.id, user_id=current.id, role_in_room="member"),
+            RoomMember(room_id=room.id, user_id=peer_id, role_in_room="member"),
+        ]
+    )
+    await session.flush()
+    return room, True
+
+
 async def ensure_torch_room(session: AsyncSession) -> Room | None:
     """Гарантировать существование group-комнаты клуба «Факел» (ARG-54).
 

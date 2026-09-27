@@ -77,6 +77,8 @@ from app.schemas.task import (
     TaskOut,
 )
 from app.schemas.torch import (
+    TorchAdminCandidateOut,
+    TorchAdminUpdateRequest,
     TorchGrantRequest,
     TorchOverviewOut,
     TorchRowOut,
@@ -1403,6 +1405,11 @@ async def torch_overview(
             .order_by(User.display_name)
         )
     ).scalars().all()
+    admins = (
+        await session.execute(
+            select(User).where(User.role == "admin").order_by(User.display_name)
+        )
+    ).scalars().all()
     settings = await get_or_create_torch_settings(session)
     return TorchOverviewOut(
         rows=[
@@ -1411,10 +1418,15 @@ async def torch_overview(
                 username=user.username,
                 display_name=user.display_name,
                 torch_unlocked=user.torch_unlocked,
+                torch_applied_at=user.torch_applied_at,
             )
             for user in users
         ],
         stub_text=settings.stub_text,
+        admin_user_id=settings.admin_user_id,
+        admin_candidates=[
+            TorchAdminCandidateOut(user_id=a.id, display_name=a.display_name) for a in admins
+        ],
     )
 
 
@@ -1457,4 +1469,21 @@ async def update_torch_stub(
     """Обновить общий текст заглушки (один на всех закрытых)."""
     settings = await get_or_create_torch_settings(session)
     settings.stub_text = body.stub_text
+    await session.flush()
+
+
+@router.patch("/torch/admin", status_code=status.HTTP_204_NO_CONTENT)
+async def update_torch_admin(
+    body: TorchAdminUpdateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Назначить администратора Факела (ARG-158) — с кем сводит кнопка «Подать
+    заявку» на гейте. `admin_user_id: null` снимает назначение (кнопка на гейте
+    пропадает)."""
+    if body.admin_user_id is not None:
+        admin = await session.get(User, body.admin_user_id)
+        if admin is None or admin.role != "admin":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Admin user not found")
+    settings = await get_or_create_torch_settings(session)
+    settings.admin_user_id = body.admin_user_id
     await session.flush()

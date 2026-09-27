@@ -7,7 +7,7 @@
 """
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, Text, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -26,6 +26,12 @@ class TorchSettings(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     stub_text: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=DEFAULT_TORCH_STUB_TEXT
+    )
+    # Администратор, с которым сводит кнопка «Подать заявку» на гейте (ARG-158).
+    # Один на платформу, nullable — пока не назначен, кнопка на гейте не
+    # показывается вовсе (см. app/api/torch.py).
+    admin_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("users.id")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

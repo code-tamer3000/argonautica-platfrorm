@@ -86,6 +86,10 @@ class User(Base):
     torch_unlocked: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Отметка «подал заявку» (ARG-158): проставляется первым кликом по кнопке
+    # «Подать заявку» на гейте, не сбрасывается тумблером — история заявки не
+    # пересматривается, это только сигнал админу в /admin/torch.
+    torch_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Подарок за анкету: персональная PDF-книга пути. Загружает админ в панели.
     survey_gift_asset_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("media_assets.id")

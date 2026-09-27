@@ -196,3 +196,128 @@ async def test_non_admin_cannot_manage_torch(
             "/api/admin/torch/grant", headers=headers, json={"user_ids": [user.id]}
         )
     ).status_code == 403
+
+
+# --- кнопка «Подать заявку» (ARG-158) -----------------------------------
+
+
+async def test_stub_has_no_apply_button_without_configured_admin(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Без назначенного админа Факела кнопки на гейте нет (apply_admin_id=None)
+    и заявку подать нельзя."""
+    await make_user(role="admin")
+    user = await make_user(graduated_at=datetime.now(UTC))
+    headers = await _headers(client, user)
+
+    stub = await client.get("/api/torch/stub", headers=headers)
+    assert stub.status_code == 200, stub.text
+    assert stub.json()["apply_admin_id"] is None
+
+    apply = await client.post("/api/torch/apply", headers=headers)
+    assert apply.status_code == 404
+
+
+async def test_admin_can_assign_torch_admin_and_stub_exposes_it(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin", display_name="Ответственный")
+    user = await make_user(graduated_at=datetime.now(UTC))
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    resp = await client.patch(
+        "/api/admin/torch/admin", headers=admin_h, json={"admin_user_id": admin.id}
+    )
+    assert resp.status_code == 204, resp.text
+
+    overview = await client.get("/api/admin/torch", headers=admin_h)
+    assert overview.json()["admin_user_id"] == admin.id
+    assert any(c["user_id"] == admin.id for c in overview.json()["admin_candidates"])
+
+    stub = await client.get("/api/torch/stub", headers=user_h)
+    assert stub.json()["apply_admin_id"] == admin.id
+
+
+async def test_non_admin_cannot_assign_torch_admin(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    user = await make_user(graduated_at=datetime.now(UTC))
+    headers = await _headers(client, user)
+
+    resp = await client.patch(
+        "/api/admin/torch/admin", headers=headers, json={"admin_user_id": admin.id}
+    )
+    assert resp.status_code == 403
+
+
+async def test_assign_torch_admin_rejects_non_admin_target(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    other = await make_user(graduated_at=datetime.now(UTC))
+    admin_h = await _headers(client, admin)
+
+    resp = await client.patch(
+        "/api/admin/torch/admin", headers=admin_h, json={"admin_user_id": other.id}
+    )
+    assert resp.status_code == 404
+
+
+async def test_apply_creates_writable_torch_scope_dm_before_toggle(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Заявка открывает DM с назначенным админом и можно сразу писать — до
+    того, как личный тумблер `torch_unlocked` вообще включён."""
+    admin = await make_user(role="admin")
+    user = await make_user(graduated_at=datetime.now(UTC))
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    await client.patch(
+        "/api/admin/torch/admin", headers=admin_h, json={"admin_user_id": admin.id}
+    )
+
+    apply = await client.post("/api/torch/apply", headers=user_h)
+    assert apply.status_code == 200, apply.text
+    room_id = apply.json()["room_id"]
+
+    room = await session.get(Room, room_id)
+    assert room is not None
+    assert room.torch_scope is True
+    assert room.is_torch is False  # не singleton-комната клуба, обычный dm заявки
+
+    await session.refresh(user)
+    assert user.torch_unlocked is False  # заявка не открывает тумблер сама по себе
+    assert user.torch_applied_at is not None
+
+    send = await client.post(
+        f"/api/rooms/{room_id}/messages", headers=user_h, json={"content": "можно вопрос?"}
+    )
+    assert send.status_code == 201, send.text
+
+    # Виден по прямой ссылке /api/rooms/{id}, хотя тумблер ещё выключен.
+    detail = await client.get(f"/api/rooms/{room_id}", headers=user_h)
+    assert detail.status_code == 200
+
+    overview = await client.get("/api/admin/torch", headers=admin_h)
+    row = next(r for r in overview.json()["rows"] if r["user_id"] == user.id)
+    assert row["torch_applied_at"] is not None
+
+
+async def test_apply_is_idempotent_same_room(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    user = await make_user(graduated_at=datetime.now(UTC))
+    admin_h = await _headers(client, admin)
+    user_h = await _headers(client, user)
+
+    await client.patch(
+        "/api/admin/torch/admin", headers=admin_h, json={"admin_user_id": admin.id}
+    )
+
+    first = await client.post("/api/torch/apply", headers=user_h)
+    second = await client.post("/api/torch/apply", headers=user_h)
+    assert first.json()["room_id"] == second.json()["room_id"]
