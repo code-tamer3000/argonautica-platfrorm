@@ -29,6 +29,11 @@ class Notification(Base):
     actor_id/message_id/room_id пусты (клик ведёт в /cabin). Админ-рассылка
     (admin) — заголовок в title, room/message/actor пусты. task_comment/task_returned —
     actor_id/message_id/room_id пусты, task_id задан (клик ведёт в /tasks/{task_id}).
+    survey_submitted — участник сдал анкету (адресат — админы); room/message/actor
+    пусты, клик ведёт в /admin/survey. Бёрст: пока у админа висит непрочитанная
+    строка, следующие сдачи растят её group_count вместо новой строки — тот же
+    приём, что DM-бёрст, но без привязки к конкретному actor_id/room_id (см.
+    services/notifications.py::notify_survey_submitted).
 
     `journal_missed` больше не генерируется (снято — раздражало пользователей);
     значение оставлено в CHECK ради обратной совместимости старых строк, новые не
@@ -39,7 +44,8 @@ class Notification(Base):
     __table_args__ = (
         CheckConstraint(
             "kind IN ('dm', 'reply', 'news', 'mention', 'journal_missed', "
-            "'cabin_granted', 'admin', 'task_comment', 'task_returned')",
+            "'cabin_granted', 'admin', 'task_comment', 'task_returned', "
+            "'survey_submitted')",
             name="notification_kind_valid",
         ),
         # Лента колокольчика: последние уведомления пользователя.

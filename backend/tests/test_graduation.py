@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.notification import Notification
 from app.models.plan import Plan
 from app.models.survey import SurveyResponse
 from app.models.user import User
@@ -97,6 +98,56 @@ async def test_submitted_before_release_gets_graduated_on_retry(
         )
     ).scalar_one()
     assert user.graduated_at == stored.created_at  # берём дату самой сдачи
+
+
+async def test_survey_submit_notifies_admins_and_bursts(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """Сдача анкеты уведомляет всех админов; вторая сдача, пока уведомление не
+    прочитано, схлопывается в ту же строку (group_count), а не плодит вторую."""
+    admin = await make_user(role="admin")
+    first = await make_user()
+    second = await make_user()
+
+    resp = await client.post(
+        "/api/survey",
+        headers=await _headers(client, first),
+        json={"answers": _valid_answers(), "publish_consent": False},
+    )
+    assert resp.status_code == 201, resp.text
+
+    row = (
+        await session.execute(
+            select(Notification).where(
+                Notification.user_id == admin.id,
+                Notification.kind == "survey_submitted",
+            )
+        )
+    ).scalar_one()
+    assert row.group_count == 1
+    assert row.read_at is None
+
+    resp = await client.post(
+        "/api/survey",
+        headers=await _headers(client, second),
+        json={"answers": _valid_answers(), "publish_consent": False},
+    )
+    assert resp.status_code == 201, resp.text
+
+    rows = (
+        (
+            await session.execute(
+                select(Notification).where(
+                    Notification.user_id == admin.id,
+                    Notification.kind == "survey_submitted",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1  # схлопнулось в ту же строку, не завело вторую
+    assert rows[0].group_count == 2
 
 
 async def test_unknown_answer_key_rejected(

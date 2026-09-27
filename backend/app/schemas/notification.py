@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 NotificationKind = Literal[
     "dm", "reply", "news", "mention", "journal_missed", "cabin_granted", "admin",
-    "task_comment", "task_returned",
+    "task_comment", "task_returned", "survey_submitted",
 ]
 
 
