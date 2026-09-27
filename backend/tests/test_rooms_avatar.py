@@ -166,13 +166,28 @@ async def test_group_owner_sets_and_clears_avatar(
     assert resp.status_code == 200, resp.text
     assert resp.json()["avatar_url"] and resp.json()["avatar_url"].startswith("http")
 
+    # Регресс: PATCH сам подписывал avatar_url корректно, но GET /rooms и
+    # GET /rooms/{id} presign'или обложку только для is_personal — группа в списке/
+    # шапке чата так и оставалась без аватарки, хотя PATCH отчитывался успехом.
+    headers = await _headers(client, owner)
+    listed = await client.get("/api/rooms", headers=headers)
+    room_out = next(r for r in listed.json() if r["id"] == room.id)
+    assert room_out["avatar_url"] and room_out["avatar_url"].startswith("http")
+
+    got = await client.get(f"/api/rooms/{room.id}", headers=headers)
+    assert got.json()["avatar_url"] and got.json()["avatar_url"].startswith("http")
+
     cleared = await client.patch(
         f"/api/rooms/{room.id}/avatar",
-        headers=await _headers(client, owner),
+        headers=headers,
         json={"avatar_media_id": None},
     )
     assert cleared.status_code == 200
     assert cleared.json()["avatar_url"] is None
+
+    listed_after = await client.get("/api/rooms", headers=headers)
+    room_out_after = next(r for r in listed_after.json() if r["id"] == room.id)
+    assert room_out_after["avatar_url"] is None
 
 
 async def test_platform_admin_sets_group_avatar(

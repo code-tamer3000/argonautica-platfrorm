@@ -478,8 +478,11 @@ async def list_rooms(
             for uid, plan_id, plan_name, role in owner_rows.all()
         }
 
-    # Обложки личных дневников — батчем, одним вызовом на весь список.
-    avatar_map = await _presign_room_avatars(session, [r for r in rooms if r.is_personal])
+    # Обложки личных дневников и аватарки групп — батчем, одним вызовом на весь список
+    # (обе используют avatar_media_id, ARG-154 добавила его и группам).
+    avatar_map = await _presign_room_avatars(
+        session, [r for r in rooms if r.is_personal or r.type == "group"]
+    )
 
     out: list[RoomOut] = []
     for room in rooms:
@@ -497,6 +500,8 @@ async def list_rooms(
             item.owner_plan_id, item.owner_plan_name = owner_plan_map.get(
                 room.created_by, (None, None)
             )
+            item.avatar_url = avatar_map.get(room.id)
+        elif room.type == "group":
             item.avatar_url = avatar_map.get(room.id)
         out.append(item)
     return out
@@ -529,6 +534,9 @@ async def get_room(
         owner = owner_row.first()
         if owner is not None:
             item.owner_plan_id, item.owner_plan_name = _owner_plan_label(*owner)
+        signed = await _presign_room_avatars(session, [room])
+        item.avatar_url = signed.get(room.id)
+    elif room.type == "group":
         signed = await _presign_room_avatars(session, [room])
         item.avatar_url = signed.get(room.id)
     last_read = (membership.last_read_message_id or 0) if membership else 0
