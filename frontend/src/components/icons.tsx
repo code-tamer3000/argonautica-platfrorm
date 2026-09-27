@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  CircleAlert,
   CircleCheck,
   Compass,
   Copy,
@@ -101,9 +100,6 @@ export const IconDownload = (p: IconProps) => <Download {...DEFAULTS} {...p} />
 // Компас — знак пройденной экспедиции (плашка «только чтение», бейдж в Динамике).
 export const IconCompass = (p: IconProps) => <Compass {...DEFAULTS} {...p} />
 export const IconAlert = (p: IconProps) => <TriangleAlert {...DEFAULTS} {...p} />
-// Круг с «!» — та же смысловая пометка «важно», но без тревожной формы треугольника
-// (для позитивных системных событий, напр. сданная анкета).
-export const IconNotice = (p: IconProps) => <CircleAlert {...DEFAULTS} {...p} />
 export const IconSupport = (p: IconProps) => <LifeBuoy {...DEFAULTS} {...p} />
 export const IconTasks = (p: IconProps) => <ListChecks {...DEFAULTS} {...p} />
 export const IconGenkeys = (p: IconProps) => <Dna {...DEFAULTS} {...p} />
