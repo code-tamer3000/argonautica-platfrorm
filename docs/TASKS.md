@@ -238,13 +238,15 @@ WS events: `task.created`, `task.updated`, `task.submission_new`, `task.submissi
 The landing screen (`GET /api/dashboard`, see [EXPEDITION.md](EXPEDITION.md)) shows a
 "Задания экспедиции" card (`frontend/src/features/dashboard/TasksCard.tsx`) right after
 the "Сегодня" card — a progress ring (`tasks_progress`, same numbers as `GET /api/tasks`)
-plus the same up-to-5 `active_tasks` list already used elsewhere, but each row shows a
+plus the full `active_tasks` list already used elsewhere, but each row shows a
 relative countdown ("сегодня" / "завтра" / "через N дней" / "без срока") instead of a
 calendar date. Deliberately positive tone: an overdue task reads as "срок прошёл · ещё
-можно сдать" in muted text, never red.
+можно сдать" in muted text, never red. Not capped: an early version capped it at 5, but
+a graduate with several backfillable tasks (ARG-157) needs to see all of them, not a
+truncated preview of its own backlog.
 
 Rows that need attention — returned, overdue, or `deadline_soon` — get a thin gold rule
-(`.itemFlag`) and are sorted to the top of the (already ≤ 5-item) list, in that priority
+(`.itemFlag`) and are sorted to the top of the list, in that priority
 order (returned first: it's a direct action from someone, not just a ticking clock);
 within the same priority the original `list_tasks()` order is kept (stable sort). Each
 still gets a chip, but the chip is the only place colour carries meaning: `returned`
