@@ -35,7 +35,7 @@ from app.models.task import (
     TaskSubmission,
     TaskSubmissionMedia,
 )
-from app.models.torch import TorchSettings
+from app.models.torch import TorchPost, TorchSettings
 from app.models.user import User
 
 __all__ = [
@@ -81,4 +81,5 @@ __all__ = [
     "TaskSubmissionMedia",
     "TaskComment",
     "TorchSettings",
+    "TorchPost",
 ]
