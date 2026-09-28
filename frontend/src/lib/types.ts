@@ -544,9 +544,6 @@ export interface UserDynamicsOut {
   late_submissions_count: number
   // Кандидат на ручной перевод в Междумирье (ARG-132) — см. AdminDynamics.tsx.
   limbo_eligible: boolean
-  // Прогресс по обязательным заданиям для артефакта экспедиции: [сдано, всего].
-  // null — обязательных заданий участнику не назначено, бейдж не показываем.
-  mandatory_progress: [number, number] | null
 }
 
 export interface DynamicsSummary {

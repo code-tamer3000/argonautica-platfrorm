@@ -68,6 +68,16 @@ required task that gets soft-deleted later drops out of the pending list rather 
 blocking the gate forever. Surfaced as `artifact_gate` on `GET /api/dashboard`, `null`
 for a non-graduate.
 
+Same snapshot surfaced to admins on **«Ответы»** (`GET /api/admin/survey`, ARG-162):
+each `SurveyRowOut` carries `mandatory_total`/`mandatory_pending` (id+title of what's
+still not `accepted`) computed the same way as `artifact_gate_for`, batched over all
+rows instead of a query per person. `mandatory_total` is `null` when the survey isn't
+submitted yet (no snapshot) or the поток had no required tasks at submission time —
+not `0`, so the UI can tell "nothing required" apart from "not answered". The person
+row shows a `done/total обязательных` badge plus the pending titles inline when any
+are missing, so an admin can see e.g. which specific task a graduate hasn't finished
+without cross-referencing «База заданий».
+
 Deleted/soft-deleted or intake-mismatched tasks are simply excluded — the gate never
 blocks on something the participant can no longer act on. The gate doesn't touch
 `GraduationPopup` or `POST/GET /api/survey`'s own gift flow — it's a separate read on
@@ -135,7 +145,7 @@ Admin (`/api/admin`, whole router under `require_admin`):
 
 | Endpoint | Behavior |
 |---|---|
-| `GET /survey` | Form + one row per non-admin: invited / completed_at / publish_consent / has_gift / answers / plan_id+plan_name / intake_id+intake_starts_on, plus counters |
+| `GET /survey` | Form + one row per non-admin: invited / completed_at / publish_consent / has_gift / answers / plan_id+plan_name / intake_id+intake_starts_on / mandatory_total+mandatory_pending (artifact gate, see above), plus counters |
 | `POST /survey/invite` | `{user_ids}` → raise the flag in bulk. Skips people who already submitted (they would hit 409 and stay locked out) and admins |
 | `DELETE /survey/invite/{user_id}` | Drop the flag without waiting for an answer |
 | `PATCH /survey/gift/{user_id}` | `{media_asset_id}` — attach the book, `null` detaches |

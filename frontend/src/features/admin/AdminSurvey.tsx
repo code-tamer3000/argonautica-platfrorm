@@ -402,6 +402,7 @@ export function AdminSurvey() {
  */
 function PersonAnswers({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
   const [open, setOpen] = useState(false)
+  const pendingCount = row.mandatory_pending.length
   return (
     <div className={styles.answerPerson}>
       <button type="button" className={styles.answerPersonHead} onClick={() => setOpen((v) => !v)}>
@@ -414,9 +415,22 @@ function PersonAnswers({ row, questions }: { row: SurveyRow; questions: SurveyQu
               <Badge tone="accent">Разрешил публикацию</Badge>
             </>
           )}
+          {row.mandatory_total != null && (
+            <>
+              {' '}
+              <Badge tone={pendingCount === 0 ? 'accent' : 'neutral'}>
+                {row.mandatory_total - pendingCount}/{row.mandatory_total} обязательных
+              </Badge>
+            </>
+          )}
         </span>
         <span className={styles.expandBtn}>{open ? 'Свернуть' : 'Развернуть'}</span>
       </button>
+      {pendingCount > 0 && (
+        <p className={styles.listMeta}>
+          Не сдано: {row.mandatory_pending.map((t) => t.title).join(', ')}
+        </p>
+      )}
       {open && <PersonAnswerBody row={row} questions={questions} />}
     </div>
   )
