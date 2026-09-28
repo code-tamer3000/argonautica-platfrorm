@@ -204,3 +204,38 @@ async def test_observer_and_graduate_cannot_react(
         headers=await _headers(client, graduate),
     )
     assert graduate_resp.status_code == 403
+
+
+async def test_graduate_can_react_in_news_channel(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+) -> None:
+    """Исключение из test_observer_and_graduate_cannot_react: в новостном канале
+    (room.is_news) выпускник по-прежнему не пишет, но реагировать может
+    (assert_can_write(..., reaction=True), см. docs/MESSAGES.md "Message lifecycle")."""
+    admin = await make_user(role="admin")
+    graduate = await make_user(graduated_at=datetime.now(UTC))
+    news = await make_room(created_by=admin.id, type="channel", is_news=True)
+    admin_headers = await _headers(client, admin)
+
+    msg = await _send(client, admin_headers, news.id, content="новость")
+
+    graduate_headers = await _headers(client, graduate)
+    react_resp = await client.post(
+        f"/api/rooms/{news.id}/messages/{msg['id']}/reaction", headers=graduate_headers
+    )
+    assert react_resp.status_code == 201, react_resp.text
+
+    unreact_resp = await client.delete(
+        f"/api/rooms/{news.id}/messages/{msg['id']}/reaction", headers=graduate_headers
+    )
+    assert unreact_resp.status_code == 204
+
+    # Постить в новостной канал выпускник всё равно не может — исключение узкое.
+    post_resp = await client.post(
+        f"/api/rooms/{news.id}/messages",
+        headers=graduate_headers,
+        json={"content": "m"},
+    )
+    assert post_resp.status_code == 403

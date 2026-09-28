@@ -218,7 +218,9 @@ async def resync_dm_memberships_after_plan_change(session: AsyncSession, user: U
     await session.flush()
 
 
-async def assert_can_write(session: AsyncSession, room: Room, user: User) -> None:
+async def assert_can_write(
+    session: AsyncSession, room: Room, user: User, *, reaction: bool = False
+) -> None:
     """Наблюдателю запись в любую комнату запрещена. Формально избыточно (он и на
     чтение комнату не проходит, см. assert_room_access) — оставлено как явный
     защитный барьер на пишущих путях (отправка/правка/удаление/закреп/typing).
@@ -235,13 +237,20 @@ async def assert_can_write(session: AsyncSession, room: Room, user: User) -> Non
     в клуб, а не причина его закрыть. Исключение шире одной singleton-комнаты
     (`is_torch`) — оно же покрывает dm/группы, созданные внутри самого раздела
     (`torch_scope`, не self-service вне него). Членство (кто именно попал внутрь)
-    гейтится отдельно через `room_members`/`torch_unlocked`, не здесь."""
+    гейтится отдельно через `room_members`/`torch_unlocked`, не здесь.
+
+    Второе, более узкое исключение — реакции (`reaction=True`) в новостном канале
+    (`room.is_news`): выпускник по-прежнему не может постить/отвечать/редактировать,
+    но ставить/снимать реакцию на пост админа может — это не новый контент, только
+    отклик на уже видимый. Вызывающая сторона обязана передавать `reaction=True`
+    ТОЛЬКО из ручек реакций (`add_reaction`/`remove_reaction`), не из отправки
+    сообщений."""
     if user.is_observer:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
             "Observer mode: this section is read-only for you",
         )
-    if not room.torch_scope:
+    if not room.torch_scope and not (reaction and room.is_news):
         assert_not_graduated(user)
     if not await dm_write_allowed(session, room, user):
         raise HTTPException(

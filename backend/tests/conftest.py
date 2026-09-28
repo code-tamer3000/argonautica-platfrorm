@@ -159,10 +159,13 @@ async def make_room(session: AsyncSession) -> MakeRoom:
         type: str = "group",
         name: str | None = "Test Group",
         dm_key: str | None = None,
+        is_news: bool = False,
     ) -> Room:
         if type == "dm" and dm_key is None:
             dm_key = f"dm_{uuid.uuid4().hex[:12]}"
-        room = Room(type=type, name=name, dm_key=dm_key, created_by=created_by)
+        room = Room(
+            type=type, name=name, dm_key=dm_key, created_by=created_by, is_news=is_news
+        )
         session.add(room)
         await session.commit()
         await session.refresh(room)
