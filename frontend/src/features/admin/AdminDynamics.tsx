@@ -4,7 +4,7 @@ import { useAdminCreditDay, useAdminDynamics, useAdminUserDays } from '../../api
 import { useAdminPlans } from '../../api/plans'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
-import { IconAlert, IconCheck, IconCompass, IconFlame, IconUsers, IconWaves } from '../../components/icons'
+import { IconAlert, IconCheck, IconCompass, IconFlame, IconTasks, IconUsers, IconWaves } from '../../components/icons'
 import { Modal } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
@@ -213,6 +213,11 @@ function UserCard({
           {u.pardons_used > 0 && (
             <span className={dynStyles.pardonBadge}>
               <IconWaves size={12} /> {u.pardons_used}/3
+            </span>
+          )}
+          {u.mandatory_progress && (
+            <span className={dynStyles.pardonBadge} title="Сдано обязательных заданий для артефакта экспедиции">
+              <IconTasks size={12} /> {u.mandatory_progress[0]}/{u.mandatory_progress[1]} обязательных
             </span>
           )}
           {u.overdue_count === 0 && u.streak > 0 && (

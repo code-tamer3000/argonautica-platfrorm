@@ -387,6 +387,49 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
         logger.exception("Failed to create cabin_granted notification for user %s", user_id)
 
 
+async def notify_torch_granted(session: AsyncSession, user_id: int) -> None:
+    """Уведомить участника, что админ открыл ему раздел «Факел».
+
+    Системное уведомление без привязки к комнате/автору (room_id/actor_id пусты) —
+    клик по нему ведёт в /torch (обрабатывается на фронте по kind). Вызывается
+    только на переходе `torch_unlocked` false→true (см. `grant_torch_access`),
+    идемпотентности внутри не требуется. Ошибку логируем и глотаем, чтобы не
+    ронять сам admin-эндпоинт тумблера.
+    """
+    try:
+        row = Notification(user_id=user_id, kind="torch_granted")
+        session.add(row)
+        await session.flush()
+        await session.refresh(row)
+        out = NotificationOut(
+            id=row.id,
+            kind="torch_granted",
+            room_id=None,
+            message_id=None,
+            actor_id=None,
+            actor_name=None,
+            preview=None,
+            ref_date=None,
+            created_at=row.created_at,
+            read_at=row.read_at,
+        )
+        notif_event = ws_schemas.notification_new_event(out)
+        after_commit(session, _notif_hook(user_id, notif_event))
+        user_settings = await session.scalar(
+            select(User.settings).where(User.id == user_id)
+        )
+        if push_allowed(user_settings, "torch_granted"):
+            payload = push_service.build_payload(
+                title="Открыт доступ к разделу «Факел»",
+                body="Нажмите, чтобы перейти",
+                url="/torch",
+                tag="torch-granted",
+            )
+            after_commit(session, _push_hook(user_id, payload))
+    except Exception:
+        logger.exception("Failed to create torch_granted notification for user %s", user_id)
+
+
 async def notify_task_returned(
     session: AsyncSession, user_id: int, task_id: int, task_title: str
 ) -> None:

@@ -524,6 +524,9 @@ export interface UserDynamicsOut {
   late_submissions_count: number
   // Кандидат на ручной перевод в Междумирье (ARG-132) — см. AdminDynamics.tsx.
   limbo_eligible: boolean
+  // Прогресс по обязательным заданиям для артефакта экспедиции: [сдано, всего].
+  // null — обязательных заданий участнику не назначено, бейдж не показываем.
+  mandatory_progress: [number, number] | null
 }
 
 export interface DynamicsSummary {
@@ -651,6 +654,7 @@ export type NotificationKind =
   | 'task_comment'
   | 'task_returned'
   | 'survey_submitted'
+  | 'torch_granted'
 
 export interface NotificationOut {
   id: number
@@ -860,6 +864,9 @@ export type WsEvent =
   // надо перечитать, иначе она появится только после reconnect.
   | { type: 'room.created'; room_id: number }
   | { type: 'room.closed'; room_id: number }
+  // Группу переименовали (ARG-162) — свежее имя приходит целиком, клиент патчит
+  // его в кэше списка комнат без рефетча (см. useRealtime.ts).
+  | { type: 'room.renamed'; room_id: number; name: string }
   // Задание дневника создано/изменено/удалено (ARG-127) — глобальный broadcast,
   // без payload'а: клиент инвалидирует свой кэш активной структуры.
   | { type: 'journal.structure_changed' }

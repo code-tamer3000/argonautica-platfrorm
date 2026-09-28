@@ -9,21 +9,42 @@ type VoidFn = () => void
 // Состояние сокета для индикатора связи: connecting/open — норма, closed — потеряли.
 export type WsStatus = 'connecting' | 'open' | 'closed'
 type StatusFn = (s: WsStatus) => void
+type LivenessFn = (live: boolean) => void
+
+// Раз в столько шлём ping, пока сокет open — служит и heartbeat'ом, и таймером
+// обнаружения зомби-соединения (ARG-161): сокращён с прежних 25с специально ради
+// более быстрого обнаружения деградации, не только ради поддержания соединения.
+const PING_INTERVAL_MS = 10_000
+// Если с момента отправки ping не пришло вообще ничего (ни pong, ни любое другое
+// серверное событие — оно тоже считается признаком живости) за это время, пока
+// ws.readyState формально ещё OPEN — считаем соединение деградировавшим (ARG-161).
+const PONG_TIMEOUT_MS = 6_000
 
 class WsClient {
   private ws: WebSocket | null = null
   private listeners = new Set<Listener>()
   private connectListeners = new Set<VoidFn>()
   private statusListeners = new Set<StatusFn>()
+  private livenessListeners = new Set<LivenessFn>()
   private subscribed = new Set<number>()
   private reconnectAttempts = 0
   private shouldRun = false
   private pingTimer: number | null = null
   private reconnectTimer: number | null = null
+  private pongTimeoutTimer: number | null = null
+  private lastActivityAt = 0
   private status: WsStatus = 'closed'
+  // Сокет формально open, но давно ничего не отвечал — зомби-соединение (ARG-161).
+  // Не путать с WsStatus: тот меняется только на настоящем onopen/onclose.
+  private live = true
 
   getStatus(): WsStatus {
     return this.status
+  }
+
+  /** Текущая отзывчивость соединения (см. `live` выше) для начального состояния хука. */
+  isLive(): boolean {
+    return this.live
   }
 
   /** Подписка на смену состояния сокета (для индикатора связи). */
@@ -32,10 +53,22 @@ class WsClient {
     return () => this.statusListeners.delete(fn)
   }
 
+  /** Подписка на смену отзывчивости живого соединения (ARG-161, см. `live`). */
+  onLiveness(fn: LivenessFn): () => void {
+    this.livenessListeners.add(fn)
+    return () => this.livenessListeners.delete(fn)
+  }
+
   private setStatus(s: WsStatus): void {
     if (this.status === s) return
     this.status = s
     this.statusListeners.forEach((fn) => fn(s))
+  }
+
+  private setLive(v: boolean): void {
+    if (this.live === v) return
+    this.live = v
+    this.livenessListeners.forEach((fn) => fn(v))
   }
 
   start(): void {
@@ -51,6 +84,7 @@ class WsClient {
     this.ws?.close()
     this.ws = null
     this.setStatus('closed')
+    this.setLive(true)
   }
 
   /** Форсировать немедленный реконнект (напр. вкладку вернули из фона). */
@@ -105,6 +139,22 @@ class WsClient {
       window.clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    if (this.pongTimeoutTimer !== null) {
+      window.clearTimeout(this.pongTimeoutTimer)
+      this.pongTimeoutTimer = null
+    }
+  }
+
+  /** Шлёт ping и взводит таймаут обнаружения зомби-соединения (ARG-161). */
+  private heartbeat(): void {
+    this.send({ type: 'ping' })
+    if (this.pongTimeoutTimer !== null) window.clearTimeout(this.pongTimeoutTimer)
+    const sentAt = Date.now()
+    this.pongTimeoutTimer = window.setTimeout(() => {
+      // За время таймаута не пришло вообще ничего (ни pong, ни любое другое
+      // событие) — сокет формально ещё open, но соединение зомби.
+      if (this.lastActivityAt < sentAt) this.setLive(false)
+    }, PONG_TIMEOUT_MS)
   }
 
   private connect(): void {
@@ -123,11 +173,18 @@ class WsClient {
     ws.onopen = () => {
       this.reconnectAttempts = 0
       this.setStatus('open')
+      this.lastActivityAt = Date.now()
+      this.setLive(true)
       for (const room of this.subscribed) this.send({ type: 'subscribe', room_id: room })
-      this.pingTimer = window.setInterval(() => this.send({ type: 'ping' }), 25_000)
+      this.pingTimer = window.setInterval(() => this.heartbeat(), PING_INTERVAL_MS)
       this.connectListeners.forEach((fn) => fn())
     }
     ws.onmessage = (ev) => {
+      // Любое сообщение — признак живости, не только pong (ARG-161): в оживлённом
+      // чате message.new/typing/presence приходят чаще, чем раз в PING_INTERVAL_MS,
+      // и не нужно ждать именно pong, чтобы понять, что соединение отзывчиво.
+      this.lastActivityAt = Date.now()
+      this.setLive(true)
       try {
         const data = JSON.parse(ev.data) as WsEvent
         this.listeners.forEach((l) => l(data))
@@ -138,6 +195,7 @@ class WsClient {
     ws.onclose = () => {
       this.clearTimers()
       this.setStatus(this.shouldRun ? 'connecting' : 'closed')
+      this.setLive(true)
       if (!this.shouldRun) return
       const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 15_000)
       this.reconnectAttempts += 1

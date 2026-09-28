@@ -3,7 +3,7 @@ import { useMarkNotificationsRead, useNotifications } from '../../api/notificati
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { EmptyState } from '../../components/EmptyState'
-import { IconAlert, IconBell, IconCheck } from '../../components/icons'
+import { IconAlert, IconBell, IconCheck, IconFlame } from '../../components/icons'
 import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
 import { timeHM } from '../../lib/format'
 import type { NotificationKind, NotificationOut } from '../../lib/types'
@@ -20,6 +20,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   task_comment: '',
   task_returned: '',
   survey_submitted: '',
+  torch_granted: '',
 }
 
 // Склонение «N сообщений» для схлопнутого DM-бёрста (group_count > 1).
@@ -60,6 +61,7 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
   survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
+  torch_granted: 'Вам открыт доступ к разделу «Факел»',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
@@ -68,6 +70,7 @@ const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   task_comment: 'Задачи',
   task_returned: 'Задачи',
   survey_submitted: 'Анкета',
+  torch_granted: 'Факел',
 }
 
 export function NotificationBell() {
@@ -142,6 +145,8 @@ export function NotificationBell() {
                     <span className={styles.systemIcon}>
                       {n.kind === 'survey_submitted' ? (
                         <IconCheck size={20} />
+                      ) : n.kind === 'torch_granted' ? (
+                        <IconFlame size={20} />
                       ) : (
                         <IconAlert size={20} />
                       )}

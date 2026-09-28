@@ -40,6 +40,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
   survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
+  torch_granted: 'Вам открыт доступ к разделу «Факел»',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
@@ -251,6 +252,14 @@ export function useRealtime(): void {
         case 'room.created':
           // Комнату завёл сервер (узел потока) — подтянуть её в список чатов.
           qc.invalidateQueries({ queryKey: roomsKey })
+          break
+        case 'room.renamed':
+          // Владелец/админ переименовал группу (ARG-162) — патчим имя в кэше
+          // списка комнат, шапка и список чата обновляются сразу без рефетча.
+          patchRooms(qc, (rs) =>
+            rs.map((r) => (r.id === e.room_id ? { ...r, name: e.name } : r)),
+          )
+          qc.invalidateQueries({ queryKey: ['room', e.room_id] })
           break
         case 'room.closed': {
           // Подгруппа потока утвердила фразу — сервер снял членство. Убираем комнату
