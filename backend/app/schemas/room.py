@@ -40,6 +40,16 @@ class UpdateChannelRequest(BaseModel):
     plan_ids: list[int] | None = None
 
 
+class UpdateGroupNameRequest(BaseModel):
+    """Переименование группы (ARG-162) — владелец группы или platform-admin, та же
+    проверка прав, что и у обложки (`UpdateRoomAvatarRequest`). Валидация значения
+    (strip/непустое/лимит длины) — в эндпоинте, см. `_validate_room_name`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+
+
 class UpdateGroupReadonlyRequest(BaseModel):
     """Переключение режима «только чтение» для группы (ARG-142) — только admin."""
 

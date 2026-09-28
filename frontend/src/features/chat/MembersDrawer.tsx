@@ -5,12 +5,13 @@ import {
   useDeleteRoom,
   useSetGroupReadonly,
   useSetRoomAvatar,
+  useSetRoomName,
 } from '../../api/rooms'
 import { useUsersMap } from '../../api/users'
 import { Avatar } from '../../components/Avatar'
 import { Drawer } from '../../components/Overlay'
 import { Spinner } from '../../components/Spinner'
-import { IconEdit, IconTrash } from '../../components/icons'
+import { IconCheck, IconClose, IconEdit, IconTrash } from '../../components/icons'
 import { mediaUpload } from '../../lib/mediaUpload'
 import type { PublicUserOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
@@ -48,17 +49,42 @@ export function MembersDrawer({
   const deleteRoom = useDeleteRoom()
   const setReadonly = useSetGroupReadonly(roomId)
   const setAvatar = useSetRoomAvatar(roomId)
+  const setName = useSetRoomName(roomId)
   const users = useUsersMap()
   const { user: me } = useAuth()
   const [picked, setPicked] = useState<PublicUserOut | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [avatarUploading, setAvatarUploading] = useState(false)
   const avatarFileRef = useRef<HTMLInputElement>(null)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(roomName ?? '')
 
   const canManageMembers = isOwner || me?.role === 'admin'
   const canDelete = isOwner || me?.role === 'admin'
+  // Владелец группы или platform-admin — те же права, что у смены аватарки (ARG-154),
+  // теперь распространены и на переименование (ARG-162).
   const canSetAvatar = isOwner || me?.role === 'admin'
   const isAdmin = me?.role === 'admin'
+
+  function startEditingName() {
+    setNameDraft(roomName ?? '')
+    setEditingName(true)
+  }
+
+  function handleSaveName() {
+    const trimmed = nameDraft.trim()
+    if (!trimmed || trimmed === roomName) {
+      setEditingName(false)
+      return
+    }
+    setName.mutate(trimmed, {
+      onSuccess: () => {
+        toast('Название группы обновлено')
+        setEditingName(false)
+      },
+      onError: (err) => toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
+    })
+  }
 
   const existingMemberIds = useMemo(
     () => new Set((members ?? []).map((m) => m.user_id)),
@@ -108,44 +134,26 @@ export function MembersDrawer({
         <div
           style={{
             display: 'flex',
+            flexDirection: 'column',
             gap: 12,
-            alignItems: 'center',
             paddingBottom: 16,
             marginBottom: 8,
             borderBottom: '1px solid var(--divider)',
           }}
         >
-          {avatarUploading ? (
-            <div style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Spinner size={16} />
-            </div>
-          ) : (
-            <Avatar name={roomName ?? 'Группа'} url={avatarUrl} square size={48} />
-          )}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => avatarFileRef.current?.click()}
-              disabled={avatarUploading}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 12,
-                padding: '4px 8px',
-                borderRadius: 4,
-                border: '1px solid var(--divider)',
-                background: 'transparent',
-                cursor: 'pointer',
-              }}
-            >
-              <IconEdit size={14} /> Сменить фото
-            </button>
-            {avatarUrl && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            {avatarUploading ? (
+              <div style={{ width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Spinner size={16} />
+              </div>
+            ) : (
+              <Avatar name={roomName ?? 'Группа'} url={avatarUrl} square size={48} />
+            )}
+            <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
-                onClick={handleRemoveAvatar}
-                disabled={setAvatar.isPending}
+                onClick={() => avatarFileRef.current?.click()}
+                disabled={avatarUploading}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -155,21 +163,119 @@ export function MembersDrawer({
                   borderRadius: 4,
                   border: '1px solid var(--divider)',
                   background: 'transparent',
-                  color: 'var(--blood-bright)',
                   cursor: 'pointer',
                 }}
               >
-                <IconTrash size={14} /> Удалить
+                <IconEdit size={14} /> Сменить фото
               </button>
-            )}
+              {avatarUrl && (
+                <button
+                  type="button"
+                  onClick={handleRemoveAvatar}
+                  disabled={setAvatar.isPending}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 12,
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    border: '1px solid var(--divider)',
+                    background: 'transparent',
+                    color: 'var(--blood-bright)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <IconTrash size={14} /> Удалить
+                </button>
+              )}
+            </div>
+            <input
+              ref={avatarFileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={handleAvatarChange}
+            />
           </div>
-          <input
-            ref={avatarFileRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={handleAvatarChange}
-          />
+
+          {editingName ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                type="text"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveName()
+                  if (e.key === 'Escape') setEditingName(false)
+                }}
+                maxLength={100}
+                autoFocus
+                disabled={setName.isPending}
+                style={{
+                  flex: 1,
+                  fontSize: 14,
+                  padding: '6px 8px',
+                  borderRadius: 4,
+                  border: '1px solid var(--divider)',
+                  background: 'var(--surface)',
+                  color: 'inherit',
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSaveName}
+                disabled={setName.isPending || !nameDraft.trim()}
+                aria-label="Сохранить название"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--accent, inherit)',
+                  cursor: 'pointer',
+                }}
+              >
+                <IconCheck size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingName(false)}
+                disabled={setName.isPending}
+                aria-label="Отменить"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  border: 'none',
+                  background: 'transparent',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                <IconClose size={18} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={startEditingName}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                alignSelf: 'flex-start',
+                fontSize: 14,
+                fontWeight: 500,
+                padding: 0,
+                border: 'none',
+                background: 'transparent',
+                color: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              {roomName ?? 'Группа'} <IconEdit size={13} />
+            </button>
+          )}
         </div>
       )}
 

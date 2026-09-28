@@ -90,6 +90,21 @@ export function useSetGroupReadonly(roomId: number) {
   })
 }
 
+// Переименование группы (ARG-162) — владелец группы или platform-admin, та же
+// проверка прав, что у обложки. Сервер сам шлёт WS room.renamed остальным
+// участникам (см. useRealtime.ts) — инвалидация здесь нужна только вызывающей
+// вкладке, у которой WS-эхо на своё же действие не приходит отдельным патчем.
+export function useSetRoomName(roomId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (name: string) => http.patch<RoomOut>(`/api/rooms/${roomId}/name`, { name }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: roomsKey })
+      qc.invalidateQueries({ queryKey: ['room', roomId] })
+    },
+  })
+}
+
 // `enabled=false` — не стрелять запросом там, где вызывающему он не всегда нужен
 // (ARG-114: только для дешёвого тарифа на экране «Дневники»).
 export function usePersonalChannel(enabled = true) {
