@@ -52,6 +52,16 @@ export async function getCachedPreviewUrl(url: string): Promise<string | null> {
   return objUrl
 }
 
+/**
+ * Синхронный срез `getCachedPreviewUrl` — только уже открытый в этой вкладке
+ * object-URL (без похода в IndexedDB). Нужен, чтобы `useOfflinePreviewSrc` мог
+ * выбрать src для самого первого рендера, не дожидаясь async-проверки (ARG-160):
+ * повторный маунт уже виденного в этой сессии превью не мигает сырым сетевым url.
+ */
+export function peekCachedPreviewUrl(url: string): string | null {
+  return objectUrlCache.get(cacheKey(url)) ?? null
+}
+
 async function store(url: string, blob: Blob): Promise<void> {
   const key = cacheKey(url)
   await idbSet(STORE_MEDIA_PREVIEW, key, { blob, savedAt: Date.now() } satisfies Entry)
