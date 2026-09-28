@@ -215,3 +215,52 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+
+.wallComposer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.wallList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.wallPost {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+  padding: var(--space-3) var(--space-4);
+}
+
+.wallPostHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.wallPostAuthor {
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+}
+
+.wallPostDate {
+  font-size: var(--text-label-md);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.wallPostBody {
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+.wallPostDelete {
+  margin-top: var(--space-2);
+}

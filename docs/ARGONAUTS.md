@@ -266,6 +266,28 @@ so their ids resolve normally — see "Roster composition".)
   (задачи, «подвиг») у чужого потока естественно приходят пустыми/`null`,
   `can_message` — `false` (не IDOR, просто нет данных для другого потока).
 
+## Стена профиля (ARG-155/166)
+
+Отдельная секция «Стена» на `/argonauts/{userId}` (`ArgonautDetail.tsx`, компонент
+`Wall`) — короткие текстовые посты, API постов см. docs/TORCH.md «Посты профиля»
+(`GET/POST/DELETE /api/torch/posts`).
+
+- **Гейт** — видна только когда И просматриваемый профиль, И сам вызывающий
+  оба `torch_unlocked=true` (`data.torch_unlocked && me?.torch_unlocked`).
+  Для всех остальных секции нет вовсе — не пустой блок, не заглушка.
+  `torch_unlocked` цели приходит новым полем в `ArgonautDetailOut`
+  (колонка БД пользователя, не вычисление).
+- **Лента** — `GET /api/torch/posts?user_id={profileId}`, посты именно этого
+  человека, новые сверху; своя react-query фабрика `api/torchPosts.ts`, не
+  переиспользует `RoomList`/чат-компоненты — это не сообщение в комнате.
+- **Форма добавления** — только на своей странице (`isOwn`, тот же
+  `useAuth().user.id === profileId`, что и у `TaskComposer` в блоке «Подвиг на
+  Экспедицию» выше), простое текстовое поле (`Input multiline`), без вложений.
+- **Удаление** — кнопка видна автору поста (`post.author_id === me.id`) ИЛИ
+  любому админу, на любой странице, не только своей — сравнение идёт с
+  `post.author_id`, не с `profileId` страницы.
+- Пустая лента — `EmptyState` «Пока нет постов.», без отдельной заглушки.
+
 ## Frontend
 
 `/argonauts` (grid, `ArgonautsScreen.tsx`) and `/argonauts/:userId` (profile,

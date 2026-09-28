@@ -459,4 +459,5 @@ async def get_argonaut(
         expedition_feat_task_id=feat_task_id,
         expedition_feat_status=feat_status,
         can_message=can_message,
+        torch_unlocked=user.torch_unlocked,
     )

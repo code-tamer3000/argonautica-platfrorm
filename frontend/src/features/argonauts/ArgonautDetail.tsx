@@ -3,10 +3,12 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { argonautKey, useArgonaut } from '../../api/argonauts'
 import { useCreateRoom } from '../../api/rooms'
+import { useCreateTorchPost, useDeleteTorchPost, useTorchPosts } from '../../api/torchPosts'
 import { Avatar } from '../../components/Avatar'
 import { Button } from '../../components/Button'
 import { Chip } from '../../components/Chip'
 import { EmptyState } from '../../components/EmptyState'
+import { Input } from '../../components/Input'
 import { Lightbox } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
@@ -15,7 +17,7 @@ import { useAuth } from '../auth/AuthContext'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { ApiError } from '../../lib/apiClient'
 import { dateTimeMsk } from '../../lib/format'
-import type { ArgonautTaskOut } from '../../lib/types'
+import type { ArgonautTaskOut, TorchPostOut } from '../../lib/types'
 import { toast } from '../../stores/toast'
 import { useUiStore } from '../../stores/ui'
 import styles from './argonauts.module.css'
@@ -53,6 +55,106 @@ function TaskRow({ task }: { task: ArgonautTaskOut }) {
           <Link to={`/tasks/${task.task_id}`} className={styles.taskSubmissionLink}>
             Открыть задачу
           </Link>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function WallPost({
+  post,
+  canDelete,
+  onDelete,
+  deleting,
+}: {
+  post: TorchPostOut
+  canDelete: boolean
+  onDelete: () => void
+  deleting: boolean
+}) {
+  return (
+    <div className={styles.wallPost}>
+      <div className={styles.wallPostHeader}>
+        <span className={styles.wallPostAuthor}>{post.author_display_name}</span>
+        <span className={styles.wallPostDate}>{dateTimeMsk(post.created_at)}</span>
+      </div>
+      <div className={styles.wallPostBody}>{post.body}</div>
+      {canDelete && (
+        <Button
+          type="button"
+          variant="danger"
+          className={styles.wallPostDelete}
+          onClick={onDelete}
+          disabled={deleting}
+        >
+          Удалить
+        </Button>
+      )}
+    </div>
+  )
+}
+
+// Стена профиля клуба «Факел» (ARG-155/166) — видна только когда И цель, И
+// смотрящий torch_unlocked (гейт снаружи, см. рендер ниже); форма добавления —
+// только на своей странице (isOwn).
+function Wall({ profileId, isOwn }: { profileId: number; isOwn: boolean }) {
+  const { user: me } = useAuth()
+  const { data: posts, isLoading } = useTorchPosts(profileId, true)
+  const createPost = useCreateTorchPost(profileId)
+  const deletePost = useDeleteTorchPost(profileId)
+  const [text, setText] = useState('')
+
+  function submit() {
+    const body = text.trim()
+    if (!body || createPost.isPending) return
+    createPost.mutate(body, {
+      onSuccess: () => setText(''),
+      onError: (err) => toast(err instanceof Error ? err.message : 'Не удалось опубликовать', 'error'),
+    })
+  }
+
+  function remove(postId: number) {
+    deletePost.mutate(postId, {
+      onError: (err) => toast(err instanceof Error ? err.message : 'Не удалось удалить', 'error'),
+    })
+  }
+
+  const isEmpty = (posts?.length ?? 0) === 0
+
+  return (
+    <div className={styles.tasksSection}>
+      <h2 className={styles.tasksHeading}>Стена</h2>
+      {isOwn && (
+        <div className={styles.wallComposer}>
+          <Input
+            multiline
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Написать пост"
+            disabled={createPost.isPending}
+          />
+          <Button type="button" onClick={submit} disabled={!text.trim() || createPost.isPending}>
+            {createPost.isPending ? 'Публикация…' : 'Опубликовать'}
+          </Button>
+        </div>
+      )}
+      {isLoading ? (
+        <div className="center">
+          <Spinner />
+        </div>
+      ) : isEmpty ? (
+        <EmptyState>Пока нет постов.</EmptyState>
+      ) : (
+        <div className={styles.wallList}>
+          {posts!.map((p) => (
+            <WallPost
+              key={p.id}
+              post={p}
+              canDelete={me?.role === 'admin' || p.author_id === me?.id}
+              onDelete={() => remove(p.id)}
+              deleting={deletePost.isPending && deletePost.variables === p.id}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -183,6 +285,10 @@ export function ArgonautDetail() {
             </div>
           )}
         </div>
+      )}
+
+      {data.torch_unlocked && me?.torch_unlocked && (
+        <Wall profileId={numericId} isOwn={isOwn} />
       )}
     </div>
   )

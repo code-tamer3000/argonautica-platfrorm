@@ -83,3 +83,6 @@ class ArgonautDetailOut(BaseModel):
     # на POST /api/rooms. Ростер по потоку шире (видны все), запись — по рангу
     # тарифа, поэтому это отдельное поле, а не "виден в ростере => можно писать".
     can_message: bool = False
+    # ARG-155/166: гейт секции «Стена» на фронте — видна только если И цель, И
+    # смотрящий torch_unlocked (см. docs/TORCH.md). Колонка БД, не вычисление.
+    torch_unlocked: bool = False
