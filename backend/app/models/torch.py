@@ -7,7 +7,7 @@
 """
 from datetime import datetime
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Text, func
+from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -36,3 +36,25 @@ class TorchSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class TorchPost(Base):
+    """Пост на стене профиля (ARG-155). Пишет только член клуба (`torch_unlocked`,
+    проверка в API-слое, не здесь) — стена показывает посты конкретного человека,
+    не общую ленту клуба.
+    """
+
+    __tablename__ = "torch_posts"
+    __table_args__ = (
+        Index("ix_torch_posts_author_created", "author_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    author_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id"), nullable=False
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # мягкое удаление
