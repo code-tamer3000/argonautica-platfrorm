@@ -47,6 +47,9 @@ EVENT_ROOM_CLOSED = "room.closed"
 # Структура дневника (задание) изменилась — глобальный broadcast (как presence),
 # без payload'а: клиент просто инвалидирует свой кэш структуры (ARG-127).
 EVENT_JOURNAL_STRUCTURE_CHANGED = "journal.structure_changed"
+# Группу переименовали (ARG-162) — в канал комнаты (publish_room_event), payload
+# несёт свежее имя, клиент патчит его в кэше списка комнат без рефетча.
+EVENT_ROOM_RENAMED = "room.renamed"
 
 
 def _with_cheap_tariff_content(
@@ -191,6 +194,10 @@ def room_created_event(room_id: int) -> dict[str, Any]:
 
 def room_closed_event(room_id: int) -> dict[str, Any]:
     return {"type": EVENT_ROOM_CLOSED, "room_id": room_id}
+
+
+def room_renamed_event(room_id: int, name: str) -> dict[str, Any]:
+    return {"type": EVENT_ROOM_RENAMED, "room_id": room_id, "name": name}
 
 
 def journal_structure_changed_event() -> dict[str, Any]:

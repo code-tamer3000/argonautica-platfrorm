@@ -252,6 +252,14 @@ export function useRealtime(): void {
           // Комнату завёл сервер (узел потока) — подтянуть её в список чатов.
           qc.invalidateQueries({ queryKey: roomsKey })
           break
+        case 'room.renamed':
+          // Владелец/админ переименовал группу (ARG-162) — патчим имя в кэше
+          // списка комнат, шапка и список чата обновляются сразу без рефетча.
+          patchRooms(qc, (rs) =>
+            rs.map((r) => (r.id === e.room_id ? { ...r, name: e.name } : r)),
+          )
+          qc.invalidateQueries({ queryKey: ['room', e.room_id] })
+          break
         case 'room.closed': {
           // Подгруппа потока утвердила фразу — сервер снял членство. Убираем комнату
           // из списка сразу: доступа к ней больше нет, запрос отдал бы 403.

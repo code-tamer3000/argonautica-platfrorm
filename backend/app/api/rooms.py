@@ -13,7 +13,7 @@ from sqlalchemy.orm import aliased
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
-from app.db.session import get_session
+from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.kb import KbItemMedia
 from app.models.media import MediaAsset
@@ -29,6 +29,7 @@ from app.schemas.room import (
     MemberOut,
     RoomOut,
     UpdateChannelRequest,
+    UpdateGroupNameRequest,
     UpdateGroupReadonlyRequest,
     UpdateRoomAvatarRequest,
 )
@@ -48,6 +49,8 @@ from app.services.visibility import (
     plan_visibility_clause,
     user_rank,
 )
+from app.ws import schemas as ws_schemas
+from app.ws.pubsub import publish_room_event
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
 
@@ -105,6 +108,25 @@ async def _presign_room_avatars(
     }
 
 
+ROOM_NAME_MAX_LENGTH = 100
+
+
+def _validate_room_name(name: str | None) -> str:
+    """Общая проверка имени group/channel: непустое после strip, с разумным лимитом
+    длины (ARG-162). Используется и при создании (`POST /api/rooms`), и при
+    переименовании группы — раньше `POST /api/rooms` проверял только `if not
+    body.name`, пропуская строку из одних пробелов и не ограничивая длину."""
+    stripped = (name or "").strip()
+    if not stripped:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
+    if len(stripped) > ROOM_NAME_MAX_LENGTH:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"name must be at most {ROOM_NAME_MAX_LENGTH} characters",
+        )
+    return stripped
+
+
 _ADMIN_OWNER_PLAN_ID = -1  # заведомо не существующий id тарифа — см. _owner_plan_label
 
 
@@ -158,9 +180,8 @@ async def create_room(
             session, current_user, body.peer_id, response, torch=body.torch
         )
 
-    # group/channel требуют имя.
-    if not body.name:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "name is required")
+    # group/channel требуют имя: непустое после strip, с лимитом длины.
+    name = _validate_room_name(body.name)
 
     if body.type == "group":
         if not body.torch and not current_user.can_create_groups:
@@ -169,7 +190,7 @@ async def create_room(
             )
         room = Room(
             type="group",
-            name=body.name,
+            name=name,
             created_by=current_user.id,
             torch_scope=body.torch,
         )
@@ -189,7 +210,7 @@ async def create_room(
     await _assert_intake_exists(session, body.intake_id)
     await _assert_plans_exist(session, body.plan_ids)
     room = Room(
-        type="channel", name=body.name, created_by=current_user.id, intake_id=body.intake_id
+        type="channel", name=name, created_by=current_user.id, intake_id=body.intake_id
     )
     session.add(room)
     await session.flush()
@@ -641,6 +662,36 @@ async def _count_owners(session: AsyncSession, room_id: int) -> int:
         .where(RoomMember.room_id == room_id, RoomMember.role_in_room == "owner")
     )
     return result.scalar_one()
+
+
+@router.patch("/{room_id}/name", response_model=RoomOut)
+async def update_group_name(
+    room_id: int,
+    body: UpdateGroupNameRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> RoomOut:
+    """Переименовать группу (ARG-162) — владелец группы или platform-admin, та же
+    проверка прав, что у обложки (`update_room_avatar`) и управления составом
+    (`add_member`/`remove_member`): без `assert_room_access`, т.к. admin может
+    управлять группой, не будучи её участником."""
+    room = await _load_group(session, room_id)
+
+    is_admin = current_user.role == "admin"
+    if not is_admin and not await _is_room_owner(session, room_id, current_user.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Owner or admin required")
+
+    room.name = _validate_room_name(body.name)
+    await session.flush()
+
+    # Открытые у других участников окна чата подхватывают новое имя сразу, без
+    # ручного рефреша (в отличие от смены аватарки, где пуша нет — см.
+    # update_room_avatar). after_commit — чтобы откат транзакции не разослал
+    # событие о переименовании, которого не случилось.
+    event = ws_schemas.room_renamed_event(room.id, room.name)
+    after_commit(session, lambda: publish_room_event(room.id, event))
+
+    return _room_out(room, [])
 
 
 @router.patch("/{room_id}/readonly", response_model=RoomOut)
