@@ -186,7 +186,7 @@ ARG-110, [ROOMS.md](ROOMS.md)) после выпуска не при делах 
 | Endpoint | Behavior |
 |---|---|
 | `GET /admin/torch` | Только выпустившиеся не-админы: `user_id`/`username`/`display_name`/`torch_unlocked`/`torch_applied_at`, плюс текущий `stub_text`, `admin_user_id` и список `admin_candidates` (все админы) |
-| `POST /admin/torch/grant` | `{user_ids}` — включить тумблер + добавить в комнату клуба (идемпотентно) |
+| `POST /admin/torch/grant` | `{user_ids}` — включить тумблер + добавить в комнату клуба (идемпотентно); на реальном переходе false→true шлёт уведомление `torch_granted` (см. [NOTIFICATIONS.md](NOTIFICATIONS.md)) |
 | `DELETE /admin/torch/grant/{user_id}` | Выключить тумблер + убрать из комнаты |
 | `PATCH /admin/torch/stub` | `{stub_text}` — обновить общий текст заглушки |
 | `PATCH /admin/torch/admin` | `{admin_user_id}` — назначить (или `null` — снять) администратора Факела |

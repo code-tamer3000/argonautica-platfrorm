@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.room import RoomMember
 from app.models.torch import TorchSettings
 from app.models.user import User
+from app.services.notifications import notify_torch_granted
 from app.services.rooms import ensure_torch_room
 
 
@@ -26,8 +27,12 @@ async def grant_torch_access(session: AsyncSession, user: User) -> None:
     """Включить тумблер и добавить в комнату клуба (идемпотентно).
 
     Комната создаётся один раз при первом включении кому-либо — дальше это
-    обычное группа-членство (см. docs/ROOMS.md).
+    обычное группа-членство (см. docs/ROOMS.md). Уведомление (`torch_granted`)
+    шлём только на реальном переходе false→true, тем же приёмом, что
+    `notify_cabin_granted` — повторный (идемпотентный) вызов на уже открытого
+    участника не должен спамить колокольчик.
     """
+    was_unlocked = user.torch_unlocked
     user.torch_unlocked = True
     room = await ensure_torch_room(session)
     if room is None:
@@ -39,6 +44,8 @@ async def grant_torch_access(session: AsyncSession, user: User) -> None:
     if membership is None:
         session.add(RoomMember(room_id=room.id, user_id=user.id, role_in_room="member"))
     await session.flush()
+    if not was_unlocked:
+        await notify_torch_granted(session, user.id)
 
 
 async def revoke_torch_access(session: AsyncSession, user: User) -> None:

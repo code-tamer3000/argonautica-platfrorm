@@ -20,6 +20,7 @@ const KIND_LABEL: Record<NotificationKind, string> = {
   task_comment: '',
   task_returned: '',
   survey_submitted: '',
+  torch_granted: '',
 }
 
 // Склонение «N сообщений» для схлопнутого DM-бёрста (group_count > 1).
@@ -60,6 +61,7 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
   survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
+  torch_granted: 'Вам открыт доступ к разделу «Факел»',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
@@ -68,6 +70,7 @@ const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   task_comment: 'Задачи',
   task_returned: 'Задачи',
   survey_submitted: 'Анкета',
+  torch_granted: 'Факел',
 }
 
 export function NotificationBell() {

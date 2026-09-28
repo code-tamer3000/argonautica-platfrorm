@@ -651,6 +651,7 @@ export type NotificationKind =
   | 'task_comment'
   | 'task_returned'
   | 'survey_submitted'
+  | 'torch_granted'
 
 export interface NotificationOut {
   id: number

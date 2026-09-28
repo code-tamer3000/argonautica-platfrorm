@@ -26,7 +26,8 @@ class Notification(Base):
     """Одно уведомление получателю `user_id`.
 
     От сообщения (dm/reply/news/mention) — заданы actor_id/message_id. cabin_granted —
-    actor_id/message_id/room_id пусты (клик ведёт в /cabin). Админ-рассылка
+    actor_id/message_id/room_id пусты (клик ведёт в /cabin). torch_granted — тот же
+    приём (клик ведёт в /torch). Админ-рассылка
     (admin) — заголовок в title, room/message/actor пусты. task_comment/task_returned —
     actor_id/message_id/room_id пусты, task_id задан (клик ведёт в /tasks/{task_id}).
     survey_submitted — участник сдал анкету (адресат — админы); room/message/actor
@@ -45,7 +46,7 @@ class Notification(Base):
         CheckConstraint(
             "kind IN ('dm', 'reply', 'news', 'mention', 'journal_missed', "
             "'cabin_granted', 'admin', 'task_comment', 'task_returned', "
-            "'survey_submitted')",
+            "'survey_submitted', 'torch_granted')",
             name="notification_kind_valid",
         ),
         # Лента колокольчика: последние уведомления пользователя.

@@ -40,6 +40,7 @@ const NOTIF_FALLBACK: Record<NotificationKind, string> = {
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
   survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
+  torch_granted: 'Вам открыт доступ к разделу «Факел»',
 }
 
 function patchRooms(qc: QueryClient, fn: (rooms: RoomOut[]) => RoomOut[]): void {
