@@ -68,7 +68,7 @@ required task that gets soft-deleted later drops out of the pending list rather 
 blocking the gate forever. Surfaced as `artifact_gate` on `GET /api/dashboard`, `null`
 for a non-graduate.
 
-Same snapshot surfaced to admins on **«Ответы»** (`GET /api/admin/survey`, ARG-162):
+Same snapshot surfaced to admins on **«Кому показать»** (`GET /api/admin/survey`, ARG-162):
 each `SurveyRowOut` carries `mandatory_total`/`mandatory_pending` (id+title of what's
 still not `accepted`) computed the same way as `artifact_gate_for`, batched over all
 rows instead of a query per person. `mandatory_total` is `null` when the survey isn't
