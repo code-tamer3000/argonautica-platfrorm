@@ -96,6 +96,7 @@ from app.services.tasks import (
     partner_id,
     published_where,
     recompute_pair_completion,
+    required_task_ids_snapshot,
     sync_task_calendar_event,
 )
 from app.services.users import avatar_url
@@ -986,7 +987,9 @@ async def list_tasks(
     # Участник: common ∪ (individual, где у него есть назначение).
     # Выпускник: экспедиция пройдена — в разделе остаются задачи, которые он успел
     # сдать, плюс те, что ещё можно доздать (GRADUATE_BACKFILLABLE_STATUSES,
-    # ARG-157); всё остальное для него закрыто и в assert_task_visible.
+    # ARG-157), плюс обязательные для артефакта задания из снимка required_task_ids
+    # (ARG-159) даже без назначения — та же логика, что и в assert_task_visible,
+    # иначе гейт на дашборде ссылался бы на задачу, которой нет в самом списке.
     where: list[ColumnElement[bool]] = [Task.deleted_at.is_(None)]
     if current_user.role != "admin":
         if is_graduated(current_user):
@@ -996,7 +999,8 @@ async def list_tasks(
                     GRADUATE_VISIBLE_STATUSES + GRADUATE_BACKFILLABLE_STATUSES
                 ),
             )
-            where.append(Task.id.in_(my_submitted))
+            required_ids = await required_task_ids_snapshot(session, current_user)
+            where.append(Task.id.in_(my_submitted) | Task.id.in_(required_ids))
         else:
             my_individual = select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == current_user.id
