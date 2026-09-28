@@ -21,6 +21,8 @@ interface Props {
   canPin?: boolean
   // См. useMessageMenu.Options.torchScope.
   torchScope?: boolean
+  // См. useMessageMenu.Options.isNews.
+  isNews?: boolean
   // Канал-дневник → текст ответов рендерится как markdown (см. MessageItem).
   markdown?: boolean
   onForward?: (msg: MessageOut) => void
@@ -38,7 +40,7 @@ interface Props {
  * см. docs/MESSAGES.md); открытый тред обновляется по инвалидации thread-query.
  */
 export function InlineThread({
-  roomId, rootId, canPin, torchScope, markdown, onForward, onQuote, onQuoteJump,
+  roomId, rootId, canPin, torchScope, isNews, markdown, onForward, onQuote, onQuoteJump,
 }: Props) {
   const { data, isLoading } = useThread(roomId, rootId)
   const [expandedAll, setExpandedAll] = useState(false)
@@ -55,6 +57,7 @@ export function InlineThread({
     roomId,
     canPin: !!canPin,
     torchScope: !!torchScope,
+    isNews: !!isNews,
     onQuote,
     onEdit: (m) => setPendingEdit({ roomId, message: m }),
     onForward,
@@ -139,6 +142,7 @@ export function InlineThread({
             onQuoteJump={onQuoteJump}
             onOpenMenu={msgMenu.openMenu}
             torchScope={torchScope}
+            isNews={isNews}
           />
         ))}
         {/* «Свернуть тред» и поле ответа живут в основном композере снизу

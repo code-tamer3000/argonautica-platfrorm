@@ -1015,7 +1015,7 @@ async def add_reaction(
     гейта пина — реакция не пост). Идемпотентно: повторный вызов — 200, без дубля."""
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
-    await assert_can_write(session, room, current_user)
+    await assert_can_write(session, room, current_user, reaction=True)
 
     message = await session.get(Message, message_id)
     if (
@@ -1050,7 +1050,7 @@ async def remove_reaction(
     """Снять свою реакцию. Право — то же, что и для постановки."""
     room = await load_room(session, room_id)
     await assert_room_access(session, room, current_user)
-    await assert_can_write(session, room, current_user)
+    await assert_can_write(session, room, current_user, reaction=True)
 
     existing = await session.get(MessageReaction, (message_id, current_user.id))
     if existing is None:

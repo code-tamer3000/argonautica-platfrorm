@@ -33,6 +33,9 @@ interface Props {
   // Раздел «Факел» (ARG-158) — пробрасывается дальше в InlineThread (свой
   // независимый useMessageMenu), см. пояснение в useMessageMenu.Options.
   torchScope?: boolean
+  // Новостной канал (room.is_news) — пробрасывается в MessageItem/InlineThread,
+  // см. MessageItem.Props.isNews.
+  isNews?: boolean
   // Канал-дневник → текст сообщений рендерится как markdown (см. MessageItem).
   markdown?: boolean
   onToggleThread?: (rootId: number) => void
@@ -57,7 +60,7 @@ interface Props {
 
 export const MessageList = forwardRef<MessageListHandle, Props>(function MessageList(
   { roomId, messages, hasMore, loadMore, loading, users, selectedMsgId, highlightedMsgId,
-    expandedThreadId, canPin, torchScope, markdown, onToggleThread, onForward,
+    expandedThreadId, canPin, torchScope, isNews, markdown, onToggleThread, onForward,
     onQuote, onQuoteJump, onOpenMenu, onAtBottomChange, onScrolledUpChange,
     onSwipeReply, swipeEnabled = true },
   ref,
@@ -213,6 +216,7 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
               onQuoteJump={onQuoteJump}
               onOpenMenu={onOpenMenu}
               torchScope={torchScope}
+              isNews={isNews}
             />
             {expandedThreadId === m.id && (
               <InlineThread
@@ -220,6 +224,7 @@ export const MessageList = forwardRef<MessageListHandle, Props>(function Message
                 rootId={m.id}
                 canPin={canPin}
                 torchScope={torchScope}
+                isNews={isNews}
                 markdown={markdown}
                 onForward={onForward}
                 onQuote={onQuote}

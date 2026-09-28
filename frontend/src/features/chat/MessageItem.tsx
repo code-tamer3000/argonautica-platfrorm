@@ -57,6 +57,9 @@ interface Props {
   onOpenMenu?: (msg: MessageOut, anchor: DOMRect) => void
   // См. useMessageMenu.Options.torchScope — та же оговорка про реакции.
   torchScope?: boolean
+  // Новостной канал (room.is_news) — второе, более узкое исключение из «выпускник
+  // не пишет»: там разрешена только реакция, не полноценная запись (см. canReact ниже).
+  isNews?: boolean
 }
 
 // memo: лента перерисовывается на каждое realtime-событие комнаты (typing/presence/
@@ -79,15 +82,18 @@ function MessageItemInner({
   onQuote,
   onOpenMenu,
   torchScope,
+  isNews,
 }: Props) {
   const stickerMap = useStickerMap()
   const toggleReaction = useToggleReaction(msg.room_id)
   const { user } = useAuth()
   // Выпускник реакцию поставить не может — тот же барьер, что и на остальную
   // запись (см. isGraduated в useMessageMenu.tsx), с тем же torch_scope-исключением.
-  // Наблюдатель сюда не попадает: чат для него закрыт целиком на уровне
-  // assert_room_access.
-  const canReact = !user?.graduated_at || torchScope
+  // Второе исключение — новостной канал (isNews): там выпускник не пишет и не
+  // отвечает, но реагировать может (см. assert_can_write(..., reaction=True) в
+  // backend/app/services/rooms.py). Наблюдатель сюда не попадает: чат для него
+  // закрыт целиком на уровне assert_room_access.
+  const canReact = !user?.graduated_at || torchScope || isNews
   const navigate = useNavigate()
   const mentionUsers = useUsersByUsername()
 

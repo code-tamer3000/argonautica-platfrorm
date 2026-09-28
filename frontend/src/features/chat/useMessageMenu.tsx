@@ -22,6 +22,10 @@ interface Options {
   // Рубка — можно отправить сообщение (см. ChatPane.isGraduated), но нельзя
   // ответить/закрепить/переслать/поставить реакцию через это меню.
   torchScope: boolean
+  // Новостной канал (room.is_news) — второе, более узкое исключение из «выпускник
+  // только читает»: разрешает ТОЛЬКО пункт «реакция», см. canReact ниже и
+  // assert_can_write(..., reaction=True) на бэкенде.
+  isNews?: boolean
   // «Ответить» = цитата (Telegram-style, не тред — см. docs/MESSAGES.md «Quotes»).
   // undefined → пункт не показываем.
   onQuote?: (msg: MessageOut) => void
@@ -37,7 +41,7 @@ interface Options {
 // Общая логика контекстного меню сообщения для ленты и треда. Видимость пунктов
 // зеркалит правила бэкенда: править — только автор текста; удалять — автор или admin.
 export function useMessageMenu({
-  roomId, canPin, torchScope, onQuote, onOpenThread, onEdit, onForward,
+  roomId, canPin, torchScope, isNews, onQuote, onOpenThread, onEdit, onForward,
 }: Options) {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -54,6 +58,8 @@ export function useMessageMenu({
   // и так отбивает 403 (см. services/graduation.py). torch_scope — исключение
   // (см. Options.torchScope выше).
   const isGraduated = !!user?.graduated_at && !torchScope
+  // Реакция — единственный пункт, который выпускник сохраняет в новостном канале.
+  const canReact = !isGraduated || isNews
 
   function buildItems(msg: MessageOut): MenuItem[] {
     const items: MenuItem[] = []
@@ -80,7 +86,7 @@ export function useMessageMenu({
     ) {
       items.push({ key: 'edit', label: 'Редактировать', icon: <IconEdit size={18} />, onClick: () => onEdit(msg) })
     }
-    if (!isGraduated) {
+    if (canReact) {
       // Единственный способ поставить ПЕРВУЮ реакцию (пока чипа под сообщением
       // ещё нет) — дальше можно тапать по самому чипу (см. ReactionChip.tsx).
       items.push({
