@@ -16,8 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
+from app.models.torch import TorchPost
 from app.models.user import User
-from app.schemas.torch import TorchApplyOut, TorchStubOut
+from app.schemas.torch import (
+    TorchApplyOut,
+    TorchPostCreate,
+    TorchPostOut,
+    TorchStubOut,
+)
 from app.schemas.user import PublicUserOut
 from app.services.media import presign_asset_urls
 from app.services.rooms import get_or_create_dm
@@ -107,3 +113,90 @@ async def list_torch_contacts(
         )
         for u in candidates
     ]
+
+
+def _require_torch_member(user: User) -> None:
+    """Строго член клуба (`torch_unlocked=true`) — БЕЗ исключения для админа,
+    в отличие от `_require_torch_access` выше (тот пускает и админа без
+    выпуска). Посты стены — контент конкретного члена клуба, писать/читать их
+    может только тот, кто сам прошёл гейт (ARG-155/164); модерация (удаление
+    чужого поста) — отдельный, более широкий, путь ниже в `delete_torch_post`."""
+    if not user.torch_unlocked:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not available")
+
+
+@router.post(
+    "/posts", response_model=TorchPostOut, status_code=status.HTTP_201_CREATED
+)
+async def create_torch_post(
+    body: TorchPostCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> TorchPostOut:
+    """Пост пишется на СВОЮ стену — `author_id` всегда `current_user.id`, из
+    тела запроса не принимается (IDOR: автора нельзя подделать)."""
+    _require_torch_member(current_user)
+    post = TorchPost(author_id=current_user.id, body=body.body)
+    session.add(post)
+    await session.flush()
+    await session.refresh(post)
+    return TorchPostOut(
+        id=post.id,
+        author_id=post.author_id,
+        author_display_name=current_user.display_name,
+        body=post.body,
+        created_at=post.created_at,
+    )
+
+
+@router.get("/posts", response_model=list[TorchPostOut])
+async def list_torch_posts(
+    user_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[TorchPostOut]:
+    """Лента постов КОНКРЕТНОГО профиля (`user_id`), не общая лента клуба (см.
+    Assumptions ARG-155/164) — новые сверху. Целевой `user_id` не обязан сам
+    быть членом клуба формально: раз писать посты мог только член, у не-члена
+    их физически нет, отдельной проверки/404 на него не делаем."""
+    _require_torch_member(current_user)
+    rows = (
+        await session.execute(
+            select(TorchPost, User.display_name)
+            .join(User, User.id == TorchPost.author_id)
+            .where(TorchPost.author_id == user_id, TorchPost.deleted_at.is_(None))
+            .order_by(TorchPost.created_at.desc())
+        )
+    ).all()
+    return [
+        TorchPostOut(
+            id=post.id,
+            author_id=post.author_id,
+            author_display_name=display_name,
+            body=post.body,
+            created_at=post.created_at,
+        )
+        for post, display_name in rows
+    ]
+
+
+@router.delete("/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_torch_post(
+    post_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> None:
+    """Автор поста ИЛИ админ — шире, чем `_require_torch_member` выше: модерация
+    (админ) должна работать независимо от собственного `torch_unlocked` админа,
+    тот же принцип "оверсайт сильнее гейта", что и везде в проекте. Soft-delete
+    (`deleted_at`), не hard — общее правило CLAUDE.md (Cabin — единственное
+    исключение, это не она)."""
+    post = await session.get(TorchPost, post_id)
+    if post is None or post.deleted_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Post not found")
+    if post.author_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Not allowed to delete this post"
+        )
+    post.deleted_at = datetime.now(UTC)
+    await session.flush()

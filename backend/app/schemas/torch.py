@@ -67,3 +67,23 @@ class TorchApplyOut(BaseModel):
     """Куда перейти после подачи заявки — id DM с назначенным админом."""
 
     room_id: int
+
+
+class TorchPostCreate(BaseModel):
+    """Тело `POST /api/torch/posts` — только текст, без вложений (ARG-155/164)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class TorchPostOut(BaseModel):
+    """Один пост стены профиля. `author_display_name` — денормализовано на
+    момент чтения (не хранится в `torch_posts`), фронту не нужен второй запрос
+    за автором."""
+
+    id: int
+    author_id: int
+    author_display_name: str
+    body: str
+    created_at: datetime
