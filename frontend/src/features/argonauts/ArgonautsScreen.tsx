@@ -48,12 +48,14 @@ function argonautSectionKey(a: ArgonautOut): { id: number | null; name: string |
 export function ArgonautsScreen() {
   const { data, isLoading, isError, dataUpdatedAt } = useArgonauts()
   const { user: me } = useAuth()
-  const isEmpty = (data?.length ?? 0) === 0
+  const roster = data?.roster ?? []
+  const torch = data?.torch
+  const isEmpty = roster.length === 0 && (torch?.length ?? 0) === 0
   const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty })
   // Сервер уже отдал порядок: админы, участники по рангу тарифа, наблюдатели
   // хвостом (см. api/argonauts.py `_roster`) — просто режем на секции по
   // соседним элементам, как контакт-лист «начать чат».
-  const groups = groupPreOrdered(data ?? [], argonautSectionKey)
+  const groups = groupPreOrdered(roster, argonautSectionKey)
 
   return (
     <div className={styles.wrap}>
@@ -67,6 +69,19 @@ export function ArgonautsScreen() {
         <EmptyState size="block">
           {offlineEmpty ? 'Нет сети — не можем загрузить список участников.' : 'Пока в потоке больше никого нет.'}
         </EmptyState>
+      )}
+      {/* ARG-155/165: секция «Факел» — все члены клуба, кросс-интейк, только
+          если сервер её прислал (сам смотрящий torch_unlocked). Плоская, без
+          деления на подсекции — масштаб ~20–30 человек. */}
+      {!isLoading && torch && torch.length > 0 && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Факел</div>
+          <div className={styles.grid}>
+            {torch.map((a) => (
+              <Tile key={a.id} a={a} isOwn={a.id === me?.id} />
+            ))}
+          </div>
+        </div>
       )}
       {!isLoading &&
         groups.map((group) => (

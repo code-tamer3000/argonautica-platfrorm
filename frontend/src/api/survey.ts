@@ -52,6 +52,11 @@ export interface SurveyGift {
   filename: string
 }
 
+export interface PendingGraduationTask {
+  id: number
+  title: string
+}
+
 export interface SurveyRow {
   user_id: number
   username: string
@@ -67,6 +72,10 @@ export interface SurveyRow {
   plan_name: string | null
   intake_id: number | null
   intake_starts_on: string | null
+  // Гейт артефакта (ARG-159): сколько обязательных заданий из снимка на момент
+  // сдачи анкеты уже принято. null — анкета не сдана или обязательных не было.
+  mandatory_total: number | null
+  mandatory_pending: PendingGraduationTask[]
 }
 
 export interface SurveyOverview {

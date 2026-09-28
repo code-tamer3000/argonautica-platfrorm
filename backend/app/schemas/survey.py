@@ -9,6 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.expedition import PendingGraduationTaskOut
+
 
 class SurveyFormOut(BaseModel):
     """Что показывать пользователю: форма + его состояние по ней."""
@@ -62,6 +64,11 @@ class SurveyRowOut(BaseModel):
     plan_name: str | None
     intake_id: int | None
     intake_starts_on: date | None
+    # Гейт артефакта (ARG-159): сколько обязательных заданий из снимка на
+    # момент сдачи анкеты уже принято. None — анкета ещё не сдана (снимка нет)
+    # или обязательных заданий у потока не было вовсе.
+    mandatory_total: int | None
+    mandatory_pending: list[PendingGraduationTaskOut]
 
 
 class SurveyOverviewOut(BaseModel):

@@ -447,6 +447,73 @@ async def test_graduate_can_open_required_task_never_assigned(
     assert submitted.status_code == 201, submitted.text
 
 
+async def test_admin_survey_shows_which_required_task_is_pending(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-162: `GET /api/admin/survey` называет админу конкретную недосданную
+    обязательную задачу выпускника, а не только факт «гейт закрыт»."""
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    user = await make_user()
+
+    task = await _create_task(
+        client, admin_h, type="common", title="Обязательная для гейта"
+    )
+    patched = await client.patch(
+        f"/api/tasks/{task['id']}",
+        headers=admin_h,
+        json={"required_for_graduation": True},
+    )
+    assert patched.status_code == 200, patched.text
+
+    user.survey_required = True
+    await session.commit()
+    submit = await client.post(
+        "/api/survey",
+        headers=await _headers(client, user),
+        json={"answers": _valid_answers(), "publish_consent": False},
+    )
+    assert submit.status_code == 201, submit.text
+
+    overview = (await client.get("/api/admin/survey", headers=admin_h)).json()
+    row = next(r for r in overview["rows"] if r["user_id"] == user.id)
+    assert row["mandatory_total"] is not None and row["mandatory_total"] >= 1
+    pending_ids = {t["id"] for t in row["mandatory_pending"]}
+    assert task["id"] in pending_ids
+    assert any(t["title"] == "Обязательная для гейта" for t in row["mandatory_pending"])
+
+    user_h = await _headers(client, user)
+    sub = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "готово"}
+    )
+    assert sub.status_code == 201, sub.text
+    assignment_id = sub.json()["assignment_id"]
+    accept = await client.post(
+        f"/api/tasks/assignments/{assignment_id}/review",
+        headers=admin_h,
+        json={"action": "accept"},
+    )
+    assert accept.status_code == 200, accept.text
+
+    overview = (await client.get("/api/admin/survey", headers=admin_h)).json()
+    row = next(r for r in overview["rows"] if r["user_id"] == user.id)
+    pending_ids = {t["id"] for t in row["mandatory_pending"]}
+    assert task["id"] not in pending_ids
+
+
+async def test_admin_survey_mandatory_total_null_before_submit(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    user = await make_user()
+
+    overview = (await client.get("/api/admin/survey", headers=admin_h)).json()
+    row = next(r for r in overview["rows"] if r["user_id"] == user.id)
+    assert row["mandatory_total"] is None
+    assert row["mandatory_pending"] == []
+
+
 # --- Рубка -------------------------------------------------------------------
 
 

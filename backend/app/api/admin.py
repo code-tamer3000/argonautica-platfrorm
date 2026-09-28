@@ -42,7 +42,13 @@ from app.models.task import (
     TaskSubmissionMedia,
 )
 from app.models.user import User
-from app.schemas.expedition import AdminExpeditionLockOut, Element, StageOut, StagesUpdate
+from app.schemas.expedition import (
+    AdminExpeditionLockOut,
+    Element,
+    PendingGraduationTaskOut,
+    StageOut,
+    StagesUpdate,
+)
 from app.schemas.feedback import (
     FeedbackListOut,
     FeedbackOut,
@@ -1297,25 +1303,68 @@ async def survey_overview(
         )
     ).all()
 
-    items = [
-        SurveyRowOut(
-            user_id=user.id,
-            username=user.username,
-            display_name=user.display_name,
-            invited=user.survey_required or response is not None,
-            completed_at=response.created_at if response else None,
-            publish_consent=bool(response and response.publish_consent),
-            has_gift=user.survey_gift_asset_id is not None,
-            gift_asset_id=user.survey_gift_asset_id,
-            answers=response.answers if response else None,
-            version=response.version if response else None,
-            plan_id=user.plan_id,
-            plan_name=plan_name,
-            intake_id=user.intake_id,
-            intake_starts_on=starts_on,
+    # Гейт артефакта (ARG-159/ARG-162): сколько из обязательных заданий, зафикси-
+    # рованных снимком на момент сдачи анкеты, уже принято — считаем одним батчем
+    # на все строки, а не запросом на человека (пачка может быть в сотню людей).
+    required_by_user: dict[int, list[int]] = {
+        user.id: response.required_task_ids
+        for user, response, _, _ in rows
+        if response is not None and response.required_task_ids
+    }
+    all_required_ids = {tid for ids in required_by_user.values() for tid in ids}
+    titles_by_task: dict[int, str] = {}
+    accepted_by_user: dict[int, set[int]] = {}
+    if all_required_ids:
+        titles_by_task = dict(
+            (
+                await session.execute(
+                    select(Task.id, Task.title).where(
+                        Task.id.in_(all_required_ids), Task.deleted_at.is_(None)
+                    )
+                )
+            ).all()
         )
-        for user, response, starts_on, plan_name in rows
-    ]
+        accepted_rows = await session.execute(
+            select(TaskAssignment.user_id, TaskAssignment.task_id).where(
+                TaskAssignment.user_id.in_(required_by_user.keys()),
+                TaskAssignment.task_id.in_(all_required_ids),
+                TaskAssignment.status == "accepted",
+            )
+        )
+        for uid, tid in accepted_rows.all():
+            accepted_by_user.setdefault(uid, set()).add(tid)
+
+    items = []
+    for user, response, starts_on, plan_name in rows:
+        required_ids = required_by_user.get(user.id, [])
+        accepted_ids = accepted_by_user.get(user.id, set())
+        pending = [
+            PendingGraduationTaskOut(id=tid, title=titles_by_task[tid])
+            for tid in required_ids
+            if tid not in accepted_ids and tid in titles_by_task
+        ]
+        items.append(
+            SurveyRowOut(
+                user_id=user.id,
+                username=user.username,
+                display_name=user.display_name,
+                invited=user.survey_required or response is not None,
+                completed_at=response.created_at if response else None,
+                publish_consent=bool(response and response.publish_consent),
+                has_gift=user.survey_gift_asset_id is not None,
+                gift_asset_id=user.survey_gift_asset_id,
+                answers=response.answers if response else None,
+                version=response.version if response else None,
+                plan_id=user.plan_id,
+                plan_name=plan_name,
+                intake_id=user.intake_id,
+                intake_starts_on=starts_on,
+                mandatory_total=(
+                    len(required_ids) if response is not None and required_ids else None
+                ),
+                mandatory_pending=pending,
+            )
+        )
     return SurveyOverviewOut(
         form=question_form(),
         rows=items,

@@ -35,11 +35,7 @@ from app.schemas.journal import (
     UserDynamicsOut,
 )
 from app.services.media import presign_asset_urls
-from app.services.tasks import (
-    late_submissions_count,
-    mandatory_tasks_progress_for,
-    overdue_tasks_for,
-)
+from app.services.tasks import late_submissions_count, overdue_tasks_for
 from app.services.users import avatar_url
 from app.ws.pubsub import publish_journal_structure_changed
 from app.ws.schemas import journal_structure_changed_event
@@ -1101,7 +1097,6 @@ async def get_all_dynamics(
         journal_today = graduated_on is None and today in stats["closed_days"]
         overdue_tasks = await overdue_tasks_for(session, user)
         late_count = await late_submissions_count(session, user)
-        mandatory_progress = await mandatory_tasks_progress_for(session, user)
         limbo_eligible = discipline_tracked_by_user.get(user.id, False) and (
             len(overdue_tasks) >= LIMBO_ELIGIBLE_OVERDUE_TASKS
             or len(stats["overdue_dates"]) >= LIMBO_ELIGIBLE_OVERDUE_DIARY_DAYS
@@ -1126,7 +1121,6 @@ async def get_all_dynamics(
                 overdue_tasks_count=len(overdue_tasks),
                 late_submissions_count=late_count,
                 limbo_eligible=limbo_eligible,
-                mandatory_progress=mandatory_progress,
             )
         )
 

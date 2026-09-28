@@ -29,6 +29,18 @@ class ArgonautOut(BaseModel):
     is_observer: bool = False
 
 
+class ArgonautsListOut(BaseModel):
+    """Ответ `GET /api/argonauts`: опциональная секция «Факел» сверху (ARG-155/165,
+    все `torch_unlocked` пользователи платформы, кросс-интейк) + обычный ростер
+    потока снизу, без изменений. `torch` отсутствует в ответе целиком (не пустой
+    список, не null-поле — ключа нет), если current_user не член клуба: не
+    члену клуба нечего знать даже о существовании секции. См. api/argonauts.py
+    `list_argonauts`, которая руками убирает ключ перед отдачей."""
+
+    torch: list[ArgonautOut] | None = None
+    roster: list[ArgonautOut]
+
+
 class ArgonautTaskOut(BaseModel):
     """Одна строка в списке задач на странице участника."""
 
@@ -71,3 +83,6 @@ class ArgonautDetailOut(BaseModel):
     # на POST /api/rooms. Ростер по потоку шире (видны все), запись — по рангу
     # тарифа, поэтому это отдельное поле, а не "виден в ростере => можно писать".
     can_message: bool = False
+    # ARG-155/166: гейт секции «Стена» на фронте — видна только если И цель, И
+    # смотрящий torch_unlocked (см. docs/TORCH.md). Колонка БД, не вычисление.
+    torch_unlocked: bool = False
