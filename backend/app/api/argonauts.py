@@ -42,7 +42,14 @@
     `contact_visible` (ARG-110), той же проверки, что стоит на `POST /api/rooms`.
     Асимметрия с составом ростера намеренная: в ростере виден весь поток (ARG-119),
     писать можно только по рангу тарифа — «вижу карточку» не значит «могу открыть
-    чат» (см. docs/ARGONAUTS.md).
+    чат» (см. docs/ARGONAUTS.md);
+  - `GET /api/argonauts` дополнительно отдаёт ключ `torch` (ARG-155/165) — ВСЕ
+    `torch_unlocked` пользователи платформы, кросс-интейк (см. `_torch_roster`) —
+    только вызывающему, у кого самого `torch_unlocked=true`; иначе ключа нет в
+    ответе вовсе (см. схему `ArgonautsListOut`). Обычная секция потока переехала
+    в ключ `roster`, её состав/сортировка не изменились. Та же кросс-интейк
+    видимость открывает `GET /api/argonauts/{user_id}` для чужого потока, если
+    ОБЕ стороны — члены клуба (см. `get_argonaut`).
 Наблюдателю раздел закрыт целиком (`require_participant`), как Задачи/Рубка.
 Держателю самого дешёвого тарифа (`CHEAP_TARIFF_NAME`) раздел закрыт целиком тоже
 (`_deny_cheap_tariff`) — раньше он только не отображался в ростере как объект, но
@@ -52,6 +59,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,7 +69,12 @@ from app.models.plan import Plan
 from app.models.room import Room
 from app.models.task import Task, TaskAssignment, TaskPlan, TaskSubmission
 from app.models.user import User
-from app.schemas.argonaut import ArgonautDetailOut, ArgonautOut, ArgonautTaskOut
+from app.schemas.argonaut import (
+    ArgonautDetailOut,
+    ArgonautOut,
+    ArgonautsListOut,
+    ArgonautTaskOut,
+)
 from app.services.media import presign_asset_urls
 from app.services.users import avatar_url, plan_names
 from app.services.visibility import (
@@ -179,6 +192,20 @@ async def _roster(
     return users, observer_ids, ranks
 
 
+async def _torch_roster(session: AsyncSession) -> list[User]:
+    """Все `torch_unlocked` пользователи платформы (ARG-155/165) — кросс-интейк
+    по конструкции клуба «Факел» (docs/TORCH.md: выпускники разных потоков в
+    одном сообществе), сознательное исключение из intake-изоляции ARG-96, но
+    ТОЛЬКО для этой секции — обычный ростер `_roster` ниже её не трогает.
+    Отсортировано по имени: рангового тарифа/потока здесь нет по построению
+    (участники разных потоков, тарифы после выпуска не при делах, см. TORCH.md
+    «Круг видимости контактов»)."""
+    rows = await session.execute(
+        select(User).where(User.torch_unlocked.is_(True)).order_by(User.display_name)
+    )
+    return list(rows.scalars().all())
+
+
 async def _tasks_done_by_user(
     session: AsyncSession, current_user: User, user_ids: list[int]
 ) -> dict[int, int]:
@@ -291,18 +318,24 @@ async def _latest_submission_bodies(
     return dict(rows.tuples().all())
 
 
-@router.get("", response_model=list[ArgonautOut])
+@router.get("", response_model=ArgonautsListOut)
 async def list_argonauts(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
-) -> list[ArgonautOut]:
+) -> JSONResponse:
     users, observer_ids, _ranks = await _roster(session, current_user)
-    media_ids = {u.avatar_media_id for u in users if u.avatar_media_id is not None}
+    torch_users = await _torch_roster(session) if current_user.torch_unlocked else []
+    media_ids = {
+        u.avatar_media_id
+        for u in [*users, *torch_users]
+        if u.avatar_media_id is not None
+    }
     signed = await presign_asset_urls(session, media_ids)
-    plans = await plan_names(session, users)
+    plans = await plan_names(session, [*users, *torch_users])
     done = await _tasks_done_by_user(session, current_user, [u.id for u in users])
-    return [
-        ArgonautOut(
+
+    def tile(u: User, *, tasks_done: int = 0, is_observer: bool = False) -> ArgonautOut:
+        return ArgonautOut(
             id=u.id,
             username=u.username,
             display_name=u.display_name,
@@ -310,11 +343,28 @@ async def list_argonauts(
             role=u.role,
             plan_id=u.plan_id,
             plan_name=plans.get(u.plan_id) if u.plan_id is not None else None,
-            tasks_done=done.get(u.id, 0),
-            is_observer=u.id in observer_ids,
+            tasks_done=tasks_done,
+            is_observer=is_observer,
         )
-        for u in users
-    ]
+
+    payload = ArgonautsListOut(
+        # Кросс-интейк по конструкции (см. `_torch_roster`) — `tasks_done`
+        # намеренно всегда 0: `_completed_common_where` считает видимость по
+        # ИНТЕЙКУ current_user, для чужого потока это давало бы случайные
+        # нули/пропуски, а не честный счётчик. Эта секция про состав клуба,
+        # не про задания.
+        torch=[tile(u) for u in torch_users] if current_user.torch_unlocked else None,
+        roster=[
+            tile(u, tasks_done=done.get(u.id, 0), is_observer=u.id in observer_ids)
+            for u in users
+        ],
+    )
+    # `torch` отсутствует в JSON целиком для не-члена клуба, не просто null —
+    # см. docstring ArgonautsListOut.
+    data = payload.model_dump(mode="json")
+    if payload.torch is None:
+        del data["torch"]
+    return JSONResponse(data)
 
 
 @router.get("/{user_id}", response_model=ArgonautDetailOut)
@@ -326,6 +376,14 @@ async def get_argonaut(
     # 404 (не 403): не подтверждаем клиенту существование юзера вне его потока.
     roster, observer_ids, ranks = await _roster(session, current_user)
     user = next((u for u in roster if u.id == user_id), None)
+    if user is None and current_user.torch_unlocked:
+        # ARG-165: секция «Факел» кросс-интейк — член клуба может открыть
+        # деталь другого члена клуба из ЧУЖОГО потока, не только своего
+        # (см. `_torch_roster`). Обычное правило (тот же поток) выше уже
+        # отработало первым, сюда попадаем только если ростер потока не нашёл.
+        candidate = await session.get(User, user_id)
+        if candidate is not None and candidate.torch_unlocked:
+            user = candidate
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Argonaut not found")
 
@@ -401,4 +459,5 @@ async def get_argonaut(
         expedition_feat_task_id=feat_task_id,
         expedition_feat_status=feat_status,
         can_message=can_message,
+        torch_unlocked=user.torch_unlocked,
     )

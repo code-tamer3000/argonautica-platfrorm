@@ -107,6 +107,14 @@ export interface ArgonautOut {
   is_observer: boolean
 }
 
+// ARG-155/165: ответ GET /api/argonauts — объект, не голый массив. `torch`
+// присутствует, только если сам смотрящий torch_unlocked (см. docs/ARGONAUTS.md
+// «Секция «Факел»») — не член клуба этого поля в ответе не увидит вовсе.
+export interface ArgonautsListOut {
+  torch?: ArgonautOut[]
+  roster: ArgonautOut[]
+}
+
 export type ArgonautTaskStatus = 'accepted' | 'submitted'
 
 export interface ArgonautTaskOut {
@@ -142,6 +150,18 @@ export interface ArgonautDetailOut {
   // участником личный чат. Ростер шире рангового каскада, поэтому не выводится из
   // видимости плитки в списке.
   can_message: boolean
+  // ARG-155/166: гейт секции «Стена» — видна только если И цель, И смотрящий
+  // torch_unlocked (см. docs/TORCH.md).
+  torch_unlocked: boolean
+}
+
+// Пост стены профиля клуба «Факел» (ARG-155/164).
+export interface TorchPostOut {
+  id: number
+  author_id: number
+  author_display_name: string
+  body: string
+  created_at: string
 }
 
 export interface RoomOut {
