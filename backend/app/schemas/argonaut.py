@@ -29,6 +29,18 @@ class ArgonautOut(BaseModel):
     is_observer: bool = False
 
 
+class ArgonautsListOut(BaseModel):
+    """Ответ `GET /api/argonauts`: опциональная секция «Факел» сверху (ARG-155/165,
+    все `torch_unlocked` пользователи платформы, кросс-интейк) + обычный ростер
+    потока снизу, без изменений. `torch` отсутствует в ответе целиком (не пустой
+    список, не null-поле — ключа нет), если current_user не член клуба: не
+    члену клуба нечего знать даже о существовании секции. См. api/argonauts.py
+    `list_argonauts`, которая руками убирает ключ перед отдачей."""
+
+    torch: list[ArgonautOut] | None = None
+    roster: list[ArgonautOut]
+
+
 class ArgonautTaskOut(BaseModel):
     """Одна строка в списке задач на странице участника."""
 

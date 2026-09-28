@@ -87,7 +87,7 @@ async def test_roster_same_intake_only(client: AsyncClient, make_user: MakeUser)
     viewer_h = await _headers(client, viewer)
     resp = await client.get("/api/argonauts", headers=viewer_h)
     assert resp.status_code == 200
-    ids = {row["id"] for row in resp.json()}
+    ids = {row["id"] for row in resp.json()["roster"]}
     assert same_intake.id in ids
     assert other_intake.id not in ids
     assert viewer.id in ids  # ARG-119: своя плитка тоже в общем ростере
@@ -118,7 +118,7 @@ async def test_roster_admins_first_observers_last(
 
     viewer_h = await _headers(client, viewer)
     resp = await client.get("/api/argonauts", headers=viewer_h)
-    rows = resp.json()
+    rows = resp.json()["roster"]
     order = [r["id"] for r in rows]
     assert order == [admin.id, member.id, viewer.id, observer.id]
     admin_row, member_row, viewer_row, observer_row = rows
@@ -149,7 +149,7 @@ async def test_roster_observer_tariff_holders_in_observer_block(
 
     viewer_h = await _headers(client, viewer)
     resp = await client.get("/api/argonauts", headers=viewer_h)
-    rows = resp.json()
+    rows = resp.json()["roster"]
     by_id = {r["id"]: r for r in rows}
     assert by_id[tariff_observer.id]["is_observer"] is True
     # Без тарифа вообще (plan_id NULL) — это НЕ «Наблюдатель», обычный участник.
@@ -228,7 +228,7 @@ async def test_tasks_done_counts_only_accepted_visible_common(
     )
     assert resp.status_code == 201
 
-    listed = (await client.get("/api/argonauts", headers=viewer_h)).json()
+    listed = (await client.get("/api/argonauts", headers=viewer_h)).json()["roster"]
     row = next(r for r in listed if r["id"] == target.id)
     assert row["tasks_done"] == 1  # только accepted, не submitted
 
@@ -254,7 +254,7 @@ async def test_tasks_done_ignores_task_of_foreign_plan(
     )
     await _submit_and_review(client, admin_h, target_h, task_id, "accept")
 
-    listed = (await client.get("/api/argonauts", headers=viewer_h)).json()
+    listed = (await client.get("/api/argonauts", headers=viewer_h)).json()["roster"]
     row = next(r for r in listed if r["id"] == target.id)
     assert row["tasks_done"] == 0
 
@@ -307,7 +307,7 @@ async def test_diary_room_id_matches_personal_room(
     room = await _make_personal_room(session, target.id)
 
     viewer_h = await _headers(client, viewer)
-    listed = (await client.get("/api/argonauts", headers=viewer_h)).json()
+    listed = (await client.get("/api/argonauts", headers=viewer_h)).json()["roster"]
     row = next(r for r in listed if r["id"] == target.id)
 
     detail = (await client.get(f"/api/argonauts/{target.id}", headers=viewer_h)).json()
@@ -641,7 +641,7 @@ async def test_own_completed_task_survives_downgrade(
     )
     assert patched.status_code == 200
 
-    listed = (await client.get("/api/argonauts", headers=target_h)).json()
+    listed = (await client.get("/api/argonauts", headers=target_h)).json()["roster"]
     own_row = next(r for r in listed if r["id"] == target.id)
     assert own_row["tasks_done"] == 1
 
@@ -669,10 +669,122 @@ async def test_admin_sees_completed_task_regardless_of_own_plan(
     )
     await _submit_and_review(client, admin_h, target_h, task_id, "accept")
 
-    listed = (await client.get("/api/argonauts", headers=admin_h)).json()
+    listed = (await client.get("/api/argonauts", headers=admin_h)).json()["roster"]
     row = next(r for r in listed if r["id"] == target.id)
     assert row["tasks_done"] == 1
 
     detail = (await client.get(f"/api/argonauts/{target.id}", headers=admin_h)).json()
     assert detail["tasks_done"] == 1
     assert task_id in {t["task_id"] for t in detail["tasks"]}
+
+
+# --- секция «Факел» (ARG-155/165) --------------------------------------------
+
+
+async def test_non_member_has_no_torch_key_in_response(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Не член клуба не получает ключ `torch` в ответе вообще — не пустой
+    список, не null, ключа нет совсем (см. `ArgonautsListOut`)."""
+    viewer = await make_user()
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get("/api/argonauts", headers=viewer_h)
+    assert resp.status_code == 200
+    assert "torch" not in resp.json()
+
+
+async def test_torch_member_sees_all_members_cross_intake(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Член клуба видит в `torch` всех torch_unlocked пользователей платформы,
+    включая себя и людей из ДРУГОГО потока — кросс-интейк по конструкции клуба
+    «Факел». Обычная секция `roster` («твой поток») не меняется рядом."""
+    starts_on = date.today() - timedelta(days=230)
+    viewer = await make_user(intake_starts_on=starts_on, torch_unlocked=True)
+    same_intake_member = await make_user(
+        intake_id=viewer.intake_id, torch_unlocked=True
+    )
+    # Другой поток — явно другая дата старта набора, иначе get_or_create_intake
+    # резолвит в тот же самый intake, что и у viewer (см. DEFAULT_INTAKE_OFFSET_DAYS).
+    other_starts_on = date.today() - timedelta(days=1)
+    other_intake_member = await make_user(
+        intake_starts_on=other_starts_on, torch_unlocked=True
+    )
+    other_intake_non_member = await make_user(intake_starts_on=other_starts_on)
+    same_intake_non_member = await make_user(intake_id=viewer.intake_id)
+
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get("/api/argonauts", headers=viewer_h)
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Секция глобальная (вся платформа, не только эти пользователи) — БД общая
+    # на весь тестовый прогон, другие тесты могли оставить своих torch_unlocked
+    # пользователей. Проверяем вхождение/исключение, не точное равенство множества
+    # (тот же приём, что в test_roster_same_intake_only выше).
+    torch_ids = {row["id"] for row in body["torch"]}
+    assert {viewer.id, same_intake_member.id, other_intake_member.id} <= torch_ids
+    assert other_intake_non_member.id not in torch_ids
+    assert same_intake_non_member.id not in torch_ids
+
+    # «Твой поток» ниже — без изменений, только свой intake, как и раньше.
+    roster_ids = {row["id"] for row in body["roster"]}
+    assert {viewer.id, same_intake_member.id, same_intake_non_member.id} <= roster_ids
+    assert other_intake_member.id not in roster_ids
+    assert other_intake_non_member.id not in roster_ids
+
+
+async def test_torch_cross_intake_detail_accessible_to_members(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Член клуба открывает деталь другого члена клуба из ЧУЖОГО потока (200,
+    не 404) — обычное правило «тот же поток» для этого случая расширено."""
+    viewer = await make_user(
+        intake_starts_on=date.today() - timedelta(days=231), torch_unlocked=True
+    )
+    other_intake_member = await make_user(
+        intake_starts_on=date.today() - timedelta(days=2), torch_unlocked=True
+    )
+
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get(f"/api/argonauts/{other_intake_member.id}", headers=viewer_h)
+    assert resp.status_code == 200
+    assert resp.json()["id"] == other_intake_member.id
+
+
+async def test_torch_cross_intake_detail_denied_for_non_member_target(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Член клуба НЕ получает доступ к чужому потоку через кросс-интейк лазейку,
+    если целевой пользователь сам не член клуба — расширение работает только
+    когда ОБЕ стороны torch_unlocked."""
+    viewer = await make_user(
+        intake_starts_on=date.today() - timedelta(days=232), torch_unlocked=True
+    )
+    other_intake_non_member = await make_user(
+        intake_starts_on=date.today() - timedelta(days=3)
+    )
+
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get(
+        f"/api/argonauts/{other_intake_non_member.id}", headers=viewer_h
+    )
+    assert resp.status_code == 404
+
+
+async def test_torch_cross_intake_detail_denied_for_non_member_viewer(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Обратная сторона: смотрящий сам не член клуба — кросс-интейк лазейка не
+    открывается, даже если цель член клуба. Обычное правило «чужой поток —
+    404» продолжает работать как раньше."""
+    viewer = await make_user(intake_starts_on=date.today() - timedelta(days=233))
+    other_intake_member = await make_user(
+        intake_starts_on=date.today() - timedelta(days=4), torch_unlocked=True
+    )
+
+    viewer_h = await _headers(client, viewer)
+    resp = await client.get(
+        f"/api/argonauts/{other_intake_member.id}", headers=viewer_h
+    )
+    assert resp.status_code == 404

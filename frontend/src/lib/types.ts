@@ -107,6 +107,14 @@ export interface ArgonautOut {
   is_observer: boolean
 }
 
+// ARG-155/165: ответ GET /api/argonauts — объект, не голый массив. `torch`
+// присутствует, только если сам смотрящий torch_unlocked (см. docs/ARGONAUTS.md
+// «Секция «Факел»») — не член клуба этого поля в ответе не увидит вовсе.
+export interface ArgonautsListOut {
+  torch?: ArgonautOut[]
+  roster: ArgonautOut[]
+}
+
 export type ArgonautTaskStatus = 'accepted' | 'submitted'
 
 export interface ArgonautTaskOut {
