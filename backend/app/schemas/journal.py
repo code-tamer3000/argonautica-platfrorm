@@ -81,6 +81,9 @@ class UserDynamicsOut(BaseModel):
     # И (просрочек задач >= 3 ИЛИ пропусков дневника >= 5). Только для подсветки
     # кнопки в AdminDynamics — вход остаётся решением админа, не автоматикой.
     limbo_eligible: bool = False
+    # Прогресс по обязательным заданиям для артефакта экспедиции: [сдано, всего].
+    # None — обязательных заданий участнику не назначено, бейдж не показываем.
+    mandatory_progress: tuple[int, int] | None = None
 
 
 class DynamicsSummary(BaseModel):
