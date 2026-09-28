@@ -255,7 +255,15 @@ export function TaskDetail() {
   // ARG-157: у выпускника композер открыт, только пока его назначение ещё
   // assigned/returned — как только он доздал (submitted/accepted), задание
   // закрывается на запись так же, как обычное сданное.
-  const canBackfill = myTrack?.status === 'assigned' || myTrack?.status === 'returned'
+  // ARG-159: назначения может не быть вовсе — обязательное для артефакта
+  // задание, которое выпускник не успел открыть до выпуска (снимок
+  // required_task_ids на анкете). Бэкенд уже пустил его на страницу без 403
+  // (см. assert_task_visible) — тут просто зеркалим то же условие, иначе
+  // страница открывается, а сдать нечем.
+  const canBackfill =
+    myTrack?.status === 'assigned' ||
+    myTrack?.status === 'returned' ||
+    (myTrack == null && task.required_for_graduation)
 
   // Возвращённую работу уже показываем прямо в композере (ReturnedFeedback, ниже,
   // рядом с формой пересдачи) — не дублируем тот же трек ещё раз в общем списке.

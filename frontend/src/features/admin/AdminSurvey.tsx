@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import {
   useAdminSurvey,
   useCancelSurveyInvite,
@@ -284,7 +284,8 @@ export function AdminSurvey() {
 
           <div className={styles.list}>
             {filtered.map((r) => (
-              <div className={styles.listItem} key={r.user_id}>
+              <Fragment key={r.user_id}>
+              <div className={styles.listItem}>
                 <div className={styles.listItemMain}>
                   <label className={styles.checkRow}>
                     <input
@@ -310,6 +311,11 @@ export function AdminSurvey() {
                   <Badge tone={r.has_gift ? 'accent' : 'neutral'}>
                     {r.has_gift ? 'Книга привязана' : 'Книги нет'}
                   </Badge>
+                  {r.mandatory_total != null && (
+                    <Badge tone={r.mandatory_pending.length === 0 ? 'accent' : 'neutral'}>
+                      {r.mandatory_total - r.mandatory_pending.length}/{r.mandatory_total} обязательных
+                    </Badge>
+                  )}
                   <Button
                     variant="outline"
                     disabled={uploading === r.user_id}
@@ -331,6 +337,12 @@ export function AdminSurvey() {
                   )}
                 </div>
               </div>
+              {r.mandatory_pending.length > 0 && (
+                <p className={styles.listMeta}>
+                  Не сдано: {r.mandatory_pending.map((t) => t.title).join(', ')}
+                </p>
+              )}
+              </Fragment>
             ))}
           </div>
         </>
@@ -402,7 +414,6 @@ export function AdminSurvey() {
  */
 function PersonAnswers({ row, questions }: { row: SurveyRow; questions: SurveyQuestion[] }) {
   const [open, setOpen] = useState(false)
-  const pendingCount = row.mandatory_pending.length
   return (
     <div className={styles.answerPerson}>
       <button type="button" className={styles.answerPersonHead} onClick={() => setOpen((v) => !v)}>
@@ -415,22 +426,9 @@ function PersonAnswers({ row, questions }: { row: SurveyRow; questions: SurveyQu
               <Badge tone="accent">Разрешил публикацию</Badge>
             </>
           )}
-          {row.mandatory_total != null && (
-            <>
-              {' '}
-              <Badge tone={pendingCount === 0 ? 'accent' : 'neutral'}>
-                {row.mandatory_total - pendingCount}/{row.mandatory_total} обязательных
-              </Badge>
-            </>
-          )}
         </span>
         <span className={styles.expandBtn}>{open ? 'Свернуть' : 'Развернуть'}</span>
       </button>
-      {pendingCount > 0 && (
-        <p className={styles.listMeta}>
-          Не сдано: {row.mandatory_pending.map((t) => t.title).join(', ')}
-        </p>
-      )}
       {open && <PersonAnswerBody row={row} questions={questions} />}
     </div>
   )
