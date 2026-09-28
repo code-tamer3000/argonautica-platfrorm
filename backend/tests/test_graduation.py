@@ -396,6 +396,57 @@ async def test_graduate_can_backfill_returned_task(
     assert resp.status_code == 201, resp.text
 
 
+async def test_graduate_can_open_required_task_never_assigned(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-159 x ARG-157: задача, отмеченная required_for_graduation, которую
+    участник ни разу не открывал до выпуска, не имеет строки task_assignments —
+    ARG-157 закрывал такую задачу для выпускника наглухо (только уже назначенные),
+    но гейт по артефакту ссылается именно на неё. Раньше переход по этой ссылке
+    отвечал 403 — задача, которая должна была открыться, оставалась недоступной."""
+    admin = await make_user(role="admin")
+    user = await make_user()
+    admin_h = await _headers(client, admin)
+
+    task = await _create_task(
+        client, admin_h, type="common", title="Обязательное для артефакта"
+    )
+    patched = await client.patch(
+        f"/api/tasks/{task['id']}",
+        headers=admin_h,
+        json={"required_for_graduation": True},
+    )
+    assert patched.status_code == 200, patched.text
+
+    user.survey_required = True
+    await session.commit()
+    submit = await client.post(
+        "/api/survey",
+        headers=await _headers(client, user),
+        json={"answers": _valid_answers(), "publish_consent": False},
+    )
+    assert submit.status_code == 201, submit.text
+
+    response = (
+        await session.execute(select(SurveyResponse).where(SurveyResponse.user_id == user.id))
+    ).scalar_one()
+    assert task["id"] in response.required_task_ids
+
+    user_h = await _headers(client, user)
+    # Карточка задачи открывается, хотя task_assignments для этой пары пуст.
+    detail = await client.get(f"/api/tasks/{task['id']}", headers=user_h)
+    assert detail.status_code == 200, detail.text
+
+    listing = await client.get("/api/tasks", headers=user_h)
+    assert task["id"] in {t["id"] for t in listing.json()["items"]}
+
+    # И доздать её тоже можно — get_or_create_assignment заводит назначение лениво.
+    submitted = await client.post(
+        f"/api/tasks/{task['id']}/submissions", headers=user_h, json={"body": "доздал"}
+    )
+    assert submitted.status_code == 201, submitted.text
+
+
 # --- Рубка -------------------------------------------------------------------
 
 

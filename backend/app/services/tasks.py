@@ -112,6 +112,17 @@ async def load_task(session: AsyncSession, task_id: int) -> Task:
     return task
 
 
+async def required_task_ids_snapshot(session: AsyncSession, user: User) -> list[int]:
+    """Снимок `survey_responses.required_task_ids` выпускника (ARG-159) — задания,
+    обязательные для артефакта на момент сдачи ИМ АНКЕТЫ, независимо от текущего
+    состояния `Task.required_for_graduation` (см. `artifact_gate_for`). Пусто, если
+    анкеты нет или гейта не было."""
+    required_ids = await session.scalar(
+        select(SurveyResponse.required_task_ids).where(SurveyResponse.user_id == user.id)
+    )
+    return required_ids or []
+
+
 async def assert_task_visible(
     session: AsyncSession, task: Task, user: User
 ) -> None:
@@ -122,7 +133,10 @@ async def assert_task_visible(
     не текущий дешёвый), КРОМЕ уже сданной/принятой самим юзером — та остаётся
     видна независимо от тарифа (GRADUATE_VISIBLE_STATUSES, тот же список что и у
     выпускника ниже); admin → всё; выпускник → свои сданные задачи плюс те, что
-    можно доздать (GRADUATE_BACKFILLABLE_STATUSES, ARG-157). Иначе:
+    можно доздать (GRADUATE_BACKFILLABLE_STATUSES, ARG-157), плюс обязательные
+    для артефакта задания из его снимка required_task_ids (ARG-159), даже если
+    он их вообще не открывал до выпуска — иначе гейт по артефакту указывает на
+    задание, попасть в которое нельзя (см. ниже). Иначе:
     - individual → у юзера есть строка task_assignments (адресат), ИЛИ юзер — автор
       перекрёстной задачи (created_by, задачу партнёру выдаёт участник);
     - pair → юзер состоит в одной из пар этого задания (task_pair_members);
@@ -142,9 +156,19 @@ async def assert_task_visible(
                 ),
             )
         )
-        if visible is None:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
-        return
+        if visible is not None:
+            return
+        # Нет назначения вовсе — единственный оставшийся шанс: задание входит в
+        # снимок required_task_ids (ARG-159, `artifact_gate_for`) на анкете
+        # выпускника. Это ровно тот случай, из-за которого гейт вообще может
+        # блокировать артефакт — задание, которое участник не успел открыть до
+        # выпуска. Без этого исключения ссылка с гейта на карточку такого
+        # задания вела бы в 403.
+        if task.type == "common" and task.required_for_graduation:
+            required_ids = await required_task_ids_snapshot(session, user)
+            if task.id in required_ids:
+                return
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
     # Отложенная публикация (база заданий): запланированная задача не существует
     # для не-админа, пока не наступил publish_at — 404, а не 403, той же логикой,
     # что и остальные "скрытые до срока" сущности (не "нет прав", а "ещё нет").
