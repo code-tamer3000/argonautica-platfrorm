@@ -1133,6 +1133,7 @@ async def list_tasks(
             intake_id=t.intake_id,
             plan_ids=task_plans.get(t.id, []),
             source_task_id=t.source_task_id,
+            required_for_graduation=t.required_for_graduation,
         )
         for t in tasks
     ]
@@ -1215,6 +1216,7 @@ async def get_task(
         intake_id=task.intake_id,
         plan_ids=await _task_plan_ids(session, task.id),
         source_task_id=task.source_task_id,
+        required_for_graduation=task.required_for_graduation,
     )
 
 
