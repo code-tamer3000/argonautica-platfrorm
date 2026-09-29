@@ -436,9 +436,14 @@ async def test_graduate_can_open_required_task_never_assigned(
     # Карточка задачи открывается, хотя task_assignments для этой пары пуст.
     detail = await client.get(f"/api/tasks/{task['id']}", headers=user_h)
     assert detail.status_code == 200, detail.text
+    # Фронт открывает композер по этому флагу (myTrack == null && required_for_graduation):
+    # без него страница открывалась, а окна сдачи не было.
+    assert detail.json()["required_for_graduation"] is True
 
     listing = await client.get("/api/tasks", headers=user_h)
     assert task["id"] in {t["id"] for t in listing.json()["items"]}
+    listed = next(t for t in listing.json()["items"] if t["id"] == task["id"])
+    assert listed["required_for_graduation"] is True
 
     # И доздать её тоже можно — get_or_create_assignment заводит назначение лениво.
     submitted = await client.post(
