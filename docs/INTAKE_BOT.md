@@ -117,8 +117,9 @@ could not recognise them. Their Telegram id is bound by hand to `users.tg_id`
 an unknown login, an account that already has a *different* `tg_id`, and a `tg_id` already
 owned by another account in `users` or via `intake_applications.user_id`). Lookup is by
 **id only** — never by username (a Telegram handle can be changed or released). For a bound
-`tg_id`, `/start` and any message go straight to service mode («Сменить пароль»,
-`/question`) and **no application row is created**; `_service_user` resolves the account for
+`tg_id`, `/start` and any message go straight to service mode («Чем помочь?» +
+«Сменить пароль», `/question`; not the «Ты уже на борту Экспедиции» text, which is for a
+new intake's participant) and **no application row is created**; `_service_user` resolves the account for
 «Сменить пароль»: `users.tg_id` first, then a `confirmed` application's `user_id`. An id
 with neither is an ordinary stranger → the funnel, exactly as before. One-off invitation
 for the bound people: `python -m scripts.intake_bot --announce` (sends «теперь здесь можно

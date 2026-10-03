@@ -1668,8 +1668,10 @@ async def _handle_start(
     await redis_client.delete(f"intakebot:await_q:{tg_id}")
 
     # Привязанная вручную учётка (ARG-167) — сразу в сервисный режим, заявку не заводим.
+    # Текст нейтральный: TEXT_ALREADY_DONE («пришлём детали старта») — про участника
+    # нового набора, админам и прошлым потокам он не подходит.
     if await _find_bound_user(session, tg_id) is not None:
-        await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
+        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
         return
 
     app = await _find_application(session, tg_id)

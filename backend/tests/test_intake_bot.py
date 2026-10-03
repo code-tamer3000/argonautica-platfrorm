@@ -1453,7 +1453,8 @@ async def test_start_from_bound_user_opens_service_mode_without_application(
     )
 
     sent = client.payload("sendMessage")
-    assert sent["text"] == intake_bot.TEXT_ALREADY_DONE
+    assert sent["text"] == intake_bot.TEXT_SERVICE_MENU
+    assert sent["text"] != intake_bot.TEXT_ALREADY_DONE  # «пришлём детали старта» — не им
     assert [b["callback_data"] for row in sent["reply_markup"]["inline_keyboard"] for b in row] == [
         intake_bot.CB_CHANGE_PASSWORD
     ]
