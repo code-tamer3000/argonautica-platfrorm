@@ -1423,3 +1423,181 @@ async def test_accept_of_expired_restarts_funnel_with_fresh_deadline(
     assert app.expired_at is None
     assert app.payment_deadline_at is not None
     assert app.payment_deadline_at > datetime.now(UTC)
+
+
+# --- Привязка users.tg_id: сервисный режим без заявки (ARG-167) -----------------
+
+
+async def make_bound_user(session: AsyncSession, make_user: MakeUser) -> tuple[User, int]:
+    """Учётка с ручной привязкой `tg_id` и без единой заявки (админ/первый поток)."""
+    user = await make_user()
+    tg_id = random.randint(10**9, 10**12)
+    user.tg_id = tg_id
+    await session.commit()
+    return user, tg_id
+
+
+async def test_start_from_bound_user_opens_service_mode_without_application(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    user, tg_id = await make_bound_user(session, make_user)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session,
+        # Ник в Telegram НЕ совпадает с логином — ищем по id, не по нику.
+        {
+            "chat": {"id": tg_id}, "text": "/start",
+            "from": {"id": tg_id, "username": "renamed_nick"},
+        },
+    )
+
+    sent = client.payload("sendMessage")
+    assert sent["text"] == intake_bot.TEXT_ALREADY_DONE
+    assert [b["callback_data"] for row in sent["reply_markup"]["inline_keyboard"] for b in row] == [
+        intake_bot.CB_CHANGE_PASSWORD
+    ]
+    assert await intake_bot._find_application(session, tg_id) is None
+    assert user.tg_id == tg_id
+
+
+async def test_message_from_bound_user_shows_service_menu(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    _, tg_id = await make_bound_user(session, make_user)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, {"chat": {"id": tg_id}, "text": "привет", "from": {"id": tg_id}}
+    )
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_SERVICE_MENU
+    assert await intake_bot._find_application(session, tg_id) is None
+
+
+async def test_change_password_for_bound_user_without_application(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    from app.core.security import verify_password
+
+    admin_chat = 999_061
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    monkeypatch.setattr(intake_bot, "LOG_CHAT_ID", None)
+    user, tg_id = await make_bound_user(session, make_user)
+    old_hash = user.password_hash
+    await intake_bot.redis_client.delete(f"intakebot:pwd:{tg_id}")
+    client = FakeClient()
+
+    await intake_bot._handle_change_password(
+        client, session,
+        {
+            "id": "cb1", "data": intake_bot.CB_CHANGE_PASSWORD,
+            "from": {"id": tg_id, "username": "renamed_nick"},
+            "message": {"message_id": 1, "chat": {"id": tg_id}},
+        },
+    )
+    await session.commit()
+    await session.refresh(user)
+
+    assert user.password_hash != old_hash
+    assert user.must_change_password is True
+    reply = next(p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == tg_id)
+    password = reply["text"].split("Пароль: <code>")[1].split("</code>")[0]
+    assert verify_password(user.password_hash, password)
+    assert f"<code>{user.username}</code>" in reply["text"]
+    log = next(p for m, p in client.calls if m == "sendMessage" and p["chat_id"] == admin_chat)
+    assert "сменил пароль" in log["text"] and user.username in log["text"]
+    await intake_bot.redis_client.delete(f"intakebot:pwd:{tg_id}")
+
+
+async def test_bound_user_wins_over_confirmed_application(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    """Один tg_id: заявка `confirmed` ведёт на учётку B, но `users.tg_id` стоит у A —
+    пароль сбрасывается у A (ручная привязка приоритетнее)."""
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", None)
+    app = await make_confirmed_application(session)
+    assert app.user_id is not None
+    other = await session.get(User, app.user_id)
+    assert other is not None
+    other_hash = other.password_hash
+    bound = await make_user()
+    bound_hash = bound.password_hash
+    bound.tg_id = app.tg_id
+    await session.commit()
+    await intake_bot.redis_client.delete(f"intakebot:pwd:{app.tg_id}")
+
+    await intake_bot._handle_change_password(
+        FakeClient(), session, callback(app, intake_bot.CB_CHANGE_PASSWORD)
+    )
+    await session.commit()
+    await session.refresh(bound)
+    await session.refresh(other)
+
+    assert bound.password_hash != bound_hash
+    assert other.password_hash == other_hash
+    await intake_bot.redis_client.delete(f"intakebot:pwd:{app.tg_id}")
+
+
+async def test_unknown_tg_id_still_enters_funnel(session: AsyncSession) -> None:
+    """Неизвестный id (ни привязки, ни заявки) — воронка как раньше, ссылка «Забыли
+    пароль?» ничего не меняет для чужих людей."""
+    tg_id = random.randint(10**9, 10**12)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, {"chat": {"id": tg_id}, "text": "/start", "from": {"id": tg_id}}
+    )
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_START
+    app = await intake_bot._find_application(session, tg_id)
+    assert app is not None and app.status == STATUS_AWAITING_ABOUT
+
+
+async def test_change_password_refused_for_stranger(session: AsyncSession) -> None:
+    tg_id = random.randint(10**9, 10**12)
+    client = FakeClient()
+
+    await intake_bot._handle_change_password(
+        client, session,
+        {"id": "cb", "data": intake_bot.CB_CHANGE_PASSWORD, "from": {"id": tg_id},
+         "message": {"message_id": 1, "chat": {"id": tg_id}}},
+    )
+
+    assert client.methods() == ["answerCallbackQuery"]
+    assert client.payload("answerCallbackQuery")["show_alert"] is True
+
+
+class SelectiveClient(FakeClient):
+    """Telegram отклоняет отправку конкретным чатам (заблокировали бота)."""
+
+    def __init__(self, blocked: set[int]) -> None:
+        super().__init__()
+        self._blocked = blocked
+
+    async def post(self, url: str, json: dict[str, Any]) -> FakeResponse:
+        method = url.rsplit("/", 1)[-1]
+        self.calls.append((method, json))
+        if json.get("chat_id") in self._blocked:
+            return FakeResponse({"ok": False, "description": "Forbidden: bot was blocked"})
+        return FakeResponse({"ok": True, "result": {"message_id": 1}})
+
+
+async def test_announce_reports_delivered_and_blocked(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    ok_user, ok_id = await make_bound_user(session, make_user)
+    blocked_user, blocked_id = await make_bound_user(session, make_user)
+    await make_user()  # без tg_id — рассылка его не касается
+    client = SelectiveClient({blocked_id})
+
+    delivered, failed = await intake_bot._announce_service_mode(client, session)
+
+    assert ok_user.username in delivered and blocked_user.username in failed
+    assert ok_user.username not in failed and blocked_user.username not in delivered
+    sent_to = {p["chat_id"] for m, p in client.calls if m == "sendMessage"}
+    assert {ok_id, blocked_id} <= sent_to
+    first = next(p for m, p in client.calls if p["chat_id"] == ok_id)
+    assert first["text"] == intake_bot.TEXT_SERVICE_ANNOUNCE
+    button = first["reply_markup"]["inline_keyboard"][0][0]
+    assert button["callback_data"] == intake_bot.CB_CHANGE_PASSWORD

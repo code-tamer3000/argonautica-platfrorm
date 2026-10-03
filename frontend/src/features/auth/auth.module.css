@@ -138,3 +138,16 @@
   color: var(--text-muted);
   font-size: var(--text-body-sm);
 }
+
+.forgot {
+  align-self: center;
+  font-family: var(--font-t4);
+  font-size: var(--text-label-md);
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.forgot:hover {
+  color: var(--text-primary);
+}
