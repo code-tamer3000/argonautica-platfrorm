@@ -1467,6 +1467,22 @@ async def test_start_from_bound_user_opens_service_mode_without_application(
     assert user.tg_id == tg_id
 
 
+async def test_start_with_recovery_payload_is_plain_start(
+    session: AsyncSession, make_user: MakeUser
+) -> None:
+    """Ссылка с логина — `/start forgot_password`: Telegram шлёт это сам при открытии
+    чата. Для привязанного — сервисный режим, как у обычного `/start`."""
+    _, tg_id = await make_bound_user(session, make_user)
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session,
+        {"chat": {"id": tg_id}, "text": "/start forgot_password", "from": {"id": tg_id}},
+    )
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_SERVICE_MENU
+
+
 async def test_message_from_bound_user_shows_service_menu(
     session: AsyncSession, make_user: MakeUser
 ) -> None:
