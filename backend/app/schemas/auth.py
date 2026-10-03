@@ -24,3 +24,8 @@ class LogoutRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
+
+
+class RecoveryLinkOut(BaseModel):
+    # Ссылка на intake-бота для «Забыли пароль?»; None — бот для контура не настроен.
+    url: str | None

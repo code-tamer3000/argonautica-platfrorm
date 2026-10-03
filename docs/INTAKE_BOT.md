@@ -110,6 +110,23 @@ fresh one-time password, same helper as `scripts/telegram_bot.py`'s password res
 inline button, plus `/question` (forward to admin DM + deliver the reply back — same
 mechanism as the access bot's support channel), same as at every other step.
 
+**Service mode without an application (ARG-167).** People who reached the platform outside
+the funnel (admins, the first July intake) have no `intake_applications` row, so the bot
+could not recognise them. Their Telegram id is bound by hand to `users.tg_id`
+(`python -m scripts.bind_tg_id file.csv`: dry-run by default, `--apply` writes; it refuses
+an unknown login, an account that already has a *different* `tg_id`, and a `tg_id` already
+owned by another account in `users` or via `intake_applications.user_id`). Lookup is by
+**id only** — never by username (a Telegram handle can be changed or released). For a bound
+`tg_id`, `/start` and any message go straight to service mode («Сменить пароль»,
+`/question`) and **no application row is created**; `_service_user` resolves the account for
+«Сменить пароль»: `users.tg_id` first, then a `confirmed` application's `user_id`. An id
+with neither is an ordinary stranger → the funnel, exactly as before. One-off invitation
+for the bound people: `python -m scripts.intake_bot --announce` (sends «теперь здесь можно
+сбросить пароль» + the service keyboard, prints who was blocked/undelivered); deliberately
+NOT run at bot startup — every restart would spam. The login screen's «Забыли пароль?» link
+(`GET /api/auth/recovery-link` → `https://t.me/<TELEGRAM_INTAKE_BOT_USERNAME>`, hidden when
+unset) just opens this bot.
+
 **«Задать вопрос» is available at every funnel step**, not just in service mode — as the
 **`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
 both set by the service at startup, not by hand in BotFather). It is deliberately *not* an
@@ -306,6 +323,7 @@ temporary placeholder; final copy is a separate follow-up.
   even reached the code — no error anywhere, just silence. Fixed by `_should_handle_message`
   (dispatch also when `chat_id == ADMIN_CHAT_ID`, regardless of chat type).
 - Env: `TELEGRAM_INTAKE_BOT_TOKEN`, `TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID`,
+  `TELEGRAM_INTAKE_BOT_USERNAME` (read by the **backend**, not the bot: login-screen link),
   `TELEGRAM_INTAKE_BOT_LOG_CHAT_ID` (optional — redirects `_log_action`'s "📋" echoes, e.g.
   password changes, to a different chat than `ADMIN_CHAT_ID`; falls back to `ADMIN_CHAT_ID`
   when unset, same as before this existed), `INTAKE_BOT_ALLOW_RESET` (staging only, see

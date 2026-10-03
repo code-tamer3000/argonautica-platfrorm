@@ -34,6 +34,11 @@ INTAKE_PAYMENT_WINDOW_HOURS (24 по умолчанию). Не пришла оп
 Требует env: TELEGRAM_INTAKE_BOT_TOKEN, DATABASE_URL, REDIS_URL,
   (опц.) PLATFORM_URL, TELEGRAM_PROXY, TELEGRAM_INTAKE_BOT_ADMIN_CHAT_ID,
   TELEGRAM_INTAKE_BOT_LOG_CHAT_ID, INTAKE_PAYMENT_WINDOW_HOURS.
+
+Разовая рассылка привязанным вручную (`users.tg_id`, ARG-167): «теперь здесь можно
+сбросить пароль» + клавиатура сервисного режима. Запускается руками, НЕ при старте бота
+(иначе каждый рестарт — спам): python -m scripts.intake_bot --announce
+Недоставленных (заблокировали бота) печатает списком.
 """
 from __future__ import annotations
 
@@ -41,6 +46,7 @@ import asyncio
 import html
 import json
 import os
+import sys
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -190,6 +196,10 @@ TEXT_ALREADY_DONE = (
 
 # Временные заглушки — финальные тексты допишет пользователь позже (см. ARG-92 «Границы»).
 TEXT_SERVICE_MENU = "Чем помочь?"
+TEXT_SERVICE_ANNOUNCE = (
+    "Теперь здесь можно сбросить пароль от платформы: забудешь его — нажми кнопку ниже, "
+    "и я пришлю новый."
+)
 TEXT_ASK_QUESTION_PROMPT = (
     "💬 Напиши свой вопрос одним сообщением — я передам его в поддержку. "
     "Ответ придёт сюда же."
@@ -487,6 +497,31 @@ async def _find_application(session: AsyncSession, tg_id: int) -> IntakeApplicat
             select(IntakeApplication).where(IntakeApplication.tg_id == tg_id)
         )
     ).scalar_one_or_none()
+
+
+async def _find_bound_user(session: AsyncSession, tg_id: int) -> User | None:
+    """Учётка, привязанная к Telegram-аккаунту вручную (`users.tg_id`, ARG-167).
+
+    Для тех, кто попал на платформу мимо воронки (админы, первый поток): заявки у них
+    нет, но сервисный режим им нужен. Ищем строго по id — совпадение по нику не
+    используется: ник в Telegram меняется и освобождается."""
+    return (
+        await session.execute(select(User).where(User.tg_id == tg_id))
+    ).scalar_one_or_none()
+
+
+async def _service_user(session: AsyncSession, tg_id: int) -> tuple[User | None, str | None]:
+    """Кому в сервисном режиме выдавать пароль: (учётка, метка для лога).
+
+    `users.tg_id` приоритетнее заявки: ручная привязка — осознанное решение админа.
+    Иначе — учётка, созданная воронкой (заявка `confirmed` с `user_id`)."""
+    user = await _find_bound_user(session, tg_id)
+    if user is not None:
+        return user, None
+    app = await _find_application(session, tg_id)
+    if app is None or app.status != STATUS_CONFIRMED or app.user_id is None:
+        return None, None
+    return await session.get(User, app.user_id), app.tg_username
 
 
 async def _current_intake(session: AsyncSession) -> Intake | None:
@@ -1246,8 +1281,8 @@ async def _handle_change_password(client: httpx.AsyncClient, session: AsyncSessi
     tg_id = from_user.get("id", chat_id)
     if chat_id is None:
         return
-    app = await _find_application(session, tg_id)
-    if app is None or app.status != STATUS_CONFIRMED or app.user_id is None:
+    user, app_username = await _service_user(session, tg_id)
+    if user is None:
         await _answer_callback(client, cb["id"], "Доступно только после зачисления", alert=True)
         return
     if not await _rate_ok(tg_id):
@@ -1256,9 +1291,6 @@ async def _handle_change_password(client: httpx.AsyncClient, session: AsyncSessi
     await _answer_callback(client, cb["id"])
 
     password = generate_one_time_password()
-    user = await session.get(User, app.user_id)
-    if user is None:
-        return
     user.password_hash = hash_password(password)
     user.must_change_password = True
     await session.flush()
@@ -1272,7 +1304,34 @@ async def _handle_change_password(client: httpx.AsyncClient, session: AsyncSessi
         f"При входе система попросит сменить пароль.",
         reply_markup=_service_keyboard(),
     )
-    await _log_action(client, f"{_user_tag(app.tg_username, tg_id)} сменил пароль (сервисный режим)")
+    tag_username = from_user.get("username") or app_username
+    await _log_action(
+        client,
+        f"{_user_tag(tag_username, tg_id)} (логин {user.username}) сменил пароль (сервисный режим)",
+    )
+
+
+async def _announce_service_mode(
+    client: httpx.AsyncClient, session: AsyncSession
+) -> tuple[list[str], list[str]]:
+    """Разослать всем с `users.tg_id` приглашение в сервисный режим (ARG-167).
+
+    Возвращает (доставлено, не доставлено) — списки логинов. Не доставлено = Telegram
+    отклонил отправку (чаще всего человек заблокировал бота): `_send` вернёт None."""
+    users = (
+        await session.execute(
+            select(User).where(User.tg_id.is_not(None)).order_by(User.username)
+        )
+    ).scalars().all()
+    delivered: list[str] = []
+    failed: list[str] = []
+    for user in users:
+        assert user.tg_id is not None
+        sent = await _send(
+            client, user.tg_id, TEXT_SERVICE_ANNOUNCE, reply_markup=_service_keyboard()
+        )
+        (delivered if sent is not None else failed).append(user.username)
+    return delivered, failed
 
 
 async def _handle_callback(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
@@ -1608,6 +1667,11 @@ async def _handle_start(
     tg_username = from_user.get("username")
     await redis_client.delete(f"intakebot:await_q:{tg_id}")
 
+    # Привязанная вручную учётка (ARG-167) — сразу в сервисный режим, заявку не заводим.
+    if await _find_bound_user(session, tg_id) is not None:
+        await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
+        return
+
     app = await _find_application(session, tg_id)
     if app is None:
         app = IntakeApplication(
@@ -1745,6 +1809,10 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         await _forward_question(client, session, chat_id, tg_id, tg_username, text)
         return
 
+    if await _find_bound_user(session, tg_id) is not None:
+        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
+        return
+
     app = await _find_application(session, tg_id)
     if app is None:
         await _send(client, chat_id, TEXT_NEED_START)
@@ -1810,9 +1878,21 @@ async def _setup_bot_menu(client: httpx.AsyncClient) -> None:
         )
 
 
+async def _announce() -> None:
+    async with httpx.AsyncClient(timeout=40, proxy=TELEGRAM_PROXY) as client:
+        async with SessionLocal() as session:
+            delivered, failed = await _announce_service_mode(client, session)
+    print(f"Доставлено: {len(delivered)} ({', '.join(delivered) or '—'})", flush=True)
+    print(f"НЕ доставлено: {len(failed)} ({', '.join(failed) or '—'})", flush=True)
+
+
 async def main() -> None:
     if not BOT_TOKEN:
         raise SystemExit("TELEGRAM_INTAKE_BOT_TOKEN не задан")
+
+    if "--announce" in sys.argv[1:]:
+        await _announce()
+        return
 
     print(
         f"Intake bot started. Platform URL: {PLATFORM_URL}. Proxy: {TELEGRAM_PROXY or 'none'}. "

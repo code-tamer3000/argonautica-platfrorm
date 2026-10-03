@@ -24,6 +24,7 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
+    RecoveryLinkOut,
     RefreshRequest,
     TokenPair,
 )
@@ -43,6 +44,17 @@ _INVALID_REFRESH = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Invalid or expired refresh token",
 )
+
+
+@router.get("/recovery-link", response_model=RecoveryLinkOut)
+async def recovery_link() -> RecoveryLinkOut:
+    """Ссылка «Забыли пароль?» на экране логина → чат с intake-ботом (ARG-167).
+
+    Публичный (экран логина без токена); отдаёт только username бота из конфигурации —
+    не секрет. Пусто → фронт прячет ссылку.
+    """
+    username = settings.telegram_intake_bot_username.strip().lstrip("@")
+    return RecoveryLinkOut(url=f"https://t.me/{username}" if username else None)
 
 
 @router.post("/login", response_model=TokenPair)
