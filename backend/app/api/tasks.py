@@ -13,8 +13,8 @@ import secrets
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import ColumnElement, and_, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select
 from sqlalchemy import delete as sa_delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -971,8 +971,13 @@ async def update_cross_task(
 async def list_tasks(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[int | None, Query()] = None,
 ) -> TaskListOut:
     """Задачи, видимые юзеру: все общие + свои индивидуальные (неудалённые).
+
+    `intake_id` — «текущая экспедиция» админа (ARG-168), для остальных игнорируется:
+    оставляет общие задачи потока (или без потока) и не-общие, где есть исполнитель
+    из этого потока (или исполнителей нет вовсе).
 
     Каждая обогащена состоянием юзера (my_status/late/deadline_soon) и агрегатами
     (assignee_count для individual, submitted_count, accepted_count). Порядок:
@@ -1016,6 +1021,25 @@ async def list_tasks(
             # видна не-админу, включая свою individual/pair/stream — common уже
             # закрыт внутри _visible_common_where, здесь добиваем остальные типы.
             where.append(published_where())
+    elif intake_id is not None:
+        cohort_assignee = exists(
+            select(1)
+            .select_from(TaskAssignment)
+            .join(User, User.id == TaskAssignment.user_id)
+            .where(TaskAssignment.task_id == Task.id, User.intake_id == intake_id)
+        )
+        any_assignee = exists(
+            select(1).where(TaskAssignment.task_id == Task.id)
+        )
+        where.append(
+            or_(
+                and_(
+                    Task.type == "common",
+                    or_(Task.intake_id.is_(None), Task.intake_id == intake_id),
+                ),
+                and_(Task.type != "common", or_(cohort_assignee, ~any_assignee)),
+            )
+        )
     stmt = (
         select(Task)
         .where(*where)

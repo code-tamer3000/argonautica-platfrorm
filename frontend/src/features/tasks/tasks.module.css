@@ -120,9 +120,9 @@ a.reviewLink:hover {
   font-family: var(--font-t1);
   font-size: 16px;
   color: var(--text-primary);
-  flex: 1;
+  flex: 1 1 10rem;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   line-height: 1.3;
 }
 

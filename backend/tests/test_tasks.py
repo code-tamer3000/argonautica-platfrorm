@@ -952,3 +952,33 @@ async def test_attach_foreign_asset_rejected(
         json={"body": "steal", "attachment_ids": [asset.id]},
     )
     assert resp.status_code == 404
+
+
+async def test_admin_intake_filter_covers_individual_tasks(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """ARG-168: GET /api/tasks?intake_id= режет и индивидуальные задачи (intake_id=NULL
+    на самой задаче) — по потоку исполнителей; без параметра админ видит всё."""
+    admin = await make_user(role="admin")
+    in_a = await make_user()
+    in_b = await make_user()
+    assert in_a.intake_id != in_b.intake_id
+    admin_h = await _headers(client, admin)
+
+    task_a = await _create_task(
+        client, admin_h, type="individual", title="A-only", assignee_ids=[in_a.id]
+    )
+    task_b = await _create_task(
+        client, admin_h, type="individual", title="B-only", assignee_ids=[in_b.id]
+    )
+
+    async def ids(**params: object) -> set[int]:
+        resp = await client.get("/api/tasks", headers=admin_h, params=params)
+        assert resp.status_code == 200, resp.text
+        return {t["id"] for t in resp.json()["items"]}
+
+    assert {task_a["id"], task_b["id"]} <= await ids()
+    only_a = await ids(intake_id=in_a.intake_id)
+    assert task_a["id"] in only_a and task_b["id"] not in only_a
+    only_b = await ids(intake_id=in_b.intake_id)
+    assert task_b["id"] in only_b and task_a["id"] not in only_b

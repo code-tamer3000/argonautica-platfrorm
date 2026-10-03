@@ -396,3 +396,7 @@ it (still one click away, not re-litigated in full). That track is then excluded
 render twice; the section itself is skipped entirely for a participant if that was the
 only thing in it. Admins/cross-authors (`canReview`) are unaffected — they still see every
 track in the flat list, review actions and all.
+
+## Admin «current expedition» filter (ARG-168)
+
+`GET /api/tasks?intake_id=` and `GET /api/admin/review-queue?intake_id=` are narrowed to one intake for admins (ignored on `/api/tasks` for participants). Tasks: `common` by `tasks.intake_id` (NULL = every intake); `individual`/`pair`/`stream` (always `intake_id=NULL`) by their assignees — kept when at least one assignee is in the intake, or when there are no assignees at all. Review queue: submissions of that intake's users. The frontend no longer filters the list client-side. Card titles wrap on whole words (`overflow-wrap: break-word`).
