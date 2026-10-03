@@ -58,7 +58,7 @@
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,7 +123,19 @@ EXPEDITION_FEAT_TASK_TITLE = "Освобождаем оперативку"
 OBSERVER_TARIFF_NAME = CHEAP_TARIFF_NAME
 
 
-def _completed_common_where(current_user: User) -> tuple[ColumnElement[bool], ...]:
+def _scope_intake_id(current_user: User, intake_id: int | None) -> int | None:
+    """Поток, в котором смотрим ростер. Админ может выбрать любой («текущая
+    экспедиция» в шапке, ARG-168) — иначе он видел бы только поток из собственного
+    профиля (чаще всего NULL → пустой ростер). Для остальных `intake_id` из запроса
+    игнорируется: чужой поток по клиентскому id не открыть (IDOR)."""
+    if current_user.role == "admin" and intake_id is not None:
+        return intake_id
+    return current_user.intake_id
+
+
+def _completed_common_where(
+    current_user: User, scope_intake_id: int | None
+) -> tuple[ColumnElement[bool], ...]:
     """common-задача видна как «выполненная» в ростере/профиле — шире, чем ещё
     не сделанные (`_visible_common_where`, тариф смотрящего там уместен), но не
     безусловно: полная тарифная изоляция ОСТАЁТСЯ для постороннего смотрящего
@@ -139,7 +151,7 @@ def _completed_common_where(current_user: User) -> tuple[ColumnElement[bool], ..
     поточная нет.
     """
     intake_clause = or_(
-        Task.intake_id.is_(None), Task.intake_id == current_user.intake_id
+        Task.intake_id.is_(None), Task.intake_id == scope_intake_id
     )
     if current_user.role == "admin":
         return (Task.type == "common", intake_clause)
@@ -156,17 +168,17 @@ def _completed_common_where(current_user: User) -> tuple[ColumnElement[bool], ..
 
 
 async def _roster(
-    session: AsyncSession, current_user: User
+    session: AsyncSession, current_user: User, scope_intake_id: int | None
 ) -> tuple[list[User], set[int], dict[int, int]]:
     """Состав + порядок (админы, участники по рангу тарифа, наблюдатели хвостом),
     множество id наблюдателей и ранги тарифов потока (`cohort_plan_ranks`) — фронт
     режет на секции по соседним элементам, ранги сам не пересчитывает (см. модуль).
     Ранги отдаём наружу, а не только используем для сортировки — `get_argonaut`
     считает по ним `can_message`, второй одинаковый запрос не нужен."""
-    if current_user.intake_id is None:
+    if scope_intake_id is None:
         return [], set(), {}
     rows = await session.execute(
-        select(User).where(User.intake_id == current_user.intake_id)
+        select(User).where(User.intake_id == scope_intake_id)
     )
     users = list(rows.scalars().all())
     # Держатель тарифа «Наблюдатель» без флага — тоже наблюдатель для ростера;
@@ -181,7 +193,7 @@ async def _roster(
         for u in users
         if u.is_observer or (u.plan_id is not None and u.plan_id in observer_plan_ids)
     }
-    ranks = await cohort_plan_ranks(session, current_user.intake_id)
+    ranks = await cohort_plan_ranks(session, scope_intake_id)
     users.sort(
         key=lambda u: (
             0 if u.role == "admin" else (2 if u.id in observer_ids else 1),
@@ -207,7 +219,10 @@ async def _torch_roster(session: AsyncSession) -> list[User]:
 
 
 async def _tasks_done_by_user(
-    session: AsyncSession, current_user: User, user_ids: list[int]
+    session: AsyncSession,
+    current_user: User,
+    scope_intake_id: int | None,
+    user_ids: list[int],
 ) -> dict[int, int]:
     """user_id -> число принятых common-задач (уже сделанных — тариф смотрящего
     не фильтрует владельца/админа, см. `_completed_common_where`)."""
@@ -218,7 +233,7 @@ async def _tasks_done_by_user(
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
         .where(
-            *_completed_common_where(current_user),
+            *_completed_common_where(current_user, scope_intake_id),
             Task.deleted_at.is_(None),
             TaskAssignment.user_id.in_(user_ids),
             TaskAssignment.status == "accepted",
@@ -229,7 +244,7 @@ async def _tasks_done_by_user(
 
 
 async def _expedition_feat(
-    session: AsyncSession, current_user: User, user_id: int
+    session: AsyncSession, scope_intake_id: int | None, user_id: int
 ) -> tuple[int | None, str | None, str | None]:
     """(task_id, текст последней сдачи, статус назначения) для задачи
     EXPEDITION_FEAT_TASK_TITLE. task_id/status отдаются фронту, чтобы владелец
@@ -254,7 +269,7 @@ async def _expedition_feat(
         .where(
             Task.title == EXPEDITION_FEAT_TASK_TITLE,
             Task.deleted_at.is_(None),
-            or_(Task.intake_id.is_(None), Task.intake_id == current_user.intake_id),
+            or_(Task.intake_id.is_(None), Task.intake_id == scope_intake_id),
         )
         .limit(1)
     )
@@ -322,8 +337,10 @@ async def _latest_submission_bodies(
 async def list_argonauts(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[int | None, Query()] = None,
 ) -> JSONResponse:
-    users, observer_ids, _ranks = await _roster(session, current_user)
+    scope = _scope_intake_id(current_user, intake_id)
+    users, observer_ids, _ranks = await _roster(session, current_user, scope)
     torch_users = await _torch_roster(session) if current_user.torch_unlocked else []
     media_ids = {
         u.avatar_media_id
@@ -332,7 +349,9 @@ async def list_argonauts(
     }
     signed = await presign_asset_urls(session, media_ids)
     plans = await plan_names(session, [*users, *torch_users])
-    done = await _tasks_done_by_user(session, current_user, [u.id for u in users])
+    done = await _tasks_done_by_user(
+        session, current_user, scope, [u.id for u in users]
+    )
 
     def tile(u: User, *, tasks_done: int = 0, is_observer: bool = False) -> ArgonautOut:
         return ArgonautOut(
@@ -372,9 +391,11 @@ async def get_argonaut(
     user_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[int | None, Query()] = None,
 ) -> ArgonautDetailOut:
     # 404 (не 403): не подтверждаем клиенту существование юзера вне его потока.
-    roster, observer_ids, ranks = await _roster(session, current_user)
+    scope = _scope_intake_id(current_user, intake_id)
+    roster, observer_ids, ranks = await _roster(session, current_user, scope)
     user = next((u for u in roster if u.id == user_id), None)
     if user is None and current_user.torch_unlocked:
         # ARG-165: секция «Факел» кросс-интейк — член клуба может открыть
@@ -409,7 +430,7 @@ async def get_argonaut(
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
         .where(
-            *_completed_common_where(current_user),
+            *_completed_common_where(current_user, scope),
             Task.deleted_at.is_(None),
             TaskAssignment.user_id == user.id,
             TaskAssignment.status.in_(VISIBLE_TASK_STATUSES),
@@ -433,7 +454,7 @@ async def get_argonaut(
     ]
     tasks_done = sum(1 for t in tasks if t.status == "accepted")
     feat_task_id, expedition_feat, feat_status = await _expedition_feat(
-        session, current_user, user.id
+        session, scope, user.id
     )
     # Зеркало `assert_peer_visible` на POST /api/rooms (ARG-110) — та же ранговая
     # проверка, только для UI-подсказки "можно ли писать", не write-путь; ranks

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
+import { useAuth } from '../features/auth/AuthContext'
+import { useUiStore } from '../stores/ui'
 import type { AttachmentOut, PlaylistOut } from '../lib/types'
 
 // --- Контракт бэкенда (поля = ответы API) ---
@@ -210,9 +212,14 @@ export const adminAssignmentsKey = (id: number) => ['tasks', id, 'assignments'] 
 // --- Список / деталь ---
 
 export function useTasks(options?: { enabled?: boolean }) {
+  // «Текущая экспедиция» админа (ARG-168): сервер учитывает intake_id только для админа.
+  const { user } = useAuth()
+  const current = useUiStore((s) => s.adminCurrentIntakeId)
+  const intakeId = user?.role === 'admin' ? current : null
   return useQuery({
-    queryKey: tasksKey,
-    queryFn: () => http.get<TaskListOut>('/api/tasks'),
+    queryKey: [...tasksKey, 'list', intakeId] as const,
+    queryFn: () =>
+      http.get<TaskListOut>(intakeId != null ? `/api/tasks?intake_id=${intakeId}` : '/api/tasks'),
     // Наблюдателю раздел «Задачи» закрыт (403) — не дёргаем эндпоинт.
     enabled: options?.enabled ?? true,
   })
@@ -399,9 +406,13 @@ export const reviewQueueKey = ['admin', 'review-queue'] as const
 /** Все сдачи в статусе «на проверке» по всем задачам сразу (ARG-134) — раздел
  * «Проверка» в админке, вместо обхода карточек задач по очереди. */
 export function useReviewQueue() {
+  const current = useUiStore((s) => s.adminCurrentIntakeId)
   return useQuery({
-    queryKey: reviewQueueKey,
-    queryFn: () => http.get<ReviewQueueItemOut[]>('/api/admin/review-queue'),
+    queryKey: [...reviewQueueKey, current] as const,
+    queryFn: () =>
+      http.get<ReviewQueueItemOut[]>(
+        current != null ? `/api/admin/review-queue?intake_id=${current}` : '/api/admin/review-queue',
+      ),
   })
 }
 

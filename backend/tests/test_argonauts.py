@@ -788,3 +788,44 @@ async def test_torch_cross_intake_detail_denied_for_non_member_viewer(
         f"/api/argonauts/{other_intake_member.id}", headers=viewer_h
     )
     assert resp.status_code == 404
+
+
+async def test_admin_intake_param_switches_roster(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """ARG-168: админ видит ростер выбранного потока, а не поток из своего профиля."""
+    first = await make_user(intake_starts_on=date.today() - timedelta(days=100))
+    second = await make_user(intake_starts_on=date.today() - timedelta(days=3))
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+
+    for target, other in ((first, second), (second, first)):
+        resp = await client.get(
+            f"/api/argonauts?intake_id={target.intake_id}", headers=admin_h
+        )
+        assert resp.status_code == 200, resp.text
+        ids = {row["id"] for row in resp.json()["roster"]}
+        assert target.id in ids and other.id not in ids
+        detail = await client.get(
+            f"/api/argonauts/{target.id}?intake_id={target.intake_id}", headers=admin_h
+        )
+        assert detail.status_code == 200, detail.text
+
+
+async def test_participant_cannot_override_intake(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """ARG-168: для не-админа intake_id из запроса игнорируется (IDOR)."""
+    viewer = await make_user(intake_starts_on=date.today() - timedelta(days=100))
+    stranger = await make_user(intake_starts_on=date.today() - timedelta(days=2))
+    viewer_h = await _headers(client, viewer)
+
+    resp = await client.get(
+        f"/api/argonauts?intake_id={stranger.intake_id}", headers=viewer_h
+    )
+    ids = {row["id"] for row in resp.json()["roster"]}
+    assert stranger.id not in ids and viewer.id in ids
+    detail = await client.get(
+        f"/api/argonauts/{stranger.id}?intake_id={stranger.intake_id}", headers=viewer_h
+    )
+    assert detail.status_code == 404

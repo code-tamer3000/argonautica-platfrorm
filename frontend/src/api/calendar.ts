@@ -1,17 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from '../lib/apiClient'
+import { useAuth } from '../features/auth/AuthContext'
+import { useUiStore } from '../stores/ui'
 import type { CalendarEventOut } from '../lib/types'
 
-export const calendarEventsKey = (from?: string, to?: string) =>
-  ['calendar', 'events', from ?? '', to ?? ''] as const
+export const calendarEventsKey = (from?: string, to?: string, intakeId: number | null = null) =>
+  ['calendar', 'events', from ?? '', to ?? '', intakeId] as const
 
 export function useCalendarEvents(from?: string, to?: string) {
+  // «Текущая экспедиция» админа (ARG-168): сервер учитывает intake_id только для админа.
+  const { user } = useAuth()
+  const current = useUiStore((s) => s.adminCurrentIntakeId)
+  const intakeId = user?.role === 'admin' ? current : null
   return useQuery({
-    queryKey: calendarEventsKey(from, to),
+    queryKey: calendarEventsKey(from, to, intakeId),
     queryFn: () => {
       const q = new URLSearchParams()
       if (from) q.set('from', from)
       if (to) q.set('to', to)
+      if (intakeId != null) q.set('intake_id', String(intakeId))
       const qs = q.toString()
       return http.get<CalendarEventOut[]>(
         `/api/calendar/events${qs ? `?${qs}` : ''}`,
