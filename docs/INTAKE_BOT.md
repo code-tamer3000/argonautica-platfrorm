@@ -107,7 +107,7 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
 
 After `confirmed`, the chat becomes **service mode**: **«Сменить пароль»** (re-issue a
 fresh one-time password, same helper as `scripts/telegram_bot.py`'s password reset) as an
-inline button, plus `/question` (forward to admin DM + deliver the reply back — same
+inline button, plus a «Задать вопрос» button and the `/question` command (forward to admin DM + deliver the reply back — same
 mechanism as the access bot's support channel), same as at every other step.
 
 **Service mode without an application (ARG-167).** People who reached the platform outside
@@ -117,8 +117,8 @@ could not recognise them. Their Telegram id is bound by hand to `users.tg_id`
 an unknown login, an account that already has a *different* `tg_id`, and a `tg_id` already
 owned by another account in `users` or via `intake_applications.user_id`). Lookup is by
 **id only** — never by username (a Telegram handle can be changed or released). For a bound
-`tg_id`, `/start` and any message go straight to service mode («Сменить пароль»,
-`/question`) and **no application row is created**; `_service_user` resolves the account for
+`tg_id`, `/start` and any message go straight to service mode («Чем помочь?» +
+«Сменить пароль» / «Задать вопрос») and **no application row is created**; `_service_user` resolves the account for
 «Сменить пароль»: `users.tg_id` first, then a `confirmed` application's `user_id`. An id
 with neither is an ordinary stranger → the funnel, exactly as before. One-off invitation
 for the bound people: `python -m scripts.intake_bot --announce` (sends «теперь здесь можно
@@ -130,8 +130,12 @@ unset) just opens this bot.
 **«Задать вопрос» is available at every funnel step**, not just in service mode — as the
 **`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
 both set by the service at startup, not by hand in BotFather). It is deliberately *not* an
-inline button any more (ARG-94): a per-message "💬 Задать вопрос" row competed with the
-buttons that actually belong to the current step. The command sets an ephemeral Redis flag
+inline button on funnel steps any more (ARG-94): a per-message "💬 Задать вопрос" row
+competed with the buttons that actually belong to the current step. **Service mode is the
+exception:** its keyboard always carries both «🔑 Сменить пароль» and «💬 Задать вопрос»
+(nothing competes there), and every service-mode entry — `/start`, any message, the
+announce — shows the same neutral «Чем помочь?» (both intakes are over, so the old
+«Ты уже на борту Экспедиции… пришлём детали старта» text is gone). The command sets an ephemeral Redis flag
 (`intakebot:await_q:{tg_id}`, distinct prefix from the access bot's `bot:await_q:*` —
 separate service, separate Redis namespace) and takes priority over whatever the funnel
 step would otherwise do with the applicant's next message. The old `svc_q` callback is

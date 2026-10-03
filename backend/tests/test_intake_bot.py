@@ -138,9 +138,14 @@ def test_plan_details_keyboard_is_back_plus_styled_pay() -> None:
     assert pay["callback_data"] == "pc:7:2" and pay["style"] == "success"
 
 
-def test_service_keyboard_has_no_ask_question_button() -> None:
+def test_service_keyboard_has_change_password_and_ask_question() -> None:
+    """Сервисный режим — всегда обе кнопки: оба потока прошли, «Сменить пароль» и
+    «Задать вопрос» — всё, ради чего сюда пишут."""
     flat = [b for row in intake_bot._service_keyboard()["inline_keyboard"] for b in row]
-    assert [b["callback_data"] for b in flat] == [intake_bot.CB_CHANGE_PASSWORD]
+    assert [b["callback_data"] for b in flat] == [
+        intake_bot.CB_CHANGE_PASSWORD,
+        intake_bot.CB_ASK_QUESTION,
+    ]
 
 
 async def test_details_and_back_edit_the_same_message(session: AsyncSession) -> None:
@@ -1453,9 +1458,10 @@ async def test_start_from_bound_user_opens_service_mode_without_application(
     )
 
     sent = client.payload("sendMessage")
-    assert sent["text"] == intake_bot.TEXT_ALREADY_DONE
+    assert sent["text"] == intake_bot.TEXT_SERVICE_MENU
     assert [b["callback_data"] for row in sent["reply_markup"]["inline_keyboard"] for b in row] == [
-        intake_bot.CB_CHANGE_PASSWORD
+        intake_bot.CB_CHANGE_PASSWORD,
+        intake_bot.CB_ASK_QUESTION,
     ]
     assert await intake_bot._find_application(session, tg_id) is None
     assert user.tg_id == tg_id

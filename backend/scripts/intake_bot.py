@@ -190,9 +190,6 @@ TEXT_CONFIRMED = (
 )
 TEXT_WAIT_DECISION = f"Твоя заявка на рассмотрении. Вернёмся с решением — жди здесь. {SHIP}"
 TEXT_WAIT_PAYMENT_CHECK = f"Проверяем оплату. Скоро подтвердим. {STAR}"
-TEXT_ALREADY_DONE = (
-    "Ты уже на борту Экспедиции 🎉 Следи за этим чатом — пришлём детали старта."
-)
 
 # Временные заглушки — финальные тексты допишет пользователь позже (см. ARG-92 «Границы»).
 TEXT_SERVICE_MENU = "Чем помочь?"
@@ -631,6 +628,7 @@ def _service_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
+            [{"text": "💬 Задать вопрос", "callback_data": CB_ASK_QUESTION}],
         ]
     }
 
@@ -1669,7 +1667,7 @@ async def _handle_start(
 
     # Привязанная вручную учётка (ARG-167) — сразу в сервисный режим, заявку не заводим.
     if await _find_bound_user(session, tg_id) is not None:
-        await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
+        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
         return
 
     app = await _find_application(session, tg_id)
@@ -1712,7 +1710,7 @@ async def _handle_start(
     elif app.status == STATUS_PAYMENT_REVIEW:
         await _send(client, chat_id, TEXT_WAIT_PAYMENT_CHECK)
     elif app.status == STATUS_CONFIRMED:
-        await _send(client, chat_id, TEXT_ALREADY_DONE, reply_markup=_service_keyboard())
+        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
 
 
 async def _resubmit_after_expiry(
