@@ -124,8 +124,10 @@ with neither is an ordinary stranger → the funnel, exactly as before. One-off 
 for the bound people: `python -m scripts.intake_bot --announce` (sends «теперь здесь можно
 сбросить пароль» + the service keyboard, prints who was blocked/undelivered); deliberately
 NOT run at bot startup — every restart would spam. The login screen's «Забыли пароль?» link
-(`GET /api/auth/recovery-link` → `https://t.me/<TELEGRAM_INTAKE_BOT_USERNAME>`, hidden when
-unset) just opens this bot.
+(`GET /api/auth/recovery-link` → `https://t.me/<TELEGRAM_INTAKE_BOT_USERNAME>?start=forgot_password`, hidden when
+unset) opens this bot and Telegram auto-sends `/start forgot_password` — the bot treats any
+`/start …` as a plain `/start` (no payload-specific branch), so bound/confirmed users land in
+service mode at once and strangers enter the funnel.
 
 **«Задать вопрос» is available at every funnel step**, not just in service mode — as the
 **`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,

@@ -184,7 +184,7 @@ async def test_recovery_link_is_public_and_built_from_config(
     monkeypatch.setattr(settings, "telegram_intake_bot_username", "@my_intake_bot")
     resp = await client.get("/api/auth/recovery-link")
     assert resp.status_code == 200
-    assert resp.json() == {"url": "https://t.me/my_intake_bot"}
+    assert resp.json() == {"url": "https://t.me/my_intake_bot?start=forgot_password"}
 
 
 async def test_recovery_link_is_null_when_bot_not_configured(
