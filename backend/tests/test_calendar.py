@@ -152,3 +152,31 @@ async def test_date_range_filter(
     ids = await _event_ids(client, headers, **{"from": "2026-07-15T00:00:00Z"})
     assert august["id"] in ids
     assert july["id"] not in ids
+
+
+async def test_admin_intake_filter(client: AsyncClient, make_user: MakeUser) -> None:
+    """ARG-168: админский ?intake_id= оставляет события потока и без потока."""
+    admin = await make_user(role="admin")
+    in_a = await make_user()
+    in_b = await make_user()
+    assert in_a.intake_id != in_b.intake_id
+    admin_h = await _headers(client, admin)
+
+    async def mk(title: str, intake_id: int | None) -> int:
+        resp = await client.post(
+            "/api/calendar/events",
+            headers=admin_h,
+            json={"title": title, "starts_at": "2030-01-01T10:00:00Z", "intake_id": intake_id},
+        )
+        assert resp.status_code == 201, resp.text
+        return int(resp.json()["id"])
+
+    ev_a, ev_b, ev_all = await mk("A", in_a.intake_id), await mk("B", in_b.intake_id), await mk("all", None)
+
+    resp = await client.get(
+        "/api/calendar/events", headers=admin_h, params={"intake_id": in_a.intake_id}
+    )
+    got = {e["id"] for e in resp.json()}
+    assert ev_a in got and ev_all in got and ev_b not in got
+    everything = {e["id"] for e in (await client.get("/api/calendar/events", headers=admin_h)).json()}
+    assert {ev_a, ev_b, ev_all} <= everything

@@ -24,6 +24,7 @@ from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
     LogoutRequest,
+    RecoveryLinkOut,
     RefreshRequest,
     TokenPair,
 )
@@ -43,6 +44,23 @@ _INVALID_REFRESH = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Invalid or expired refresh token",
 )
+
+
+@router.get("/recovery-link", response_model=RecoveryLinkOut)
+async def recovery_link() -> RecoveryLinkOut:
+    """Ссылка «Забыли пароль?» на экране логина → чат с intake-ботом (ARG-167).
+
+    Публичный (экран логина без токена); отдаёт только username бота из конфигурации —
+    не секрет. Пусто → фронт прячет ссылку.
+
+    `?start=forgot_password`: с параметром Telegram сам шлёт боту `/start …` при открытии
+    чата, и человек сразу видит сервисный режим, а не пустой чат. Бот ловит любой
+    `/start …` как обычный `/start` — отдельной логики под параметр нет.
+    """
+    username = settings.telegram_intake_bot_username.strip().lstrip("@")
+    if not username:
+        return RecoveryLinkOut(url=None)
+    return RecoveryLinkOut(url=f"https://t.me/{username}?start=forgot_password")
 
 
 @router.post("/login", response_model=TokenPair)

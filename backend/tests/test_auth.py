@@ -2,6 +2,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 import jwt
+import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -174,3 +175,22 @@ async def test_refresh_rotation_and_logout(
     assert r3.status_code == 204
     r4 = await client.post("/api/auth/refresh", json={"refresh_token": new_refresh})
     assert r4.status_code == 401
+
+
+async def test_recovery_link_is_public_and_built_from_config(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Экран логина без токена спрашивает ссылку «Забыли пароль?» (ARG-167)."""
+    monkeypatch.setattr(settings, "telegram_intake_bot_username", "@my_intake_bot")
+    resp = await client.get("/api/auth/recovery-link")
+    assert resp.status_code == 200
+    assert resp.json() == {"url": "https://t.me/my_intake_bot?start=forgot_password"}
+
+
+async def test_recovery_link_is_null_when_bot_not_configured(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "telegram_intake_bot_username", "")
+    resp = await client.get("/api/auth/recovery-link")
+    assert resp.status_code == 200
+    assert resp.json() == {"url": None}

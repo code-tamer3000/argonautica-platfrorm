@@ -847,11 +847,13 @@ async def admin_dynamics(
 @router.get("/review-queue", response_model=list[ReviewQueueItemOut])
 async def review_queue(
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[int | None, Query()] = None,
 ) -> list[ReviewQueueItemOut]:
     """Все сдачи в статусе 'submitted' по ВСЕМ задачам сразу (ARG-134) — один
     экран вместо обхода карточек задач по очереди. `submitted_at` — момент
     последней сдачи трека (той, что и поставила статус 'submitted'), сортировка
-    по нему по возрастанию (старые ожидающие — первыми).
+    по нему по возрастанию (старые ожидающие — первыми). `intake_id` («текущая
+    экспедиция», ARG-168) оставляет только сдачи участников этого потока.
     """
     latest_submission_at = (
         select(func.max(TaskSubmission.created_at))
@@ -859,25 +861,26 @@ async def review_queue(
         .correlate(TaskAssignment)
         .scalar_subquery()
     )
-    rows = (
-        await session.execute(
-            select(
-                TaskAssignment,
-                Task.id,
-                Task.title,
-                Task.type,
-                User,
-                Plan.id,
-                Plan.name,
-                latest_submission_at.label("submitted_at"),
-            )
-            .join(Task, Task.id == TaskAssignment.task_id)
-            .join(User, User.id == TaskAssignment.user_id)
-            .outerjoin(Plan, Plan.id == User.plan_id)
-            .where(TaskAssignment.status == "submitted", Task.deleted_at.is_(None))
-            .order_by(latest_submission_at.asc())
+    stmt = (
+        select(
+            TaskAssignment,
+            Task.id,
+            Task.title,
+            Task.type,
+            User,
+            Plan.id,
+            Plan.name,
+            latest_submission_at.label("submitted_at"),
         )
-    ).all()
+        .join(Task, Task.id == TaskAssignment.task_id)
+        .join(User, User.id == TaskAssignment.user_id)
+        .outerjoin(Plan, Plan.id == User.plan_id)
+        .where(TaskAssignment.status == "submitted", Task.deleted_at.is_(None))
+        .order_by(latest_submission_at.asc())
+    )
+    if intake_id is not None:
+        stmt = stmt.where(User.intake_id == intake_id)
+    rows = (await session.execute(stmt)).all()
 
     signed = await presign_asset_urls(
         session,

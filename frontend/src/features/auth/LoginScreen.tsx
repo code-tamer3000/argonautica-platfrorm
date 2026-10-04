@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react'
-import { ApiError, isNetworkError } from '../../lib/apiClient'
+import { useEffect, useState, type FormEvent } from 'react'
+import { api, ApiError, isNetworkError } from '../../lib/apiClient'
 import { Button } from '../../components/Button'
 import { Input } from '../../components/Input'
 import { StarSpark } from '../../components/StarSpark'
@@ -12,6 +12,14 @@ export function LoginScreen() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [recoveryUrl, setRecoveryUrl] = useState<string | null>(null)
+
+  // Ссылка на intake-бота («Забыли пароль?»). Не пришла — просто не показываем её.
+  useEffect(() => {
+    api<{ url: string | null }>('/api/auth/recovery-link', {}, { auth: false })
+      .then((r) => setRecoveryUrl(r.url))
+      .catch(() => setRecoveryUrl(null))
+  }, [])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -67,6 +75,11 @@ export function LoginScreen() {
         <Button type="submit" variant="gold" disabled={busy || !username || !password}>
           {busy ? 'Вход…' : 'Войти'}
         </Button>
+        {recoveryUrl && (
+          <a className={styles.forgot} href={recoveryUrl} target="_blank" rel="noopener noreferrer">
+            Забыли пароль?
+          </a>
+        )}
       </form>
     </div>
   )

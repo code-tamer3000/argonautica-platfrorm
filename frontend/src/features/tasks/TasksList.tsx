@@ -28,7 +28,6 @@ import { Modal } from '../../components/Overlay'
 import { toast } from '../../stores/toast'
 import { dayLabel } from '../../lib/format'
 import { useIsOfflineEmpty } from '../../hooks/useOfflineEmpty'
-import { useUiStore } from '../../stores/ui'
 import { TaskForm, TYPE_LABEL, type TaskFormValues } from './TaskForm'
 import styles from './tasks.module.css'
 
@@ -223,19 +222,11 @@ export function TasksList() {
   const { data, isLoading, isError, dataUpdatedAt } = useTasks()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  // «Текущая экспедиция» (ARG-104): для admin этот экран не гейтится сервером
-  // вообще (полный доступ) — сужаем отображение тем же общим контекстом, что и
-  // раньше был у /admin/tasks. Индивидуальные/парные/потоковые задачи всегда
-  // intake_id=NULL (видимость на назначении, не потоке) — фильтр их не трогает.
-  // Выбирается ОДИН раз в /admin/expeditions, здесь только читаем.
-  const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
-  const intakeFiltered = isAdmin && currentIntakeId != null
-
-  const allItems = data?.items ?? []
-  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: allItems.length === 0 })
-  const items = intakeFiltered
-    ? allItems.filter((t) => t.intake_id == null || t.intake_id === currentIntakeId)
-    : allItems
+  // «Текущая экспедиция» (ARG-104/168): для admin сервер сам сужает список по
+  // выбранному потоку (`useTasks` передаёт intake_id) — общие по `tasks.intake_id`,
+  // остальные по потоку исполнителей. Выбирается ОДИН раз в шапке, здесь только читаем.
+  const items = data?.items ?? []
+  const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: items.length === 0 })
 
   // Участник — по своему статусу: активные / истёк срок (обе — не принятые,
   // делит дедлайн) / выполненные (принятые, дедлайн уже не важен).
@@ -387,13 +378,10 @@ export function TasksList() {
       </div>
 
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
-      {!isLoading && allItems.length === 0 && (
+      {!isLoading && items.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>
           {offlineEmpty ? 'Нет сети — не можем загрузить задачи.' : 'Задач пока нет'}
         </div>
-      )}
-      {!isLoading && allItems.length > 0 && items.length === 0 && (
-        <div className="center muted" style={{ padding: 40 }}>В этом потоке задач нет</div>
       )}
 
       {isAdmin ? (

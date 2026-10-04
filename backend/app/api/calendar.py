@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin, require_participant
@@ -201,9 +201,33 @@ async def list_events(
     session: Annotated[AsyncSession, Depends(get_session)],
     from_: Annotated[datetime | None, Query(alias="from")] = None,
     to: Annotated[datetime | None, Query()] = None,
+    intake_id: Annotated[int | None, Query()] = None,
 ) -> list[CalendarEventOut]:
-    """События, видимые юзеру: двойной фильтр поток+тариф (ARG-96/ARG-111); admin — все."""
+    """События, видимые юзеру: двойной фильтр поток+тариф (ARG-96/ARG-111); admin — все.
+
+    `intake_id` — «текущая экспедиция» админа (ARG-168), для остальных игнорируется:
+    события потока и без потока; дедлайн не-общей задачи — только если у неё есть
+    исполнитель из этого потока (или исполнителей нет вовсе).
+    """
     stmt = select(CalendarEvent)
+    if current_user.role == "admin" and intake_id is not None:
+        cohort_assignee = exists(
+            select(1)
+            .select_from(TaskAssignment)
+            .join(User, User.id == TaskAssignment.user_id)
+            .where(TaskAssignment.task_id == Task.id, User.intake_id == intake_id)
+        )
+        any_assignee = exists(select(1).where(TaskAssignment.task_id == Task.id))
+        cohort_task_ids = select(Task.id).where(
+            or_(Task.type == "common", cohort_assignee, ~any_assignee)
+        )
+        stmt = stmt.where(
+            or_(
+                CalendarEvent.intake_id.is_(None),
+                CalendarEvent.intake_id == intake_id,
+            ),
+            or_(CalendarEvent.task_id.is_(None), CalendarEvent.task_id.in_(cohort_task_ids)),
+        )
     if current_user.role != "admin":
         stmt = stmt.where(
             or_(

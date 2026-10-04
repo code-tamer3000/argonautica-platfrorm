@@ -76,6 +76,7 @@
 | Endpoint | Behavior |
 |---|---|
 | `POST /login` | IP rate-limited (anti-bruteforce). **Anti-enumeration:** identical response for "no such user" and "wrong password". |
+| `GET /recovery-link` | Public (login screen has no token). `{url}` = `https://t.me/<TELEGRAM_INTAKE_BOT_USERNAME>?start=forgot_password` for «Забыли пароль?», `null` when unset (frontend hides the link). Password recovery itself happens in the intake bot's service mode, matched by Telegram **id** (`users.tg_id` / `intake_applications`), never by username — see [INTAKE_BOT.md](INTAKE_BOT.md). |
 | `POST /refresh` | **Rotation:** revoke the presented `jti`, issue a new pair. |
 | `POST /logout` | Idempotent revoke of the refresh `jti`. |
 | `POST /change-password` | Allowed while `must_change_password=true` (first login). |

@@ -27,6 +27,11 @@ class User(Base):
     # Логин = TG-аккаунт. Платформа закрытая, регистрации нет — заводит админ.
     username: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     email: Mapped[str | None] = mapped_column(Text, unique=True)  # опционален
+    # Telegram user id (ARG-167): по нему intake-бот находит учётку для «Сменить пароль»
+    # у тех, кто попал на платформу мимо воронки (админы, первый поток). НЕ производная
+    # от username: ник в Telegram меняется, id — нет. Проставляет только скрипт
+    # `bind_tg_id` вручную; у прошедших воронку источник — intake_applications.tg_id.
+    tg_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(Text)  # legacy/внешний URL

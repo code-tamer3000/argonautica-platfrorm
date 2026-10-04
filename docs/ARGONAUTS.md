@@ -300,3 +300,5 @@ item itself disappears for both groups via the same `isRouteVisible` check
 usual "materials only" placeholder) and a plain redirect to `/` for the cheap
 tariff (no dedicated placeholder exists for that group). Also
 `withCohortGate` (cohort-pending placeholder if `today < intake.starts_on`).
+
+**Admin «current expedition» (ARG-168).** `GET /api/argonauts` and `GET /api/argonauts/{id}` accept `?intake_id=`. It is honoured for admins only (replaces the intake from the admin's own profile, which is usually NULL → empty roster) and ignored for everyone else, so a participant can't open a foreign roster by id. The frontend sends `adminCurrentIntakeId` and includes it in the query key.

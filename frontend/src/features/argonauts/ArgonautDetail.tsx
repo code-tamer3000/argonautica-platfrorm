@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { argonautKey, useArgonaut } from '../../api/argonauts'
+import { argonautsKey, useArgonaut } from '../../api/argonauts'
 import { useCreateRoom } from '../../api/rooms'
 import { useCreateTorchPost, useDeleteTorchPost, useTorchPosts } from '../../api/torchPosts'
 import { Avatar } from '../../components/Avatar'
@@ -253,7 +253,7 @@ export function ArgonautDetail() {
               <TaskComposer
                 taskId={data.expedition_feat_task_id}
                 status={data.expedition_feat_status ?? undefined}
-                onSubmitted={() => qc.invalidateQueries({ queryKey: argonautKey(numericId) })}
+                onSubmitted={() => qc.invalidateQueries({ queryKey: argonautsKey })}
               />
             )}
           </div>
