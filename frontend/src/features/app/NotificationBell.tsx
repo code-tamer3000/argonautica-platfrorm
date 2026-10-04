@@ -61,7 +61,7 @@ const KIND_FALLBACK: Record<NotificationKind, string> = {
   task_comment: 'Новый комментарий к вашей сдаче',
   task_returned: 'Задача возвращена на доработку. Вы можете отправить сдачу повторно.',
   survey_submitted: 'Посмотреть ответы в разделе «Анкета»',
-  torch_granted: 'Вам открыт доступ к разделу «Факел»',
+  torch_granted: 'Вам открыт доступ к разделу «Грот»',
 }
 
 // Заголовок системного уведомления (без автора). admin — берём из n.title.
@@ -70,7 +70,7 @@ const SYSTEM_TITLE: Partial<Record<NotificationKind, string>> = {
   task_comment: 'Задачи',
   task_returned: 'Задачи',
   survey_submitted: 'Анкета',
-  torch_granted: 'Факел',
+  torch_granted: 'Грот',
 }
 
 export function NotificationBell() {

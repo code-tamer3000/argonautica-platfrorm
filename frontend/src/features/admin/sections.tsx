@@ -44,7 +44,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   { path: 'journal', label: 'Дневник', group: 'progress', Component: AdminJournal },
   { path: 'calendar', label: 'Календарь', group: 'progress', Component: AdminCalendar },
   { path: 'cabin', label: 'Каюта', group: 'progress', Component: AdminCabin },
-  { path: 'torch', label: 'Факел', group: 'progress', Component: AdminTorch },
+  { path: 'torch', label: 'Грот', group: 'progress', Component: AdminTorch },
   { path: 'feedback', label: 'Обращения', group: 'support', Component: AdminFeedback },
   { path: 'faq', label: 'FAQ', group: 'support', Component: AdminFaq },
   { path: 'broadcast', label: 'Рассылка', group: 'support', Component: AdminBroadcast },

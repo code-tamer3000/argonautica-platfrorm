@@ -75,7 +75,7 @@ export function ArgonautsScreen() {
           деления на подсекции — масштаб ~20–30 человек. */}
       {!isLoading && torch && torch.length > 0 && (
         <div className={styles.section}>
-          <div className={styles.sectionTitle}>Факел</div>
+          <div className={styles.sectionTitle}>Грот</div>
           <div className={styles.grid}>
             {torch.map((a) => (
               <Tile key={a.id} a={a} isOwn={a.id === me?.id} />

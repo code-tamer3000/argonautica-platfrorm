@@ -62,7 +62,7 @@ export function GraduationPopup() {
             Тебя ждёт артефакт экспедиции — скачать его можно на главной.
           </p>
           <p className={styles.welcomeText}>
-            А ещё тебе открылся клуб «Факел» — переходи в него, чтобы узнать подробности.
+            А ещё тебе открылся Грот аргонавтов — переходи в него, чтобы узнать подробности.
           </p>
         </>
       )}
@@ -74,7 +74,7 @@ export function GraduationPopup() {
         />
         Не показывать снова
       </label>
-      <Button variant="gold" onClick={handleGoToTorch}>Перейти в «Факел»</Button>
+      <Button variant="gold" onClick={handleGoToTorch}>Перейти в Грот аргонавтов</Button>
     </Modal>
   )
 }

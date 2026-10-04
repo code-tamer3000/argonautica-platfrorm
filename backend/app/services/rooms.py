@@ -26,7 +26,7 @@ from app.services.visibility import (
 )
 
 NEWS_CHANNEL_NAME = "Новости"
-TORCH_ROOM_NAME = "Факел"
+TORCH_ROOM_NAME = "Грот аргонавтов"
 
 
 async def load_room(session: AsyncSession, room_id: int) -> Room:

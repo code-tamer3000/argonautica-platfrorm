@@ -97,7 +97,7 @@ export function AdminExpeditions() {
       },
       {
         onSuccess: () => {
-          toast('Настройки «Факела» потока сохранены')
+          toast('Настройки Грота потока сохранены')
           setTorchIntake(null)
         },
         onError: (err: unknown) => {
@@ -224,7 +224,7 @@ export function AdminExpeditions() {
                   setTorchKbIntake(intake.torch_kb_intake_id != null ? String(intake.torch_kb_intake_id) : '')
                 }}
               >
-                Факел потока
+                Грот потока
               </Button>
             </div>
           </div>
@@ -234,7 +234,7 @@ export function AdminExpeditions() {
       {/* «Факел» потока (ARG-169) */}
       {torchIntake && (
         <Modal
-          title={`Факел: экспедиция ${intakeDate(torchIntake.starts_on)}`}
+          title={`Грот: экспедиция ${intakeDate(torchIntake.starts_on)}`}
           onClose={() => setTorchIntake(null)}
           closeOnBackdrop={false}
         >
