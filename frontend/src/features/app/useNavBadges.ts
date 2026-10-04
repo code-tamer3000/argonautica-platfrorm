@@ -8,6 +8,7 @@ export interface NavBadges {
   channels: number // Σ по каналам (кроме новостей)
   news: number // непрочитанные в новостном канале
   rubka: number // общий бейдж «Рубки» = chats + channels
+  torch: number // непрочитанные в чатах раздела «Грот» (torch_scope), только когда раздел открыт
   tasks: number // задачи, требующие внимания (attention_count из GET /api/tasks)
 }
 
@@ -25,13 +26,19 @@ export function useNavBadges(): NavBadges {
     let chats = 0
     let channels = 0
     let news = 0
+    let torch = 0
+    // Чаты раздела «Грот» (torch_scope) считаем на его пункт меню, а не на «Рубку» —
+    // но только когда раздел самому пользователю открыт: пока он закрыт заглушкой,
+    // такие комнаты (заявка) живут в Рубке (см. RoomList.torchLocked).
+    const torchOpen = isAdmin || !!user?.torch_unlocked
     for (const r of rooms ?? []) {
       if (r.is_news) news += r.unread_count
+      else if (r.torch_scope && torchOpen) torch += r.unread_count
       else if (r.type === 'dm' || r.type === 'group') chats += r.unread_count
       else if (r.type === 'channel') channels += r.unread_count
     }
     // Админ задачи не выполняет — бейдж «Задачи» для него всегда пуст.
     const taskBadge = isAdmin ? 0 : (tasks?.attention_count ?? 0)
-    return { chats, channels, news, rubka: chats + channels, tasks: taskBadge }
-  }, [rooms, tasks, isAdmin])
+    return { chats, channels, news, rubka: chats + channels, torch, tasks: taskBadge }
+  }, [rooms, tasks, isAdmin, user?.torch_unlocked])
 }

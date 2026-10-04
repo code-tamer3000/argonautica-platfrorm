@@ -92,6 +92,8 @@ class RoomOut(BaseModel):
     is_readonly: bool = False
     # Вопрос-«виджет» над композером (ARG-171): клиент рисует карточку с полем ответа.
     prompt_text: str | None = None
+    # Закрепление в списке чатов (ARG-172): не None — выше остальных, по возрастанию.
+    pin_order: int | None = None
     created_by: int = 0
     peer_id: int | None = None  # заполняется только для type='dm'
     # Комната подгруппы потока: узел сетки и его задача. Клиент вешает на такую

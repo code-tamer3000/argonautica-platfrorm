@@ -133,6 +133,11 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       !!r.torch_scope && (tab === 'torch' || (tab === 'chats' && torchLocked))
     let dms = filtered.filter((r) => r.type === 'dm' && (tab === 'torch' ? inTorchTab(r) : !r.torch_scope || inTorchTab(r)))
     let groups = filtered.filter((r) => r.type === 'group' && (tab === 'torch' ? inTorchTab(r) : !r.torch_scope || inTorchTab(r)))
+    // Закреплённые комнаты (`pin_order`, ARG-172) — выше остальных своей секции, по
+    // возрастанию; sort стабилен, остальные сохраняют серверный порядок (по активности).
+    const byPin = (a: RoomOut, b: RoomOut) => (a.pin_order ?? 1e9) - (b.pin_order ?? 1e9)
+    dms = [...dms].sort(byPin)
+    groups = [...groups].sort(byPin)
     if (applyIntakeFilter) {
       // dm/group не несут intake_id на самой комнате (гейтятся явным членством,
       // не потоком, см. docs/ROOMS.md) — но admin здесь смотрит на них с точки
