@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
 DEFAULT_TORCH_STUB_TEXT = (
-    "Факел зажигается не сразу — доступ в клуб выпускников открывает администратор."
+    "Грот аргонавтов открывается не сразу — доступ в клуб выпускников открывает администратор."
 )
 
 

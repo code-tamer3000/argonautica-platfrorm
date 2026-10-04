@@ -20,6 +20,7 @@ import { Composer } from './Composer'
 import { DailyJournalForm } from './DailyJournalForm'
 import { ForwardPicker } from './ForwardPicker'
 import { GraduatedNotice } from './GraduatedNotice'
+import { RoomPrompt } from './RoomPrompt'
 import { MembersDrawer } from './MembersDrawer'
 import { MessageActionsMenu } from './MessageActionsMenu'
 import { MessageList, type MessageListHandle } from './MessageList'
@@ -549,6 +550,14 @@ export function ChatPane({ roomId, onOpenRoom, onBack }: { roomId: number; onOpe
       {isJournalTargetRoom && !isGraduated && !isWindowClosed &&
         !(!isOwnPersonal && listScrolledUp) && (
         <DailyJournalForm roomId={roomId} />
+      )}
+      {/* Вопрос-виджет комнаты (ARG-171): только там, где вообще можно писать, и не
+          поверх открытого треда/правки; в ленте, прокрученной вверх, прячем, как
+          виджет отписки. */}
+      {room.prompt_text && !isGraduated && !room.dm_write_locked &&
+        (!room.is_readonly || user?.role === 'admin') &&
+        threadRootId == null && pendingEdit?.roomId !== roomId && !listScrolledUp && (
+        <RoomPrompt roomId={roomId} prompt={room.prompt_text} />
       )}
       {/* Экспедиция пройдена: вместо любого ввода — плашка. История комнаты
           (личные чаты, дневник, каналы) остаётся доступной на чтение. */}

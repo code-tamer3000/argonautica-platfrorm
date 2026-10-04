@@ -90,6 +90,8 @@ class RoomOut(BaseModel):
     # композер по этому полю; сервер 403-ит тот же путь независимо от него
     # (assert_can_post), см. docs/ROOMS.md.
     is_readonly: bool = False
+    # Вопрос-«виджет» над композером (ARG-171): клиент рисует карточку с полем ответа.
+    prompt_text: str | None = None
     created_by: int = 0
     peer_id: int | None = None  # заполняется только для type='dm'
     # Комната подгруппы потока: узел сетки и его задача. Клиент вешает на такую

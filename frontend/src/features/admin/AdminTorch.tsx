@@ -83,7 +83,7 @@ export function AdminTorch() {
 
   function handleAdminChange(value: string) {
     updateAdmin.mutate(value === '' ? null : Number(value), {
-      onSuccess: () => toast('Администратор Факела сохранён'),
+      onSuccess: () => toast('Администратор Грота сохранён'),
       onError: (err: unknown) =>
         toast(err instanceof Error ? err.message : 'Ошибка', 'error'),
     })
@@ -99,7 +99,7 @@ export function AdminTorch() {
 
   return (
     <div className={styles.page}>
-      <PageHeader title="Факел">
+      <PageHeader title="Грот">
         <span className={styles.listMeta}>
           Открыт: {rows.filter((r) => r.torch_unlocked).length} из {rows.length}
         </span>
@@ -113,7 +113,7 @@ export function AdminTorch() {
 
       <div className={styles.listItem} style={{ flexDirection: 'column', alignItems: 'stretch' }}>
         <label className={styles.listMeta} htmlFor="torch-admin">
-          Администратор Факела (с ним сводит кнопка «Подать заявку» на гейте)
+          Администратор Грота (с ним сводит кнопка «Подать заявку» на гейте)
         </label>
         <select
           id="torch-admin"

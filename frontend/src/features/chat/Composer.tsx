@@ -97,6 +97,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const pendingEdit = useUiStore((s) => s.pendingEdit)
   const setPendingEdit = useUiStore((s) => s.setPendingEdit)
   const pendingJournal = useUiStore((s) => s.pendingJournal)
+  const pendingPrompt = useUiStore((s) => s.pendingPrompt)
+  const setPendingPrompt = useUiStore((s) => s.setPendingPrompt)
   const setPendingJournal = useUiStore((s) => s.setPendingJournal)
   const pendingDraft = useUiStore((s) => s.pendingDraft)
   const setPendingDraft = useUiStore((s) => s.setPendingDraft)
@@ -118,6 +120,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const journalMeta = journalKey
     ? structure?.sections.find((s) => s.key === journalKey) ?? null
     : null
+  // Вопрос комнаты, прицепленный к композеру (ARG-171): только в основном вводе —
+  // не в треде, не при правке, не поверх дневника/пересылки.
+  const promptActive =
+    pendingPrompt?.roomId === roomId && !inThread && !editing && !journalMeta && !repost
+  // «Ответить» на вопрос → сразу в поле ввода (editorRef объявлен ниже — читаем в эффекте).
+  useEffect(() => {
+    if (promptActive) editorRef.current?.focus()
+  }, [promptActive])
   const lastTyping = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const justSentRef = useRef(false)
@@ -607,7 +617,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     setPendingQuote(null)
     setPendingPlaylist(null)
     const body: SendBody = { ...refBody(ref), ...quoteBody(q) }
-    if (content) body.content = content
+    // Прицепленный вопрос комнаты (ARG-171) — заголовок над ответом.
+    const promptHeader = promptActive ? `🔥 ${pendingPrompt!.text}` : null
+    if (promptHeader) {
+      body.content = content ? `${promptHeader}\n\n${content}` : promptHeader
+      setPendingPrompt(null)
+    } else if (content) {
+      body.content = content
+    }
     if (playlist) body.playlist_id = playlist.id
     enqueueTopLevel(body, uploads, ref, q)
   }
@@ -777,6 +794,18 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
             )}
           </button>
           <span className={styles.ctxSnippet}>{threadSnippet || '…'}</span>
+        </div>
+      )}
+      {promptActive && (
+        <div className={`${styles.contextBar} ${styles.contextBarJournal}`}>
+          <span className={styles.ctxDesc}>🔥 {pendingPrompt!.text}</span>
+          <button
+            className={styles.pendingChipX}
+            onClick={() => setPendingPrompt(null)}
+            aria-label="Убрать вопрос"
+          >
+            ✕
+          </button>
         </div>
       )}
       {quote && (

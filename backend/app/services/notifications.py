@@ -388,7 +388,7 @@ async def notify_cabin_granted(session: AsyncSession, user_id: int) -> None:
 
 
 async def notify_torch_granted(session: AsyncSession, user_id: int) -> None:
-    """Уведомить участника, что админ открыл ему раздел «Факел».
+    """Уведомить участника, что админ открыл ему раздел «Грот» (бывший «Факел»).
 
     Системное уведомление без привязки к комнате/автору (room_id/actor_id пусты) —
     клик по нему ведёт в /torch (обрабатывается на фронте по kind). Вызывается
@@ -420,7 +420,7 @@ async def notify_torch_granted(session: AsyncSession, user_id: int) -> None:
         )
         if push_allowed(user_settings, "torch_granted"):
             payload = push_service.build_payload(
-                title="Открыт доступ к разделу «Факел»",
+                title="Открыт доступ к разделу «Грот»",
                 body="Нажмите, чтобы перейти",
                 url="/torch",
                 tag="torch-granted",
