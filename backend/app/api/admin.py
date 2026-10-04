@@ -54,7 +54,12 @@ from app.schemas.feedback import (
     FeedbackOut,
     FeedbackResolveRequest,
 )
-from app.schemas.intake import IntakeCreateRequest, IntakeOut, IntakeUpdateRequest
+from app.schemas.intake import (
+    IntakeCreateRequest,
+    IntakeOut,
+    IntakeTorchRequest,
+    IntakeUpdateRequest,
+)
 from app.schemas.journal import (
     AdminCreditRequest,
     AdminDynamicsOut,
@@ -143,6 +148,19 @@ router = APIRouter(
 )
 
 
+def _intake_out(intake: Intake, user_count: int) -> IntakeOut:
+    return IntakeOut(
+        id=intake.id,
+        starts_on=intake.starts_on,
+        ends_on=intake.ends_on,
+        created_at=intake.created_at,
+        user_count=user_count,
+        graduation_popup_text=intake.graduation_popup_text,
+        torch_stub_text=intake.torch_stub_text,
+        torch_kb_intake_id=intake.torch_kb_intake_id,
+    )
+
+
 @router.get("/intakes", response_model=list[IntakeOut])
 async def list_intakes(
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -163,16 +181,7 @@ async def list_intakes(
         .outerjoin(counts, counts.c.intake_id == Intake.id)
         .order_by(Intake.starts_on.desc())
     )
-    return [
-        IntakeOut(
-            id=intake.id,
-            starts_on=intake.starts_on,
-            ends_on=intake.ends_on,
-            created_at=intake.created_at,
-            user_count=user_count,
-        )
-        for intake, user_count in rows.all()
-    ]
+    return [_intake_out(intake, user_count) for intake, user_count in rows.all()]
 
 
 @router.post("/intakes", response_model=IntakeOut, status_code=status.HTTP_201_CREATED)
@@ -191,13 +200,7 @@ async def create_intake(
             detail="Набор с такой датой старта уже существует",
         ) from exc
     await session.refresh(intake)  # created_at приходит из server_default
-    return IntakeOut(
-        id=intake.id,
-        starts_on=intake.starts_on,
-        ends_on=intake.ends_on,
-        created_at=intake.created_at,
-        user_count=0,
-    )
+    return _intake_out(intake, 0)
 
 
 @router.patch("/intakes/{intake_id}", response_model=IntakeOut)
@@ -221,13 +224,42 @@ async def update_intake(
             select(func.count()).select_from(User).where(User.intake_id == intake.id)
         )
     ) or 0
-    return IntakeOut(
-        id=intake.id,
-        starts_on=intake.starts_on,
-        ends_on=intake.ends_on,
-        created_at=intake.created_at,
-        user_count=user_count,
-    )
+    return _intake_out(intake, user_count)
+
+
+@router.patch("/intakes/{intake_id}/torch", response_model=IntakeOut)
+async def update_intake_torch(
+    intake_id: int,
+    body: IntakeTorchRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IntakeOut:
+    """«Факел» потока (ARG-169): свой текст окна выпускника и заглушки клуба и поток,
+    чью базу знаний видят члены клуба этого потока. Не переданное поле не трогаем,
+    пустая строка/null сбрасывают на общее поведение."""
+    intake = await session.get(Intake, intake_id)
+    if intake is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Набор не найден")
+    changes = body.model_dump(exclude_unset=True)
+    for field in ("graduation_popup_text", "torch_stub_text"):
+        if field in changes:
+            setattr(intake, field, (changes[field] or "").strip() or None)
+    if "torch_kb_intake_id" in changes:
+        kb_id = changes["torch_kb_intake_id"]
+        if kb_id is not None:
+            if kb_id == intake.id:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, "Поток не может ссылаться сам на себя"
+                )
+            if await session.get(Intake, kb_id) is None:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Набор не найден")
+        intake.torch_kb_intake_id = kb_id
+    await session.flush()
+    user_count = (
+        await session.scalar(
+            select(func.count()).select_from(User).where(User.intake_id == intake.id)
+        )
+    ) or 0
+    return _intake_out(intake, user_count)
 
 
 @router.get("/intakes/{intake_id}/stages", response_model=list[StageOut])

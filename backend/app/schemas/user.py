@@ -112,6 +112,8 @@ class UserOut(BaseModel):
     # входе. NULL/NULL — участник без набора или набор без текста (старые наборы).
     intake_starts_on: date | None = None
     intake_welcome_message: str | None = None
+    # Свой текст окна выпускника у потока (ARG-169); NULL — общий текст на клиенте.
+    intake_graduation_popup_text: str | None = None
     # АКТИВНЫЙ intake_id (сырой id, не только производные starts_on/welcome) —
     # нужен клиенту, чтобы сузить свой же список dm до текущего потока (пикер
     # пересылки, ForwardPicker.tsx), не завязываясь на admin-only /api/admin/users.

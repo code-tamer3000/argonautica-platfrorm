@@ -36,7 +36,7 @@ from app.models.playlist import Playlist, PlaylistTrack
 from app.models.user import User
 from app.schemas.media import AttachmentOut, PlaylistOut, PlaylistTrackOut
 from app.services.rooms import assert_room_access, load_room
-from app.services.visibility import intake_visible, plan_visible
+from app.services.visibility import intake_visible, kb_intake_ids, plan_visible
 
 logger = logging.getLogger(__name__)
 
@@ -467,6 +467,8 @@ async def assert_media_access(
     if asset.created_by == user.id:
         return
 
+    # Потоки базы знаний юзера: свой + мост члена клуба (ARG-169).
+    kb_intakes = await kb_intake_ids(session, user)
     # Медиа опубликованного материала базы знаний доступно любому участнику (§4.9),
     # с двойным фильтром поток+тариф (ARG-96) — тем же, что и assert_kb_item_visible.
     kb_items = (
@@ -482,7 +484,7 @@ async def assert_media_access(
             return
         if not kb_item.published:
             continue
-        if not intake_visible(kb_item.intake_id, user):
+        if kb_item.intake_id is not None and kb_item.intake_id not in kb_intakes:
             continue
         if await plan_visible(
             session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, kb_item.id, user.plan_id
@@ -621,7 +623,7 @@ async def assert_media_access(
                 return
             if not kb_item.published:
                 continue
-            if not intake_visible(kb_item.intake_id, user):
+            if kb_item.intake_id is not None and kb_item.intake_id not in kb_intakes:
                 continue
             if await plan_visible(
                 session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, kb_item.id, user.plan_id

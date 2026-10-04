@@ -70,6 +70,8 @@ export interface UserOut {
   // при первом входе. Оба null у бесхозного участника или у набора без текста.
   intake_starts_on: string | null
   intake_welcome_message: string | null
+  /** Свой текст окна выпускника у потока (ARG-169); null — общий текст. */
+  intake_graduation_popup_text: string | null
   // АКТИВНЫЙ intake_id (сырой id) — сужение своего dm-списка до текущего потока
   // в ForwardPicker.tsx. null у бесхозного участника.
   intake_id: number | null
@@ -483,6 +485,9 @@ export interface IntakeOut {
   ends_on: string
   created_at: string
   user_count: number
+  graduation_popup_text: string | null
+  torch_stub_text: string | null
+  torch_kb_intake_id: number | null
 }
 
 // --- Динамика (прогресс ДЗ) ---

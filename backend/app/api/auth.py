@@ -142,13 +142,19 @@ async def _me_out(session: AsyncSession, user: User) -> UserOut:
     if user.intake_id is not None:
         intake = (
             await session.execute(
-                select(Intake.starts_on, Intake.welcome_message).where(
-                    Intake.id == user.intake_id
-                )
+                select(
+                    Intake.starts_on,
+                    Intake.welcome_message,
+                    Intake.graduation_popup_text,
+                ).where(Intake.id == user.intake_id)
             )
         ).one_or_none()
         if intake is not None:
-            out.intake_starts_on, out.intake_welcome_message = intake
+            (
+                out.intake_starts_on,
+                out.intake_welcome_message,
+                out.intake_graduation_popup_text,
+            ) = intake
     return out
 
 

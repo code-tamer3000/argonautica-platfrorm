@@ -29,6 +29,7 @@ from typing import Any
 from sqlalchemy import ColumnElement, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.intake import Intake
 from app.models.plan import Plan
 from app.models.user import User
 
@@ -44,6 +45,22 @@ CHEAP_TARIFF_NAME = "Наблюдатель"
 def intake_visible(content_intake_id: int | None, user: User) -> bool:
     """Виден по потоку: NULL — всем; иначе только участнику того же набора."""
     return content_intake_id is None or content_intake_id == user.intake_id
+
+
+async def kb_intake_ids(session: AsyncSession, user: User) -> list[int]:
+    """Потоки, чья база знаний видна юзеру (ARG-169): свой + «мост» — для члена
+    клуба (`torch_unlocked`) поток `intakes.torch_kb_intake_id` его потока. Считаем
+    на лету: снятый тумблер сразу закрывает чужую базу знаний."""
+    ids: list[int] = []
+    if user.intake_id is not None:
+        ids.append(user.intake_id)
+        if user.torch_unlocked:
+            bridge = await session.scalar(
+                select(Intake.torch_kb_intake_id).where(Intake.id == user.intake_id)
+            )
+            if bridge is not None:
+                ids.append(bridge)
+    return ids
 
 
 async def cohort_plan_ranks(session: AsyncSession, intake_id: int | None) -> dict[int, int]:

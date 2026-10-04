@@ -1,7 +1,7 @@
 """Набор: когорта участников с общей датой старта 28-дневного окна Динамики."""
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Text, func
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -26,6 +26,14 @@ class Intake(Base):
     # scripts/provision_second_intake.py). NULL = поп-ап не показывается (старые
     # наборы, заведённые до этой фичи).
     welcome_message: Mapped[str | None] = mapped_column(Text)
+    # «Факел» для потока (ARG-169): свой текст окна выпускника и заглушки клуба
+    # (NULL = общий текст) и поток, чью базу знаний видят члены клуба из этого
+    # потока (`torch_unlocked`) вдобавок к своей — NULL = только своя.
+    graduation_popup_text: Mapped[str | None] = mapped_column(Text)
+    torch_stub_text: Mapped[str | None] = mapped_column(Text)
+    torch_kb_intake_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("intakes.id", ondelete="SET NULL")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
