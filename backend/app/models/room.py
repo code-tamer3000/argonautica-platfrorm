@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    SmallInteger,
     Text,
     func,
 )
@@ -95,6 +96,10 @@ class Room(Base):
     # факел?» в чате Грота): не пусто — клиент рисует карточку с полем ответа, ответ
     # уходит обычным сообщением в эту же комнату. Задаётся вручную (SQL), без API.
     prompt_text: Mapped[str | None] = mapped_column(Text)
+    # Закрепление в списках чатов (ARG-172): не NULL — комната показывается выше
+    # остальных своей секции, по возрастанию значения (1 — самая верхняя). Задаётся
+    # вручную (SQL), без API.
+    pin_order: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class RoomPlan(Base):

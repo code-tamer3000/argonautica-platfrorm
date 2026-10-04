@@ -186,6 +186,8 @@ export interface RoomOut {
   torch_scope: boolean
   /** Вопрос-«виджет» над композером комнаты (ARG-171); null — виджета нет. */
   prompt_text: string | null
+  /** Закрепление в списке чатов (ARG-172): не null — выше остальных, по возрастанию. */
+  pin_order: number | null
   // Только group: композер закрыт всем, кроме admin (ARG-142) — прячем композер,
   // сервер 403-ит тот же путь независимо от этого поля.
   is_readonly: boolean

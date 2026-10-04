@@ -204,6 +204,7 @@ export const routes: RouteEntry[] = [
     label: 'Грот',
     icon: IconFlame,
     access: { kind: 'torchAccess' },
+    badgeKey: 'torch',
     Component: withTorchGate(() => <ChatLayout tab="torch" />),
     children: [{ path: '/torch/:roomId', Component: withTorchGate(() => <ChatLayout tab="torch" />) }],
   },
