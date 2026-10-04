@@ -85,6 +85,12 @@ class Room(Base):
     torch_scope: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Общая группа клуба помимо singleton `is_torch` (ARG-169, напр. «Пещера
+    # аргонавтов»): `grant/revoke_torch_access` кладут/убирают участника во всех
+    # комнатах с `is_torch OR torch_autojoin`. Флаг ставит админ вручную.
+    torch_autojoin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class RoomPlan(Base):

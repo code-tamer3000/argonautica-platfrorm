@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.kb import KbCategory, KbItem, KbItemMedia, KbItemPlan
 from app.models.user import User
-from app.services.visibility import intake_visible, plan_visible
+from app.services.visibility import kb_intake_ids, plan_visible
 
 
 async def assert_category_exists(
@@ -43,7 +43,9 @@ async def assert_kb_item_visible(
         return
     if not item.published:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "KB item not found")
-    if not intake_visible(item.intake_id, user):
+    if item.intake_id is not None and item.intake_id not in await kb_intake_ids(
+        session, user
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "KB item not found")
     if not await plan_visible(
         session, KbItemPlan.plan_id, KbItemPlan.kb_item_id, item.id, user.plan_id

@@ -113,6 +113,26 @@ export function useUpdateIntake() {
   })
 }
 
+/** «Факел» потока (ARG-169): тексты окна выпускника/заглушки и мост к БЗ другого потока.
+ * Пустая строка/null — сброс на общее поведение. */
+export function useUpdateIntakeTorch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: number
+      graduation_popup_text: string | null
+      torch_stub_text: string | null
+      torch_kb_intake_id: number | null
+    }) => http.patch<IntakeOut>(`/api/admin/intakes/${id}/torch`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: adminIntakesKey })
+    },
+  })
+}
+
 // --- Круг Экспедиции: расписание этапов потока ------------------------------
 
 export const intakeStagesKey = (intakeId: number) => ['admin', 'intakes', intakeId, 'stages'] as const

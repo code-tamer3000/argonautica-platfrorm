@@ -112,3 +112,7 @@ that opens a full-screen chapter reader. Nothing changes server-side.
 
 - Flat comments under an item: `GET/POST /items/{id}/comments`, `DELETE /comments/{id}`.
 - Soft delete (`kb_comments.deleted_at`), by author or admin.
+
+## Мост для членов клуба «Факел» (ARG-169)
+
+Участник с `torch_unlocked=true` видит материалы не только своего потока, но и потока `intakes.torch_kb_intake_id` своего потока (если задан): `GET /kb/items`, `GET /kb/items/{id}`, комментарии и медиа материала проходят через `visibility.kb_intake_ids`. Тарифный фильтр не снимается. Подробнее — [TORCH.md](TORCH.md) «Возвращающийся поток».

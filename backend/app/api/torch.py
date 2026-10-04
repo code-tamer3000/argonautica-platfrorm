@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.db.session import get_session
+from app.models.intake import Intake
 from app.models.torch import TorchPost
 from app.models.user import User
 from app.schemas.torch import (
@@ -47,7 +48,17 @@ async def get_torch_stub(
     """Текст заглушки для закрытого клуба — та же видимость, что у пункта меню."""
     _require_torch_access(current_user)
     settings = await get_or_create_torch_settings(session)
-    return TorchStubOut(stub_text=settings.stub_text, apply_admin_id=settings.admin_user_id)
+    # Свой текст потока (ARG-169) перекрывает общий.
+    intake_text = (
+        await session.scalar(
+            select(Intake.torch_stub_text).where(Intake.id == current_user.intake_id)
+        )
+        if current_user.intake_id is not None
+        else None
+    )
+    return TorchStubOut(
+        stub_text=intake_text or settings.stub_text, apply_admin_id=settings.admin_user_id
+    )
 
 
 @router.post("/apply", response_model=TorchApplyOut)

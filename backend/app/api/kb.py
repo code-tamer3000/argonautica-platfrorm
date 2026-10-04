@@ -49,7 +49,7 @@ from app.services.kb import (
     load_kb_item,
 )
 from app.services.media import load_attachable_playlist, resolve_playlists
-from app.services.visibility import plan_visibility_clause
+from app.services.visibility import kb_intake_ids, plan_visibility_clause
 
 router = APIRouter(prefix="/api/kb", tags=["kb"])
 
@@ -358,7 +358,10 @@ async def list_items(
     if current_user.role != "admin":
         stmt = stmt.where(
             KbItem.published.is_(True),
-            or_(KbItem.intake_id.is_(None), KbItem.intake_id == current_user.intake_id),
+            or_(
+                KbItem.intake_id.is_(None),
+                KbItem.intake_id.in_(await kb_intake_ids(session, current_user)),
+            ),
             plan_visibility_clause(
                 KbItemPlan.plan_id, KbItemPlan.kb_item_id, KbItem.id, current_user.plan_id
             ),
