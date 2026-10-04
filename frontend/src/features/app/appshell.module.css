@@ -316,6 +316,26 @@
   font-size: var(--text-ui);
   line-height: 1.5;
 }
+/* Заглушка Грота: длинный текст прокручивается, а не режется сверху/снизу.
+   Центровка — через margin: auto у внутреннего блока: короткий текст по центру,
+   длинный начинается сверху и скроллится (justify-content: center резал бы оба края). */
+.torchStubScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.torchStubInner {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+}
 .torchStubText {
   margin: 0;
   max-width: 56ch;
