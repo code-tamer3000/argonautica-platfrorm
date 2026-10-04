@@ -91,6 +91,10 @@ class Room(Base):
     torch_autojoin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Вопрос-«виджет» над композером комнаты (ARG-171, напр. «О чём горит твой
+    # факел?» в чате Грота): не пусто — клиент рисует карточку с полем ответа, ответ
+    # уходит обычным сообщением в эту же комнату. Задаётся вручную (SQL), без API.
+    prompt_text: Mapped[str | None] = mapped_column(Text)
 
 
 class RoomPlan(Base):

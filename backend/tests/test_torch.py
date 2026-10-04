@@ -456,3 +456,36 @@ async def test_kb_bridge_for_club_members(
     await client.delete(f"/api/admin/torch/grant/{member.id}", headers=admin_h)
     assert not await visible()
     assert (await client.get(f"/api/kb/items/{item_id}", headers=member_h)).status_code == 404
+
+
+async def test_room_prompt_text_is_exposed_to_members(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-171: `rooms.prompt_text` приходит в RoomOut участнику комнаты, у остальных
+    комнат — null; ответ-виджет уходит обычным сообщением."""
+    admin = await make_user(role="admin")
+    member = await make_user(graduated_at=datetime.now(UTC))
+    cave = Room(
+        type="group", name="Грот", torch_scope=True, created_by=admin.id,
+        prompt_text="О чём горит твой факел?",
+    )
+    plain = Room(type="group", name="Обычная", torch_scope=True, created_by=admin.id)
+    session.add_all([cave, plain])
+    await session.flush()
+    session.add_all([
+        RoomMember(room_id=cave.id, user_id=member.id, role_in_room="member"),
+        RoomMember(room_id=plain.id, user_id=member.id, role_in_room="member"),
+    ])
+    await session.commit()
+    member_h = await _headers(client, member)
+
+    rooms = {r["id"]: r for r in (await client.get("/api/rooms", headers=member_h)).json()}
+    assert rooms[cave.id]["prompt_text"] == "О чём горит твой факел?"
+    assert rooms[plain.id]["prompt_text"] is None
+
+    send = await client.post(
+        f"/api/rooms/{cave.id}/messages",
+        headers=member_h,
+        json={"content": "🔥 О чём горит твой факел?\n\nО смысле"},
+    )
+    assert send.status_code == 201, send.text
