@@ -489,3 +489,28 @@ async def test_room_prompt_text_is_exposed_to_members(
         json={"content": "🔥 О чём горит твой факел?\n\nО смысле"},
     )
     assert send.status_code == 201, send.text
+
+
+async def test_room_pin_order_is_exposed(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    """ARG-172: `rooms.pin_order` приходит в RoomOut (клиент закрепляет такие комнаты
+    выше остальных), у обычных комнат — null."""
+    admin = await make_user(role="admin")
+    member = await make_user(graduated_at=datetime.now(UTC))
+    pinned = Room(type="group", name="Закреплённая", torch_scope=True, created_by=admin.id, pin_order=1)
+    plain = Room(type="group", name="Обычная", torch_scope=True, created_by=admin.id)
+    session.add_all([pinned, plain])
+    await session.flush()
+    session.add_all([
+        RoomMember(room_id=pinned.id, user_id=member.id, role_in_room="member"),
+        RoomMember(room_id=plain.id, user_id=member.id, role_in_room="member"),
+    ])
+    await session.commit()
+
+    rooms = {
+        r["id"]: r
+        for r in (await client.get("/api/rooms", headers=await _headers(client, member))).json()
+    }
+    assert rooms[pinned.id]["pin_order"] == 1
+    assert rooms[plain.id]["pin_order"] is None
