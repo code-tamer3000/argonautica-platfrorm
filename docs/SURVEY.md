@@ -42,7 +42,7 @@ but the path is over. Rules live in one place, `app/services/graduation.py`
   `assigned`/`returned` (`GRADUATE_BACKFILLABLE_STATUSES`, ARG-157) — the latter can
   still be submitted/commented on once, then close for good; review of someone
   else's cross-task and every other stream write stay → 403. See [TASKS.md](TASKS.md).
-- **A first-login popup after submitting** (`GraduationPopup.tsx`, `settings.graduation_popup_dismissed`,
+- **A first-login popup after submitting** (per-intake override of the text: `intakes.graduation_popup_text`, ARG-169 — see [TORCH.md](TORCH.md)) (`GraduationPopup.tsx`, `settings.graduation_popup_dismissed`,
   same dismiss pattern as `WelcomePopup`/`LimboPopup`) points at the backfillable
   tasks, the gift PDF, and the newly-opened «Факел». On the dashboard, the graduate's
   Dynamics widget slot is replaced by `ExpeditionArtifactCard.tsx` — a download button

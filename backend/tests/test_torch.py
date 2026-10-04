@@ -3,7 +3,7 @@
 Тесты бегут без lifespan (см. conftest.py) — комната клуба создаётся лениво
 первым же `grant_torch_access` (через `POST /admin/torch/grant`), не заранее.
 """
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -321,3 +321,138 @@ async def test_apply_is_idempotent_same_room(
     first = await client.post("/api/torch/apply", headers=user_h)
     second = await client.post("/api/torch/apply", headers=user_h)
     assert first.json()["room_id"] == second.json()["room_id"]
+
+
+# --- ARG-169: Факел для возвращающегося потока ------------------------------
+
+
+async def test_apply_works_with_torch_admin_from_another_intake(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Заявка выпускника потока A к админу Факела из потока B (поток админа неважен)."""
+    admin = await make_user(role="admin", intake_starts_on=date(2026, 8, 31))
+    user = await make_user(graduated_at=datetime.now(UTC), intake_starts_on=date(2026, 7, 2))
+    assert admin.intake_id != user.intake_id
+    admin_h = await _headers(client, admin)
+    await client.patch(
+        "/api/admin/torch/admin", headers=admin_h, json={"admin_user_id": admin.id}
+    )
+
+    apply = await client.post("/api/torch/apply", headers=await _headers(client, user))
+    assert apply.status_code == 200, apply.text
+
+
+async def test_grant_and_revoke_cover_all_autojoin_rooms(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    admin = await make_user(role="admin")
+    user = await make_user(graduated_at=datetime.now(UTC))
+    cave = Room(
+        type="group", name="Пещера аргонавтов", torch_scope=True, torch_autojoin=True,
+        created_by=admin.id,
+    )
+    plain = Room(type="group", name="Обычная", torch_scope=True, created_by=admin.id)
+    session.add_all([cave, plain])
+    await session.commit()
+    admin_h = await _headers(client, admin)
+
+    grant = await client.post(
+        "/api/admin/torch/grant", headers=admin_h, json={"user_ids": [user.id]}
+    )
+    assert grant.status_code in (200, 204), grant.text
+    rooms = (await session.execute(
+        select(RoomMember.room_id).where(RoomMember.user_id == user.id)
+    )).scalars().all()
+    assert cave.id in rooms and plain.id not in rooms
+    assert len(rooms) == 2  # singleton «Факел» + «Пещера»
+
+    revoke = await client.delete(f"/api/admin/torch/grant/{user.id}", headers=admin_h)
+    assert revoke.status_code in (200, 204), revoke.text
+    left = (await session.execute(
+        select(RoomMember.room_id).where(RoomMember.user_id == user.id)
+    )).scalars().all()
+    assert left == []
+
+
+async def test_intake_texts_override_popup_and_stub(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    returning = await make_user(graduated_at=datetime.now(UTC), intake_starts_on=date(2026, 7, 2))
+    other = await make_user(graduated_at=datetime.now(UTC), intake_starts_on=date(2026, 8, 31))
+    admin_h = await _headers(client, admin)
+
+    patch = await client.patch(
+        f"/api/admin/intakes/{returning.intake_id}/torch",
+        headers=admin_h,
+        json={"graduation_popup_text": "С возвращением!", "torch_stub_text": "Подай заявку"},
+    )
+    assert patch.status_code == 200, patch.text
+    assert patch.json()["torch_stub_text"] == "Подай заявку"
+
+    ret_h = await _headers(client, returning)
+    me = (await client.get("/api/auth/me", headers=ret_h)).json()
+    assert me["intake_graduation_popup_text"] == "С возвращением!"
+    stub = (await client.get("/api/torch/stub", headers=ret_h)).json()
+    assert stub["stub_text"] == "Подай заявку"
+
+    other_h = await _headers(client, other)
+    assert (await client.get("/api/auth/me", headers=other_h)).json()[
+        "intake_graduation_popup_text"
+    ] is None
+    assert (await client.get("/api/torch/stub", headers=other_h)).json()["stub_text"] != "Подай заявку"
+
+    # пустая строка сбрасывает на общий текст
+    await client.patch(
+        f"/api/admin/intakes/{returning.intake_id}/torch",
+        headers=admin_h,
+        json={"torch_stub_text": ""},
+    )
+    assert (await client.get("/api/torch/stub", headers=ret_h)).json()["stub_text"] != "Подай заявку"
+
+
+async def test_kb_bridge_for_club_members(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    """Член клуба потока A (с мостом на B) видит и комментирует материалы B; без
+    тумблера или после снятия — нет."""
+    admin = await make_user(role="admin")
+    member = await make_user(graduated_at=datetime.now(UTC), intake_starts_on=date(2026, 7, 2))
+    host = await make_user(intake_starts_on=date(2026, 8, 31))
+    admin_h = await _headers(client, admin)
+    member_h = await _headers(client, member)
+
+    created = await client.post(
+        "/api/kb/items",
+        headers=admin_h,
+        json={"title": "Материал потока B", "body": "x", "published": True,
+              "intake_id": host.intake_id},
+    )
+    assert created.status_code == 201, created.text
+    item_id = created.json()["id"]
+
+    async def visible() -> bool:
+        listed = await client.get("/api/kb/items", headers=member_h)
+        return item_id in {i["id"] for i in listed.json()}
+
+    assert not await visible()
+    await client.patch(
+        f"/api/admin/intakes/{member.intake_id}/torch",
+        headers=admin_h,
+        json={"torch_kb_intake_id": host.intake_id},
+    )
+    assert not await visible()  # мост работает только вместе с тумблером клуба
+
+    await client.post("/api/admin/torch/grant", headers=admin_h, json={"user_ids": [member.id]})
+    assert await visible()
+    me = (await client.get("/api/auth/me", headers=member_h)).json()
+    assert me["kb_bridge_intake_id"] == host.intake_id and me["kb_bridge_starts_on"]
+    assert (await client.get(f"/api/kb/items/{item_id}", headers=member_h)).status_code == 200
+    comment = await client.post(
+        f"/api/kb/items/{item_id}/comments", headers=member_h, json={"body": "спасибо"}
+    )
+    assert comment.status_code == 201, comment.text
+
+    await client.delete(f"/api/admin/torch/grant/{member.id}", headers=admin_h)
+    assert not await visible()
+    assert (await client.get(f"/api/kb/items/{item_id}", headers=member_h)).status_code == 404

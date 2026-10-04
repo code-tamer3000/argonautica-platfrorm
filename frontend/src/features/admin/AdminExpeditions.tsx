@@ -5,6 +5,7 @@ import {
   useIntakeStages,
   useSetIntakeStages,
   useUpdateIntake,
+  useUpdateIntakeTorch,
 } from '../../api/admin'
 import { useTasks } from '../../api/tasks'
 import { Modal } from '../../components/Overlay'
@@ -65,6 +66,7 @@ export function AdminExpeditions() {
   const activeIntake: IntakeOut | undefined = intakes[0]
   const createIntake = useCreateIntake()
   const updateIntake = useUpdateIntake()
+  const updateIntakeTorch = useUpdateIntakeTorch()
 
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const setCurrentIntakeId = useUiStore((s) => s.setAdminCurrentIntakeId)
@@ -77,6 +79,33 @@ export function AdminExpeditions() {
   // Edit expedition window modal (только ends_on — starts_on без API, см. ARG-89)
   const [editIntakeWindow, setEditIntakeWindow] = useState<IntakeOut | null>(null)
   const [editIntakeEndsOn, setEditIntakeEndsOn] = useState('')
+
+  // «Факел» потока (ARG-169): свои тексты окна/заглушки и мост к БЗ другого потока
+  const [torchIntake, setTorchIntake] = useState<IntakeOut | null>(null)
+  const [torchPopup, setTorchPopup] = useState('')
+  const [torchStub, setTorchStub] = useState('')
+  const [torchKbIntake, setTorchKbIntake] = useState('')
+
+  function handleSaveTorch() {
+    if (!torchIntake) return
+    updateIntakeTorch.mutate(
+      {
+        id: torchIntake.id,
+        graduation_popup_text: torchPopup.trim() || null,
+        torch_stub_text: torchStub.trim() || null,
+        torch_kb_intake_id: torchKbIntake ? Number(torchKbIntake) : null,
+      },
+      {
+        onSuccess: () => {
+          toast('Настройки «Факела» потока сохранены')
+          setTorchIntake(null)
+        },
+        onError: (err: unknown) => {
+          toast(err instanceof Error ? err.message : 'Ошибка', 'error')
+        },
+      },
+    )
+  }
 
   // Круг Экспедиции: расписание этапов потока
   const [stagesIntake, setStagesIntake] = useState<IntakeOut | null>(null)
@@ -186,10 +215,79 @@ export function AdminExpeditions() {
               >
                 Дата окончания
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setTorchIntake(intake)
+                  setTorchPopup(intake.graduation_popup_text ?? '')
+                  setTorchStub(intake.torch_stub_text ?? '')
+                  setTorchKbIntake(intake.torch_kb_intake_id != null ? String(intake.torch_kb_intake_id) : '')
+                }}
+              >
+                Факел потока
+              </Button>
             </div>
           </div>
         ))}
       </div>
+
+      {/* «Факел» потока (ARG-169) */}
+      {torchIntake && (
+        <Modal
+          title={`Факел: экспедиция ${intakeDate(torchIntake.starts_on)}`}
+          onClose={() => setTorchIntake(null)}
+          closeOnBackdrop={false}
+        >
+          <div className={styles.form}>
+            <div className={styles.formRow}>
+              <label htmlFor="torch_popup">Окно выпускника (пусто — общий текст)</label>
+              <textarea
+                id="torch_popup"
+                className={styles.input}
+                rows={5}
+                value={torchPopup}
+                onChange={(e) => setTorchPopup(e.target.value)}
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label htmlFor="torch_stub">Заглушка клуба (пусто — общий текст)</label>
+              <textarea
+                id="torch_stub"
+                className={styles.input}
+                rows={4}
+                value={torchStub}
+                onChange={(e) => setTorchStub(e.target.value)}
+              />
+            </div>
+            <div className={styles.formRow}>
+              <label htmlFor="torch_kb">База знаний для членов клуба — дополнительно</label>
+              <select
+                id="torch_kb"
+                className={styles.input}
+                value={torchKbIntake}
+                onChange={(e) => setTorchKbIntake(e.target.value)}
+              >
+                <option value="">Только своя</option>
+                {intakes
+                  .filter((i) => i.id !== torchIntake.id)
+                  .map((i) => (
+                    <option key={i.id} value={i.id}>
+                      Экспедиция {intakeDate(i.starts_on)}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className={styles.formActions}>
+              <Button variant="outline" onClick={() => setTorchIntake(null)}>
+                Отмена
+              </Button>
+              <Button onClick={handleSaveTorch} disabled={updateIntakeTorch.isPending}>
+                {updateIntakeTorch.isPending ? 'Сохраняем…' : 'Сохранить'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Edit expedition window modal */}
       {editIntakeWindow && (

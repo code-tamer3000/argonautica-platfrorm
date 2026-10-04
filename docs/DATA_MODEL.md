@@ -65,6 +65,9 @@ content (channels, common tasks, KB items) can be scoped to one intake — see
 | starts_on | DATE | NOT NULL, UNIQUE | Dynamics window start for every user in this intake |
 | ends_on | DATE | NOT NULL | window close date; after it Dynamics is a read-only archive for the intake's users (frozen stats, no new entries/pardons). Independent of the 28-day Dynamics duration — set explicitly, not derived from `starts_on` |
 | welcome_message | TEXT | NULL | welcome popup text on first login (ARG-106) — same copy as the news post, set by `scripts/provision_second_intake.py` (`NEWS_BODY`). NULL = no popup (intakes seeded before this feature) |
+| graduation_popup_text | TEXT | NULL | own copy of the graduate popup for this intake (ARG-169); NULL = the common text on the client |
+| torch_stub_text | TEXT | NULL | own club-gate stub text for this intake (ARG-169); NULL = `torch_settings.stub_text` |
+| torch_kb_intake_id | BIGINT | FK intakes ON DELETE SET NULL, NULL | members of this intake with `torch_unlocked` additionally see the KB of that intake (ARG-169); NULL = own KB only |
 | created_at | TIMESTAMPTZ | NOT NULL | |
 
 **Cohort-pending gate (ARG-106).** While `today < intake.starts_on`, a participant's own

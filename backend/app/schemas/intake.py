@@ -44,3 +44,18 @@ class IntakeOut(BaseModel):
     ends_on: date
     created_at: datetime
     user_count: int = 0
+    # «Факел» для потока (ARG-169) — см. models/intake.py.
+    graduation_popup_text: str | None = None
+    torch_stub_text: str | None = None
+    torch_kb_intake_id: int | None = None
+
+
+class IntakeTorchRequest(BaseModel):
+    """PATCH /api/admin/intakes/{id}/torch: тексты клуба потока и мост к базе знаний
+    другого потока. Поле не передано — не меняется; пустая строка/null — сброс."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    graduation_popup_text: str | None = None
+    torch_stub_text: str | None = None
+    torch_kb_intake_id: int | None = None

@@ -4,6 +4,7 @@ import { useCreateKbItem, useDeleteKbItem, useKbCategories, useKbItems, useUpdat
 import { BackButton } from '../../components/BackButton'
 import ph from '../../components/pageHeader.module.css'
 import { Spinner } from '../../components/Spinner'
+import { Segmented } from '../../components/Segmented'
 import { Badge } from '../../components/Badge'
 import { Button } from '../../components/Button'
 import { cardClass } from '../../components/Card'
@@ -42,11 +43,24 @@ export function KbList() {
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const intakeFiltered = isAdmin && currentIntakeId != null
 
+  // Мост БЗ (ARG-169): член клуба видит и материалы другого потока — не в кучу, а
+  // отдельным переключателем «Мой поток / Поток <дата>». Общие (без потока) — в «Моём».
+  const bridgeId = !isAdmin ? (user?.kb_bridge_intake_id ?? null) : null
+  const [scope, setScope] = useState<'own' | 'bridge'>('own')
+  const bridgeLabel = user?.kb_bridge_starts_on
+    ? `Поток ${new Date(`${user.kb_bridge_starts_on}T00:00:00`).toLocaleDateString('ru-RU', {
+        day: 'numeric',
+        month: 'long',
+      })}`
+    : 'Другой поток'
+
   const allItems = data ?? []
   const items = allItems.filter(
     (item) =>
       item.title.toLowerCase().includes(search.toLowerCase()) &&
-      (!intakeFiltered || item.intake_id == null || item.intake_id === currentIntakeId),
+      (!intakeFiltered || item.intake_id == null || item.intake_id === currentIntakeId) &&
+      (bridgeId == null ||
+        (scope === 'bridge' ? item.intake_id === bridgeId : item.intake_id !== bridgeId)),
   )
   const offlineEmpty = useIsOfflineEmpty({ isLoading, isError, dataUpdatedAt, isEmpty: items.length === 0 })
 
@@ -173,6 +187,17 @@ export function KbList() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+      {bridgeId != null && (
+        <Segmented
+          label="Поток материалов"
+          value={scope}
+          onChange={setScope}
+          options={[
+            { value: 'own', label: 'Мой поток' },
+            { value: 'bridge', label: bridgeLabel },
+          ]}
+        />
+      )}
       {isLoading && <div className="center" style={{ padding: 40 }}><Spinner /></div>}
       {!isLoading && items.length === 0 && (
         <div className="center muted" style={{ padding: 40 }}>

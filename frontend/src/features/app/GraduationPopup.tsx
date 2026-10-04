@@ -21,6 +21,9 @@ export function GraduationPopup() {
   const [closed, setClosed] = useState(false)
 
   const dismissed = !!user?.settings.graduation_popup_dismissed
+  // Свой текст потока (ARG-169, напр. вернувшиеся участники первого потока) заменяет
+  // общее поздравление целиком; кнопка в «Факел» остаётся.
+  const customText = user?.intake_graduation_popup_text?.trim() || null
   if (!user || !user.graduated_at || dismissed || closed) return null
 
   async function handleClose() {
@@ -39,18 +42,30 @@ export function GraduationPopup() {
   }
 
   return (
-    <Modal title="Экспедиция пройдена" onClose={handleClose} closeOnBackdrop={false}>
-      <p className={styles.welcomeText}>Поздравляем с завершением экспедиции!</p>
-      <p className={styles.welcomeText}>
-        Если что-то из заданий не успел сдать — можно доздать, они остались доступны
-        в разделе «Задачи».
-      </p>
-      <p className={styles.welcomeText}>
-        Тебя ждёт артефакт экспедиции — скачать его можно на главной.
-      </p>
-      <p className={styles.welcomeText}>
-        А ещё тебе открылся клуб «Факел» — переходи в него, чтобы узнать подробности.
-      </p>
+    <Modal title={customText ? 'С возвращением!' : 'Экспедиция пройдена'} onClose={handleClose} closeOnBackdrop={false}>
+      {customText ? (
+        customText
+          .split(/\n{2,}/)
+          .map((para, i) => (
+            <p key={i} className={styles.welcomeText} style={{ whiteSpace: 'pre-wrap' }}>
+              {para}
+            </p>
+          ))
+      ) : (
+        <>
+          <p className={styles.welcomeText}>Поздравляем с завершением экспедиции!</p>
+          <p className={styles.welcomeText}>
+            Если что-то из заданий не успел сдать — можно доздать, они остались доступны
+            в разделе «Задачи».
+          </p>
+          <p className={styles.welcomeText}>
+            Тебя ждёт артефакт экспедиции — скачать его можно на главной.
+          </p>
+          <p className={styles.welcomeText}>
+            А ещё тебе открылся клуб «Факел» — переходи в него, чтобы узнать подробности.
+          </p>
+        </>
+      )}
       <label className={styles.welcomeCheckboxRow}>
         <input
           type="checkbox"
