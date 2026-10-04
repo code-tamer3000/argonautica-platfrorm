@@ -47,7 +47,8 @@ export function TorchLocked() {
   }
 
   return (
-    <div className={`center grow col ${styles.observerBlocked}`}>
+    <div className={styles.torchStubScroll}>
+      <div className={styles.torchStubInner}>
       <span className={styles.observerBlockedIcon} aria-hidden>
         <IconFlame />
       </span>
@@ -64,6 +65,7 @@ export function TorchLocked() {
           )}
         </>
       )}
+      </div>
     </div>
   )
 }
