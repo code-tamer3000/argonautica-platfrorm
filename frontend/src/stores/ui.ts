@@ -52,6 +52,11 @@ interface UiState {
   pendingQuote: PendingQuote | null
   setPendingQuote: (q: PendingQuote | null) => void
 
+  // Вопрос комнаты (`rooms.prompt_text`, ARG-171), «прицепленный» к родному композеру:
+  // следующее сообщение уйдёт с заголовком-вопросом; крестик в композере снимает.
+  pendingPrompt: { roomId: number; text: string } | null
+  setPendingPrompt: (p: { roomId: number; text: string } | null) => void
+
   // Правка, ожидающая сохранения (см. PendingEdit).
   pendingEdit: PendingEdit | null
   setPendingEdit: (e: PendingEdit | null) => void
@@ -102,6 +107,9 @@ export const useUiStore = create<UiState>((set) => ({
 
   pendingQuote: null,
   setPendingQuote: (q) => set({ pendingQuote: q }),
+
+  pendingPrompt: null,
+  setPendingPrompt: (p) => set({ pendingPrompt: p }),
 
   pendingEdit: null,
   setPendingEdit: (e) => set({ pendingEdit: e }),
