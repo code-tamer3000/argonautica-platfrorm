@@ -1468,3 +1468,27 @@ a.mention:hover { text-decoration: underline; }
   transform: translateY(-48px) scale(1);
 }
 .scrollDownBtn:hover { color: var(--text-primary); }
+
+/* Виджет-вопрос над композером (RoomPrompt, ARG-171). */
+.promptBar {
+  display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  flex: 0 0 auto; width: 100%; box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--color-frame-deep);
+  background: var(--bg-surface);
+}
+.promptTitle {
+  flex: 1 1 12rem; min-width: 0;
+  color: var(--text-primary); font-family: var(--font-t4);
+  overflow-wrap: break-word;
+}
+.promptInput {
+  flex: 1 1 100%; box-sizing: border-box; resize: vertical;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
+  border-radius: var(--radius-btn); color: var(--text-primary);
+  font: inherit; line-height: 1.5;
+}
+.promptActions {
+  display: flex; gap: var(--space-2); justify-content: flex-end; flex: 1 1 100%;
+}

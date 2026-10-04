@@ -291,3 +291,7 @@ personal/news) accept `intake_id`/`plan_ids`.
 ## Calendar link
 
 Events may be room-scoped (`calendar_events.room_id`); their visibility follows room access. See [CALENDAR.md](CALENDAR.md).
+
+## Вопрос-виджет комнаты (`rooms.prompt_text`, ARG-171)
+
+Необязательный вопрос над композером комнаты, напр. «О чём горит твой факел?» в чате Грота. Не пусто → клиент (`RoomPrompt.tsx`, рисуется в `ChatPane` над композером, когда в комнате можно писать, нет открытого треда/правки и лента не прокручена вверх) показывает карточку «Ответить»; ответ уходит **обычным сообщением** в эту же комнату (`POST /api/rooms/{id}/messages`, текст `🔥 <вопрос>\n\n<ответ>`), поэтому видят его все участники комнаты, автор правит/удаляет как любое своё сообщение, частоты нет. Колонка отдаётся в `RoomOut.prompt_text`; API для её правки нет — задаётся вручную (`UPDATE rooms SET prompt_text = '…' WHERE id = …`).
