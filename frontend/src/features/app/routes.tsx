@@ -201,7 +201,7 @@ export const routes: RouteEntry[] = [
   },
   {
     path: '/torch',
-    label: 'Факел',
+    label: 'Грот',
     icon: IconFlame,
     access: { kind: 'torchAccess' },
     Component: withTorchGate(() => <ChatLayout tab="torch" />),
