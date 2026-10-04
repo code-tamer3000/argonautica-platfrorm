@@ -445,6 +445,8 @@ async def test_kb_bridge_for_club_members(
 
     await client.post("/api/admin/torch/grant", headers=admin_h, json={"user_ids": [member.id]})
     assert await visible()
+    me = (await client.get("/api/auth/me", headers=member_h)).json()
+    assert me["kb_bridge_intake_id"] == host.intake_id and me["kb_bridge_starts_on"]
     assert (await client.get(f"/api/kb/items/{item_id}", headers=member_h)).status_code == 200
     comment = await client.post(
         f"/api/kb/items/{item_id}/comments", headers=member_h, json={"body": "спасибо"}

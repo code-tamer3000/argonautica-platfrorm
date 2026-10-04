@@ -72,6 +72,9 @@ export interface UserOut {
   intake_welcome_message: string | null
   /** Свой текст окна выпускника у потока (ARG-169); null — общий текст. */
   intake_graduation_popup_text: string | null
+  /** Мост БЗ (ARG-169): поток, чью КБ член клуба видит вдобавок к своей. */
+  kb_bridge_intake_id: number | null
+  kb_bridge_starts_on: string | null
   // АКТИВНЫЙ intake_id (сырой id) — сужение своего dm-списка до текущего потока
   // в ForwardPicker.tsx. null у бесхозного участника.
   intake_id: number | null
