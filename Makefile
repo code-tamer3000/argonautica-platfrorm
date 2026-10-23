@@ -114,6 +114,13 @@ local-up:
 			-keyout /certs/argonautica-systems.ru.key -out /certs/argonautica-systems.ru.crt \
 			-subj "/CN=argonautica-systems.ru" \
 			-addext "subjectAltName=DNS:argonautica-systems.ru,DNS:www.argonautica-systems.ru" 2>/dev/null
+	@# То же для заглушки agraba.art (второй захардкоженный vhost шлюза).
+	@test -f docker/nginx/certs/agraba.art.crt || \
+		docker run --rm -v "$(CURDIR)/docker/nginx/certs":/certs nginx:1.27 \
+			openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+			-keyout /certs/agraba.art.key -out /certs/agraba.art.crt \
+			-subj "/CN=agraba.art" \
+			-addext "subjectAltName=DNS:agraba.art,DNS:www.agraba.art" 2>/dev/null
 	$(LOCAL_DCT) build backend-blue frontend
 	$(LOCAL_DCT) run --rm migrate
 	$(LOCAL_DCT) up -d postgres redis minio backend-blue transcode-worker frontend nginx
