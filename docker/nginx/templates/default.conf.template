@@ -387,6 +387,42 @@ server {
     }
 }
 
+# --- Заглушка agraba.art (apex + www) ---
+# Отдельный сайт на этом же сервере: статика в контейнере `agraba-site` (nginx:alpine,
+# контент /root/agraba-site, вне репозитория), сеть `gateway`. Паттерн один в один как у
+# визитки выше, включая ленивый резолв апстрима и отсутствие HSTS. Домен захардкожен:
+# прод-compose не пробрасывает под него переменную. Без блока agraba.art падает в
+# :443 catch-all (серт платформы + return 444).
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    # HTTP/3 (QUIC). reuseport — только в catch-all выше (одна пара адрес:порт).
+    listen 443 quic;
+    listen [::]:443 quic;
+    server_name agraba.art www.agraba.art;
+
+    ssl_certificate     /etc/nginx/certs/agraba.art.crt;
+    ssl_certificate_key /etc/nginx/certs/agraba.art.key;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Alt-Svc 'h3=":443"; ma=86400' always;
+
+    resolver 127.0.0.11 valid=10s;
+
+    location / {
+        set $agraba_upstream http://agraba-site:80;
+        proxy_pass $agraba_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
 # --- Превью визитки: preview.argonautica-systems.ru ---
 # Билд фичер-ветки сайта (не main), тот же паттерн отдельного контейнера
 # `argonautica-site-preview` (nginx:alpine) в сети `gateway`, что и боевая

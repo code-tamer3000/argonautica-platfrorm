@@ -36,6 +36,16 @@
 - **`MINIO_PUBLIC_ENDPOINT` no longer carries a port** (`https://staging.argonautica-systems.ru`). Now that staging sits behind the standard `:443`, the signed Host matches what staging-nginx forwards with plain `Host $host` — the old `Host $http_host` port-preservation hack (needed only for the nonstandard `:8443`) is gone.
 - Known staging gotcha: after `up -d` recreates containers they get new IPs; nginx caches upstream IPs → 502 until nginx is recreated. `deploy-staging.sh` runs `up -d --force-recreate nginx` for exactly this — and `--force-recreate` (not `restart`) is also required so envsubst re-renders the template after a config change. This is now separate from — and does not replace — recreating **prod** nginx if the staging-facing block in its own template changed.
 
+## Заглушка `agraba.art`
+
+Отдельный статичный сайт на том же сервере и том же шлюзе; платформы не касается.
+
+- **Контент:** `/root/agraba-site` на сервере (вне репо; исходник — локальная папка `~/projects/sites/agraba`, на сервер едут только `index.html` и `favicon.svg`). Контейнер `agraba-site` (nginx:alpine) — свой compose-проект `docker/agraba-site.compose.yml`, сеть `gateway`, порты не публикует; nginx-конфиг общий с визиткой (`docker/argonautica-site/nginx.conf`: 404 на dotfiles/php). Запуск: `docker compose -p agraba-site -f docker/agraba-site.compose.yml up -d` из `/opt/platform`.
+- **Шлюз:** в шаблоне прод-nginx захардкожен блок `server_name agraba.art www.agraba.art` (паттерн визитки: ленивый резолв `agraba-site`, без HSTS). Порт 80 править не нужно: единственный :80-блок шаблона и так default и для ACME, и для редиректа на https по `$host`. Без блока домен падает в :443 catch-all (серт платформы + `return 444`).
+- **TLS:** свой Let's Encrypt (`agraba.art` + `www`), каталог `/opt/platform/letsencrypt-agraba`, первичная выдача — `certbot/certbot certonly --webroot` контейнером, продление `docker/nginx/renew-agraba-cert.sh` (cron, recreate прод-nginx). Блок шаблона требует `certs/agraba.art.{crt,key}` — без них nginx не стартует; `make local-up` сам делает self-signed.
+- **Обновить заглушку:** `scp index.html favicon.svg platform-new:/root/agraba-site/` — рестарт не нужен.
+- Правка шаблона применяется только `up -d --force-recreate --no-deps nginx` (deploy.sh nginx не пересоздаёт).
+
 ## Marketing site (`argonautica-systems.ru`)
 
 The apex domain is **not** the platform — it's the static marketing одностраничник, served by the *same* prod gateway.
