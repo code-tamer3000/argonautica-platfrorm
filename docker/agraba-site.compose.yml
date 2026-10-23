@@ -1,0 +1,27 @@
+# Заглушка agraba.art — отдельный compose-проект (`-p agraba-site`), по образцу
+# argonautica-site.compose.yml: deploy.sh его не видит, выкат платформы его не трогает.
+# Наружу ничего не публикует: TLS/HTTP/3 терминирует прод-nginx и проксирует сюда по
+# имени `agraba-site` через внешнюю сеть `gateway`.
+#
+# Управление (на сервере, из /opt/platform):
+#   docker compose -p agraba-site -f docker/agraba-site.compose.yml up -d
+#
+# Контент лежит ВНЕ репозитория (`/root/agraba-site`, исходники — отдельная папка
+# разработчика); сюда монтируется read-only, путь переопределяется SITE_ROOT.
+# Конфиг nginx общий с визиткой (закрывает dotfiles и php) — отдельный не нужен.
+services:
+  site:
+    image: nginx:alpine
+    container_name: agraba-site
+    volumes:
+      - ${SITE_ROOT:-/root/agraba-site}:/usr/share/nginx/html:ro
+      - ./argonautica-site/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      gateway:
+        aliases:
+          - agraba-site
+    restart: unless-stopped
+
+networks:
+  gateway:
+    external: true
