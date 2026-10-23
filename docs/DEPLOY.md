@@ -40,10 +40,10 @@
 
 Отдельный статичный сайт на том же сервере и том же шлюзе; платформы не касается.
 
-- **Контент:** `/root/agraba-site` на сервере (вне репо; исходник — локальная папка `~/projects/sites/agraba`, на сервер едут только `index.html` и `favicon.svg`). Контейнер `agraba-site` (nginx:alpine) — свой compose-проект `docker/agraba-site.compose.yml`, сеть `gateway`, порты не публикует; nginx-конфиг общий с визиткой (`docker/argonautica-site/nginx.conf`: 404 на dotfiles/php). Запуск: `docker compose -p agraba-site -f docker/agraba-site.compose.yml up -d` из `/opt/platform`.
+- **Контент:** `/root/agraba-site` на сервере (вне репо; исходник — локальная папка `~/projects/sites/agraba`, на сервер едут `index.html`, `favicon.svg` и `IMG_2837.MOV` (фон-видео, `index.html` ссылается на него относительным путём); дубль `*_standalone.html` и `*:Zone.Identifier` не нужны). Контейнер `agraba-site` (nginx:alpine) — свой compose-проект `docker/agraba-site.compose.yml`, сеть `gateway`, порты не публикует; nginx-конфиг общий с визиткой (`docker/argonautica-site/nginx.conf`: 404 на dotfiles/php). Запуск: `docker compose -p agraba-site -f docker/agraba-site.compose.yml up -d` из `/opt/platform`.
 - **Шлюз:** в шаблоне прод-nginx захардкожен блок `server_name agraba.art www.agraba.art` (паттерн визитки: ленивый резолв `agraba-site`, без HSTS). Порт 80 править не нужно: единственный :80-блок шаблона и так default и для ACME, и для редиректа на https по `$host`. Без блока домен падает в :443 catch-all (серт платформы + `return 444`).
 - **TLS:** свой Let's Encrypt (`agraba.art` + `www`), каталог `/opt/platform/letsencrypt-agraba`, первичная выдача — `certbot/certbot certonly --webroot` контейнером, продление `docker/nginx/renew-agraba-cert.sh` (cron, recreate прод-nginx). Блок шаблона требует `certs/agraba.art.{crt,key}` — без них nginx не стартует; `make local-up` сам делает self-signed.
-- **Обновить заглушку:** `scp index.html favicon.svg platform-new:/root/agraba-site/` — рестарт не нужен.
+- **Обновить заглушку:** `scp index.html favicon.svg IMG_2837.MOV platform-new:/root/agraba-site/` — рестарт не нужен.
 - Правка шаблона применяется только `up -d --force-recreate --no-deps nginx` (deploy.sh nginx не пересоздаёт).
 
 ## Marketing site (`argonautica-systems.ru`)
