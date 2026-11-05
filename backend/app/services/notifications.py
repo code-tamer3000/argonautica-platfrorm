@@ -213,7 +213,7 @@ async def on_new_message(
             await session.execute(
                 select(User.id, User.settings).where(User.id.in_(kind_by_uid))
             )
-        ).all()
+        ).tuples().all()
         settings_by_uid: dict[int, dict[str, object]] = {
             uid: s for uid, s in rows_settings
         }
@@ -315,7 +315,7 @@ async def broadcast_admin(
         await session.execute(
             select(User.id, User.settings).where(User.is_observer.is_(False))
         )
-    ).all()
+    ).tuples().all()
     preview = _preview(body)
     for uid, user_settings in users:
         row = Notification(user_id=uid, kind="admin", title=title, body=body)
@@ -491,7 +491,7 @@ async def notify_survey_submitted(session: AsyncSession, submitter_name: str) ->
             await session.execute(
                 select(User.id, User.settings).where(User.role == "admin")
             )
-        ).all()
+        ).tuples().all()
         if not admins:
             return
         admin_ids = [uid for uid, _ in admins]

@@ -1011,7 +1011,7 @@ async def get_all_dynamics(
         )
         chat_room_id = version.chat_room_id if version else None
         if chat_room_id:
-            rows = await session.execute(
+            seg_rows = await session.execute(
                 select(Message.sender_id, Message.created_at, Message.content).where(
                     Message.room_id == chat_room_id,
                     Message.sender_id.in_(user_ids),
@@ -1022,7 +1022,7 @@ async def get_all_dynamics(
                 )
             )
         elif personal_room_ids:
-            rows = await session.execute(
+            seg_rows = await session.execute(
                 select(Room.created_by, Message.created_at, Message.content)
                 .join(Room, Room.id == Message.room_id)
                 .where(
@@ -1035,7 +1035,7 @@ async def get_all_dynamics(
             )
         else:
             continue
-        for uid, created_at, content in rows.all():
+        for uid, created_at, content in seg_rows.all():
             msgs_by_user.setdefault(uid, []).append((created_at.date(), content))
 
     # Кто отправил ЛЮБОЕ сообщение сегодня (активность на платформе).

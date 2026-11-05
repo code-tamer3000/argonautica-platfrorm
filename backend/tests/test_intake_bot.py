@@ -56,6 +56,10 @@ class FakeResponse:
         return self._body
 
 
+# message_id, который «Telegram» возвращает в result на любой успешный вызов.
+FAKE_SENT_MESSAGE_ID = 777
+
+
 class FakeClient:
     """Минимальный httpx-совместимый клиент: пишет (метод, payload) в calls."""
 
@@ -68,7 +72,7 @@ class FakeClient:
         method = url.rsplit("/", 1)[-1]
         self.calls.append((method, json))
         if self._ok:
-            return FakeResponse({"ok": True, "result": {"message_id": 777}})
+            return FakeResponse({"ok": True, "result": {"message_id": FAKE_SENT_MESSAGE_ID}})
         return FakeResponse({"ok": False, "description": self._description})
 
     def methods(self) -> list[str]:
@@ -759,9 +763,11 @@ async def test_accept_with_comment_moves_status_and_asks_admin_for_comment(
     assert all(p["chat_id"] != app.tg_id for p in sends)
     invite = sent_to(client, admin_chat)
     assert "комментарий" in invite["text"].lower()
-    stored = await intake_bot.redis_client.get(f"intakebot:acmap:{invite['message_id']}")
+    # message_id приглашения приходит в ответе Telegram (result), а не в payload.
+    key = f"intakebot:acmap:{FAKE_SENT_MESSAGE_ID}"
+    stored = await intake_bot.redis_client.get(key)
     assert stored == str(app.id)
-    await intake_bot.redis_client.delete(f"intakebot:acmap:{invite['message_id']}")
+    await intake_bot.redis_client.delete(key)
 
 
 async def test_admin_reply_with_comment_delivers_accept_message_then_plan_list(
@@ -786,7 +792,7 @@ async def test_admin_reply_with_comment_delivers_accept_message_then_plan_list(
         },
     )
     await session.commit()
-    invite_id = sent_to(client, admin_chat)["message_id"]
+    invite_id = FAKE_SENT_MESSAGE_ID  # id приглашения из ответа Telegram
 
     client = FakeClient()
     await intake_bot._handle_message(
@@ -832,7 +838,7 @@ async def test_admin_reply_with_photo_only_uses_send_photo(
         },
     )
     await session.commit()
-    invite_id = sent_to(client, admin_chat)["message_id"]
+    invite_id = FAKE_SENT_MESSAGE_ID  # id приглашения из ответа Telegram
 
     client = FakeClient()
     await intake_bot._handle_message(

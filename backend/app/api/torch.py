@@ -98,14 +98,14 @@ async def list_torch_contacts(
     будет говорить, когда откроют, не запрещено.
     """
     _require_torch_access(current_user)
-    candidates = (
+    candidates = list((
         await session.execute(
             select(User).where(
                 User.id != current_user.id,
                 (User.role == "admin") | (User.torch_unlocked.is_(True)),
             )
         )
-    ).scalars().all()
+    ).scalars().all())
     # Админы — блоком после участников клуба, тем же порядком, что и обычный
     # контакт-лист (см. list_contacts, app/api/users.py) — привычная раскладка.
     candidates.sort(key=lambda u: (u.role == "admin", u.display_name))

@@ -106,7 +106,7 @@ used across 15+ frontend files), never sliced by visibility. The roster for
   hidden composer) and surfaced to the client as `RoomOut.dm_write_locked` (dm-only,
   computed per-viewer in `list_rooms`/`get_room`) so the frontend can hide the
   composer instead of letting the participant hit a dead-end send button. A
-  navigator has no such asymmetry — a normal two-way dm.
+  navigator has no such asymmetry — a normal two-way dm. `torch_scope` dms (Torch application, see TORCH.md) are exempt from the rank check too.
 - **Unlocking on admin outreach** — the moment the non-navigator admin themselves
   sends (or forwards) a message into the dm, `rooms.dm_unlocked_by_admin` flips to
   `true` and the asymmetry is gone for that dm **permanently** (`dm_write_allowed`
