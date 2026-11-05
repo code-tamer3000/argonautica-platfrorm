@@ -34,8 +34,9 @@ services:
       retries: 30
 
   minio:
-    # Тот же релиз, что на проде. Docker Hub minio/minio удалён (404) — берём с quay.io.
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # Тот же релиз, что на проде. minio убрал образы из публичных реестров (Docker Hub 404,
+    # quay.io 401), поэтому берём наше зеркало (см. .github/workflows/mirror-minio.yml).
+    image: ghcr.io/code-tamer3000/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data
     environment:
       MINIO_ROOT_USER: argo_test
