@@ -6,9 +6,9 @@
 
 Replaces the manual "person messages a manager, pays, gets added by hand" path with a
 self-service Telegram funnel: anketa → admin accepts → tariff → payment receipt → admin
-confirms → platform account created. Ported and extended from the old PHP bot
-(`OldBot/`, cron long-poll, no tariff step, no real account creation) — texts are reused
-verbatim from `OldBot/bot_texts.md`.
+confirms → platform account created. Grew out of an early PHP prototype
+(cron long-poll, no tariff step, no real account creation), since removed; the texts live
+in `backend/scripts/intake_bot.py` (`TEXT_*`).
 
 ## Funnel (`intake_applications.status`)
 

@@ -45,4 +45,3 @@ docker/nginx-staging/certs/
 # Массовое заведение аккаунтов — выгрузка логинов/паролей (секреты) и список ников.
 credentials_*.txt
 users.md
-/OldBot/*
