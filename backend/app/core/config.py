@@ -1,7 +1,7 @@
 """Настройки приложения из окружения (pydantic-settings).
 
 Единственный источник конфигурации. Значения берутся из переменных окружения
-(см. `.env.example`). Секреты — только в `.env` (в .gitignore), никогда в git.
+(см. `env/env.example`). Секреты — только в `.env` (в .gitignore), никогда в git.
 """
 from functools import lru_cache
 

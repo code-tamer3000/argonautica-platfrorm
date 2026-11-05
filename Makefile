@@ -4,7 +4,7 @@
 # Target NAMES are the stable contract referenced by CLAUDE.md. Internals wrap
 # the dedicated test stack (docker-compose.test.yaml): postgres/redis/minio +
 # a one-off `api` container built from the prod Dockerfile. All Python tooling
-# runs INSIDE that container (service-name networking, .env.test), so nothing
+# runs INSIDE that container (service-name networking, env/env.test), so nothing
 # depends on a host venv. Frontend checks run in a throwaway node container.
 #
 # Prereqs: Docker running. Nothing else — no host venv, no host node_modules.
