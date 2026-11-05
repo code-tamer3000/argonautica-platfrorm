@@ -27,6 +27,9 @@ dist/
 .claude/*
 # Проектные скиллы агента — часть репозитория (см. docs/TASK_PROTOCOL.md).
 !.claude/skills/
+# Запрет локальных прогонов (CI-only): настройки и хук — часть репозитория.
+!.claude/settings.json
+!.claude/hooks/
 
 # TLS-серты (self-signed локально / боевые на сервере) — никогда в git.
 docker/nginx/certs/

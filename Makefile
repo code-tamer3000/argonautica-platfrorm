@@ -1,4 +1,5 @@
-# Makefile — single entry point for test commands.
+# Makefile — single entry point for test commands. ВСЕ проверки идут только в CI
+# (цели защищены _ci-only; локально — FORCE_LOCAL=1, только человеку).
 #
 # Target NAMES are the stable contract referenced by CLAUDE.md. Internals wrap
 # the dedicated test stack (docker-compose.test.yaml): postgres/redis/minio +
@@ -33,7 +34,16 @@ LOCAL_PROJECT := platform-local
 # (nginx это warning'ом игнорирует, выигрывает первый), сертификат берётся готовый.
 LOCAL_DCT := STAGING_DOMAIN=localhost $(DC) -p $(LOCAL_PROJECT) -f $(LOCAL_CF) --env-file .env
 
-.PHONY: help test test-backend test-frontend lint migrate-test migration up-test down-test local-up local-down local-reset local-logs
+.PHONY: _ci-only help test test-backend test-frontend lint migrate-test migration up-test down-test local-up local-down local-reset local-logs
+
+# --- CI-only guard ---
+# Проверки (тесты/линт/стенды) гоняются ТОЛЬКО в CI: GitHub Actions выставляет CI=true.
+# Локально цель падает сразу. Обход для человека: FORCE_LOCAL=1 make <target>.
+# Агентам обход запрещён (см. CLAUDE.md и .claude/settings.json).
+_ci-only:
+	@[ "$$CI" = "true" ] || [ -n "$$FORCE_LOCAL" ] || { \
+		echo "make $(MAKECMDGOALS): проверки запускаются только в CI (push -> PR -> gh pr checks)." >&2; \
+		echo "Человеку: FORCE_LOCAL=1 make $(MAKECMDGOALS)" >&2; exit 1; }
 
 help:
 	@echo "Targets:"
@@ -51,7 +61,7 @@ help:
 	@echo "  local-logs     - tail backend + nginx logs"
 
 # --- test env (stateful services) ---
-up-test:
+up-test: _ci-only
 	$(DCT) up -d postgres redis minio
 	@echo "waiting for postgres/redis..."
 	@for i in $$(seq 1 30); do \
@@ -61,11 +71,11 @@ up-test:
 		sleep 1; \
 	done; echo "services did not become ready in time" >&2; exit 1
 
-down-test:
+down-test: _ci-only
 	$(DCT) down -v
 
 # --- migrations (in the api container) ---
-migrate-test:
+migrate-test: _ci-only
 	$(DCT) run --rm api alembic upgrade head
 
 migration:
@@ -78,18 +88,18 @@ migration:
 # --- tests ---
 # Dev tooling (pytest/ruff/mypy) is baked into the image's `test` stage — no
 # network installs at run time. See backend/requirements-dev.txt.
-test: test-backend test-frontend
+test: _ci-only test-backend test-frontend
 
-test-backend: up-test migrate-test
+test-backend: _ci-only up-test migrate-test
 	$(DCT) run --rm api pytest -q -p no:cacheprovider
 
 # No vitest suite yet — typecheck is the frontend gate (see CLAUDE.md testing rules).
-test-frontend:
+test-frontend: _ci-only
 	$(FE_RUN) sh -lc "npm ci --silent && npm run typecheck"
 
 # --- lint + typecheck ---
 # Caches redirected off the read-only bind mount so lint runs as the image user.
-lint:
+lint: _ci-only
 	$(DCT) run --rm api sh -lc "ruff check --no-cache app alembic && mypy --cache-dir=/tmp/mypy app"
 	$(FE_RUN) sh -lc "npm ci --silent && npm run typecheck"
 
@@ -98,7 +108,7 @@ lint:
 #   mkcert -install
 #   mkcert -cert-file docker/nginx/certs/localhost.crt -key-file docker/nginx/certs/localhost.key localhost 127.0.0.1 ::1
 #   mkcert -cert-file docker/nginx/certs/media.localhost.crt -key-file docker/nginx/certs/media.localhost.key media.localhost
-local-up:
+local-up: _ci-only
 	@test -f docker/nginx/certs/localhost.crt || \
 		{ echo "нет docker/nginx/certs/*.crt — см. коммент над local-up в Makefile (mkcert)"; exit 1; }
 	@# Прод-compose объявляет сеть `gateway` external (мост прод↔staging на сервере).
@@ -129,11 +139,11 @@ local-up:
 	@$(LOCAL_DCT) exec -T backend-blue python -m scripts.bootstrap_admin admin
 	@echo "https://localhost  (admin / see password above on first run)"
 
-local-down:
+local-down: _ci-only
 	$(LOCAL_DCT) stop
 
-local-reset:
+local-reset: _ci-only
 	$(LOCAL_DCT) down -v
 
-local-logs:
+local-logs: _ci-only
 	$(LOCAL_DCT) logs -f backend-blue nginx

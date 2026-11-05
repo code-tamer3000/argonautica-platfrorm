@@ -5,37 +5,36 @@ plus Tasks, Dynamics (daily-homework journal), News, Notifications, Cabin (ка�
 private psych journaling), Support. Mobile access is PWA (no native apps).
 Stack: FastAPI, PostgreSQL, Redis (pub/sub), React/Vite, MinIO, Nginx, Docker Compose.
 
-## Commands — the ONLY way to run things
+## Verification = CI ONLY
 
-| Action            | Command                     |
-|-------------------|-----------------------------|
-| All checks        | `make test`                 |
-| Backend tests     | `make test-backend`         |
-| Frontend tests¹   | `make test-frontend`        |
-| Lint + typecheck  | `make lint`                 |
-| Apply migrations  | `make migrate-test`         |
-| New migration     | `make migration m="<name>"` |
-| Test env up/down  | `make up-test` / `make down-test` |
-| Local prod-like stack² up/down | `make local-up` / `make local-down` (`local-reset` wipes data) |
+**Тесты, линт, typecheck, миграции на тестовой БД, `local-up` и Playwright НЕ запускаются
+локально — ни агентом, ни «на минуточку».** Единственный источник истины «зелено/красно» —
+CI на GitHub. Поэтому: сделал → commit → push → PR → читай результат.
 
-¹ `test-frontend` currently runs typecheck only (`tsc --noEmit`) — no frontend test runner exists yet.
-² `make local-up` runs the actual `docker/docker-compose.prod.yml` locally (project `platform-local`,
-  `DOMAIN=localhost`/`MEDIA_DOMAIN=media.localhost` from `.env`): built SPA + nginx edge + MinIO behind
-  it, single backend (no blue-green), bot always off. Browser/Playwright needs a locally-trusted cert —
-  one-time `mkcert -install` then regenerate `docker/nginx/certs/*` (see comment above `local-up` in
-  Makefile). `dev.sh` (host uvicorn --reload + vite dev, no nginx/TLS) is gone — `make local-up` is now
-  the only local run mode, prod-like from the start.
+| Action | Как |
+|--------|-----|
+| Статус CI | `gh pr checks <PR> --watch` |
+| Почему красный | `gh run view <run-id> --log-failed` |
+| НЕ запускать локально | `make test*`, `make lint`, `make up-test`, `make migrate-test`, `make local-*`, `pytest`, `ruff`, `mypy`, `alembic`, `npm`, `tsc`, `vite`, `docker run/compose`, Playwright |
+| Новая миграция (генерация файла) | `make migration m="<name>"` — единственная локальная make-цель |
+
+Как это зашито:
+- цели Makefile защищены `_ci-only` — без `CI=true` падают сразу (обход `FORCE_LOCAL=1` — только для человека, агенту запрещён);
+- `.claude/settings.json` — `permissions.deny` + хук `.claude/hooks/block-local-checks.py` блокируют эти команды и Playwright;
+- упал тест → НЕ «проверить локально», НЕ поднимать второй worktree «для контроля»: читать лог CI и историю прогонов базовой ветки.
+
+Если CI недоступен или красный по причинам окружения (не кода) — остановись и доложи, не обходи.
+
+**UI не проверяется локально.** После мёржа в `develop` фича уезжает на staging — человек
+смотрит её там глазами. Агент в отчёте пишет, что именно смотреть на staging (экран,
+сценарий, краевые случаи), и честно отмечает «UI не проверен визуально».
 
 Hard rules:
-- NEVER run pytest, alembic, npm, or vite directly. Always via `make` targets — they
-  define the correct environment. (Currently local venv/compose; will move to a
-  dedicated test compose stack later. Makefile internals may change, target names will not.)
 - NEVER touch `docker/docker-compose.prod.yml`, `docker/deploy.sh`, `.env`, or `docker/nginx/certs/`.
-- If a `make` target fails for environment reasons (not code reasons), stop and report — do not improvise workarounds.
+- Makefile-цели остаются точками входа CI (ci.yml зовёт `make lint`, `make test`); их имена — стабильный контракт.
 
-> `make` is fully Dockerized: test/lint targets drive `docker/docker-compose.test.yaml`
-> (one-off container from the prod Dockerfile), `local-*` targets drive the real
-> `docker/docker-compose.prod.yml`. No host venv, no host node_modules.
+> `make` в CI полностью Dockerized: test/lint-цели гоняют `docker/docker-compose.test.yaml`
+> (one-off контейнер из prod Dockerfile). Нет host venv, нет host node_modules.
 
 ## Architecture facts (one line each; details in docs/)
 
@@ -115,7 +114,7 @@ Hard rules:
 
 - Base branch: `develop`. Prod branch: `main`. Feature branches: `feature/<slug>`.
 - Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`).
-- Commit once at the end of a task, after `make lint && make test` pass (not after every step).
+- Commit once at the end of a task (not after every step); зелёность подтверждает CI после push, не локальный прогон.
 - Small change (bugfix, minor refactor, text/style) → commit straight to `develop`.
   Large change (new feature, migration, cross-module) → `feature/*` branch + PR into `develop`.
 - PRs into `develop` may be self-merged when CI is green (no manual review wait). `develop` → `main` is ALWAYS merged manually by the user.
@@ -127,6 +126,6 @@ Hard rules:
 - New endpoint → integration test (httpx against the app, real test DB).
 - Bug fix → regression test that fails before the fix.
 - Do not mock PostgreSQL or Redis in integration tests — the test compose provides real ones.
-- Frontend has no test runner yet; the gate is `tsc --noEmit`. When vitest is added, cover components with logic (skip snapshot-only tests).
+- Frontend has no test runner yet; the gate is `tsc --noEmit` (в CI). When vitest is added, cover components with logic (skip snapshot-only tests).
 - `make migration` autogenerate re-reports 4 phantom index diffs — see docs/DATA_MODEL.md "Migrations gotchas"; NEVER commit those index drops/recreates.
-- A task that changes UI is not done until the agent opened the result (Playwright MCP against `make local-up`) and looked at it — clicked through, screenshot, checked console errors. Don't report a UI change as working from reading the diff alone.
+- UI-задача: локально не смотрим (см. «Verification = CI ONLY»); в отчёте — что проверить на staging.
