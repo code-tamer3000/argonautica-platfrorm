@@ -71,6 +71,7 @@ Hard rules:
 | docs/NOTIFICATIONS.md      | bell feed: kinds, generation, realtime delivery           |
 | docs/SUPPORT.md            | feedback (bug/improvement) + FAQ                          |
 | docs/SURVEY.md             | выпускная анкета: гейт платформы, вопросы, подарок-PDF     |
+| docs/GRADUATION_BOOK.md    | генератор выпускных PDF-книг: офлайн-скрипты, приватные данные, запрет на Каюту |
 | docs/CALENDAR.md           | calendar events, project-wide vs room-scoped visibility   |
 | docs/ARGONAUTS.md          | participant roster tiles, profile+tasks page, diary link  |
 | docs/TELEGRAM_BOT.md       | access/support bot: provisioning, proxy, runbook          |

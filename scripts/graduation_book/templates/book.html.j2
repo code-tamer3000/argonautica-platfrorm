@@ -1,0 +1,252 @@
+{#- Книга-артефакт одного участника: титул, карта пути, главы-периоды, колофон -#}
+
+{#- Символ стихии. Если художник положил рисунок в assets/glyphs/ — берём его
+    (glyphs.prepare() уже перекрасил под нужный цвет), иначе рисуем запасной
+    геометрический символ, чтобы книга собиралась и с пустой папкой. -#}
+{#- in_svg: внутри <svg> картинка вставляется как <image>, тег <img> там невалиден. -#}
+{#- Ниже этого размера рисунок не читается: у нарисованного глифа живой штрих и
+    мелкие детали схлопываются в серое пятно. Полоска на титуле (20) и метки на
+    карте пути (28) остаются геометрическими, крупные — авторские. -#}
+{#- force: взять рисунок даже мелким (полоска на титуле — авторские глифы). -#}
+{% set MIN_DRAWN = 40 %}
+{% macro sigil(slug, size=24, color='currentColor', in_svg=false, force=false) -%}
+{% set drawn = glyphs.get(slug, {}).get(color) if (force or size >= MIN_DRAWN) else none %}
+{% if drawn and in_svg %}
+<image href="{{ drawn }}" x="0" y="0" width="{{ size }}" height="{{ size }}"/>
+{%- elif drawn %}
+{# размер только инлайновым стилем: HTML-атрибуты width/height WeasyPrint у img
+   не применяет, картинка встаёт в натуральные 1024 px #}
+<img class="sigil sigil--drawn" src="{{ drawn }}" alt=""
+     style="width:{{ size }}px;height:{{ size }}px"/>
+{%- else -%}
+<svg class="sigil" viewBox="0 0 24 24" width="{{ size }}" height="{{ size }}"
+     fill="none" stroke="{{ color }}" stroke-width="0.9"
+     stroke-linejoin="round" aria-hidden="true">
+  {% if slug == 'fire' %}
+    <path d="M12 3 L21.5 20 L2.5 20 Z"/>
+  {% elif slug == 'water' %}
+    <path d="M12 21 L2.5 4 L21.5 4 Z"/>
+  {% elif slug == 'air' %}
+    <path d="M12 3 L21.5 20 L2.5 20 Z"/><path d="M6.2 14.4 H17.8"/>
+  {% elif slug == 'earth' %}
+    <path d="M12 21 L2.5 4 L21.5 4 Z"/><path d="M6.2 9.6 H17.8"/>
+  {% else %}
+    <circle cx="12" cy="12" r="9.2"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/>
+  {% endif %}
+</svg>
+{%- endif %}
+{%- endmacro %}
+
+{#- Гексаграмма ключа: 6 линий снизу вверх, '1' — сплошная (ян), '0' — прерванная
+    (инь). Пропорции те же, что в виджете «Генные Ключи» (Hexagram.tsx). -#}
+{% macro hexagram(bits, w=13, color='#6a4a2b') -%}
+{% set lh = w * 0.13 %}{% set gp = w * 0.16 %}{% set h = 6 * lh + 5 * gp %}
+<svg class="hex" width="{{ w }}" height="{{ h|round(2) }}"
+     viewBox="0 0 {{ w }} {{ h|round(2) }}" fill="none" aria-hidden="true">
+  {% for i in range(6) %}
+  {% set y = (i * (lh + gp))|round(2) %}
+  {% if bits[5 - i] == '1' %}
+  <rect x="0" y="{{ y }}" width="{{ w }}" height="{{ lh|round(2) }}" fill="{{ color }}"/>
+  {% else %}
+  {% set half = (w * 0.38)|round(2) %}
+  <rect x="0" y="{{ y }}" width="{{ half }}" height="{{ lh|round(2) }}" fill="{{ color }}"/>
+  <rect x="{{ (w - half)|round(2) }}" y="{{ y }}" width="{{ half }}" height="{{ lh|round(2) }}" fill="{{ color }}"/>
+  {% endif %}
+  {% endfor %}
+</svg>
+{%- endmacro %}
+
+{% macro prose(blocks, dropcap=false) -%}
+  {% for lines in blocks %}
+  <p>
+    {%- if dropcap and loop.first and lines[0]|length > 1 -%}
+      <span class="dropcap">{{ lines[0][0] }}</span>{{ lines[0][1:] }}
+      {%- if lines|length > 1 %}<br/>{% endif %}
+      {%- for line in lines[1:] %}{{ line }}{% if not loop.last %}<br/>{% endif %}{% endfor %}
+    {%- else -%}
+      {% for line in lines %}{{ line }}{% if not loop.last %}<br/>{% endif %}{% endfor %}
+    {%- endif -%}
+  </p>
+  {% endfor %}
+{%- endmacro %}
+
+{#- Палитра продублирована из styles.css: перекрашенные глифы выбираются по
+    точному hex-коду, а CSS-переменные внутрь src="" не подставить. -#}
+{% set ACCENT = {'balance': '#7a5c34', 'air': '#4f6379', 'fire': '#9c3a20',
+                 'water': '#235a68', 'earth': '#566438'} %}
+{% set RULE = '#ab9878' %}
+{% set SEPIA = '#6a4a2b' %}
+{% set LIGHT = '#e0d0ab' %}
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<title>Артефакт Экспедиции — {{ book.display_name }}</title>
+<style>{{ css }}</style>
+{# Фактуры подставляются здесь, а не в styles.css: путь до .build известен
+   только после paper.prepare(). Если файлов нет — правил нет, страницы
+   остаются на плоском кремовом фоне. #}
+<style>
+{% if paper.page %}
+@page { background-image: url("{{ paper.page }}"); background-size: cover; background-repeat: no-repeat;
+        background-position: center;
+        background-origin: border-box; background-clip: border-box; }
+{% endif %}
+{% if paper.cover %}
+@page :first { background-image: url("{{ paper.cover }}"); background-size: cover;
+               background-position: center; }
+{% endif %}
+</style>
+</head>
+<body{% if paper.cover %} class="has-cover"{% endif %}>
+
+{# ------------------------------------------------------------------ титул #}
+<section class="page page--title">
+  <div class="title__rule"></div>
+  <p class="title__kicker">Аргонавтика · {{ book.stream_label|default('поток первых', true) }}</p>
+  <h1 class="title__head">Артефакт<br/>Экспедиции</h1>
+  <p class="title__name">{{ book.display_name }}</p>
+  {# без переносов внутри: WeasyPrint делает из пробельных узлов flex-элементы
+     и полоска символов уезжает вправо от оптической оси страницы #}
+  <div class="title__sigils">{% for slug in ['balance', 'air', 'fire', 'water', 'earth'] %}{{ sigil(slug, 26, LIGHT if paper.cover else SEPIA, force=true) }}{% endfor %}</div>
+  <p class="title__dates">{{ book.stream_dates|default('2—29 июля 2026', true) }}</p>
+  <div class="title__rule"></div>
+</section>
+
+{# -------------------------------------------------------------- карта пути #}
+<section class="page page--map">
+  <h2 class="map__head">Карта пути</h2>
+  {# Диаграмма — авторский рисунок (assets/glyphs/wheel.jpeg), стихии на нём
+     стоят по сторонам света: воздух сверху, огонь справа, земля снизу, вода
+     слева. Позиции ключей ниже привязаны именно к этому порядку. #}
+  {% set wheel_img = glyphs.get('wheel', {}).get(SEPIA) %}
+  <div class="map__wheel">
+    {% if wheel_img %}
+    <img class="map__wheel-img" src="{{ wheel_img }}" alt=""
+         style="width:92mm;height:92mm"/>
+    {% endif %}
+    {% for slug, label in [('air', 'ВОЗДУХ'), ('fire', 'ОГОНЬ'),
+                           ('earth', 'ЗЕМЛЯ'), ('water', 'ВОДА')] %}
+    {% set card = book.gene_keys[slug] %}
+    <div class="map__key map__key--{{ slug }}{% if not card %} map__key--empty{% endif %}">
+      <p class="map__key-el" style="color:{{ ACCENT[slug] }}">{{ label }}</p>
+      {% if card %}
+      <div class="map__key-hex">{{ hexagram(card.bits, 19, ACCENT[slug]) }}</div>
+      <p class="map__key-num">ключ {{ card.number }}</p>
+      <p class="map__key-gift">{{ card.gift }}</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  <ol class="map__toc">
+    {% for ch in book.chapters %}
+    <li><span class="map__toc-title">{{ ch.title }}</span>
+        <span class="map__toc-dots"></span>
+        <span class="map__toc-dates">{{ ch.dates }}</span></li>
+    {% endfor %}
+  </ol>
+</section>
+
+{# ----------------------------------------------------------------- главы #}
+{% for ch in book.chapters %}
+<section class="chapter ch--{{ ch.slug }}">
+
+  <div class="page page--opener">
+    {% if ch.quote %}<p class="opener__quote">«{{ ch.quote }}»</p>{% endif %}
+    <div class="opener__mark">{{ sigil(ch.slug, 150, ACCENT[ch.slug]) }}</div>
+    <h2 class="opener__title">{{ ch.title }}</h2>
+    <p class="opener__meta">
+      <span class="nowrap">{{ ch.dates }}</span>{% if ch.key %}<span class="opener__sep">·</span><span class="nowrap">генный ключ {{ ch.key }}</span>{% endif %}
+    </p>
+    {% if ch.key_card %}
+    <div class="opener__hex">{{ hexagram(ch.key_card.bits, 22, ACCENT[ch.slug]) }}</div>
+    <p class="opener__gift">{{ ch.key_card.shadow }} <span class="opener__arrow">→</span> {{ ch.key_card.gift }}</p>
+    {% endif %}
+  </div>
+
+  {% if not (ch.lock or ch.days or ch.tasks or ch.stream_versions) %}
+  <div class="block block--absent"><p>От этого отрезка пути записей не осталось.</p></div>
+  {% elif ch.lock %}
+  <div class="block block--lock">
+    <p class="block__eyebrow">{% if ch.slug == 'balance' %}Начало{% else %}Генный замок{% endif %}</p>
+    <h3 class="block__title">{{ ch.lock.title }}</h3>
+    <div class="prose prose--lock">{{ prose(ch.lock.paragraphs, dropcap=true) }}</div>
+  </div>
+  {% elif ch.slug != 'balance' %}
+  <div class="block block--absent"><p>Замок этой стихии остался неотпертым.</p></div>
+  {% endif %}
+
+  {% if ch.days %}
+  <div class="block block--days">
+    <p class="block__eyebrow">Дни</p>
+    {% for day in ch.days %}
+    <article class="day">
+      <div class="day__date"><span class="day__num">{{ day.day_num }}</span><span class="day__month">{{ day.month }}</span></div>
+      <div class="day__body">
+        {% for sec in day.sections %}
+        <div class="sec sec--{{ sec.kind }}">
+          {% if sec.kind == 'film' and sec.title %}
+            <p class="sec__film"><span class="sec__film-label">Фильм дня</span> {{ sec.title }}</p>
+          {% else %}
+            <p class="sec__label">{{ sec.label }}</p>
+            <div class="prose">{{ prose(sec.paragraphs) }}</div>
+          {% endif %}
+          {% if sec.images %}
+          <div class="sec__photos">
+            {% for img in sec.images %}
+            <img class="sec__photo" src="{{ img }}" alt=""/>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if ch.tasks %}
+  <div class="block block--tasks">
+    <p class="block__eyebrow">Задания</p>
+    {% for task in ch.tasks %}
+    <article class="task">
+      <h3 class="task__title">{{ task.title }}</h3>
+      <p class="task__type">{{ task.type_label }}</p>
+      <div class="prose">{{ prose(task.paragraphs) }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if ch.stream_versions %}
+  <div class="block block--stream">
+    <p class="block__eyebrow">Турнир «Кольцо Воды»</p>
+    {% for v in ch.stream_versions %}
+    <article class="task">
+      <h3 class="task__title">Версия {{ v.version }}</h3>
+      <div class="prose">{{ prose(v.paragraphs) }}</div>
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</section>
+{% endfor %}
+
+{# --------------------------------------------------------------- колофон #}
+<section class="page page--colophon">
+  <div class="colophon__mark">{{ sigil('balance', 34, SEPIA) }}</div>
+  <p class="colophon__line">{{ book.display_name }}<br/>экспедиция пройдена {{ book.stream_completed|default('со 2 по 29 июля 2026 года', true) }}</p>
+  <dl class="colophon__stats">
+    <div><dt>дней дневника</dt><dd>{{ book.stats.days }}</dd></div>
+    <div><dt>сданных заданий</dt><dd>{{ book.stats.tasks }}</dd></div>
+    <div><dt>слов в дневнике</dt><dd>{{ book.stats.words }}</dd></div>
+  </dl>
+  <div class="title__rule"></div>
+  <p class="colophon__foot">Аргонавтика · {{ book.stream_label|default('поток первых', true) }} · книга собрана из личного дневника<br/>и сданных заданий участника</p>
+</section>
+
+</body>
+</html>

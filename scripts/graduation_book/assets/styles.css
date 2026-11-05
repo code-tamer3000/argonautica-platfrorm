@@ -1,0 +1,304 @@
+/* Книга-артефакт «Аргонавтика», 1-й поток.
+   Экранный A4, алхимический манускрипт: кремовая бумага, антиква, сепия. */
+
+@font-face {
+  font-family: "EB Garamond";
+  src: url("assets/fonts/EBGaramond-Var.ttf") format("truetype");
+  font-weight: 400 800;
+  font-style: normal;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("assets/fonts/EBGaramond-Italic-Var.ttf") format("truetype");
+  font-weight: 400 800;
+  font-style: italic;
+}
+
+/* Палитра посчитана под реальную фактуру: скан бумаги даёт (238, 222, 195) —
+   заметно теплее и темнее плоского кремового, на котором книга верстались
+   изначально, и прежние краски на нём выцветали. Контраст к тёмным участкам
+   бумаги: текст 10.9, вспомогательный 5.8, акценты 4.2–5.2, линейки 1.9.
+   Те же значения продублированы в templates/book.html.j2 и glyphs.py —
+   инлайновому SVG и перекраске глифов CSS-переменные недоступны. */
+:root {
+  --paper: #eedec3;
+  --ink: #262019;
+  --ink-soft: #574a3c;
+  --sepia: #6a4a2b;
+  --rule: #ab9878;
+  --accent: #6a4a2b;
+}
+
+.ch--balance { --accent: #7a5c34; }
+.ch--air     { --accent: #4f6379; }
+.ch--fire    { --accent: #9c3a20; }
+.ch--water   { --accent: #235a68; }
+.ch--earth   { --accent: #566438; }
+
+/* Поля страницы нулевые, отступ текста задаётся padding'ом. Иначе фактура
+   бумаги не доходит до края листа: фон @page рисуется по border-box, то есть
+   ВНУТРИ полей, и по периметру остаётся кремовая кайма.
+   Плата за это — нумерация страниц: counter(page) живёт только в margin-боксах,
+   которых при нулевых полях нет. В книге на неё ничто не ссылается —
+   оглавление на «Карте пути» ведёт по датам. */
+@page {
+  size: A4;
+  margin: 0;
+  padding: 22mm 22mm 20mm 36mm;
+  background: var(--paper);
+  background-origin: border-box;
+  background-clip: border-box;
+}
+
+/* Фон НЕ вешаем на html: фон корневого элемента распространяется на область
+   страницы и закрывает фактуру из @page — она остаётся видна только в полях.
+   Цвет бумаги задаётся один раз в @page выше. */
+
+body {
+  font-family: "EB Garamond", "DejaVu Serif", serif;
+  font-size: 11.4pt;
+  line-height: 1.52;
+  color: var(--ink);
+  hyphens: auto;
+  orphans: 2;
+  widows: 2;
+}
+
+p { margin: 0 0 0.62em; text-align: justify; }
+.sigil { display: inline-block; overflow: visible; }
+/* нарисованный глиф: картинка выше строки, поэтому снимаем базовую линию */
+.sigil--drawn { vertical-align: middle; }
+
+/* --------------------------------------------------------------- страницы */
+.page {
+  break-before: page;
+  break-after: page;
+  height: 255mm;  /* вся полоса набора: 297 − 22 сверху − 20 снизу */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.page--title { break-before: avoid; }
+
+/* Поля страницы намеренно несимметричны (слева 36 мм под вынос дат в дневнике),
+   из-за чего центрированные страницы уезжают вправо от середины ЛИСТА на
+   полразницы. Возвращаем их на оптическую ось: 36 − 22 = 14 мм. */
+.page--title, .page--map, .page--opener, .page--colophon { margin-left: -14mm; }
+
+.title__rule { width: 44mm; height: 0.6pt; background: var(--rule); margin: 0 0 14mm; }
+.title__rule:last-child { margin: 14mm 0 0; }
+.title__kicker {
+  font-size: 9.5pt; letter-spacing: 0.34em; text-transform: uppercase;
+  color: var(--sepia); margin-bottom: 12mm; text-align: center;
+}
+.title__head {
+  font-size: 44pt; font-weight: 500; line-height: 1.06; margin: 0;
+  color: var(--ink); letter-spacing: 0.01em;
+}
+.title__name {
+  font-size: 17pt; font-style: italic; color: var(--sepia);
+  margin: 10mm 0 0; text-align: center;
+}
+/* width:100% + justify-content — иначе flex-строка во WeasyPrint съезжает
+   вправо от оптической оси страницы (ширина элементов считается неточно) */
+.title__sigils {
+  color: var(--rule); margin: 14mm 0 0;
+  display: flex; justify-content: center; align-items: center;
+  width: 100%; gap: 7mm;
+}
+.title__dates {
+  font-size: 10pt; letter-spacing: 0.22em; color: var(--ink-soft);
+  margin: 12mm 0 0; text-align: center;
+}
+
+/* Титул лежит на тёмной коже обложки — вся типографика уходит в светлое.
+   Класс на <body> ставится только когда обложка реально нашлась, без неё
+   титул остаётся кремовым, как был. */
+/* Кожа не просто тёмная, она пятнистая: под набором есть и почти чёрные, и
+   выгоревшие светлые участки. Поэтому две меры сразу — мягкая вуаль под всем
+   блоком и тень у каждой строки. Без них разрядка кикера и даты тонут. */
+.has-cover .page--title {
+  background-image: radial-gradient(ellipse at center,
+    rgba(9, 6, 3, 0.66) 0%, rgba(9, 6, 3, 0.5) 46%, rgba(9, 6, 3, 0) 74%);
+}
+.has-cover .page--title p,
+.has-cover .page--title h1 {
+  text-shadow: 0 0 1.6mm rgba(10, 6, 3, 0.95), 0 0 4mm rgba(10, 6, 3, 0.8);
+}
+.has-cover .page--title .title__kicker { color: #e3cda1; }
+.has-cover .page--title .title__head   { color: #f7edd8; }
+.has-cover .page--title .title__name   { color: #ecd9b2; }
+.has-cover .page--title .title__dates  { color: #ddc59a; }
+.has-cover .page--title .title__rule   { background: #b79a68; }
+
+/* ------------------------------------------------------------- карта пути */
+.map__head {
+  font-size: 11pt; font-weight: 400; letter-spacing: 0.32em;
+  text-transform: uppercase; color: var(--sepia); margin: 0 0 8mm;
+}
+/* Рисованная диаграмма + четыре ключа вокруг неё. Позиции заданы жёсткой
+   геометрией, а не transform/translate: WeasyPrint считает их неточно, а
+   подписи должны сесть ровно против своих стихий на рисунке. Порядок на
+   рисунке: воздух сверху, огонь справа, земля снизу, вода слева. */
+.map__wheel {
+  position: relative;
+  width: 100%;
+  height: 134mm;
+  margin: 0 0 6mm;
+}
+.map__wheel-img { display: block; margin: 21mm auto 0; }
+
+.map__key { position: absolute; text-align: center; }
+.map__key p { margin: 0; text-align: center; }
+/* Верх/низ привязаны к краю рисунка (21mm сверху + 92mm картинки), а не к краю
+   блока: у кого стихия без ключа, подпись короткая — иначе она отлетает. */
+.map__key--air   { bottom: 113mm; left: 0;  right: 0; }
+.map__key--earth { top: 113mm;    left: 0;  right: 0; }
+.map__key--fire  { top: 56mm;     right: 0; width: 29mm; }
+.map__key--water { top: 56mm;     left: 0;  width: 29mm; }
+.map__key--empty { opacity: 0.45; }
+.map__key--empty.map__key--fire,
+.map__key--empty.map__key--water { top: 65mm; }
+
+.map__key-el {
+  font-size: 8.6pt; letter-spacing: 0.28em; text-transform: uppercase;
+}
+.map__key-hex { margin: 1.6mm 0 1.4mm; }
+.map__key-hex .hex { display: inline-block; }
+.map__key-num { font-size: 10pt; color: var(--ink); }
+.map__key-gift {
+  font-size: 8.6pt; font-style: italic; color: var(--ink-soft); hyphens: none;
+}
+.map__toc { list-style: none; padding: 0; margin: 0; width: 96mm; }
+.map__toc li {
+  display: flex; align-items: baseline; gap: 2mm;
+  font-size: 10.5pt; color: var(--ink-soft); padding: 1.1mm 0;
+}
+.map__toc-title { color: var(--ink); }
+.map__toc-dots { flex: 1; border-bottom: 0.5pt dotted var(--rule); }
+.map__toc-dates { font-style: italic; }
+
+/* ------------------------------------------------------------ шмуцтитулы */
+.page--opener { justify-content: center; }
+.opener__quote {
+  font-style: italic; font-size: 12.5pt; line-height: 1.5; color: var(--ink-soft);
+  max-width: 104mm; margin: 0 0 16mm; text-align: center; text-wrap: balance;
+}
+.opener__mark { color: var(--accent); line-height: 0; margin-bottom: 12mm; }
+.opener__title {
+  font-size: 30pt; font-weight: 400; letter-spacing: 0.16em;
+  text-transform: uppercase; margin: 0; color: var(--ink);
+}
+.opener__meta {
+  font-size: 10.5pt; letter-spacing: 0.14em; color: var(--ink-soft);
+  margin: 7mm 0 0; text-align: center; hyphens: none; max-width: 120mm;
+}
+.opener__sep { color: var(--rule); margin: 0 0.6em; }
+.opener__hex { margin: 9mm 0 4mm; line-height: 0; }
+.opener__gift {
+  font-size: 10pt; font-style: italic; color: var(--ink-soft);
+  margin: 0; text-align: center; hyphens: none;
+}
+.opener__arrow { color: var(--rule); margin: 0 0.35em; font-style: normal; }
+.nowrap { white-space: nowrap; }
+
+/* ----------------------------------------------------------------- блоки */
+.block { margin: 0 0 12mm; }
+.block--lock { break-before: page; }
+.block--days, .block--tasks, .block--stream { break-before: page; }
+
+.block__eyebrow {
+  font-size: 8.8pt; letter-spacing: 0.3em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 5mm; text-align: left;
+  border-bottom: 0.5pt solid var(--rule); padding-bottom: 2mm;
+  break-after: avoid;
+}
+.block__title {
+  font-size: 16pt; font-weight: 400; margin: 0 0 5mm; color: var(--ink);
+  break-after: avoid;
+}
+.block--absent p {
+  font-style: italic; color: var(--ink-soft); text-align: center; margin: 8mm 0;
+}
+
+/* Буквица отдельным элементом: ::first-letter + float во WeasyPrint кладёт
+   первую строку поверх буквы. */
+.dropcap {
+  float: left;
+  font-size: 38pt;
+  line-height: 0.78;
+  margin: 1.2mm 2.2mm 0 0;
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------------- дни */
+.day {
+  position: relative;
+  padding: 0 0 6mm;
+  margin: 0 0 6mm;
+  border-bottom: 0.5pt solid var(--rule);
+}
+.day:last-child { border-bottom: none; }
+.day__date {
+  position: absolute;
+  left: -28mm;
+  top: 0.6mm;
+  width: 22mm;
+  text-align: right;
+  color: var(--accent);
+}
+.day__num { display: block; font-size: 20pt; line-height: 1; }
+.day__month { display: block; font-size: 8.4pt; letter-spacing: 0.14em; color: var(--ink-soft); }
+
+.sec { margin: 0 0 4mm; }
+.sec:last-child { margin-bottom: 0; }
+.sec__label {
+  font-size: 8.8pt; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--ink-soft); margin: 0 0 1.6mm; text-align: left;
+  break-after: avoid;
+}
+.sec__film {
+  font-style: italic; color: var(--ink-soft); margin: 0; text-align: left;
+}
+.sec__film-label {
+  font-style: normal; font-size: 8.8pt; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--accent); margin-right: 1.5mm;
+}
+.sec__photos {
+  margin: 2.5mm 0 0; display: flex; flex-wrap: wrap; gap: 2.5mm;
+}
+.sec__photo {
+  width: 46mm; height: 34mm; object-fit: cover; border: 0.4mm solid var(--rule);
+}
+
+/* --------------------------------------------------------------- задания */
+.task { margin: 0 0 9mm; }
+.task:last-child { margin-bottom: 0; }
+.task__title {
+  font-size: 14pt; font-weight: 400; margin: 0 0 1mm; color: var(--ink);
+  break-after: avoid;
+}
+.task__type {
+  font-size: 8.6pt; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 3.5mm; break-after: avoid;
+}
+
+/* --------------------------------------------------------------- колофон */
+.colophon__mark { color: var(--sepia); line-height: 0; margin-bottom: 10mm; }
+.colophon__line {
+  font-size: 12.5pt; font-style: italic; color: var(--ink-soft);
+  max-width: 100mm; text-align: center; margin: 0 0 12mm;
+}
+.colophon__stats { display: flex; gap: 10mm; margin: 0 0 14mm; }
+.colophon__stats div { text-align: center; width: 42mm; }
+.colophon__stats dt {
+  font-size: 8.4pt; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-soft); margin-bottom: 1.5mm; hyphens: none;
+  min-height: 8mm;  /* подписи в 1 и 2 строки — цифры остаются на одной линии */
+}
+.colophon__stats dd { font-size: 22pt; margin: 0; color: var(--accent); }
+.colophon__foot {
+  font-size: 9.5pt; color: var(--ink-soft); text-align: center; margin: 12mm 0 0;
+}
