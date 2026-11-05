@@ -118,6 +118,10 @@ Hard rules:
 - Small change (bugfix, minor refactor, text/style) → commit straight to `develop`.
   Large change (new feature, migration, cross-module) → `feature/*` branch + PR into `develop`.
 - PRs into `develop` may be self-merged when CI is green (no manual review wait). `develop` → `main` is ALWAYS merged manually by the user.
+- **Cleanup after merge** (обязательно): merge with `gh pr merge --squash --delete-branch`, then `git checkout develop && git pull --ff-only && git fetch --prune`
+  (`gh` leaves you on `main`), remove your worktree. `develop` и `main` защищены от удаления (branch protection), на GitHub включено автоудаление веток.
+- **Linear statuses**: задача, проверяемая только CI → `Done` после мёржа. Задача, меняющая поведение/UI → описание содержит раздел
+  «Проверить на staging (вручную)» с чекбоксами, статус `На проверке`; `Done` ставит человек после ручной проверки.
 - If the spec is ambiguous: make the smallest reasonable assumption, implement it, and list it explicitly under **Assumptions**. Never guess silently, never expand scope.
 - Any change that alters behavior described in docs/ MUST update the corresponding docs/ file in the SAME task.
 
