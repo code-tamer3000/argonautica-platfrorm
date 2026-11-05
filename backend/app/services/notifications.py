@@ -495,7 +495,7 @@ async def notify_survey_submitted(session: AsyncSession, submitter_name: str) ->
         if not admins:
             return
         admin_ids = [uid for uid, _ in admins]
-        settings_by_uid = dict(admins)
+        settings_by_uid = {uid: prefs for uid, prefs in admins}
 
         existing_rows = (
             (

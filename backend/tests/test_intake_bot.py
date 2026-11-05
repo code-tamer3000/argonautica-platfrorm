@@ -812,7 +812,11 @@ async def test_admin_reply_with_comment_delivers_accept_message_then_plan_list(
     accepted, plans_screen = to_applicant
     assert intake_bot.TEXT_ACCEPT_COMMENT_HEADER in accepted["text"]
     assert "Пиши, ждём тебя на созвоне в четверг" in accepted["text"]
-    assert plan.name in plans_screen["text"]
+    # Тарифы на экране списка — кнопки клавиатуры, а не текст сообщения.
+    plan_buttons = [
+        b["text"] for row in plans_screen["reply_markup"]["inline_keyboard"] for b in row
+    ]
+    assert any(plan.name in text for text in plan_buttons)
     assert await intake_bot.redis_client.get(f"intakebot:acmap:{invite_id}") is None
 
 
