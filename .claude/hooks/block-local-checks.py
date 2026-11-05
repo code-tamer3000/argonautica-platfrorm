@@ -12,8 +12,8 @@ import sys
 BLOCKED = re.compile(
     r"""(?x)
     \bmake\s+(?:-\S+\s+)*(?:test\S*|lint|up-test|down-test|migrate-test|local-\w+)\b
-    | \b(?:pytest|ruff|mypy|alembic|vite|tsc|vitest|playwright)\b
-    | \bnpm\s+(?:run|test|ci|exec)\b | \bnpx\b
+    | (?<![/\w.-])(?:pytest|ruff|mypy|alembic|vite|tsc|vitest|playwright)(?![/\w.-])
+    | \bnpm\s+(?:run|test|ci|exec)\b | (?<![/\w.-])npx(?![/\w.-])
     | \bdocker-compose(?![.\w-]) | \bdocker\s+compose\b | \bdocker\s+run\b
     | \bFORCE_LOCAL\b
     """

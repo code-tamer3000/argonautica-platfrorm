@@ -122,6 +122,12 @@ Hard rules:
   (`gh` leaves you on `main`), remove your worktree. `develop` и `main` защищены от удаления (branch protection), на GitHub включено автоудаление веток.
 - **Linear statuses**: задача, проверяемая только CI → `Done` после мёржа. Задача, меняющая поведение/UI → описание содержит раздел
   «Проверить на staging (вручную)» с чекбоксами, статус `На проверке`; `Done` ставит человек после ручной проверки.
+- **Feature staging-before-merge**: фичу с изменением поведения/UI выкатывают на staging ДО мёржа
+  (`gh workflow run deploy-staging.yml --ref <ветка>`), человек проверяет, и только после его одобрения PR мёржится в `develop`
+  (потом `develop` сам выкатывается — вторая проверка «всё вместе»). Staging один — одна ветка за раз, чужую не перетирать.
+  Закрытый PR никогда не дополняем: баг после мёржа = новый короткий PR с тем же `ARG-NN`.
+- **Миграции на staging-ветках**: ветка с миграцией → предупредить человека, дамп staging на сервере перед выкатом и удалить сразу
+  после (см. `/work`, шаг 4); выкаченную миграцию не переписывать — только новая следующая.
 - If the spec is ambiguous: make the smallest reasonable assumption, implement it, and list it explicitly under **Assumptions**. Never guess silently, never expand scope.
 - Any change that alters behavior described in docs/ MUST update the corresponding docs/ file in the SAME task.
 
