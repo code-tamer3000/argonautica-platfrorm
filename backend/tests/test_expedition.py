@@ -286,10 +286,14 @@ async def test_admin_lock_list_shows_participants_who_entered(
     )
     assert resp.status_code == 200, resp.text
     rows = resp.json()
-    assert [r["user_id"] for r in rows] == [entered.id]
-    assert rows[0]["key_number"] == 3
-    assert rows[0]["display_name"] == "Введший"
-    assert not_entered.id not in [r["user_id"] for r in rows]
+    # Набор переиспользуется другими тестами (starts_on UNIQUE), поэтому проверяем
+    # только своих участников, а не весь список.
+    ids = [r["user_id"] for r in rows]
+    assert entered.id in ids
+    assert not_entered.id not in ids
+    row = next(r for r in rows if r["user_id"] == entered.id)
+    assert row["key_number"] == 3
+    assert row["display_name"] == "Введший"
 
 
 async def test_admin_lock_list_forbidden_for_participant(

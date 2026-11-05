@@ -188,6 +188,12 @@ async def test_republish_clones_without_assignments_and_lets_prior_submitter_red
     assert clone["intake_id"] == target_intake["id"]
     assert clone["source_task_id"] == original["id"]
 
+    # Ветеран переходит в новый поток (в своём прежнем он клон не увидит: common-задача
+    # чужого потока для участника 403, ARG-96). Оригинал при этом остаётся виден —
+    # он уже принят (already_done).
+    veteran.intake_id = target_intake["id"]  # type: ignore[assignment]
+    await session.commit()
+
     # Клон видит и старый, и новый участник — свежее, без унаследованных сдач.
     veteran_detail = await client.get(f"/api/tasks/{clone['id']}", headers=veteran_h)
     assert veteran_detail.status_code == 200

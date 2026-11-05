@@ -157,15 +157,17 @@ async def test_admin_overview_lists_only_graduates(
 ) -> None:
     admin = await make_user(role="admin")
     graduate = await make_user(graduated_at=datetime.now(UTC), display_name="Выпускник")
-    await make_user(display_name="Не выпустился")
+    not_graduate = await make_user(display_name="Не выпустился")
     admin_h = await _headers(client, admin)
 
     resp = await client.get("/api/admin/torch", headers=admin_h)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     ids = {r["user_id"] for r in body["rows"]}
+    # БД общая на весь прогон — другие тесты тоже создают выпускников, поэтому
+    # проверяем членство, а не размер списка.
     assert graduate.id in ids
-    assert len(body["rows"]) == 1
+    assert not_graduate.id not in ids
     assert body["stub_text"]
 
 

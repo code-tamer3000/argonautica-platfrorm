@@ -264,33 +264,33 @@ async def _expedition_feat(
     словит 403 (`assert_task_visible` для individual требует своё назначение либо
     авторство задачи, см. services/tasks.py) — молча отправлять в тупик не стоит.
     """
-    task_id = await session.scalar(
-        select(Task.id)
-        .where(
-            Task.title == EXPEDITION_FEAT_TASK_TITLE,
-            Task.deleted_at.is_(None),
-            or_(Task.intake_id.is_(None), Task.intake_id == scope_intake_id),
-        )
-        .limit(1)
-    )
-    if task_id is None:
-        return None, None, None
-    # LEFT JOIN: назначение может существовать без единой сдачи (status='assigned')
-    # — статус фронту нужен и в этом случае (чтобы сразу открыть композер), body
-    # тогда NULL. Нет строки вовсе — юзер на это задание не назначен.
+    # Одним запросом по задачам, у которых ЕСТЬ назначение этому user_id: название
+    # не уникально (на проде одна задача, но `.limit(1)` без привязки к назначению
+    # мог подхватить одноимённую задачу другого участника/потока и вернуть None).
+    # LEFT JOIN к сдачам: назначение может существовать без единой сдачи
+    # (status='assigned') — статус фронту нужен и в этом случае (чтобы сразу открыть
+    # композер), body тогда NULL. Нет назначения вовсе — юзер на задание не назначен.
     row = (
         await session.execute(
-            select(TaskAssignment.status, TaskSubmission.body)
-            .select_from(TaskAssignment)
+            select(Task.id, TaskAssignment.status, TaskSubmission.body)
+            .select_from(Task)
+            .join(
+                TaskAssignment,
+                (TaskAssignment.task_id == Task.id) & (TaskAssignment.user_id == user_id),
+            )
             .outerjoin(TaskSubmission, TaskSubmission.assignment_id == TaskAssignment.id)
-            .where(TaskAssignment.task_id == task_id, TaskAssignment.user_id == user_id)
-            .order_by(TaskSubmission.created_at.desc().nullslast())
+            .where(
+                Task.title == EXPEDITION_FEAT_TASK_TITLE,
+                Task.deleted_at.is_(None),
+                or_(Task.intake_id.is_(None), Task.intake_id == scope_intake_id),
+            )
+            .order_by(Task.id.desc(), TaskSubmission.created_at.desc().nullslast())
             .limit(1)
         )
     ).first()
     if row is None:
         return None, None, None
-    status, body = row
+    task_id, status, body = row
     return task_id, body, status
 
 

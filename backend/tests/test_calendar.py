@@ -1,6 +1,8 @@
 """Тесты календаря (§4.10): авторство admin-only, project-wide видимость всем,
 валидация дат, фильтр диапазона. Изоляция по потоку/тарифу — test_content_isolation.py
 (ARG-96/ARG-111). Доступ проверяется на сервере на каждом запросе."""
+from datetime import date, timedelta
+
 from httpx import AsyncClient
 
 from app.models.user import User
@@ -158,7 +160,7 @@ async def test_admin_intake_filter(client: AsyncClient, make_user: MakeUser) -> 
     """ARG-168: админский ?intake_id= оставляет события потока и без потока."""
     admin = await make_user(role="admin")
     in_a = await make_user()
-    in_b = await make_user()
+    in_b = await make_user(intake_starts_on=date.today() - timedelta(days=137))
     assert in_a.intake_id != in_b.intake_id
     admin_h = await _headers(client, admin)
 

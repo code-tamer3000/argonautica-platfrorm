@@ -148,6 +148,9 @@ async def test_survey_submit_notifies_admins_and_bursts(
         .all()
     )
     assert len(rows) == 1  # схлопнулось в ту же строку, не завело вторую
+    # Тестовая сессия держит `row` в identity map (commit не было) — повторный
+    # select не перезаписывает её атрибуты, поэтому перечитываем из БД явно.
+    await session.refresh(rows[0])
     assert rows[0].group_count == 2
 
 
