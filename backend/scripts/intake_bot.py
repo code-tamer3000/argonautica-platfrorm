@@ -95,6 +95,13 @@ LOG_CHAT_ID: int | None = int(_log_raw) if _log_raw.lstrip("-").isdigit() else N
 ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
     "1", "true", "yes", "on",
 }
+# Скидка за членство в закрытом канале (бот в нём админ — иначе getChatMember не
+# работает). Пусто = механика выключена. Id канала не в коде: репо публичный.
+_channel_raw = os.environ.get("INTAKE_DISCOUNT_CHANNEL_ID", "").strip()
+DISCOUNT_CHANNEL_ID: int | None = (
+    int(_channel_raw) if _channel_raw.lstrip("-").isdigit() else None
+)
+CHANNEL_DISCOUNT_RUB = 1000
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
@@ -626,6 +633,39 @@ def _returning_prices(plans: list[Plan]) -> dict[str, int]:
     }
 
 
+def _channel_discount_prices(plans: list[Plan]) -> dict[str, int]:
+    """Снимок цен для участника канала: −1000 ₽ на всё, кроме самого дорогого тарифа.
+
+    Самый дорогой — по `max(price)` среди активных, не по названию (как в
+    `_returning_prices`). Скидка не уводит цену ниже нуля."""
+    if not plans:
+        return {}
+    top = max(plan.price for plan in plans)
+    return {
+        str(plan.id): plan.price
+        if plan.price == top
+        else max(plan.price - CHANNEL_DISCOUNT_RUB, 0)
+        for plan in plans
+    }
+
+
+async def _is_channel_member(client: httpx.AsyncClient, tg_id: int) -> bool:
+    """Состоит ли Telegram-аккаунт в канале скидки. Любой сбой/отказ Telegram = False
+
+    (скидку не даём, воронку не роняем). Проверка строго по id, не по нику."""
+    if DISCOUNT_CHANNEL_ID is None:
+        return False
+    member = await _api_call(
+        client, "getChatMember", {"chat_id": DISCOUNT_CHANNEL_ID, "user_id": tg_id}
+    )
+    if member is None:
+        return False
+    status = member.get("status")
+    return status in ("creator", "administrator", "member") or (
+        status == "restricted" and bool(member.get("is_member"))
+    )
+
+
 async def _current_intake(session: AsyncSession) -> Intake | None:
     """Активный набор — с максимальной starts_on (см. docs/DATA_MODEL.md)."""
     return (
@@ -900,7 +940,11 @@ async def _status_reminder(client: httpx.AsyncClient, chat_id: int, app: IntakeA
 
 
 TEXT_PLAN_LIST = "Выбери тариф — покажу, что входит, и переведу к оплате:"
-TEXT_NO_PLANS = f"Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. {SHIP}"
+TEXT_CHANNEL_DISCOUNT = (
+    f"🎁 Ты в нашем канале и ещё не плавал с нами — скидка {CHANNEL_DISCOUNT_RUB} ₽ "
+    "на тарифы уже учтена в ценах ниже."
+)
+TEXT_NO_PLANS =f"Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. {SHIP}"
 
 
 async def _send_plan_list(
@@ -1075,12 +1119,18 @@ async def _assign_intake_welcome_tasks(
 # --- Обработчики callback-кнопок ---------------------------------------------
 
 
-async def _accept_application(session: AsyncSession, app: IntakeApplication) -> list[Plan]:
+async def _accept_application(
+    client: httpx.AsyncClient, session: AsyncSession, app: IntakeApplication
+) -> tuple[list[Plan], bool]:
     """Общая часть двух кнопок принятия («Принять» / «Принять с комментарием»):
 
     статус, дедлайн окна оплаты, снимок цен. Не трогает ни карточку в admin-чате,
     ни сообщения заявителю — этим дальше распоряжается вызывающий, у кнопок он
     расходится (см. `_handle_accept` vs `_handle_accept_with_comment`).
+
+    Возвращает (тарифы, скидка_канала). Скидка −1000 ₽ — тем, кто состоит в закрытом
+    канале и ещё не проходил экспедицию (нет аккаунта ни по `users.tg_id`, ни по заявке);
+    членство смотрим один раз, здесь, дальше воронка читает снимок.
     """
     # Приём сгоревшей заявки — это и «принять заново», и «продлить»: воронка
     # начинается с выбора тарифа, оферта принимается ещё раз (согласие привязано к
@@ -1096,9 +1146,17 @@ async def _accept_application(session: AsyncSession, app: IntakeApplication) -> 
     # Снимок цен — в тот же момент, что и дедлайн: с этой секунды и до конца окна
     # заявка смотрит только сюда, что бы админ ни поменял в plans (см. _plan_price).
     plans = await _active_plans(session)
-    app.price_snapshot = {str(plan.id): plan.price for plan in plans}
+    discounted = False
+    if app.user_id is None and DISCOUNT_CHANNEL_ID is not None:
+        account, _ = await _service_user(session, app.tg_id)
+        discounted = account is None and await _is_channel_member(client, app.tg_id)
+    app.price_snapshot = (
+        _channel_discount_prices(plans)
+        if discounted
+        else {str(plan.id): plan.price for plan in plans}
+    )
     await session.flush()
-    return plans
+    return plans, discounted
 
 
 def _accept_application_gate(app: IntakeApplication | None) -> bool:
@@ -1106,13 +1164,19 @@ def _accept_application_gate(app: IntakeApplication | None) -> bool:
 
 
 async def _edit_anketa_accepted(
-    client: httpx.AsyncClient, app: IntakeApplication, tag: str, message_id: int | None
+    client: httpx.AsyncClient,
+    app: IntakeApplication,
+    tag: str,
+    message_id: int | None,
+    *,
+    discounted: bool = False,
 ) -> None:
     if message_id is None:
         return
+    note = f" · 🎁 скидка {CHANNEL_DISCOUNT_RUB} ₽ (в канале)" if discounted else ""
     await _edit_text(
         client, ADMIN_CHAT_ID, message_id,  # type: ignore[arg-type]
-        f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята\n\n"
+        f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята{note}\n\n"
         f"{html.escape(app.about or '')}",
         reply_markup={"inline_keyboard": []},
     )
@@ -1128,12 +1192,14 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
         await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
         return
     assert app is not None
-    plans = await _accept_application(session, app)
+    plans, discounted = await _accept_application(client, session, app)
     await _answer_callback(client, cb["id"], "Принято")
 
     tag = _user_tag(app.tg_username, app.tg_id)
     message_id = (cb.get("message") or {}).get("message_id")
-    await _edit_anketa_accepted(client, app, tag, message_id)
+    await _edit_anketa_accepted(client, app, tag, message_id, discounted=discounted)
+    if discounted:
+        await _send(client, app.tg_id, TEXT_CHANNEL_DISCOUNT)
     await _send_plan_list(client, session, app.tg_id, app, plans=plans)
     print(f"[action] заявка #{app.id} ({tag}) принята", flush=True)
 
@@ -1157,12 +1223,12 @@ async def _handle_accept_with_comment(
         await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
         return
     assert app is not None
-    await _accept_application(session, app)
+    _, discounted = await _accept_application(client, session, app)
     await _answer_callback(client, cb["id"], "Принято, жду комментарий")
 
     tag = _user_tag(app.tg_username, app.tg_id)
     message_id = (cb.get("message") or {}).get("message_id")
-    await _edit_anketa_accepted(client, app, tag, message_id)
+    await _edit_anketa_accepted(client, app, tag, message_id, discounted=discounted)
 
     invite = await _send(
         client, ADMIN_CHAT_ID,  # type: ignore[arg-type]
