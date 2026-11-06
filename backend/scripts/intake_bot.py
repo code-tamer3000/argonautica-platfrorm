@@ -521,28 +521,39 @@ async def _find_application(session: AsyncSession, tg_id: int) -> IntakeApplicat
     ).scalars().first()
 
 
+# Итог `_rollover_stale_application` (ARG-189).
+ROLL_KEEP = "keep"  # заявка актуальна (или её нет) — работаем с ней как обычно
+ROLL_RESTARTED = "restarted"  # завели новую заявку на текущий поток — человек с анкеты
+ROLL_SERVICE = "service"  # у человека есть аккаунт — ему сервисный режим, не воронка
+
+
 async def _rollover_stale_application(
     session: AsyncSession, app: IntakeApplication | None, from_user: dict[str, Any]
-) -> tuple[IntakeApplication | None, bool]:
-    """Ленивый сброс воронки при смене потока (ARG-189): (заявка, начата_заново).
+) -> tuple[IntakeApplication | None, str]:
+    """Ленивый сброс воронки при смене потока (ARG-189): (заявка, `ROLL_*`).
 
     Заявка, которая ещё в воронке, но относится не к текущему (самому новому) потоку,
-    — хвост прошлого набора. Человек пришёл снова → заводим НОВУЮ заявку на текущий
-    поток (`retry`), как при первом `/start`; старая остаётся в архиве потока. Никаких
-    хуков на создание потока и массовых рассылок: сброс случается, когда пишет сам
-    человек. Исторические заявки без потока (`intake_id IS NULL`) считаются прошлыми.
+    — хвост прошлого набора. Что с ним делать, решает наличие аккаунта:
 
-    `confirmed` не трогаем (сервисный режим). Незавершённая заявка вернувшегося
-    (`user_id` задан) заново не начинается — у него есть аккаунт и анкета не нужна:
-    бронь прошлого потока просто сгорает, и он снова жмёт «Записаться»."""
+    - **Аккаунта нет** (`ROLL_RESTARTED`): человек пришёл снова → заводим НОВУЮ заявку на
+      текущий поток (`retry`), как при первом `/start`; старая остаётся в архиве потока.
+    - **Аккаунт есть** (`ROLL_SERVICE`) — привязан по `users.tg_id` или заявка с
+      `user_id`: воронка новичка ему не нужна, ведём в сервисный режим (вернувшийся
+      оттуда записывается кнопкой). Если у хвоста есть `user_id`, его бронь сгорает.
+
+    Никаких хуков на создание потока и массовых рассылок: сброс случается, когда пишет
+    сам человек. Исторические заявки без потока (`intake_id IS NULL`) считаются
+    прошлыми. `confirmed` не трогаем (и так сервисный режим)."""
     if app is None or not _app_in_funnel(app):
-        return app, False
+        return app, ROLL_KEEP
     current = await _current_intake(session)
     if current is None or app.intake_id == current.id:
-        return app, False
-    if app.user_id is not None:
-        await _mark_expired(session, app)
-        return app, False
+        return app, ROLL_KEEP
+    account, _ = await _service_user(session, app.tg_id)
+    if account is not None or app.user_id is not None:
+        if app.user_id is not None:
+            await _mark_expired(session, app)
+        return app, ROLL_SERVICE
     fresh = IntakeApplication(
         tg_id=app.tg_id,
         tg_username=from_user.get("username"),
@@ -558,7 +569,7 @@ async def _rollover_stale_application(
         f"прошлому потоку — начата заново на поток #{current.id}, заявка #{fresh.id}",
         flush=True,
     )
-    return fresh, True
+    return fresh, ROLL_RESTARTED
 
 
 async def _find_bound_user(session: AsyncSession, tg_id: int) -> User | None:
@@ -1965,9 +1976,12 @@ async def _handle_start(
     # привязанная вручную учётка (ARG-167) — заявку не заводим. Незавершённая заявка
     # (в т.ч. вернувшегося, пока он платит за новый поток) имеет приоритет.
     app = await _find_application(session, tg_id)
-    app, restarted = await _rollover_stale_application(session, app, from_user)
-    if restarted:
+    app, roll = await _rollover_stale_application(session, app, from_user)
+    if roll == ROLL_RESTARTED:
         await _send(client, chat_id, TEXT_START)
+        return
+    if roll == ROLL_SERVICE:
+        await _send_service_menu(client, session, chat_id, tg_id)
         return
     if not _app_in_funnel(app):
         if app is not None or await _find_bound_user(session, tg_id) is not None:
@@ -2111,9 +2125,12 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         return
 
     app = await _find_application(session, tg_id)
-    app, restarted = await _rollover_stale_application(session, app, from_user)
-    if restarted:
+    app, roll = await _rollover_stale_application(session, app, from_user)
+    if roll == ROLL_RESTARTED:
         await _send(client, chat_id, TEXT_START)
+        return
+    if roll == ROLL_SERVICE:
+        await _send_service_menu(client, session, chat_id, tg_id)
         return
     if not _app_in_funnel(app):
         if app is not None or await _find_bound_user(session, tg_id) is not None:
