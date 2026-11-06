@@ -1798,6 +1798,7 @@ async def test_returning_payment_moves_existing_account(
     assert user.intake_id == new_intake.id
     assert user.plan_id == plan.id
     assert user.password_hash == old_hash  # пароль не трогаем
+    assert user.must_change_password is False  # временным пароль не становится
     assert await session.scalar(select(func.count()).select_from(User)) == users_before
     text = next(
         p["text"] for name, p in client.calls
