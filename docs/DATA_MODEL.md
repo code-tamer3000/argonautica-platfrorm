@@ -208,7 +208,8 @@ ARG-107. See [INTAKE_BOT.md](INTAKE_BOT.md).
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
-| tg_id | BIGINT | NOT NULL, UNIQUE | Telegram user id (== chat id in a private chat) |
+| tg_id | BIGINT | NOT NULL, UNIQUE with `intake_id` | Telegram user id (== chat id in a private chat). Since ARG-176 one row **per intake**: unique `(tg_id, intake_id)` plus a partial unique index on `tg_id WHERE intake_id IS NULL` (legacy rows keep the old one-per-chat guarantee) |
+| intake_id | BIGINT | FK intakes, NULL | the intake the application is for (ARG-176 / ARG-189). Set by the bot on creation (newest intake) and on enrolment; backfilled from `users.intake_id` via `user_id`; NULL for legacy unenrolled rows |
 | tg_username | TEXT | NULL | refreshed on every `/start` |
 | tg_first_name | TEXT | NULL | |
 | tg_last_name | TEXT | NULL | |
