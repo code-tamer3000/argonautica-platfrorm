@@ -5,7 +5,7 @@
 #
 # --- Одноразовый BOOTSTRAP на сервере (до первого CI-деплоя) ---
 #   1. mkdir -p /opt/platform-staging   (или первый прогон workflow создаст каталог rsync-ом)
-#   2. Создать /opt/platform-staging/.env из .env.staging.example: подставить <IP> стенда,
+#   2. Создать /opt/platform-staging/.env из env/env.staging.example: подставить <IP> стенда,
 #      сгенерить свои POSTGRES_*/MINIO_*/JWT_SECRET (openssl rand -hex 32). TELEGRAM_BOT_TOKEN
 #      оставить ПУСТЫМ (стенд бота не поднимает).
 #   3. Сеть-мост к проду: `docker network create gateway` (один раз, общая для обоих

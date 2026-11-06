@@ -57,7 +57,7 @@ services:
       context: ../backend
       dockerfile: Dockerfile
       target: test # prod runtime + pinned dev tooling (pytest/ruff/mypy)
-    env_file: ../.env.test
+    env_file: ../env/env.test
     depends_on:
       - postgres
       - redis
