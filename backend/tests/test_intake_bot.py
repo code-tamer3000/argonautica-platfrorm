@@ -1453,9 +1453,16 @@ async def make_bound_user(session: AsyncSession, make_user: MakeUser) -> tuple[U
 
 
 async def test_start_from_bound_user_opens_service_mode_without_application(
-    session: AsyncSession, make_user: MakeUser
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
 ) -> None:
     user, tg_id = await make_bound_user(session, make_user)
+    # Поток пользователя — «текущий»: кнопки записи для вернувшихся (ARG-176) нет.
+    own_intake = await session.get(Intake, user.intake_id)
+
+    async def current(_session: AsyncSession) -> Intake | None:
+        return own_intake
+
+    monkeypatch.setattr(intake_bot, "_current_intake", current)
     client = FakeClient()
 
     await intake_bot._handle_message(
