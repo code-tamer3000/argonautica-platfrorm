@@ -158,7 +158,9 @@ async def _unread_replies_map(
         )
         .group_by(Message.thread_root_id)
     )
-    return {root_id: count for root_id, count in rows.all()}
+    return {
+        root_id: count for root_id, count in rows.all() if root_id is not None
+    }
 
 
 async def _reactions_map(
@@ -176,7 +178,10 @@ async def _reactions_map(
         .where(MessageReaction.message_id.in_(message_ids))
         .group_by(MessageReaction.message_id)
     )
-    return {message_id: (count, reacted) for message_id, count, reacted in rows.all()}
+    return {
+        message_id: (count, reacted)
+        for message_id, count, reacted in rows.tuples().all()
+    }
 
 
 async def _reaction_count(session: AsyncSession, message_id: int) -> int:
@@ -372,14 +377,17 @@ async def send_message(
         ref_id=body.ref_id,
         client_id=body.client_id,
     )
-    session.add(message)
     try:
-        await session.flush()
+        # SAVEPOINT: откат только вставки, не всей транзакции — иначе полный
+        # rollback() протухает current_user/room, и обращение к их атрибутам
+        # ниже падает MissingGreenlet (async-сессия не умеет lazy-load).
+        async with session.begin_nested():
+            session.add(message)
+            await session.flush()
     except IntegrityError:
         # Гонка/повтор outbox с потерянным ответом (uq_messages_sender_room_client):
         # это уже отправленное сообщение, а не новое — вернуть существующую строку,
         # не вставлять вторую и не слать второй message.new (docs/MESSAGES.md «Send»).
-        await session.rollback()
         existing = (
             await session.execute(
                 select(Message).where(

@@ -1283,7 +1283,7 @@ async def notification_prefs_overview(
                 User.display_name
             )
         )
-    ).all()
+    ).tuples().all()
 
     # Число активных push-подписок на пользователя (одним запросом).
     device_rows = (

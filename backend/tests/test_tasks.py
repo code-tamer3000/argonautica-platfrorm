@@ -5,7 +5,7 @@
 Доступ проверяется на сервере на каждом запросе (CLAUDE.md п.1). MediaAsset сидим
 прямо через session (MinIO не нужен — presigned_get_url подписывает URL локально).
 """
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -961,7 +961,7 @@ async def test_admin_intake_filter_covers_individual_tasks(
     на самой задаче) — по потоку исполнителей; без параметра админ видит всё."""
     admin = await make_user(role="admin")
     in_a = await make_user()
-    in_b = await make_user()
+    in_b = await make_user(intake_starts_on=date.today() - timedelta(days=137))
     assert in_a.intake_id != in_b.intake_id
     admin_h = await _headers(client, admin)
 

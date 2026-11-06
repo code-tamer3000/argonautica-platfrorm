@@ -16,6 +16,7 @@ from sqlalchemy import (
     Index,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -42,8 +43,15 @@ STATUSES_ON_PAYMENT_CLOCK = (
 )
 
 
+# ARG-189: откуда пришёл заявитель — считается в момент создания заявки на поток.
+KIND_NEW = "new"  # в боте раньше не было ни одной заявки
+KIND_RETRY = "retry"  # подавался в прошлые потоки, зачислен не был — начал заново
+KIND_RETURNING = "returning"  # уже зачисленный участник записывается на новый поток
+APPLICANT_KINDS = (KIND_NEW, KIND_RETRY, KIND_RETURNING)
+
+
 class IntakeApplication(Base):
-    """Одна заявка на приём = один Telegram-чат (`tg_id` уникален)."""
+    """Одна заявка на приём = один Telegram-чат на один поток (`tg_id`+`intake_id` уникальны)."""
 
     __tablename__ = "intake_applications"
     __table_args__ = (
@@ -53,13 +61,33 @@ class IntakeApplication(Base):
             "'expired')",
             name="intake_application_status_valid",
         ),
+        CheckConstraint(
+            "applicant_kind IS NULL OR applicant_kind IN ('new', 'retry', 'returning')",
+            name="intake_application_kind_valid",
+        ),
         # ARG-107: CRM-дашборд группирует заявки по статусу и сортирует по свежести.
         Index("ix_intake_applications_status", "status"),
         Index("ix_intake_applications_created_at", "created_at"),
+        # ARG-176: заявка на каждый поток — одна на (tg_id, intake_id). Вернувшийся
+        # участник получает вторую строку на новый поток, старая с историей остаётся.
+        Index("uq_intake_applications_tg_id_intake_id", "tg_id", "intake_id", unique=True),
+        # NULL в intake_id Postgres считает разными — историческим строкам без потока
+        # возвращаем прежнюю гарантию «один tg_id — одна заявка».
+        Index(
+            "uq_intake_applications_tg_id_no_intake",
+            "tg_id",
+            unique=True,
+            postgresql_where=text("intake_id IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    tg_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Поток, на который подана заявка (ARG-176 / ARG-189). NULL — историческая заявка
+    # без потока (не дошла до зачисления до появления поля).
+    intake_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("intakes.id"))
+    # Тип заявителя (ARG-189). NULL — заявка до появления поля.
+    applicant_kind: Mapped[str | None] = mapped_column(Text)
     tg_username: Mapped[str | None] = mapped_column(Text)
     tg_first_name: Mapped[str | None] = mapped_column(Text)
     tg_last_name: Mapped[str | None] = mapped_column(Text)

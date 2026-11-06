@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict
 
 # Порядок стадий — совпадает с CheckConstraint в app/models/intake_application.py.
 # `expired` (ARG-108) — терминальная стадия, бронь сгорела до оплаты.
+FUNNEL_KINDS: tuple[str, ...] = ("new", "retry", "returning")  # ARG-189
+
 FUNNEL_STATUSES: tuple[str, ...] = (
     "awaiting_about",
     "submitted",
@@ -29,6 +31,8 @@ class ApplicationOut(BaseModel):
 
     id: int
     tg_id: int
+    intake_id: int | None
+    applicant_kind: str | None
     tg_username: str | None
     tg_first_name: str | None
     tg_last_name: str | None
@@ -60,4 +64,7 @@ class ApplicationFunnelOut(BaseModel):
 
     total: int
     by_status: dict[str, int]
+    # ARG-189: сколько заявок выбранного потока от новых людей / подававшихся раньше /
+    # уже зачисленных (все три ключа всегда). Заявки до появления поля не входят.
+    by_kind: dict[str, int]
     items: list[ApplicationOut]

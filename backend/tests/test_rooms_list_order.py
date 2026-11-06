@@ -47,7 +47,8 @@ async def test_room_without_messages_falls_back_to_created_at(
     add_membership: AddMembership,
 ) -> None:
     """Ни в одной комнате нет сообщений — порядок как раньше, по созданию
-    (свежесозданная dm/группа не проваливается в конец списка)."""
+    (свежесозданная dm/группа не проваливается в конец списка): свежая комната
+    выше, т.е. created_at DESC."""
     viewer = await make_user()
     first = await make_room(created_by=viewer.id, name="First")
     second = await make_room(created_by=viewer.id, name="Second")
@@ -57,7 +58,7 @@ async def test_room_without_messages_falls_back_to_created_at(
 
     rooms = (await client.get("/api/rooms", headers=headers)).json()
     ids = [r["id"] for r in rooms if r["id"] in (first.id, second.id)]
-    assert ids == [first.id, second.id]
+    assert ids == [second.id, first.id]
 
 
 async def test_second_message_re_bumps_room_again(

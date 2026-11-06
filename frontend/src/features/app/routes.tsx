@@ -87,7 +87,11 @@ function withCohortGate(makeComponent: (opts: { newsOnly: boolean }) => ReactNod
     const { user } = useAuth()
     const isNewsRoom = useIsNewsRoom()
     const startsOn = user?.intake_starts_on ?? null
-    const pending = !!startsOn && differenceInCalendarDays(new Date(startsOn), new Date()) > 0
+    // Админам заглушку не показываем: им нужен доступ к чатам и календарю до старта потока.
+    const pending =
+      user?.role !== 'admin' &&
+      !!startsOn &&
+      differenceInCalendarDays(new Date(startsOn), new Date()) > 0
     if (pending && !isNewsRoom) return <CohortPending startsOn={startsOn!} />
     return makeComponent({ newsOnly: pending && isNewsRoom })
   }

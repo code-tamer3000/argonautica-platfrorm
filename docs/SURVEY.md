@@ -186,7 +186,8 @@ these blocks need broke the layout.
 
 Books are uploaded through the ordinary presigned media flow (`mediaUpload`, kind
 `file`). Uploading a batch matches each file to a participant by filename
-(`<username>.pdf`) — that is how the artefact generator lays them out. Per-row upload
+(`<username>.pdf`) — that is how the artefact generator lays them out
+(see [GRADUATION_BOOK.md](GRADUATION_BOOK.md) for how the books are produced). Per-row upload
 overrides the match.
 
 ## Frontend

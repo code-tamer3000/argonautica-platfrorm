@@ -144,6 +144,7 @@ async def test_binding_to_own_funnel_application_is_allowed(
 async def test_db_enforces_unique_tg_id(session: AsyncSession, make_user: MakeUser) -> None:
     a = await make_user()
     b = await make_user()
+    a_id = a.id  # после rollback() атрибуты expired — читаем id заранее
     tg_id = new_tg_id()
     a.tg_id = tg_id
     await session.commit()
@@ -151,7 +152,7 @@ async def test_db_enforces_unique_tg_id(session: AsyncSession, make_user: MakeUs
     with pytest.raises(IntegrityError):
         await session.commit()
     await session.rollback()
-    assert (await session.get(User, a.id)) is not None
+    assert (await session.get(User, a_id)) is not None
 
 
 def test_report_marks_dry_run() -> None:

@@ -6,9 +6,9 @@
 
 Replaces the manual "person messages a manager, pays, gets added by hand" path with a
 self-service Telegram funnel: anketa → admin accepts → tariff → payment receipt → admin
-confirms → platform account created. Ported and extended from the old PHP bot
-(`OldBot/`, cron long-poll, no tariff step, no real account creation) — texts are reused
-verbatim from `OldBot/bot_texts.md`.
+confirms → platform account created. Grew out of an early PHP prototype
+(cron long-poll, no tariff step, no real account creation), since removed; the texts live
+in `backend/scripts/intake_bot.py` (`TEXT_*`).
 
 ## Funnel (`intake_applications.status`)
 
@@ -88,11 +88,14 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    admin saw the payment land some other way — goes through `/confirm @username` instead,
    see below, which shares this same account-creation path.) Login = the
    applicant's Telegram `@username`, one-time password (`must_change_password=true`),
-   `intake_id` = the current active intake ([DATA_MODEL.md](DATA_MODEL.md) `intakes`),
+   `intake_id` = the **application's** intake (`app.intake_id`, ARG-189; legacy rows without
+   one fall back to the current active intake — [DATA_MODEL.md](DATA_MODEL.md) `intakes`),
    `plan_id` = the chosen tariff. Right after the account is created, the bot assigns the
    new user every `type='individual'` task tagged with this same `intake_id` (welcome
-   tasks provisioned ahead of time by `scripts/provision_second_intake.py`, with an empty
-   recipient list at creation — see that script and [TASKS.md](TASKS.md)). Sends
+   tasks of the second intake, provisioned with an empty recipient list). Since the third
+   intake (ARG-174) `scripts/provision_second_intake.py` creates the welcome tasks as
+   `type='common'` scoped by `intake_id` instead — the bot's query doesn't match them, they
+   are visible to the whole intake without an assignment (see [TASKS.md](TASKS.md)). Sends
    login/password + `PLATFORM_URL` to the applicant. `status=confirmed`,
    `intake_applications.user_id` set.
    - If the applicant has no Telegram `@username` at this point, account creation is
@@ -117,7 +120,7 @@ could not recognise them. Their Telegram id is bound by hand to `users.tg_id`
 an unknown login, an account that already has a *different* `tg_id`, and a `tg_id` already
 owned by another account in `users` or via `intake_applications.user_id`). Lookup is by
 **id only** — never by username (a Telegram handle can be changed or released). For a bound
-`tg_id`, `/start` and any message go straight to service mode («Чем помочь?» +
+`tg_id`, `/start` and any message go straight to service mode («Чем помочь, аргонавт?» +
 «Сменить пароль» / «Задать вопрос») and **no application row is created**; `_service_user` resolves the account for
 «Сменить пароль»: `users.tg_id` first, then a `confirmed` application's `user_id`. An id
 with neither is an ordinary stranger → the funnel, exactly as before. One-off invitation
@@ -129,6 +132,81 @@ unset) opens this bot and Telegram auto-sends `/start forgot_password` — the b
 `/start …` as a plain `/start` (no payload-specific branch), so bound/confirmed users land in
 service mode at once and strangers enter the funnel.
 
+## Returning participants (ARG-176)
+
+Someone who already took an expedition has a platform account and a bound Telegram id, so the
+bot used to leave them in service mode forever (and `create_user` would fail on their taken
+login). Special conditions for them:
+
+- **Who is "returning"** (`_returning_user`): the account found by `tg_id` only (`users.tg_id`,
+  else any application with `user_id`) is a `participant` whose `intake_id` is not the current
+  (newest) intake. Never matched by username.
+- **Entry:** the service menu of such a person gets a top button **«🌊 Записаться в новую
+  экспедицию»** (`svc_en`). It creates an application for the current intake **without anketa
+  and without the admin's «Принять»**: straight to `choosing_plan`, 24h window started,
+  `user_id` already set to the existing account. The admin only gets an informational card
+  («Вернувшийся записался: @tag (логин …)»), no buttons. Pressing again resumes the existing application;
+  a burned one (`expired`) is reopened in the same row. An expired returning application
+  sends `/start` back to the service menu, not to the anketa.
+- **Price:** `price_snapshot` is built by `_returning_prices` — **⅔ of each active plan,
+  rounded to hundreds** (10 000 → 6 700), except the plan(s) with the highest price
+  (`max(price)`, not by name), which keep the full price. The rest of the funnel reads
+  the snapshot, so it needs no changes.
+- **Payment confirmation:** `_create_platform_user` sees `app.user_id` and does **not** create
+  an account: it moves the existing one (`users.intake_id` → current, `users.plan_id` → chosen
+  tariff) and assigns the new intake's welcome tasks. No new password; the bot says so. Side
+  effect to remember: moving `intake_id` hides the previous intake's channels/KB and restarts
+  the Dynamics window ([DATA_MODEL.md](DATA_MODEL.md) «Content isolation»).
+- **Applications are per intake:** `(tg_id, intake_id)` is unique, the old application with its
+  payment history stays. `_find_application` returns the newest one. `/reset` deletes the user
+  only if no other application points at it.
+
+## Channel discount (−1000 ₽)
+
+Applicants who sit in the closed Telegram channel and have **never taken an expedition** get
+−1000 ₽ on every tariff except the most expensive one (`max(price)` over active plans, not by
+name — same rule as `_returning_prices`; all plans sharing the top price stay full).
+
+- **Switch:** env `INTAKE_DISCOUNT_CHANNEL_ID` (`-100…`, the bot must be an **admin** of the
+  channel — otherwise `getChatMember` is refused). Unset = mechanic off. The id is in `.env`,
+  not in the repo (public repo).
+- **When:** once, inside `_accept_application` (both «Принять» buttons, also a re-accept of an
+  `expired` application). `_is_channel_member` calls `getChatMember(channel, tg_id)`; `member`,
+  `administrator`, `creator` and `restricted` with `is_member` count. `left`, `kicked`, any
+  Telegram error or network failure = no discount (the funnel never fails on it). By id only.
+- **"Never took an expedition":** no account by `_service_user` (`users.tg_id` or an application
+  with `user_id`) and the application has no `user_id`. Returning participants never go through
+  this path — they have their own ⅔ conditions (above); the two discounts don't stack.
+- **Where it shows:** `_channel_discount_prices` becomes `price_snapshot`, so the rest of the
+  funnel (tariff buttons, receipt caption, payment text) needs no changes. The admin's anketa
+  card gets «🎁 скидка 1000 ₽ (в канале)» next to «Принята»; the applicant gets no extra
+  message — the lower prices are just there on the tariff screen. Nothing new is stored in the DB — the snapshot is the record.
+
+## Intake switch and applicant kind (ARG-189)
+
+Applications are archived per intake; when a new intake appears nobody is migrated or
+mass-messaged — the reset is **lazy**, triggered by the person writing to the bot
+(`_rollover_stale_application`, called in `/start` and in the message handler):
+
+- An application still **in the funnel** (not `confirmed`, not a returning user's burned one)
+  whose `intake_id` is not the current (newest) intake — legacy `NULL` counts as old — is a
+  leftover of the previous intake. The bot creates a **new** application for the current intake
+  (`awaiting_about`, `applicant_kind='retry'`) and sends the opening `/start` text: the person
+  starts from scratch. The old row stays untouched in the previous intake's archive.
+- `confirmed` applications are never reset (service mode). An unfinished application of someone
+  who already has an account (`user_id`, i.e. a returning user) is not restarted with an anketa:
+  its booking is just burned (`expired`), the person is back in service mode and taps
+  «Записаться в новую экспедицию» again.
+- **`applicant_kind`** is written once at creation: `new` — the chat had no application at all;
+  `retry` — restarted by the rule above (applied to a previous intake, was not enrolled);
+  `returning` — enrolment through the ARG-176 button. `NULL` for applications created before
+  ARG-189 (never backfilled).
+- No broadcast announces the new intake — people find out when they message the bot.
+- **Prod one-off (not a migration — no data in the repo):** before the new intake is created,
+  attach legacy applications to the previous intake:
+  `UPDATE intake_applications SET intake_id = <id of the second intake> WHERE intake_id IS NULL;`
+  Without it, `NULL` applications would be treated as leftovers of an intake that is still current.
+
 **«Задать вопрос» is available at every funnel step**, not just in service mode — as the
 **`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
 both set by the service at startup, not by hand in BotFather). It is deliberately *not* an
@@ -136,7 +214,7 @@ inline button on funnel steps any more (ARG-94): a per-message "💬 Задат�
 competed with the buttons that actually belong to the current step. **Service mode is the
 exception:** its keyboard always carries both «🔑 Сменить пароль» and «💬 Задать вопрос»
 (nothing competes there), and every service-mode entry — `/start`, any message, the
-announce — shows the same neutral «Чем помочь?» (both intakes are over, so the old
+announce — shows the same neutral «Чем помочь, аргонавт?» (both intakes are over, so the old
 «Ты уже на борту Экспедиции… пришлём детали старта» text is gone). The command sets an ephemeral Redis flag
 (`intakebot:await_q:{tg_id}`, distinct prefix from the access bot's `bot:await_q:*` —
 separate service, separate Redis namespace) and takes priority over whatever the funnel
@@ -272,6 +350,13 @@ Response shape: `{total, by_status: {<status>: count, ...all 8 keys always}, ite
 — all 8 including `expired` (ARG-108). Each item adds two backend-computed fields the
 frontend must not try to derive itself: `stage_since` (timestamp the application entered
 its *current* status) and `days_in_stage`.
+
+Since ARG-189 the endpoint takes an optional **`?intake_id=`**: `items`, `total`, `by_status`
+and `by_kind` are all scoped to that intake (no parameter = every intake). `by_kind` is
+`{new, retry, returning}` (all three keys always; applications with `applicant_kind IS NULL`
+are not counted). Each item also carries `intake_id` and `applicant_kind`. The page selects the
+newest intake (first of `GET /api/admin/intakes`) by default; older intakes are the archive,
+«Все потоки» drops the filter.
 
 Five nullable timestamp columns back `stage_since`, set by the bot right next to the
 `status` assignment that causes them (`submitted_at`, `accepted_at`, `plan_chosen_at`,

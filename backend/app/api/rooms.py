@@ -449,7 +449,9 @@ async def list_rooms(
         )
     )
     stream_map: dict[int, tuple[int, int]] = {
-        room_id: (node_id, task_id) for room_id, node_id, task_id in node_rows.all()
+        room_id: (node_id, task_id)
+        for room_id, node_id, task_id in node_rows.all()
+        if room_id is not None
     }
 
     # Тариф владельца личного дневника — батчем, чтобы «Все дневники» группировались

@@ -30,6 +30,7 @@ from app.schemas.auth import (
 )
 from app.schemas.user import ProfileUpdateRequest, UserOut
 from app.services.auth import issue_token_pair, refresh_is_valid, revoke_refresh
+from app.services.limbo import resolve_limbo
 from app.services.media import presign_asset_urls
 from app.services.ratelimit import client_ip, enforce_rate_limit
 from app.services.visibility import is_cheap_tariff
@@ -172,6 +173,11 @@ async def me(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> UserOut:
+    # /me не идёт через get_current_active_user, значит сам resolve_limbo не
+    # вызывается — а фронт гейтит LimboPopup именно по `limbo_deadline_at` из /me,
+    # так что без этого Междумирье, выполненное/истёкшее с прошлого запроса,
+    # висело бы в ответе до любого другого вызова (docs/LIMBO.md «Resolving it»).
+    await resolve_limbo(session, user)
     return await _me_out(session, user)
 
 

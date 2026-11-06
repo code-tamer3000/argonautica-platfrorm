@@ -107,13 +107,13 @@ FAQ_ITEMS: list[tuple[str, str]] = [
     ),
 ]
 
-TASK_NAME_TITLE = "Имя аргонавта"
+TASK_NAME_TITLE = "Пиратское имя"
 TASK_NAME_BODY = (
     "В Экспедиции мы сбрасываем старые роли. Не важно что было раньше — твой "
     "опыт всегда с тобой. Придумай себе имя аргонавта, которым будешь "
     "пользоваться на протяжении всей Экспедиции."
 )
-TASK_WELCOME2_TITLE = "Освобождаем оперативку"
+TASK_WELCOME2_TITLE = "Подвиг на экспедицию"
 TASK_WELCOME2_BODY = (
     "Напиши, какое незавершённое дело висит у тебя в операционке более 3х "
     "месяцев. За время Экспедиции ты его либо выкинешь за борт, либо доделаешь."
@@ -291,7 +291,7 @@ async def _ensure_welcome_task(
     existing = (
         await session.execute(
             select(Task).where(
-                Task.type == "individual",
+                Task.type == "common",
                 Task.intake_id == intake.id,
                 Task.title == title,
                 Task.deleted_at.is_(None),
@@ -302,7 +302,7 @@ async def _ensure_welcome_task(
         print(f"  задание уже есть: {title!r} (task id={existing.id})")
         return existing
     task = Task(
-        type="individual",
+        type="common",
         title=title,
         body=body,
         created_by=admin_id,
@@ -312,9 +312,9 @@ async def _ensure_welcome_task(
     )
     session.add(task)
     await session.flush()
-    # Пустой список получателей — намеренно (см. intake_bot.py::_assign_intake_welcome_tasks):
-    # каждый новичок этого набора получает назначение в момент регистрации.
-    print(f"  задание создано (0 получателей на старте): {title!r} (task id={task.id})")
+    # Общее задание набора (ARG-174): строки назначений создаются лениво при первой
+    # сдаче, бот приёма его не назначает (он берёт только type='individual').
+    print(f"  задание создано (общее, видно набору): {title!r} (task id={task.id})")
     return task
 
 

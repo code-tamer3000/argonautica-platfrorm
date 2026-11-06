@@ -9,7 +9,7 @@ Telegram-токен. Свой токен = свой `getUpdates`-поллер, �
 переживает рестарт контейнера. Эфемерное «жду ответа на вопрос поддержки» — в Redis
 (`intakebot:*`), тем же паттерном, что в access-боте (ADR-013).
 
-Флоу (тексты — OldBot/bot_texts.md, ключи используются как есть):
+Флоу (тексты — константы TEXT_* ниже):
   /start → «расскажи о себе» → анкета уходит в admin-чат с кнопкой «Принять» →
   админ принимает → участник выбирает тариф (список из БД: одна кнопка на тариф →
   экран описания → «Перейти к оплате», всё в одном сообщении через editMessageText) →
@@ -61,6 +61,9 @@ from app.core.security import generate_one_time_password, hash_password
 from app.db.session import SessionLocal
 from app.models.intake import Intake
 from app.models.intake_application import (
+    KIND_NEW,
+    KIND_RETRY,
+    KIND_RETURNING,
     STATUS_AWAITING_ABOUT,
     STATUS_AWAITING_OFFER,
     STATUS_AWAITING_RECEIPT,
@@ -92,6 +95,13 @@ LOG_CHAT_ID: int | None = int(_log_raw) if _log_raw.lstrip("-").isdigit() else N
 ALLOW_RESET = os.environ.get("INTAKE_BOT_ALLOW_RESET", "").strip().lower() in {
     "1", "true", "yes", "on",
 }
+# Скидка за членство в закрытом канале (бот в нём админ — иначе getChatMember не
+# работает). Пусто = механика выключена. Id канала не в коде: репо публичный.
+_channel_raw = os.environ.get("INTAKE_DISCOUNT_CHANNEL_ID", "").strip()
+DISCOUNT_CHANNEL_ID: int | None = (
+    int(_channel_raw) if _channel_raw.lstrip("-").isdigit() else None
+)
+CHANNEL_DISCOUNT_RUB = 1000
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
@@ -131,7 +141,7 @@ RATE_WINDOW_SEC = 3600
 AWAIT_QUESTION_TTL_SEC = 3600
 QMAP_TTL_SEC = 7 * 24 * 3600
 
-# --- Тексты (OldBot/bot_texts.md, использованы как есть) -------------------------
+# --- Тексты -----------------------------------------------------------------------
 
 # Premium-эмодзи «звезда» из набора t.me/addemoji/argonautica_systems (custom_emoji_id
 # получен через getStickerSet). Текст внутри тега — ОБЯЗАН быть настоящим Unicode-эмодзи
@@ -154,7 +164,7 @@ TRIBUTE_PAYMENT_URL = "https://t.me/tribute/app?startapp=dP8y"
 TEXT_ASK_ABOUT = f"Представься пожалуйста. Опиши: в какой точке жизненного пути находишься? {STAR}"
 TEXT_START = (
     f"{SHIP} <b>Экспедиция «Искусство посылания на Хер»</b>\n\n"
-    "Путь Аргонавта: 28 дней, 5 миров, освобождение внимания и проявление своего "
+    "Путь Аргонавта: 5 недель, 5 миров, освобождение внимания и проявление своего "
     "Дела.\n\n"
     f"{TEXT_ASK_ABOUT}"
 )
@@ -192,7 +202,17 @@ TEXT_WAIT_DECISION = f"Твоя заявка на рассмотрении. Ве
 TEXT_WAIT_PAYMENT_CHECK = f"Проверяем оплату. Скоро подтвердим. {STAR}"
 
 # Временные заглушки — финальные тексты допишет пользователь позже (см. ARG-92 «Границы»).
-TEXT_SERVICE_MENU = "Чем помочь?"
+TEXT_SERVICE_MENU = "Чем помочь, аргонавт?"
+TEXT_ENROLL_WELCOME = (
+    f"{STAR} <b>С возвращением!</b>\n\n"
+    "Анкета не нужна: выбирай тариф, оплата — как обычно. "
+    "Вход на платформу останется прежним."
+)
+TEXT_ENROLL_NOT_AVAILABLE = "Запись для вернувшихся сейчас недоступна."
+TEXT_RETURNING_CONFIRMED = (
+    "Оплата подтверждена — ты снова на борту! Заходи на платформу как раньше, "
+    "логин и пароль прежние."
+)
 TEXT_SERVICE_ANNOUNCE = (
     "Теперь здесь можно сбросить пароль от платформы: забудешь его — нажми кнопку ниже, "
     "и я пришлю новый."
@@ -243,6 +263,7 @@ TEXT_RESUBMITTED = (
 
 CB_ASK_QUESTION = "svc_q"
 CB_CHANGE_PASSWORD = "svc_pw"
+CB_ENROLL = "svc_en"  # вернувшийся записывается в новый поток (ARG-176)
 
 TEXT_STEP_DONE = "Этот шаг уже пройден."
 
@@ -489,11 +510,55 @@ async def _log_action(client: httpx.AsyncClient, text: str) -> None:
 
 
 async def _find_application(session: AsyncSession, tg_id: int) -> IntakeApplication | None:
+    """Последняя заявка Telegram-аккаунта (с ARG-176 их может быть по одной на поток)."""
     return (
         await session.execute(
-            select(IntakeApplication).where(IntakeApplication.tg_id == tg_id)
+            select(IntakeApplication)
+            .where(IntakeApplication.tg_id == tg_id)
+            .order_by(IntakeApplication.id.desc())
+            .limit(1)
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
+
+
+async def _rollover_stale_application(
+    session: AsyncSession, app: IntakeApplication | None, from_user: dict[str, Any]
+) -> tuple[IntakeApplication | None, bool]:
+    """Ленивый сброс воронки при смене потока (ARG-189): (заявка, начата_заново).
+
+    Заявка, которая ещё в воронке, но относится не к текущему (самому новому) потоку,
+    — хвост прошлого набора. Человек пришёл снова → заводим НОВУЮ заявку на текущий
+    поток (`retry`), как при первом `/start`; старая остаётся в архиве потока. Никаких
+    хуков на создание потока и массовых рассылок: сброс случается, когда пишет сам
+    человек. Исторические заявки без потока (`intake_id IS NULL`) считаются прошлыми.
+
+    `confirmed` не трогаем (сервисный режим). Незавершённая заявка вернувшегося
+    (`user_id` задан) заново не начинается — у него есть аккаунт и анкета не нужна:
+    бронь прошлого потока просто сгорает, и он снова жмёт «Записаться»."""
+    if app is None or not _app_in_funnel(app):
+        return app, False
+    current = await _current_intake(session)
+    if current is None or app.intake_id == current.id:
+        return app, False
+    if app.user_id is not None:
+        await _mark_expired(session, app)
+        return app, False
+    fresh = IntakeApplication(
+        tg_id=app.tg_id,
+        tg_username=from_user.get("username"),
+        tg_first_name=from_user.get("first_name"),
+        tg_last_name=from_user.get("last_name"),
+        intake_id=current.id,
+        applicant_kind=KIND_RETRY,
+    )
+    session.add(fresh)
+    await session.flush()
+    print(
+        f"[action] заявка #{app.id} ({_user_tag(app.tg_username, app.tg_id)}) относится к "
+        f"прошлому потоку — начата заново на поток #{current.id}, заявка #{fresh.id}",
+        flush=True,
+    )
+    return fresh, True
 
 
 async def _find_bound_user(session: AsyncSession, tg_id: int) -> User | None:
@@ -515,10 +580,90 @@ async def _service_user(session: AsyncSession, tg_id: int) -> tuple[User | None,
     user = await _find_bound_user(session, tg_id)
     if user is not None:
         return user, None
-    app = await _find_application(session, tg_id)
-    if app is None or app.status != STATUS_CONFIRMED or app.user_id is None:
+    return await _find_funnel_user(session, tg_id)
+
+
+async def _find_funnel_user(
+    session: AsyncSession, tg_id: int
+) -> tuple[User | None, str | None]:
+    """Учётка по заявке с `user_id` (созданная воронкой или привязанная вернувшемуся).
+
+    Смотрим любую заявку этого tg_id, а не только последнюю: у вернувшегося, который
+    ещё платит за новый поток, последняя заявка не `confirmed`, а аккаунт у него есть."""
+    app = (
+        await session.execute(
+            select(IntakeApplication)
+            .where(IntakeApplication.tg_id == tg_id, IntakeApplication.user_id.is_not(None))
+            .order_by(IntakeApplication.id.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+    if app is None or app.user_id is None:
         return None, None
     return await session.get(User, app.user_id), app.tg_username
+
+
+async def _returning_user(session: AsyncSession, tg_id: int) -> User | None:
+    """Участник прошлых потоков, которому положены спецусловия (ARG-176).
+
+    Участник платформы (`role='participant'`), чей поток — не текущий (самый новый).
+    Ищем строго по tg_id, не по нику."""
+    user, _ = await _service_user(session, tg_id)
+    if user is None or user.role != "participant" or user.intake_id is None:
+        return None
+    intake = await _current_intake(session)
+    if intake is None or user.intake_id == intake.id:
+        return None
+    return user
+
+
+def _returning_prices(plans: list[Plan]) -> dict[str, int]:
+    """Снимок цен для вернувшегося: ⅔ цены с округлением до сотен.
+
+    Самый дорогой тариф (по `max(price)` среди активных, не по названию) остаётся без
+    скидки. Если у нескольких тарифов цена максимальная — без скидки все они."""
+    if not plans:
+        return {}
+    top = max(plan.price for plan in plans)
+    return {
+        str(plan.id): plan.price
+        if plan.price == top
+        else (plan.price * 2 + 150) // 300 * 100
+        for plan in plans
+    }
+
+
+def _channel_discount_prices(plans: list[Plan]) -> dict[str, int]:
+    """Снимок цен для участника канала: −1000 ₽ на всё, кроме самого дорогого тарифа.
+
+    Самый дорогой — по `max(price)` среди активных, не по названию (как в
+    `_returning_prices`). Скидка не уводит цену ниже нуля."""
+    if not plans:
+        return {}
+    top = max(plan.price for plan in plans)
+    return {
+        str(plan.id): plan.price
+        if plan.price == top
+        else max(plan.price - CHANNEL_DISCOUNT_RUB, 0)
+        for plan in plans
+    }
+
+
+async def _is_channel_member(client: httpx.AsyncClient, tg_id: int) -> bool:
+    """Состоит ли Telegram-аккаунт в канале скидки. Любой сбой/отказ Telegram = False
+
+    (скидку не даём, воронку не роняем). Проверка строго по id, не по нику."""
+    if DISCOUNT_CHANNEL_ID is None:
+        return False
+    member = await _api_call(
+        client, "getChatMember", {"chat_id": DISCOUNT_CHANNEL_ID, "user_id": tg_id}
+    )
+    if member is None:
+        return False
+    status = member.get("status")
+    return status in ("creator", "administrator", "member") or (
+        status == "restricted" and bool(member.get("is_member"))
+    )
 
 
 async def _current_intake(session: AsyncSession) -> Intake | None:
@@ -624,13 +769,24 @@ def _payment_keyboard() -> dict[str, Any]:
     }
 
 
-def _service_keyboard() -> dict[str, Any]:
-    return {
-        "inline_keyboard": [
-            [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
-            [{"text": "💬 Задать вопрос", "callback_data": CB_ASK_QUESTION}],
-        ]
-    }
+def _service_keyboard(returning: bool = False) -> dict[str, Any]:
+    rows = [
+        [{"text": "🔑 Сменить пароль", "callback_data": CB_CHANGE_PASSWORD}],
+        [{"text": "💬 Задать вопрос", "callback_data": CB_ASK_QUESTION}],
+    ]
+    if returning:
+        rows.insert(0, [{"text": "🌊 Записаться в новую экспедицию", "callback_data": CB_ENROLL}])
+    return {"inline_keyboard": rows}
+
+
+async def _send_service_menu(
+    client: httpx.AsyncClient, session: AsyncSession, chat_id: int, tg_id: int
+) -> None:
+    """Сервисное меню; вернувшемуся — с кнопкой записи в новый поток (ARG-176)."""
+    returning = await _returning_user(session, tg_id) is not None
+    await _send(
+        client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard(returning)
+    )
 
 
 async def _rate_ok(tg_id: int) -> bool:
@@ -784,7 +940,7 @@ async def _status_reminder(client: httpx.AsyncClient, chat_id: int, app: IntakeA
 
 
 TEXT_PLAN_LIST = "Выбери тариф — покажу, что входит, и переведу к оплате:"
-TEXT_NO_PLANS = f"Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. {SHIP}"
+TEXT_NO_PLANS =f"Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. {SHIP}"
 
 
 async def _send_plan_list(
@@ -891,12 +1047,30 @@ async def _handle_receipt(
 
 async def _create_platform_user(
     session: AsyncSession, app: IntakeApplication
-) -> tuple[str, str] | None:
-    """Создать пользователя платформы. None, если у заявителя нет @username."""
-    if not app.tg_username:
-        return None
-    intake = await _current_intake(session)
+) -> tuple[str, str | None] | None:
+    """Создать пользователя платформы. None, если у заявителя нет @username.
+
+    Вернувшийся (у заявки уже есть `user_id`, ARG-176) нового аккаунта не получает:
+    переносим существующий в текущий поток. Пароль в этом случае не выдаётся (None)."""
+    # Поток берём из заявки (ARG-189): заявка прошлого потока, подтверждённая уже после
+    # появления нового, не должна уехать в «самый новый». Старые заявки без потока —
+    # в текущий, как раньше.
+    intake = await session.get(Intake, app.intake_id) if app.intake_id is not None else None
     if intake is None:
+        intake = await _current_intake(session)
+    if intake is None:
+        return None
+    if app.user_id is not None:
+        user = await session.get(User, app.user_id)
+        if user is None:
+            return None
+        user.intake_id = intake.id
+        user.plan_id = app.plan_id
+        app.intake_id = intake.id
+        await session.flush()
+        await _assign_intake_welcome_tasks(session, intake.id, user.id)
+        return user.username, None
+    if not app.tg_username:
         return None
     body = AdminCreateUserRequest(
         username=app.tg_username,
@@ -907,6 +1081,7 @@ async def _create_platform_user(
     )
     response = await create_user(body, session)
     app.user_id = response.id
+    app.intake_id = intake.id
     await _assign_intake_welcome_tasks(session, intake.id, response.id)
     return response.username, response.one_time_password
 
@@ -940,12 +1115,18 @@ async def _assign_intake_welcome_tasks(
 # --- Обработчики callback-кнопок ---------------------------------------------
 
 
-async def _accept_application(session: AsyncSession, app: IntakeApplication) -> list[Plan]:
+async def _accept_application(
+    client: httpx.AsyncClient, session: AsyncSession, app: IntakeApplication
+) -> tuple[list[Plan], bool]:
     """Общая часть двух кнопок принятия («Принять» / «Принять с комментарием»):
 
     статус, дедлайн окна оплаты, снимок цен. Не трогает ни карточку в admin-чате,
     ни сообщения заявителю — этим дальше распоряжается вызывающий, у кнопок он
     расходится (см. `_handle_accept` vs `_handle_accept_with_comment`).
+
+    Возвращает (тарифы, скидка_канала). Скидка −1000 ₽ — тем, кто состоит в закрытом
+    канале и ещё не проходил экспедицию (нет аккаунта ни по `users.tg_id`, ни по заявке);
+    членство смотрим один раз, здесь, дальше воронка читает снимок.
     """
     # Приём сгоревшей заявки — это и «принять заново», и «продлить»: воронка
     # начинается с выбора тарифа, оферта принимается ещё раз (согласие привязано к
@@ -961,9 +1142,17 @@ async def _accept_application(session: AsyncSession, app: IntakeApplication) -> 
     # Снимок цен — в тот же момент, что и дедлайн: с этой секунды и до конца окна
     # заявка смотрит только сюда, что бы админ ни поменял в plans (см. _plan_price).
     plans = await _active_plans(session)
-    app.price_snapshot = {str(plan.id): plan.price for plan in plans}
+    discounted = False
+    if app.user_id is None and DISCOUNT_CHANNEL_ID is not None:
+        account, _ = await _service_user(session, app.tg_id)
+        discounted = account is None and await _is_channel_member(client, app.tg_id)
+    app.price_snapshot = (
+        _channel_discount_prices(plans)
+        if discounted
+        else {str(plan.id): plan.price for plan in plans}
+    )
     await session.flush()
-    return plans
+    return plans, discounted
 
 
 def _accept_application_gate(app: IntakeApplication | None) -> bool:
@@ -971,13 +1160,19 @@ def _accept_application_gate(app: IntakeApplication | None) -> bool:
 
 
 async def _edit_anketa_accepted(
-    client: httpx.AsyncClient, app: IntakeApplication, tag: str, message_id: int | None
+    client: httpx.AsyncClient,
+    app: IntakeApplication,
+    tag: str,
+    message_id: int | None,
+    *,
+    discounted: bool = False,
 ) -> None:
     if message_id is None:
         return
+    note = f" · 🎁 скидка {CHANNEL_DISCOUNT_RUB} ₽ (в канале)" if discounted else ""
     await _edit_text(
         client, ADMIN_CHAT_ID, message_id,  # type: ignore[arg-type]
-        f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята\n\n"
+        f"📝 <b>Заявка от {html.escape(tag)}</b> — ✅ Принята{note}\n\n"
         f"{html.escape(app.about or '')}",
         reply_markup={"inline_keyboard": []},
     )
@@ -993,12 +1188,12 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
         await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
         return
     assert app is not None
-    plans = await _accept_application(session, app)
+    plans, discounted = await _accept_application(client, session, app)
     await _answer_callback(client, cb["id"], "Принято")
 
     tag = _user_tag(app.tg_username, app.tg_id)
     message_id = (cb.get("message") or {}).get("message_id")
-    await _edit_anketa_accepted(client, app, tag, message_id)
+    await _edit_anketa_accepted(client, app, tag, message_id, discounted=discounted)
     await _send_plan_list(client, session, app.tg_id, app, plans=plans)
     print(f"[action] заявка #{app.id} ({tag}) принята", flush=True)
 
@@ -1022,12 +1217,12 @@ async def _handle_accept_with_comment(
         await _answer_callback(client, cb["id"], "Уже обработано", alert=True)
         return
     assert app is not None
-    await _accept_application(session, app)
+    _, discounted = await _accept_application(client, session, app)
     await _answer_callback(client, cb["id"], "Принято, жду комментарий")
 
     tag = _user_tag(app.tg_username, app.tg_id)
     message_id = (cb.get("message") or {}).get("message_id")
-    await _edit_anketa_accepted(client, app, tag, message_id)
+    await _edit_anketa_accepted(client, app, tag, message_id, discounted=discounted)
 
     invite = await _send(
         client, ADMIN_CHAT_ID,  # type: ignore[arg-type]
@@ -1184,7 +1379,7 @@ async def _handle_offer_accept(client: httpx.AsyncClient, session: AsyncSession,
 
 async def _finalize_payment(
     client: httpx.AsyncClient, session: AsyncSession, app: IntakeApplication, *, manual: bool
-) -> tuple[str, str] | None:
+) -> tuple[str, str | None] | None:
     """Создать аккаунт участника и завершить заявку — общий хвост для кнопки
 
     «Подтвердить оплату» и для ручной команды `/confirm` (ARG — оплата мимо чека,
@@ -1202,15 +1397,21 @@ async def _finalize_payment(
     app.confirmed_at = datetime.now(UTC)
     await session.flush()
 
-    await _send(
-        client, app.tg_id,
-        f"{TEXT_CONFIRMED}\n\n"
-        f"🔗 Ссылка: {PLATFORM_URL}\n"
-        f"👤 Логин: <code>{html.escape(username)}</code>\n"
-        f"🔑 Пароль: <code>{html.escape(password)}</code>\n\n"
-        f"При первом входе система попросит сменить пароль.",
-        reply_markup=_service_keyboard(),
-    )
+    if password is None:  # вернувшийся: аккаунт прежний (ARG-176)
+        text = (
+            f"{TEXT_RETURNING_CONFIRMED}\n\n"
+            f"🔗 Ссылка: {PLATFORM_URL}\n"
+            f"👤 Логин: <code>{html.escape(username)}</code>"
+        )
+    else:
+        text = (
+            f"{TEXT_CONFIRMED}\n\n"
+            f"🔗 Ссылка: {PLATFORM_URL}\n"
+            f"👤 Логин: <code>{html.escape(username)}</code>\n"
+            f"🔑 Пароль: <code>{html.escape(password)}</code>\n\n"
+            f"При первом входе система попросит сменить пароль."
+        )
+    await _send(client, app.tg_id, text, reply_markup=_service_keyboard())
     tag = _user_tag(app.tg_username, app.tg_id)
     suffix = " вручную (без чека)" if manual else ""
     print(f"[action] заявка #{app.id} ({tag}) подтверждена{suffix}, юзер {username}", flush=True)
@@ -1271,6 +1472,90 @@ async def _handle_ask_question(client: httpx.AsyncClient, cb: dict[str, Any]) ->
         return
     await _answer_callback(client, cb["id"])
     await _await_question(client, chat_id, tg_id)
+
+
+def _app_in_funnel(app: IntakeApplication | None) -> bool:
+    """Заявка ещё в воронке (участнику показываем её шаг), а не в сервисном режиме.
+
+    Сервисный режим — `confirmed`, а также сгоревшая заявка вернувшегося (ARG-176): у неё
+    уже есть аккаунт, поэтому «вернуться через /start к анкете» не нужно, достаточно
+    снова нажать «Записаться в новую экспедицию»."""
+    if app is None:
+        return False
+    if app.status == STATUS_CONFIRMED:
+        return False
+    return not (app.status == STATUS_EXPIRED and app.user_id is not None)
+
+
+async def _handle_enroll(
+    client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]
+) -> None:
+    """«Записаться в новую экспедицию» — вернувшийся без анкеты и «Принять» (ARG-176).
+
+    Заводим заявку на текущий поток сразу в `choosing_plan`, с аккаунтом (`user_id`) и
+    снимком цен со скидкой ⅔ (`_returning_prices`). Часы брони стартуют сейчас."""
+    chat_id = (cb.get("message") or {}).get("chat", {}).get("id")
+    from_user = cb.get("from") or {}
+    tg_id = from_user.get("id", chat_id)
+    if chat_id is None:
+        return
+    user = await _returning_user(session, tg_id)
+    intake = await _current_intake(session)
+    plans = await _active_plans(session)
+    if user is None or intake is None or not plans:
+        await _answer_callback(client, cb["id"], TEXT_ENROLL_NOT_AVAILABLE, alert=True)
+        return
+
+    app = (
+        await session.execute(
+            select(IntakeApplication).where(
+                IntakeApplication.tg_id == tg_id, IntakeApplication.intake_id == intake.id
+            )
+        )
+    ).scalars().first()
+    if app is not None and app.status != STATUS_EXPIRED:
+        await _answer_callback(client, cb["id"])
+        if app.status == STATUS_CHOOSING_PLAN:
+            await _send_plan_list(client, session, chat_id, app)
+        else:
+            await _status_reminder(client, chat_id, app)
+        return
+
+    now = datetime.now(UTC)
+    if app is None:
+        app = IntakeApplication(
+            tg_id=tg_id,
+            tg_username=from_user.get("username"),
+            tg_first_name=from_user.get("first_name"),
+            tg_last_name=from_user.get("last_name"),
+            intake_id=intake.id,
+        )
+        session.add(app)
+    app.applicant_kind = KIND_RETURNING
+    # Сгоревшую заявку переоткрываем той же строкой — (tg_id, intake_id) уникальны.
+    app.user_id = user.id
+    app.status = STATUS_CHOOSING_PLAN
+    app.submitted_at = now
+    app.accepted_at = now
+    app.plan_id = None
+    app.offer_accepted_at = None
+    app.offer_version = None
+    app.expired_at = None
+    app.payment_deadline_at = now + timedelta(hours=PAYMENT_WINDOW_HOURS)
+    app.price_snapshot = _returning_prices(plans)
+    await session.flush()
+    await _answer_callback(client, cb["id"])
+
+    await _send(client, chat_id, TEXT_ENROLL_WELCOME)
+    await _send_plan_list(client, session, chat_id, app, plans=plans)
+    tag = _user_tag(app.tg_username, tg_id)
+    if ADMIN_CHAT_ID is not None:
+        await _send(
+            client, ADMIN_CHAT_ID,
+            f"Вернувшийся записался: {html.escape(tag)} "
+            f"(логин {html.escape(user.username)})",
+        )
+    print(f"[action] вернувшийся {tag} записался на поток #{intake.id}, заявка #{app.id}", flush=True)
 
 
 async def _handle_change_password(client: httpx.AsyncClient, session: AsyncSession, cb: dict[str, Any]) -> None:
@@ -1352,6 +1637,8 @@ async def _handle_callback(client: httpx.AsyncClient, session: AsyncSession, cb:
         await _handle_ask_question(client, cb)
     elif data == CB_CHANGE_PASSWORD:
         await _handle_change_password(client, session, cb)
+    elif data == CB_ENROLL:
+        await _handle_enroll(client, session, cb)
     else:
         await _answer_callback(client, cb["id"])
 
@@ -1450,7 +1737,7 @@ async def _find_application_by_username(
         await session.execute(
             select(IntakeApplication).where(
                 func.lower(IntakeApplication.tg_username) == username.lower()
-            )
+            ).order_by(IntakeApplication.id.desc())
         )
     ).scalars().first()
 
@@ -1475,7 +1762,16 @@ async def _reset_application(
     await session.delete(app)
     await session.flush()
 
-    if user_id is not None and username is not None:
+    # Аккаунт могут делить несколько заявок (вернувшийся, ARG-176): пока на него
+    # ссылается другая заявка, учётку не удаляем — иначе сломаем FK и чужой прогон.
+    still_used = user_id is not None and (
+        await session.execute(
+            select(func.count()).select_from(IntakeApplication).where(
+                IntakeApplication.user_id == user_id
+            )
+        )
+    ).scalar_one() > 0
+    if user_id is not None and username is not None and not still_used:
         await delete_user(user_id, _reset_actor(), session)
 
     await redis_client.delete(f"intakebot:await_q:{tg_id}")
@@ -1665,18 +1961,27 @@ async def _handle_start(
     tg_username = from_user.get("username")
     await redis_client.delete(f"intakebot:await_q:{tg_id}")
 
-    # Привязанная вручную учётка (ARG-167) — сразу в сервисный режим, заявку не заводим.
-    if await _find_bound_user(session, tg_id) is not None:
-        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
-        return
-
+    # Сервисный режим: подтверждённая заявка, сгоревшая заявка вернувшегося (ARG-176) или
+    # привязанная вручную учётка (ARG-167) — заявку не заводим. Незавершённая заявка
+    # (в т.ч. вернувшегося, пока он платит за новый поток) имеет приоритет.
     app = await _find_application(session, tg_id)
+    app, restarted = await _rollover_stale_application(session, app, from_user)
+    if restarted:
+        await _send(client, chat_id, TEXT_START)
+        return
+    if not _app_in_funnel(app):
+        if app is not None or await _find_bound_user(session, tg_id) is not None:
+            await _send_service_menu(client, session, chat_id, tg_id)
+            return
     if app is None:
+        current = await _current_intake(session)
         app = IntakeApplication(
             tg_id=tg_id,
             tg_username=tg_username,
             tg_first_name=from_user.get("first_name"),
             tg_last_name=from_user.get("last_name"),
+            intake_id=current.id if current is not None else None,
+            applicant_kind=KIND_NEW,
         )
         session.add(app)
         await session.flush()
@@ -1709,8 +2014,6 @@ async def _handle_start(
         await _send(client, chat_id, TEXT_NEED_RECEIPT)
     elif app.status == STATUS_PAYMENT_REVIEW:
         await _send(client, chat_id, TEXT_WAIT_PAYMENT_CHECK)
-    elif app.status == STATUS_CONFIRMED:
-        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
 
 
 async def _resubmit_after_expiry(
@@ -1807,14 +2110,18 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         await _forward_question(client, session, chat_id, tg_id, tg_username, text)
         return
 
-    if await _find_bound_user(session, tg_id) is not None:
-        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
-        return
-
     app = await _find_application(session, tg_id)
-    if app is None:
-        await _send(client, chat_id, TEXT_NEED_START)
+    app, restarted = await _rollover_stale_application(session, app, from_user)
+    if restarted:
+        await _send(client, chat_id, TEXT_START)
         return
+    if not _app_in_funnel(app):
+        if app is not None or await _find_bound_user(session, tg_id) is not None:
+            await _send_service_menu(client, session, chat_id, tg_id)
+        else:
+            await _send(client, chat_id, TEXT_NEED_START)
+        return
+    assert app is not None
 
     # Одна точка на все шаги: чек, присланный после дедлайна, тоже опоздал.
     if _deadline_passed(app):
@@ -1837,10 +2144,6 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
             await _handle_receipt(client, session, chat_id, app, file_id, "photo")
         else:
             await _handle_receipt(client, session, chat_id, app, document["file_id"], "document")
-        return
-
-    if app.status == STATUS_CONFIRMED:
-        await _send(client, chat_id, TEXT_SERVICE_MENU, reply_markup=_service_keyboard())
         return
 
     await _status_reminder(client, chat_id, app)

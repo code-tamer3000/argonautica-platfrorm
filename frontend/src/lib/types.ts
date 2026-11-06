@@ -756,9 +756,14 @@ export type ApplicationStatus =
   | 'confirmed'
   | 'expired'
 
+/** Откуда пришёл заявитель (ARG-189); null — заявка до появления поля. */
+export type ApplicantKind = 'new' | 'retry' | 'returning'
+
 export interface ApplicationOut {
   id: number
   tg_id: number
+  intake_id: number | null
+  applicant_kind: ApplicantKind | null
   tg_username: string | null
   tg_first_name: string | null
   tg_last_name: string | null
@@ -789,6 +794,7 @@ export interface ApplicationOut {
 export interface ApplicationFunnelOut {
   total: number
   by_status: Record<ApplicationStatus, number>
+  by_kind: Record<ApplicantKind, number>
   items: ApplicationOut[]
 }
 

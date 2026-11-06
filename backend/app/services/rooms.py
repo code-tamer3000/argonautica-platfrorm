@@ -141,8 +141,17 @@ async def dm_write_allowed(session: AsyncSession, room: Room, user: User) -> boo
     (в т.ч. навигатор) и любой dm без админа-собеседника не ограничены.
 
     `dm_unlocked_by_admin` снимает это ограничение навсегда, если сам админ уже
-    написал сюда первым (см. `unlock_dm_by_admin_message`) — независимо от ранга."""
-    if room.type != "dm" or user.role == "admin" or room.dm_unlocked_by_admin:
+    написал сюда первым (см. `unlock_dm_by_admin_message`) — независимо от ранга.
+
+    `torch_scope`-dm (заявка в «Факел», ARG-158) ранговым каскадом не гейтится
+    вовсе: у выпускника он не имеет смысла (docs/TORCH.md), а вся точка заявки —
+    дать написать назначенному админу."""
+    if (
+        room.type != "dm"
+        or room.torch_scope
+        or user.role == "admin"
+        or room.dm_unlocked_by_admin
+    ):
         return True
     peer = await _dm_peer(session, room, user)
     if peer is None or peer.role != "admin" or peer.is_navigator:

@@ -14,7 +14,7 @@ class Plan(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    # Рубли, целое число — цены круглые (см. OldBot/bot_texts.md: «9000 ₽»).
+    # Рубли, целое число — цены круглые (например «9000 ₽»).
     price: Mapped[int] = mapped_column(Integer, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     is_active: Mapped[bool] = mapped_column(
