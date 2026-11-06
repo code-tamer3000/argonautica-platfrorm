@@ -119,7 +119,7 @@ could not recognise them. Their Telegram id is bound by hand to `users.tg_id`
 an unknown login, an account that already has a *different* `tg_id`, and a `tg_id` already
 owned by another account in `users` or via `intake_applications.user_id`). Lookup is by
 **id only** — never by username (a Telegram handle can be changed or released). For a bound
-`tg_id`, `/start` and any message go straight to service mode («Чем помочь?» +
+`tg_id`, `/start` and any message go straight to service mode («Чем помочь, аргонавт?» +
 «Сменить пароль» / «Задать вопрос») and **no application row is created**; `_service_user` resolves the account for
 «Сменить пароль»: `users.tg_id` first, then a `confirmed` application's `user_id`. An id
 with neither is an ordinary stranger → the funnel, exactly as before. One-off invitation
@@ -131,6 +131,35 @@ unset) opens this bot and Telegram auto-sends `/start forgot_password` — the b
 `/start …` as a plain `/start` (no payload-specific branch), so bound/confirmed users land in
 service mode at once and strangers enter the funnel.
 
+## Returning participants (ARG-176)
+
+Someone who already took an expedition has a platform account and a bound Telegram id, so the
+bot used to leave them in service mode forever (and `create_user` would fail on their taken
+login). Special conditions for them:
+
+- **Who is "returning"** (`_returning_user`): the account found by `tg_id` only (`users.tg_id`,
+  else any application with `user_id`) is a `participant` whose `intake_id` is not the current
+  (newest) intake. Never matched by username.
+- **Entry:** the service menu of such a person gets a top button **«🌊 Записаться в новую
+  экспедицию»** (`svc_en`). It creates an application for the current intake **without anketa
+  and without the admin's «Принять»**: straight to `choosing_plan`, 24h window started,
+  `user_id` already set to the existing account. The admin only gets an informational card
+  («Вернувшийся записался: @tag (логин …)»), no buttons. Pressing again resumes the existing application;
+  a burned one (`expired`) is reopened in the same row. An expired returning application
+  sends `/start` back to the service menu, not to the anketa.
+- **Price:** `price_snapshot` is built by `_returning_prices` — **⅔ of each active plan,
+  rounded to hundreds** (10 000 → 6 700), except the plan(s) with the highest price
+  (`max(price)`, not by name), which keep the full price. The rest of the funnel reads
+  the snapshot, so it needs no changes.
+- **Payment confirmation:** `_create_platform_user` sees `app.user_id` and does **not** create
+  an account: it moves the existing one (`users.intake_id` → current, `users.plan_id` → chosen
+  tariff) and assigns the new intake's welcome tasks. No new password; the bot says so. Side
+  effect to remember: moving `intake_id` hides the previous intake's channels/KB and restarts
+  the Dynamics window ([DATA_MODEL.md](DATA_MODEL.md) «Content isolation»).
+- **Applications are per intake:** `(tg_id, intake_id)` is unique, the old application with its
+  payment history stays. `_find_application` returns the newest one. `/reset` deletes the user
+  only if no other application points at it.
+
 **«Задать вопрос» is available at every funnel step**, not just in service mode — as the
 **`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
 both set by the service at startup, not by hand in BotFather). It is deliberately *not* an
@@ -138,7 +167,7 @@ inline button on funnel steps any more (ARG-94): a per-message "💬 Задат�
 competed with the buttons that actually belong to the current step. **Service mode is the
 exception:** its keyboard always carries both «🔑 Сменить пароль» and «💬 Задать вопрос»
 (nothing competes there), and every service-mode entry — `/start`, any message, the
-announce — shows the same neutral «Чем помочь?» (both intakes are over, so the old
+announce — shows the same neutral «Чем помочь, аргонавт?» (both intakes are over, so the old
 «Ты уже на борту Экспедиции… пришлём детали старта» text is gone). The command sets an ephemeral Redis flag
 (`intakebot:await_q:{tg_id}`, distinct prefix from the access bot's `bot:await_q:*` —
 separate service, separate Redis namespace) and takes priority over whatever the funnel

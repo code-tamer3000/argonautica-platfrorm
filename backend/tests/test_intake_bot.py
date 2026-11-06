@@ -1453,9 +1453,16 @@ async def make_bound_user(session: AsyncSession, make_user: MakeUser) -> tuple[U
 
 
 async def test_start_from_bound_user_opens_service_mode_without_application(
-    session: AsyncSession, make_user: MakeUser
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
 ) -> None:
     user, tg_id = await make_bound_user(session, make_user)
+    # Поток пользователя — «текущий»: кнопки записи для вернувшихся (ARG-176) нет.
+    own_intake = await session.get(Intake, user.intake_id)
+
+    async def current(_session: AsyncSession) -> Intake | None:
+        return own_intake
+
+    monkeypatch.setattr(intake_bot, "_current_intake", current)
     client = FakeClient()
 
     await intake_bot._handle_message(
@@ -1633,3 +1640,189 @@ async def test_announce_reports_delivered_and_blocked(
     assert first["text"] == intake_bot.TEXT_SERVICE_ANNOUNCE
     button = first["reply_markup"]["inline_keyboard"][0][0]
     assert button["callback_data"] == intake_bot.CB_CHANGE_PASSWORD
+
+
+# --- Вернувшиеся участники: скидка ⅔ и повторная запись (ARG-176) ---------------
+
+
+def test_returning_prices_two_thirds_except_most_expensive() -> None:
+    plans = [
+        Plan(id=1, name="Земля", price=10_000),
+        Plan(id=2, name="Вода", price=20_000),
+        Plan(id=3, name="Огонь", price=40_000),
+        Plan(id=4, name="Воздух", price=100_000),
+    ]
+    assert intake_bot._returning_prices(plans) == {
+        "1": 6_700, "2": 13_300, "3": 26_700, "4": 100_000,
+    }
+    assert intake_bot._returning_prices([]) == {}
+
+
+def test_returning_prices_keeps_every_plan_with_top_price() -> None:
+    plans = [Plan(id=1, name="A", price=9_000), Plan(id=2, name="B", price=9_000)]
+    assert intake_bot._returning_prices(plans) == {"1": 9_000, "2": 9_000}
+
+
+async def _returning_setup(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> tuple[User, Intake]:
+    """Участник прошлого потока с tg_id и «текущий» поток, подменённый через monkeypatch
+    (общая БД тестов не откатывается, настоящий «последний поток» тут не годится)."""
+    new_intake = await get_or_create_intake(
+        session, date(2020, 1, 1) + timedelta(days=random.randint(1, 3000))
+    )
+    user = await make_user()
+    user.tg_id = random.randint(10**9, 10**12)
+    await session.commit()
+
+    async def current(_session: AsyncSession) -> Intake:
+        return new_intake
+
+    monkeypatch.setattr(intake_bot, "_current_intake", current)
+    return user, new_intake
+
+
+def _buttons(client: FakeClient) -> list[str]:
+    markup = client.payload("sendMessage")["reply_markup"]
+    return [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+
+
+async def test_returning_user_sees_enroll_button(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    user, _ = await _returning_setup(session, make_user, monkeypatch)
+    client = FakeClient()
+
+    await intake_bot._handle_start(
+        client, session, user.tg_id, {"id": user.tg_id, "username": user.username}
+    )
+
+    assert intake_bot.CB_ENROLL in _buttons(client)
+    # Заявку на просмотр меню не заводим.
+    assert await intake_bot._find_application(session, user.tg_id) is None
+
+
+async def test_current_intake_user_has_no_enroll_button(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    user, new_intake = await _returning_setup(session, make_user, monkeypatch)
+    user.intake_id = new_intake.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_start(
+        client, session, user.tg_id, {"id": user.tg_id, "username": user.username}
+    )
+
+    assert intake_bot.CB_ENROLL not in _buttons(client)
+
+
+async def test_enroll_opens_plan_list_with_discounted_snapshot(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    admin_chat = 999_101
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    user, new_intake = await _returning_setup(session, make_user, monkeypatch)
+    await make_plan(session, f"Земля-{random.randint(100, 999)}", 10_000)
+    client = FakeClient()
+
+    await intake_bot._handle_callback(
+        client, session,
+        {
+            "id": "cb", "data": intake_bot.CB_ENROLL,
+            "from": {"id": user.tg_id, "username": user.username},
+            "message": {"message_id": 5, "chat": {"id": user.tg_id}},
+        },
+    )
+    await session.commit()
+
+    app = await intake_bot._find_application(session, user.tg_id)
+    assert app is not None
+    assert app.status == STATUS_CHOOSING_PLAN
+    assert app.user_id == user.id
+    assert app.intake_id == new_intake.id
+    assert app.payment_deadline_at is not None
+    plans = await intake_bot._active_plans(session)
+    assert app.price_snapshot == intake_bot._returning_prices(plans)
+    # Участнику ушли приветствие и список тарифов, админу — карточка без кнопок.
+    sent = [p for name, p in client.calls if name == "sendMessage"]
+    chats = [p["chat_id"] for p in sent]
+    assert chats.count(user.tg_id) == 2
+    admin_card = next(p for p in sent if p["chat_id"] == admin_chat)
+    assert "reply_markup" not in admin_card
+
+    # Повторное нажатие не плодит заявок.
+    await intake_bot._handle_callback(
+        client, session,
+        {
+            "id": "cb", "data": intake_bot.CB_ENROLL,
+            "from": {"id": user.tg_id, "username": user.username},
+            "message": {"message_id": 5, "chat": {"id": user.tg_id}},
+        },
+    )
+    await session.commit()
+    count = await session.scalar(
+        select(func.count()).select_from(IntakeApplication).where(
+            IntakeApplication.tg_id == user.tg_id
+        )
+    )
+    assert count == 1
+
+
+async def test_returning_payment_moves_existing_account(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    admin_chat = 999_102
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", admin_chat)
+    user, new_intake = await _returning_setup(session, make_user, monkeypatch)
+    old_hash = user.password_hash
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12_000)
+    app = IntakeApplication(
+        tg_id=user.tg_id, tg_username=user.username, status=STATUS_PAYMENT_REVIEW,
+        user_id=user.id, intake_id=new_intake.id, plan_id=plan.id,
+    )
+    session.add(app)
+    await session.commit()
+    users_before = await session.scalar(select(func.count()).select_from(User))
+    client = FakeClient()
+
+    await intake_bot._handle_confirm_payment(
+        client, session,
+        {"id": "cb", "data": f"pay:{app.id}", "message": {"chat": {"id": admin_chat}}},
+    )
+    await session.commit()
+    await session.refresh(app)
+    await session.refresh(user)
+
+    assert app.status == STATUS_CONFIRMED
+    assert user.intake_id == new_intake.id
+    assert user.plan_id == plan.id
+    assert user.password_hash == old_hash  # пароль не трогаем
+    assert user.must_change_password is False  # временным пароль не становится
+    assert await session.scalar(select(func.count()).select_from(User)) == users_before
+    text = next(
+        p["text"] for name, p in client.calls
+        if name == "sendMessage" and p["chat_id"] == user.tg_id
+    )
+    assert "Пароль" not in text and user.username in text
+
+
+async def test_expired_returning_application_goes_back_to_service_menu(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    user, new_intake = await _returning_setup(session, make_user, monkeypatch)
+    app = IntakeApplication(
+        tg_id=user.tg_id, tg_username=user.username, status=STATUS_EXPIRED,
+        user_id=user.id, intake_id=new_intake.id,
+    )
+    session.add(app)
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_start(
+        client, session, user.tg_id, {"id": user.tg_id, "username": user.username}
+    )
+
+    assert intake_bot.CB_ENROLL in _buttons(client)
+    await session.refresh(app)
+    assert app.status == STATUS_EXPIRED  # не отправили к админу заново
