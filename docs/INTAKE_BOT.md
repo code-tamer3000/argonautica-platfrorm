@@ -91,8 +91,10 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    `intake_id` = the current active intake ([DATA_MODEL.md](DATA_MODEL.md) `intakes`),
    `plan_id` = the chosen tariff. Right after the account is created, the bot assigns the
    new user every `type='individual'` task tagged with this same `intake_id` (welcome
-   tasks provisioned ahead of time by `scripts/provision_second_intake.py`, with an empty
-   recipient list at creation — see that script and [TASKS.md](TASKS.md)). Sends
+   tasks of the second intake, provisioned with an empty recipient list). Since the third
+   intake (ARG-174) `scripts/provision_second_intake.py` creates the welcome tasks as
+   `type='common'` scoped by `intake_id` instead — the bot's query doesn't match them, they
+   are visible to the whole intake without an assignment (see [TASKS.md](TASKS.md)). Sends
    login/password + `PLATFORM_URL` to the applicant. `status=confirmed`,
    `intake_applications.user_id` set.
    - If the applicant has no Telegram `@username` at this point, account creation is
