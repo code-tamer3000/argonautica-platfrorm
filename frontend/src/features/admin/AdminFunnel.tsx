@@ -1,14 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useAdminIntakes } from '../../api/admin'
 import { useAdminApplications } from '../../api/applications'
 import { useAdminPlans } from '../../api/plans'
 import { Chip } from '../../components/Chip'
 import { EmptyState } from '../../components/EmptyState'
-import { Input } from '../../components/Input'
 import { Drawer } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { groupByPlan } from '../../lib/planGroups'
-import type { ApplicationOut, ApplicationStatus } from '../../lib/types'
+import type { ApplicantKind, ApplicationOut, ApplicationStatus } from '../../lib/types'
 import styles from './admin.module.css'
 import funnelStyles from './funnel.module.css'
 
@@ -46,6 +46,23 @@ const TIMELINE_FIELDS: { key: keyof ApplicationOut; label: string }[] = [
   { key: 'expired_at', label: 'Бронь сгорела' },
 ]
 
+const KIND_LABEL: Record<ApplicantKind, string> = {
+  new: 'Новые',
+  retry: 'Уже подавались',
+  returning: 'Уже проходили',
+}
+
+const KIND_ORDER: ApplicantKind[] = ['new', 'retry', 'returning']
+
+/** `YYYY-MM-DD` → «2 июня 2026». Дата потока календарная, без часовых поясов. */
+function intakeDate(startsOn: string): string {
+  return new Date(`${startsOn}T00:00:00`).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
 function formatDatetime(iso: string | null): string {
   if (!iso) return '—'
   return new Date(iso).toLocaleString('ru-RU', {
@@ -61,21 +78,14 @@ function isStuck(item: ApplicationOut): boolean {
   return !TERMINAL_STATUSES.has(item.status) && (item.days_in_stage ?? 0) > STUCK_THRESHOLD_DAYS
 }
 
-function matchesQuery(item: ApplicationOut, query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (!q) return true
-  return (
-    item.display_name.toLowerCase().includes(q) ||
-    (item.tg_username?.toLowerCase().includes(q) ?? false) ||
-    (item.about?.toLowerCase().includes(q) ?? false)
-  )
-}
-
 function ApplicationCard({ item, onOpen }: { item: ApplicationOut; onOpen: () => void }) {
   return (
     <button type="button" className={funnelStyles.card} onClick={onOpen}>
       <span className={funnelStyles.cardName}>{item.display_name}</span>
       {item.plan_name && <span className={funnelStyles.cardPlan}>{item.plan_name}</span>}
+      {item.applicant_kind && (
+        <span className={funnelStyles.cardPlan}>{KIND_LABEL[item.applicant_kind]}</span>
+      )}
       <div className={funnelStyles.cardMeta}>
         <span className={funnelStyles.cardDays}>
           {item.days_in_stage != null ? `${item.days_in_stage} дн. в стадии` : '—'}
@@ -106,6 +116,13 @@ function ApplicationDrawer({ item, onClose }: { item: ApplicationOut; onClose: (
           )}
         </span>
       </div>
+
+      {item.applicant_kind && (
+        <div className={funnelStyles.drawerSection}>
+          <span className={funnelStyles.drawerLabel}>Заявитель</span>
+          <span className={funnelStyles.drawerValue}>{KIND_LABEL[item.applicant_kind]}</span>
+        </div>
+      )}
 
       <div className={funnelStyles.drawerSection}>
         <span className={funnelStyles.drawerLabel}>Стадия</span>
@@ -175,18 +192,21 @@ function ApplicationDrawer({ item, onClose }: { item: ApplicationOut; onClose: (
 }
 
 export function AdminFunnel() {
-  const { data, isLoading } = useAdminApplications()
+  // Поток: по умолчанию самый новый (первый в списке), архив — через селектор (ARG-189).
+  const { data: intakes = [], isSuccess: intakesLoaded } = useAdminIntakes()
+  const [intakeChoice, setIntakeChoice] = useState<number | 'all' | null>(null)
+  const selectedIntake: number | 'all' | null =
+    intakeChoice ?? (intakes.length > 0 ? intakes[0].id : null)
+  const { data, isLoading } = useAdminApplications(
+    selectedIntake === 'all' ? null : selectedIntake,
+    intakesLoaded, // пока список потоков не пришёл, «все потоки» не запрашиваем
+  )
   // Тарифы задают порядок групп в колонках (по цене) — берём админский список,
   // чтобы заявка на уже выключенном тарифе не теряла своё место.
   const { data: plans = [] } = useAdminPlans()
-  const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<number | null>(null)
 
   const items = data?.items ?? []
-  const filtered = useMemo(
-    () => items.filter((item) => matchesQuery(item, query)),
-    [items, query],
-  )
   const openItem = openId != null ? items.find((i) => i.id === openId) ?? null : null
 
   const byStatus = data?.by_status
@@ -202,9 +222,19 @@ export function AdminFunnel() {
       <PageHeader title="Воронка" />
 
       <div className={funnelStyles.summaryRow}>
-        <div className={funnelStyles.summaryItem}>
+        {/* Разбивка по типам заявителя раскрывается по ховеру/фокусу, чтобы не держать
+            второй ряд цифр (ARG-189). tabIndex — чтобы работало и по тапу на телефоне. */}
+        <div className={`${funnelStyles.summaryItem} ${funnelStyles.summaryHover}`} tabIndex={0}>
           <span className={funnelStyles.summaryValue}>{data?.total ?? 0}</span>
           <span className={funnelStyles.summaryLabel}>Всего заявок</span>
+          <div className={funnelStyles.kindPop} role="tooltip">
+            {KIND_ORDER.map((kind) => (
+              <div key={kind} className={funnelStyles.kindPopRow}>
+                <span>{KIND_LABEL[kind]}</span>
+                <span className={funnelStyles.kindPopValue}>{data?.by_kind?.[kind] ?? 0}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className={funnelStyles.summaryItem}>
           <span className={funnelStyles.summaryValue}>{working}</span>
@@ -222,15 +252,29 @@ export function AdminFunnel() {
         </div>
       </div>
 
-      <Input
-        placeholder="Поиск по имени, @username или тексту анкеты"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      {intakes.length > 0 && (
+        <div className={styles.formRow} style={{ maxWidth: 420 }}>
+          <label htmlFor="funnel_intake_filter">Поток</label>
+          <select
+            id="funnel_intake_filter"
+            className={styles.input}
+            value={String(selectedIntake)}
+            onChange={(e) => setIntakeChoice(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          >
+            {intakes.map((intake, index) => (
+              <option key={intake.id} value={intake.id}>
+                {intakeDate(intake.starts_on)}
+                {index === 0 ? ' — новый' : ' — архив'}
+              </option>
+            ))}
+            <option value="all">Все потоки</option>
+          </select>
+        </div>
+      )}
 
       <div className={funnelStyles.board}>
         {STAGES.map((stage) => {
-          const stageItems = filtered.filter((item) => item.status === stage.status)
+          const stageItems = items.filter((item) => item.status === stage.status)
           const stageHasPlan = stageItems.some((item) => item.plan_id != null)
           return (
             <div
