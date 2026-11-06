@@ -93,9 +93,13 @@ async def make_plan(
 
 
 async def make_application(
-    session: AsyncSession, status: str = STATUS_CHOOSING_PLAN
+    session: AsyncSession, status: str = STATUS_CHOOSING_PLAN, with_intake: bool = True
 ) -> IntakeApplication:
+    # Заявка живёт в текущем потоке, как у бота (ARG-189): без потока (`with_intake=False`)
+    # она считалась бы хвостом прошлого набора и /start начинал бы воронку заново.
+    current = await intake_bot._current_intake(session) if with_intake else None
     app = IntakeApplication(
+        intake_id=current.id if current is not None else None,
         tg_id=random.randint(10**9, 10**12),
         # Диапазон настолько же широкий, как у tg_id — узкий (1000-9999) давал
         # реальные коллизии username между тестами: `_find_application_by_username`
@@ -1922,7 +1926,7 @@ async def test_legacy_application_without_intake_is_restarted(
     """Историческая заявка без потока (NULL) — тоже хвост прошлого набора."""
     _, new = await _two_intakes(session)
     _pin_current(monkeypatch, new)
-    stale = await make_application(session, status=STATUS_EXPIRED)
+    stale = await make_application(session, status=STATUS_EXPIRED, with_intake=False)
     assert stale.intake_id is None
 
     fresh, restarted = await intake_bot._rollover_stale_application(session, stale, {})

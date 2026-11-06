@@ -114,7 +114,8 @@ async def list_applications(
         .group_by(IntakeApplication.applicant_kind)
     )
     for kind_value, count in (await session.execute(kinds_stmt)).all():
-        by_kind[kind_value] = count
+        if kind_value is not None:
+            by_kind[kind_value] = count
 
     stmt = (
         select(IntakeApplication, Plan)
