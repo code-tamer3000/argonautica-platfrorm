@@ -940,10 +940,6 @@ async def _status_reminder(client: httpx.AsyncClient, chat_id: int, app: IntakeA
 
 
 TEXT_PLAN_LIST = "Выбери тариф — покажу, что входит, и переведу к оплате:"
-TEXT_CHANNEL_DISCOUNT = (
-    f"🎁 Ты в нашем канале и ещё не плавал с нами — скидка {CHANNEL_DISCOUNT_RUB} ₽ "
-    "на тарифы уже учтена в ценах ниже."
-)
 TEXT_NO_PLANS =f"Список тарифов временно пуст — мы уже знаем и разберёмся. Жди весточку. {SHIP}"
 
 
@@ -1198,8 +1194,6 @@ async def _handle_accept(client: httpx.AsyncClient, session: AsyncSession, cb: d
     tag = _user_tag(app.tg_username, app.tg_id)
     message_id = (cb.get("message") or {}).get("message_id")
     await _edit_anketa_accepted(client, app, tag, message_id, discounted=discounted)
-    if discounted:
-        await _send(client, app.tg_id, TEXT_CHANNEL_DISCOUNT)
     await _send_plan_list(client, session, app.tg_id, app, plans=plans)
     print(f"[action] заявка #{app.id} ({tag}) принята", flush=True)
 

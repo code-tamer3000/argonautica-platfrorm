@@ -179,8 +179,8 @@ name — same rule as `_returning_prices`; all plans sharing the top price stay 
   this path — they have their own ⅔ conditions (above); the two discounts don't stack.
 - **Where it shows:** `_channel_discount_prices` becomes `price_snapshot`, so the rest of the
   funnel (tariff buttons, receipt caption, payment text) needs no changes. The admin's anketa
-  card gets «🎁 скидка 1000 ₽ (в канале)» next to «Принята»; the applicant gets a short note
-  before the tariff list. Nothing new is stored in the DB — the snapshot is the record.
+  card gets «🎁 скидка 1000 ₽ (в канале)» next to «Принята»; the applicant gets no extra
+  message — the lower prices are just there on the tariff screen. Nothing new is stored in the DB — the snapshot is the record.
 
 ## Intake switch and applicant kind (ARG-189)
 

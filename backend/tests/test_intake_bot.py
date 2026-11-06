@@ -2095,8 +2095,9 @@ async def test_accept_gives_channel_discount_to_new_member(
     assert app.price_snapshot[str(cheap.id)] == 10_000
     assert app.price_snapshot[str(top.id)] == 10_000_000
     assert "скидка" in client.payload("editMessageText")["text"]
-    texts = [p["text"] for m, p in client.calls if m == "sendMessage"]
-    assert any(intake_bot.TEXT_CHANNEL_DISCOUNT == t for t in texts)
+    # Заявителю отдельного сообщения про скидку нет — только экран тарифов.
+    sends = [p for m, p in client.calls if m == "sendMessage"]
+    assert len(sends) == 1 and sends[0]["text"].startswith(intake_bot.TEXT_PLAN_LIST)
 
 
 async def test_accept_without_channel_membership_keeps_full_price(
