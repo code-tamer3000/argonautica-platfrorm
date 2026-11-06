@@ -2002,3 +2002,136 @@ async def test_account_gets_intake_of_application_not_newest(
     assert created is not None
     user = await session.scalar(select(User).where(User.username == created[0]))
     assert user is not None and user.intake_id == old.id
+
+
+# --- Скидка 1000 ₽ за членство в закрытом канале ---------------------------------
+
+
+def test_channel_discount_prices_minus_1000_except_most_expensive() -> None:
+    plans = [
+        Plan(id=1, name="A", price=11_000),
+        Plan(id=2, name="B", price=21_000),
+        Plan(id=3, name="C", price=150_000),
+    ]
+    assert intake_bot._channel_discount_prices(plans) == {
+        "1": 10_000, "2": 20_000, "3": 150_000,
+    }
+    assert intake_bot._channel_discount_prices([]) == {}
+
+
+def test_channel_discount_prices_keeps_every_top_price_and_never_negative() -> None:
+    plans = [Plan(id=1, name="A", price=500), Plan(id=2, name="B", price=9_000),
+             Plan(id=3, name="C", price=9_000)]
+    assert intake_bot._channel_discount_prices(plans) == {"1": 0, "2": 9_000, "3": 9_000}
+
+
+class _MemberClient(FakeClient):
+    def __init__(self, member: dict[str, Any] | None) -> None:
+        super().__init__()
+        self._member = member
+
+    async def post(self, url: str, json: dict[str, Any]) -> FakeResponse:
+        method = url.rsplit("/", 1)[-1]
+        self.calls.append((method, json))
+        if method == "getChatMember":
+            if self._member is None:
+                return FakeResponse({"ok": False, "description": "Bad Request: member not found"})
+            return FakeResponse({"ok": True, "result": self._member})
+        return FakeResponse({"ok": True, "result": {"message_id": FAKE_SENT_MESSAGE_ID}})
+
+
+async def test_is_channel_member_statuses(monkeypatch: Any) -> None:
+    monkeypatch.setattr(intake_bot, "DISCOUNT_CHANNEL_ID", -100123)
+    for member, expected in [
+        ({"status": "member"}, True),
+        ({"status": "administrator"}, True),
+        ({"status": "creator"}, True),
+        ({"status": "restricted", "is_member": True}, True),
+        ({"status": "restricted", "is_member": False}, False),
+        ({"status": "left"}, False),
+        ({"status": "kicked"}, False),
+        (None, False),
+    ]:
+        client = _MemberClient(member)
+        assert await intake_bot._is_channel_member(client, 42) is expected
+        assert client.payload("getChatMember") == {"chat_id": -100123, "user_id": 42}
+
+
+async def test_is_channel_member_off_without_channel_id(monkeypatch: Any) -> None:
+    monkeypatch.setattr(intake_bot, "DISCOUNT_CHANNEL_ID", None)
+    client = _MemberClient({"status": "member"})
+    assert await intake_bot._is_channel_member(client, 42) is False
+    assert client.calls == []
+
+
+async def _accept_with_channel(
+    session: AsyncSession, monkeypatch: Any, member: dict[str, Any] | None,
+) -> tuple[IntakeApplication, Plan, Plan, _MemberClient]:
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_031)
+    monkeypatch.setattr(intake_bot, "DISCOUNT_CHANNEL_ID", -100123)
+    cheap = await make_plan(session, "Дешёвый", 11_000)
+    top = await make_plan(session, "Топ", 10_000_000)
+    app = await make_application(session, status="submitted")
+    app.about = "кто я"
+    await session.commit()
+    client = _MemberClient(member)
+    await intake_bot._handle_accept(
+        client, session,
+        {"id": "cb", "data": f"acc:{app.id}",
+         "message": {"message_id": 55, "chat": {"id": 999_031}}},
+    )
+    await session.commit()
+    await session.refresh(app)
+    return app, cheap, top, client
+
+
+async def test_accept_gives_channel_discount_to_new_member(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    app, cheap, top, client = await _accept_with_channel(
+        session, monkeypatch, {"status": "member"}
+    )
+    assert app.price_snapshot is not None
+    assert app.price_snapshot[str(cheap.id)] == 10_000
+    assert app.price_snapshot[str(top.id)] == 10_000_000
+    assert "скидка" in client.payload("editMessageText")["text"]
+    # Заявителю отдельного сообщения про скидку нет — только экран тарифов.
+    sends = [p for m, p in client.calls if m == "sendMessage"]
+    assert len(sends) == 1 and sends[0]["text"].startswith(intake_bot.TEXT_PLAN_LIST)
+
+
+async def test_accept_without_channel_membership_keeps_full_price(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    app, cheap, _, client = await _accept_with_channel(
+        session, monkeypatch, {"status": "left"}
+    )
+    assert app.price_snapshot is not None
+    assert app.price_snapshot[str(cheap.id)] == 11_000
+    assert "скидка" not in client.payload("editMessageText")["text"]
+
+
+async def test_accept_no_channel_discount_for_existing_account(
+    session: AsyncSession, monkeypatch: Any, make_user: MakeUser
+) -> None:
+    """Аккаунт уже есть (проходил экспедицию) — членство в канале скидки не даёт."""
+    monkeypatch.setattr(intake_bot, "ADMIN_CHAT_ID", 999_032)
+    monkeypatch.setattr(intake_bot, "DISCOUNT_CHANNEL_ID", -100123)
+    cheap = await make_plan(session, "Дешёвый2", 11_000)
+    await make_plan(session, "Топ2", 10_000_000)
+    user = await make_user(role="participant")
+    user.tg_id = random.randint(10**9, 10**12)
+    app = await make_application(session, status="submitted")
+    app.tg_id = user.tg_id
+    await session.commit()
+    client = _MemberClient({"status": "member"})
+    await intake_bot._handle_accept(
+        client, session,
+        {"id": "cb", "data": f"acc:{app.id}",
+         "message": {"message_id": 55, "chat": {"id": 999_032}}},
+    )
+    await session.commit()
+    await session.refresh(app)
+    assert app.price_snapshot is not None
+    assert app.price_snapshot[str(cheap.id)] == 11_000
+    assert "getChatMember" not in client.methods()

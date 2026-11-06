@@ -161,6 +161,27 @@ login). Special conditions for them:
   payment history stays. `_find_application` returns the newest one. `/reset` deletes the user
   only if no other application points at it.
 
+## Channel discount (−1000 ₽)
+
+Applicants who sit in the closed Telegram channel and have **never taken an expedition** get
+−1000 ₽ on every tariff except the most expensive one (`max(price)` over active plans, not by
+name — same rule as `_returning_prices`; all plans sharing the top price stay full).
+
+- **Switch:** env `INTAKE_DISCOUNT_CHANNEL_ID` (`-100…`, the bot must be an **admin** of the
+  channel — otherwise `getChatMember` is refused). Unset = mechanic off. The id is in `.env`,
+  not in the repo (public repo).
+- **When:** once, inside `_accept_application` (both «Принять» buttons, also a re-accept of an
+  `expired` application). `_is_channel_member` calls `getChatMember(channel, tg_id)`; `member`,
+  `administrator`, `creator` and `restricted` with `is_member` count. `left`, `kicked`, any
+  Telegram error or network failure = no discount (the funnel never fails on it). By id only.
+- **"Never took an expedition":** no account by `_service_user` (`users.tg_id` or an application
+  with `user_id`) and the application has no `user_id`. Returning participants never go through
+  this path — they have their own ⅔ conditions (above); the two discounts don't stack.
+- **Where it shows:** `_channel_discount_prices` becomes `price_snapshot`, so the rest of the
+  funnel (tariff buttons, receipt caption, payment text) needs no changes. The admin's anketa
+  card gets «🎁 скидка 1000 ₽ (в канале)» next to «Принята»; the applicant gets no extra
+  message — the lower prices are just there on the tariff screen. Nothing new is stored in the DB — the snapshot is the record.
+
 ## Intake switch and applicant kind (ARG-189)
 
 Applications are archived per intake; when a new intake appears nobody is migrated or
