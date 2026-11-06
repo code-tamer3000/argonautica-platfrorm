@@ -88,7 +88,8 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    admin saw the payment land some other way — goes through `/confirm @username` instead,
    see below, which shares this same account-creation path.) Login = the
    applicant's Telegram `@username`, one-time password (`must_change_password=true`),
-   `intake_id` = the current active intake ([DATA_MODEL.md](DATA_MODEL.md) `intakes`),
+   `intake_id` = the **application's** intake (`app.intake_id`, ARG-189; legacy rows without
+   one fall back to the current active intake — [DATA_MODEL.md](DATA_MODEL.md) `intakes`),
    `plan_id` = the chosen tariff. Right after the account is created, the bot assigns the
    new user every `type='individual'` task tagged with this same `intake_id` (welcome
    tasks of the second intake, provisioned with an empty recipient list). Since the third
@@ -159,6 +160,31 @@ login). Special conditions for them:
 - **Applications are per intake:** `(tg_id, intake_id)` is unique, the old application with its
   payment history stays. `_find_application` returns the newest one. `/reset` deletes the user
   only if no other application points at it.
+
+## Intake switch and applicant kind (ARG-189)
+
+Applications are archived per intake; when a new intake appears nobody is migrated or
+mass-messaged — the reset is **lazy**, triggered by the person writing to the bot
+(`_rollover_stale_application`, called in `/start` and in the message handler):
+
+- An application still **in the funnel** (not `confirmed`, not a returning user's burned one)
+  whose `intake_id` is not the current (newest) intake — legacy `NULL` counts as old — is a
+  leftover of the previous intake. The bot creates a **new** application for the current intake
+  (`awaiting_about`, `applicant_kind='retry'`) and sends the opening `/start` text: the person
+  starts from scratch. The old row stays untouched in the previous intake's archive.
+- `confirmed` applications are never reset (service mode). An unfinished application of someone
+  who already has an account (`user_id`, i.e. a returning user) is not restarted with an anketa:
+  its booking is just burned (`expired`), the person is back in service mode and taps
+  «Записаться в новую экспедицию» again.
+- **`applicant_kind`** is written once at creation: `new` — the chat had no application at all;
+  `retry` — restarted by the rule above (applied to a previous intake, was not enrolled);
+  `returning` — enrolment through the ARG-176 button. `NULL` for applications created before
+  ARG-189 (never backfilled).
+- No broadcast announces the new intake — people find out when they message the bot.
+- **Prod one-off (not a migration — no data in the repo):** before the new intake is created,
+  attach legacy applications to the previous intake:
+  `UPDATE intake_applications SET intake_id = <id of the second intake> WHERE intake_id IS NULL;`
+  Without it, `NULL` applications would be treated as leftovers of an intake that is still current.
 
 **«Задать вопрос» is available at every funnel step**, not just in service mode — as the
 **`/question` command** and the bot's menu button (`setMyCommands` + `setChatMenuButton`,
@@ -303,6 +329,13 @@ Response shape: `{total, by_status: {<status>: count, ...all 8 keys always}, ite
 — all 8 including `expired` (ARG-108). Each item adds two backend-computed fields the
 frontend must not try to derive itself: `stage_since` (timestamp the application entered
 its *current* status) and `days_in_stage`.
+
+Since ARG-189 the endpoint takes an optional **`?intake_id=`**: `items`, `total`, `by_status`
+and `by_kind` are all scoped to that intake (no parameter = every intake). `by_kind` is
+`{new, retry, returning}` (all three keys always; applications with `applicant_kind IS NULL`
+are not counted). Each item also carries `intake_id` and `applicant_kind`. The page selects the
+newest intake (first of `GET /api/admin/intakes`) by default; older intakes are the archive,
+«Все потоки» drops the filter.
 
 Five nullable timestamp columns back `stage_since`, set by the bot right next to the
 `status` assignment that causes them (`submitted_at`, `accepted_at`, `plan_chosen_at`,

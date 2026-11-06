@@ -210,6 +210,7 @@ ARG-107. See [INTAKE_BOT.md](INTAKE_BOT.md).
 | id | BIGSERIAL | PK | |
 | tg_id | BIGINT | NOT NULL, UNIQUE with `intake_id` | Telegram user id (== chat id in a private chat). Since ARG-176 one row **per intake**: unique `(tg_id, intake_id)` plus a partial unique index on `tg_id WHERE intake_id IS NULL` (legacy rows keep the old one-per-chat guarantee) |
 | intake_id | BIGINT | FK intakes, NULL | the intake the application is for (ARG-176 / ARG-189). Set by the bot on creation (newest intake) and on enrolment; backfilled from `users.intake_id` via `user_id`; NULL for legacy unenrolled rows |
+| applicant_kind | TEXT | NULL, CHECK (`new`/`retry`/`returning`) | where the applicant came from (ARG-189), written at creation: `new` — first ever application of this chat; `retry` — restarted after an unenrolled application of a previous intake; `returning` — already-enrolled participant signing up for a new intake (ARG-176). NULL for rows created before ARG-189 |
 | tg_username | TEXT | NULL | refreshed on every `/start` |
 | tg_first_name | TEXT | NULL | |
 | tg_last_name | TEXT | NULL | |

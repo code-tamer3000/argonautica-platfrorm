@@ -5,7 +5,7 @@
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.db.session import get_session
 from app.models.intake_application import IntakeApplication
 from app.models.plan import Plan
 from app.schemas.intake_application import (
+    FUNNEL_KINDS,
     FUNNEL_STATUSES,
     ApplicationFunnelOut,
     ApplicationOut,
@@ -58,6 +59,8 @@ def _to_out(app: IntakeApplication, plan: Plan | None) -> ApplicationOut:
     return ApplicationOut(
         id=app.id,
         tg_id=app.tg_id,
+        intake_id=app.intake_id,
+        applicant_kind=app.applicant_kind,
         tg_username=app.tg_username,
         tg_first_name=app.tg_first_name,
         tg_last_name=app.tg_last_name,
@@ -88,22 +91,39 @@ def _to_out(app: IntakeApplication, plan: Plan | None) -> ApplicationOut:
 @router.get("", response_model=ApplicationFunnelOut)
 async def list_applications(
     session: Annotated[AsyncSession, Depends(get_session)],
+    intake_id: Annotated[int | None, Query(description="Поток; без параметра — все потоки")] = None,
 ) -> ApplicationFunnelOut:
+    """Воронка (ARG-189): `intake_id` сужает и список, и счётчики до одного потока —
+    так прошлые потоки лежат в архиве и не мешают текущему."""
+    scope = [] if intake_id is None else [IntakeApplication.intake_id == intake_id]
+
     by_status = dict.fromkeys(FUNNEL_STATUSES, 0)
-    counts_stmt = select(
-        IntakeApplication.status, func.count(IntakeApplication.id)
-    ).group_by(IntakeApplication.status)
+    counts_stmt = (
+        select(IntakeApplication.status, func.count(IntakeApplication.id))
+        .where(*scope)
+        .group_by(IntakeApplication.status)
+    )
     for status_value, count in (await session.execute(counts_stmt)).all():
         by_status[status_value] = count
     total = sum(by_status.values())
 
+    by_kind = dict.fromkeys(FUNNEL_KINDS, 0)
+    kinds_stmt = (
+        select(IntakeApplication.applicant_kind, func.count(IntakeApplication.id))
+        .where(*scope, IntakeApplication.applicant_kind.is_not(None))
+        .group_by(IntakeApplication.applicant_kind)
+    )
+    for kind_value, count in (await session.execute(kinds_stmt)).all():
+        by_kind[kind_value] = count
+
     stmt = (
         select(IntakeApplication, Plan)
         .outerjoin(Plan, IntakeApplication.plan_id == Plan.id)
+        .where(*scope)
         .order_by(IntakeApplication.created_at.desc())
         .limit(_MAX_ITEMS)
     )
     rows = (await session.execute(stmt)).all()
     items = [_to_out(app, plan) for app, plan in rows]
 
-    return ApplicationFunnelOut(total=total, by_status=by_status, items=items)
+    return ApplicationFunnelOut(total=total, by_status=by_status, by_kind=by_kind, items=items)

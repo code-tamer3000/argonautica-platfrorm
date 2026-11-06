@@ -43,6 +43,13 @@ STATUSES_ON_PAYMENT_CLOCK = (
 )
 
 
+# ARG-189: откуда пришёл заявитель — считается в момент создания заявки на поток.
+KIND_NEW = "new"  # в боте раньше не было ни одной заявки
+KIND_RETRY = "retry"  # подавался в прошлые потоки, зачислен не был — начал заново
+KIND_RETURNING = "returning"  # уже зачисленный участник записывается на новый поток
+APPLICANT_KINDS = (KIND_NEW, KIND_RETRY, KIND_RETURNING)
+
+
 class IntakeApplication(Base):
     """Одна заявка на приём = один Telegram-чат на один поток (`tg_id`+`intake_id` уникальны)."""
 
@@ -53,6 +60,10 @@ class IntakeApplication(Base):
             "'awaiting_offer', 'awaiting_receipt', 'payment_review', 'confirmed', "
             "'expired')",
             name="intake_application_status_valid",
+        ),
+        CheckConstraint(
+            "applicant_kind IS NULL OR applicant_kind IN ('new', 'retry', 'returning')",
+            name="intake_application_kind_valid",
         ),
         # ARG-107: CRM-дашборд группирует заявки по статусу и сортирует по свежести.
         Index("ix_intake_applications_status", "status"),
@@ -75,6 +86,8 @@ class IntakeApplication(Base):
     # Поток, на который подана заявка (ARG-176 / ARG-189). NULL — историческая заявка
     # без потока (не дошла до зачисления до появления поля).
     intake_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("intakes.id"))
+    # Тип заявителя (ARG-189). NULL — заявка до появления поля.
+    applicant_kind: Mapped[str | None] = mapped_column(Text)
     tg_username: Mapped[str | None] = mapped_column(Text)
     tg_first_name: Mapped[str | None] = mapped_column(Text)
     tg_last_name: Mapped[str | None] = mapped_column(Text)

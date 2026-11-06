@@ -1741,6 +1741,7 @@ async def test_enroll_opens_plan_list_with_discounted_snapshot(
     assert app.status == STATUS_CHOOSING_PLAN
     assert app.user_id == user.id
     assert app.intake_id == new_intake.id
+    assert app.applicant_kind == "returning"
     assert app.payment_deadline_at is not None
     plans = await intake_bot._active_plans(session)
     assert app.price_snapshot == intake_bot._returning_prices(plans)
@@ -1826,3 +1827,174 @@ async def test_expired_returning_application_goes_back_to_service_menu(
     assert intake_bot.CB_ENROLL in _buttons(client)
     await session.refresh(app)
     assert app.status == STATUS_EXPIRED  # не отправили к админу заново
+
+
+# --- ARG-189: воронка по потокам, ленивый сброс, тип заявителя -----------------
+
+
+async def _two_intakes(session: AsyncSession) -> tuple[Intake, Intake]:
+    """(старый, новый) поток с датами строго позже любых чужих — `_current_intake`
+    берёт max(starts_on), БД переживает прогоны."""
+    current_max = await session.scalar(select(func.max(Intake.starts_on)))
+    base = (current_max or date.today()) + timedelta(days=1)
+    old = await get_or_create_intake(session, base)
+    new = await get_or_create_intake(session, base + timedelta(days=100))
+    return old, new
+
+
+def _pin_current(monkeypatch: Any, intake: Intake) -> None:
+    async def current(_session: AsyncSession) -> Intake | None:
+        return intake
+
+    monkeypatch.setattr(intake_bot, "_current_intake", current)
+
+
+async def test_new_application_gets_current_intake_and_kind_new(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    _, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    tg_id = random.randint(10**9, 10**12)
+
+    await intake_bot._handle_message(
+        FakeClient(), session, {"chat": {"id": tg_id}, "text": "/start", "from": {"id": tg_id}}
+    )
+
+    app = await intake_bot._find_application(session, tg_id)
+    assert app is not None
+    assert app.intake_id == new.id
+    assert app.applicant_kind == "new"
+
+
+async def test_start_on_previous_intake_application_restarts_funnel(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Сгоревшая заявка прошлого потока: после появления нового человек идёт с нуля —
+    новая заявка `retry` на текущий поток, старая остаётся нетронутой."""
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    stale = await make_application(session, status=STATUS_EXPIRED)
+    stale.intake_id = old.id
+    stale.about = "старая анкета"
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session,
+        {"chat": {"id": stale.tg_id}, "text": "/start", "from": {"id": stale.tg_id}},
+    )
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_START
+    fresh = await intake_bot._find_application(session, stale.tg_id)
+    assert fresh is not None and fresh.id != stale.id
+    assert fresh.intake_id == new.id
+    assert fresh.applicant_kind == "retry"
+    assert fresh.status == STATUS_AWAITING_ABOUT
+    assert fresh.about is None
+    await session.refresh(stale)
+    assert stale.intake_id == old.id and stale.status == STATUS_EXPIRED
+    assert stale.about == "старая анкета"
+
+
+async def test_plain_message_on_previous_intake_application_restarts_funnel(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    stale = await make_application(session, status=STATUS_AWAITING_ABOUT)
+    stale.intake_id = old.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session,
+        {"chat": {"id": stale.tg_id}, "text": "привет", "from": {"id": stale.tg_id}},
+    )
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_START
+    fresh = await intake_bot._find_application(session, stale.tg_id)
+    assert fresh is not None and fresh.id != stale.id and fresh.intake_id == new.id
+
+
+async def test_legacy_application_without_intake_is_restarted(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Историческая заявка без потока (NULL) — тоже хвост прошлого набора."""
+    _, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    stale = await make_application(session, status=STATUS_EXPIRED)
+    assert stale.intake_id is None
+
+    fresh, restarted = await intake_bot._rollover_stale_application(session, stale, {})
+
+    assert restarted is True
+    assert fresh is not None and fresh.id != stale.id
+    assert fresh.intake_id == new.id and fresh.applicant_kind == "retry"
+
+
+async def test_application_of_current_intake_is_not_restarted(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    _, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN)
+    app.intake_id = new.id
+    await session.commit()
+
+    same, restarted = await intake_bot._rollover_stale_application(session, app, {})
+
+    assert restarted is False and same is app
+
+
+async def test_confirmed_application_of_previous_intake_is_not_restarted(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    app = await make_application(session, status=STATUS_CONFIRMED)
+    app.intake_id = old.id
+    await session.commit()
+
+    same, restarted = await intake_bot._rollover_stale_application(session, app, {})
+
+    assert restarted is False and same is app
+    assert same.status == STATUS_CONFIRMED
+
+
+async def test_unfinished_application_of_enrolled_user_is_expired_not_restarted(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    """У заявки уже есть аккаунт (вернувшийся) — анкета заново не нужна, бронь
+    прошлого потока просто сгорает, остаётся сервисный режим."""
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    user = await make_user()
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN)
+    app.intake_id = old.id
+    app.user_id = user.id
+    await session.commit()
+
+    same, restarted = await intake_bot._rollover_stale_application(session, app, {})
+
+    assert restarted is False and same is app
+    assert app.status == STATUS_EXPIRED
+
+
+async def test_account_gets_intake_of_application_not_newest(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Заявка потока N, подтверждённая уже после появления потока N+1, зачисляет в N."""
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    plan = await make_plan(session, f"Вода-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN)
+    app.plan_id = plan.id
+    app.intake_id = old.id
+    await session.flush()
+
+    created = await intake_bot._create_platform_user(session, app)
+    await session.commit()
+
+    assert created is not None
+    user = await session.scalar(select(User).where(User.username == created[0]))
+    assert user is not None and user.intake_id == old.id

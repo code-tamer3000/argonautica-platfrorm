@@ -61,6 +61,9 @@ from app.core.security import generate_one_time_password, hash_password
 from app.db.session import SessionLocal
 from app.models.intake import Intake
 from app.models.intake_application import (
+    KIND_NEW,
+    KIND_RETRY,
+    KIND_RETURNING,
     STATUS_AWAITING_ABOUT,
     STATUS_AWAITING_OFFER,
     STATUS_AWAITING_RECEIPT,
@@ -509,6 +512,46 @@ async def _find_application(session: AsyncSession, tg_id: int) -> IntakeApplicat
             .limit(1)
         )
     ).scalars().first()
+
+
+async def _rollover_stale_application(
+    session: AsyncSession, app: IntakeApplication | None, from_user: dict[str, Any]
+) -> tuple[IntakeApplication | None, bool]:
+    """Ленивый сброс воронки при смене потока (ARG-189): (заявка, начата_заново).
+
+    Заявка, которая ещё в воронке, но относится не к текущему (самому новому) потоку,
+    — хвост прошлого набора. Человек пришёл снова → заводим НОВУЮ заявку на текущий
+    поток (`retry`), как при первом `/start`; старая остаётся в архиве потока. Никаких
+    хуков на создание потока и массовых рассылок: сброс случается, когда пишет сам
+    человек. Исторические заявки без потока (`intake_id IS NULL`) считаются прошлыми.
+
+    `confirmed` не трогаем (сервисный режим). Незавершённая заявка вернувшегося
+    (`user_id` задан) заново не начинается — у него есть аккаунт и анкета не нужна:
+    бронь прошлого потока просто сгорает, и он снова жмёт «Записаться»."""
+    if app is None or not _app_in_funnel(app):
+        return app, False
+    current = await _current_intake(session)
+    if current is None or app.intake_id == current.id:
+        return app, False
+    if app.user_id is not None:
+        await _mark_expired(session, app)
+        return app, False
+    fresh = IntakeApplication(
+        tg_id=app.tg_id,
+        tg_username=from_user.get("username"),
+        tg_first_name=from_user.get("first_name"),
+        tg_last_name=from_user.get("last_name"),
+        intake_id=current.id,
+        applicant_kind=KIND_RETRY,
+    )
+    session.add(fresh)
+    await session.flush()
+    print(
+        f"[action] заявка #{app.id} ({_user_tag(app.tg_username, app.tg_id)}) относится к "
+        f"прошлому потоку — начата заново на поток #{current.id}, заявка #{fresh.id}",
+        flush=True,
+    )
+    return fresh, True
 
 
 async def _find_bound_user(session: AsyncSession, tg_id: int) -> User | None:
@@ -969,7 +1012,12 @@ async def _create_platform_user(
 
     Вернувшийся (у заявки уже есть `user_id`, ARG-176) нового аккаунта не получает:
     переносим существующий в текущий поток. Пароль в этом случае не выдаётся (None)."""
-    intake = await _current_intake(session)
+    # Поток берём из заявки (ARG-189): заявка прошлого потока, подтверждённая уже после
+    # появления нового, не должна уехать в «самый новый». Старые заявки без потока —
+    # в текущий, как раньше.
+    intake = await session.get(Intake, app.intake_id) if app.intake_id is not None else None
+    if intake is None:
+        intake = await _current_intake(session)
     if intake is None:
         return None
     if app.user_id is not None:
@@ -1423,6 +1471,7 @@ async def _handle_enroll(
             intake_id=intake.id,
         )
         session.add(app)
+    app.applicant_kind = KIND_RETURNING
     # Сгоревшую заявку переоткрываем той же строкой — (tg_id, intake_id) уникальны.
     app.user_id = user.id
     app.status = STATUS_CHOOSING_PLAN
@@ -1856,6 +1905,10 @@ async def _handle_start(
     # привязанная вручную учётка (ARG-167) — заявку не заводим. Незавершённая заявка
     # (в т.ч. вернувшегося, пока он платит за новый поток) имеет приоритет.
     app = await _find_application(session, tg_id)
+    app, restarted = await _rollover_stale_application(session, app, from_user)
+    if restarted:
+        await _send(client, chat_id, TEXT_START)
+        return
     if not _app_in_funnel(app):
         if app is not None or await _find_bound_user(session, tg_id) is not None:
             await _send_service_menu(client, session, chat_id, tg_id)
@@ -1868,6 +1921,7 @@ async def _handle_start(
             tg_first_name=from_user.get("first_name"),
             tg_last_name=from_user.get("last_name"),
             intake_id=current.id if current is not None else None,
+            applicant_kind=KIND_NEW,
         )
         session.add(app)
         await session.flush()
@@ -1997,6 +2051,10 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         return
 
     app = await _find_application(session, tg_id)
+    app, restarted = await _rollover_stale_application(session, app, from_user)
+    if restarted:
+        await _send(client, chat_id, TEXT_START)
+        return
     if not _app_in_funnel(app):
         if app is not None or await _find_bound_user(session, tg_id) is not None:
             await _send_service_menu(client, session, chat_id, tg_id)
