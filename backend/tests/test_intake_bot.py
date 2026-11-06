@@ -1080,6 +1080,29 @@ async def test_confirm_command_reports_already_confirmed(
     assert "уже подтверждена" in client.payload("sendMessage")["text"]
 
 
+async def test_create_platform_user_without_tg_username_gets_argo_user_login(
+    session: AsyncSession,
+) -> None:
+    await get_or_create_intake(
+        session, (await session.scalar(select(func.max(Intake.starts_on))) or date.today())
+        + timedelta(days=1),
+    )
+    plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN, with_intake=False)
+    app.tg_username = None
+    app.plan_id = plan.id
+    session.add(app)
+    await session.flush()
+
+    created = await intake_bot._create_platform_user(session, app)
+    await session.commit()
+
+    assert created is not None
+    user = await session.get(User, app.user_id)
+    assert user is not None
+    assert user.username == f"argo_user_{user.id}" == created[0]
+
+
 async def test_confirm_command_usage_without_username(
     session: AsyncSession, monkeypatch: Any
 ) -> None:
@@ -1929,9 +1952,9 @@ async def test_legacy_application_without_intake_is_restarted(
     stale = await make_application(session, status=STATUS_EXPIRED, with_intake=False)
     assert stale.intake_id is None
 
-    fresh, restarted = await intake_bot._rollover_stale_application(session, stale, {})
+    fresh, roll = await intake_bot._rollover_stale_application(session, stale, {})
 
-    assert restarted is True
+    assert roll == intake_bot.ROLL_RESTARTED
     assert fresh is not None and fresh.id != stale.id
     assert fresh.intake_id == new.id and fresh.applicant_kind == "retry"
 
@@ -1945,9 +1968,9 @@ async def test_application_of_current_intake_is_not_restarted(
     app.intake_id = new.id
     await session.commit()
 
-    same, restarted = await intake_bot._rollover_stale_application(session, app, {})
+    same, roll = await intake_bot._rollover_stale_application(session, app, {})
 
-    assert restarted is False and same is app
+    assert roll == intake_bot.ROLL_KEEP and same is app
 
 
 async def test_confirmed_application_of_previous_intake_is_not_restarted(
@@ -1959,9 +1982,9 @@ async def test_confirmed_application_of_previous_intake_is_not_restarted(
     app.intake_id = old.id
     await session.commit()
 
-    same, restarted = await intake_bot._rollover_stale_application(session, app, {})
+    same, roll = await intake_bot._rollover_stale_application(session, app, {})
 
-    assert restarted is False and same is app
+    assert roll == intake_bot.ROLL_KEEP and same is app
     assert same.status == STATUS_CONFIRMED
 
 
@@ -1978,9 +2001,9 @@ async def test_unfinished_application_of_enrolled_user_is_expired_not_restarted(
     app.user_id = user.id
     await session.commit()
 
-    same, restarted = await intake_bot._rollover_stale_application(session, app, {})
+    same, roll = await intake_bot._rollover_stale_application(session, app, {})
 
-    assert restarted is False and same is app
+    assert roll == intake_bot.ROLL_SERVICE and same is app
     assert app.status == STATUS_EXPIRED
 
 
@@ -2135,3 +2158,44 @@ async def test_accept_no_channel_discount_for_existing_account(
     assert app.price_snapshot is not None
     assert app.price_snapshot[str(cheap.id)] == 11_000
     assert "getChatMember" not in client.methods()
+
+
+async def test_bound_account_with_stale_application_goes_to_service_mode(
+    session: AsyncSession, make_user: MakeUser, monkeypatch: Any
+) -> None:
+    """Аккаунт, привязанный по `users.tg_id`, + висящая заявка прошлого потока: не
+    новая воронка `retry`, а сервисный режим; хвост остаётся нетронутым."""
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    user, tg_id = await make_bound_user(session, make_user)
+    user.role = "admin"
+    stale = await make_application(session, status=STATUS_SUBMITTED)
+    stale.tg_id = tg_id
+    stale.intake_id = old.id
+    await session.commit()
+    client = FakeClient()
+
+    await intake_bot._handle_message(
+        client, session, {"chat": {"id": tg_id}, "text": "/start", "from": {"id": tg_id}}
+    )
+
+    assert client.payload("sendMessage")["text"] == intake_bot.TEXT_SERVICE_MENU
+    latest = await intake_bot._find_application(session, tg_id)
+    assert latest is not None and latest.id == stale.id
+    assert latest.status == STATUS_SUBMITTED and latest.intake_id == old.id
+
+
+async def test_applicant_without_account_still_restarts(
+    session: AsyncSession, monkeypatch: Any
+) -> None:
+    """Просто оставлявший заявку (аккаунта нет) — по-прежнему с анкеты заново."""
+    old, new = await _two_intakes(session)
+    _pin_current(monkeypatch, new)
+    stale = await make_application(session, status=STATUS_SUBMITTED)
+    stale.intake_id = old.id
+    await session.commit()
+
+    fresh, roll = await intake_bot._rollover_stale_application(session, stale, {})
+
+    assert roll == intake_bot.ROLL_RESTARTED
+    assert fresh is not None and fresh.id != stale.id and fresh.applicant_kind == "retry"

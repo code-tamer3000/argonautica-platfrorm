@@ -20,7 +20,11 @@ BLOCKED = re.compile(
 )
 # Читать результаты CI можно и нужно.
 # Read-only утилиты и git/gh: упоминание `make test` в аргументах — не запуск.
-ALLOWED = re.compile(r"^\s*(?:gh|git|grep|rg|cat|ls|head|tail|wc|echo|printf)\s")
+# `ssh platform-new …` — команда выполняется на сервере (прод/стенд), а не локально:
+# docker/compose там — штатная эксплуатация (рестарт бота, логи), хук её не трогает.
+ALLOWED = re.compile(
+    r"^\s*(?:(?:gh|git|grep|rg|cat|ls|head|tail|wc|echo|printf)\s|ssh\s+(?:-\S+\s+)*platform-new\s)"
+)
 # Тело heredoc — это данные (например, текст правки CLAUDE.md), а не команды.
 HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n.*?\n\s*\1\b", re.S)
 

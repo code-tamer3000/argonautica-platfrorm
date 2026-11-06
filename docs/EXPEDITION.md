@@ -31,8 +31,8 @@ entered under the old dates is **not** revoked.
 `balance` (Точка Баланса) and `final` render in the **centre** of the circle as a small
 ring of days around the yin-yang mark — not on the outer rim. The four elements
 (`air`/`fire`/`water`/`earth`) sit on the rim at the cardinal points and are read
-**counter-clockwise**: Воздух (right) → Огонь (top) → Вода (left) → Земля (bottom) —
-this is a reading of the reference scheme's layout, not an arbitrary choice.
+**clockwise**: Воздух (left) → Огонь (top) → Вода (right) → Земля (bottom); days inside
+a stage also run clockwise.
 
 **No schedule configured** for an intake (fresh intake, admin hasn't opened "Круг
 Экспедиции" yet): the circle falls back to four equal 7-day element stages from
@@ -103,7 +103,7 @@ Layers, centre outward (`CX = CY = 350`, viewBox `0 0 700 700`; radii in
 Точка Баланса/Финал ring visibly clipped through those day discs when it started right
 at the hub; leaving that ring alone reads cleaner than any per-day angle nudge would.
 The regular element-day ring doesn't need the same treatment: `elementDayAngle` places
-day *i* at `quadrantStart - (i + 0.5) * step`, always at least half a day-slot inside
+day *i* at `quadrantStart + (i + 0.5) * step`, always at least half a day-slot inside
 the quadrant, so it structurally never lands on a 45°/135°/225°/315° ray regardless of
 how many days a stage has — unlike `centerDayAngle`, which has no such offset and *can*
 place a day exactly on a ray for some day counts (5 or 6, concretely).

@@ -98,10 +98,11 @@ awaiting_about → submitted → choosing_plan → awaiting_offer → awaiting_r
    are visible to the whole intake without an assignment (see [TASKS.md](TASKS.md)). Sends
    login/password + `PLATFORM_URL` to the applicant. `status=confirmed`,
    `intake_applications.user_id` set.
-   - If the applicant has no Telegram `@username` at this point, account creation is
-     refused (login = username, must exist) — the admin gets an alert and the applicant is
-     asked to set one; nothing else in the funnel is blocked, retry the same button once
-     they have.
+   - If the applicant has no (or a hidden) Telegram `@username`, the login is
+     `argo_user_<users.id>` instead: the row is inserted with a placeholder
+     `argo_user_pending_<tg_id>` and renamed in the same transaction once the id is known.
+     The login is sent to the applicant like any other. Such an account is not reachable
+     via `/confirm @username` or `/reset @username` (no handle to match) — use the button.
 8. Any step between «Принять» and the receipt can end in **`expired`** — the booking
    window ran out. See «Payment window» below.
 9. In-between statuses show `wait_decision` / `wait_payment_check` / the offer prompt again
@@ -193,10 +194,12 @@ mass-messaged — the reset is **lazy**, triggered by the person writing to the 
   leftover of the previous intake. The bot creates a **new** application for the current intake
   (`awaiting_about`, `applicant_kind='retry'`) and sends the opening `/start` text: the person
   starts from scratch. The old row stays untouched in the previous intake's archive.
-- `confirmed` applications are never reset (service mode). An unfinished application of someone
-  who already has an account (`user_id`, i.e. a returning user) is not restarted with an anketa:
-  its booking is just burned (`expired`), the person is back in service mode and taps
-  «Записаться в новую экспедицию» again.
+- **Whoever already has an account goes to service mode instead** (`ROLL_SERVICE`): an account
+  bound by `users.tg_id` (admins, first intake) or any application with `user_id`
+  (`_service_user`). They never enter the newcomer funnel; a returning participant enrols with
+  the «Записаться в новую экспедицию» button. If the leftover itself has a `user_id` its booking
+  is burned (`expired`); a bound person's leftover without `user_id` is left untouched.
+- `confirmed` applications are never reset (already service mode).
 - **`applicant_kind`** is written once at creation: `new` — the chat had no application at all;
   `retry` — restarted by the rule above (applied to a previous intake, was not enrolled);
   `returning` — enrolment through the ARG-176 button. `NULL` for applications created before

@@ -185,9 +185,9 @@ TEXT_ACCEPTED = (
 TEXT_OFFER_PROMPT = (
     "Прежде чем перейти к оплате — прочитай оферту и подтверди согласие. 📄"
 )
-# Редакция принятой оферты (совпадает с «Редакция от …» в самом тексте оферты,
+# Редакция принятой оферты (совпадает с датой в шапке текста оферты,
 # frontend/src/features/oferta/content/oferta.md) — поднимать при правке текста.
-OFFER_VERSION = "2026-08-19"
+OFFER_VERSION = "2026-11-06"
 TEXT_NEED_RECEIPT = (
     "Чтобы подтвердить место — пришли чек об оплате: PDF-файлом или скриншотом. 🧾"
 )
@@ -222,10 +222,6 @@ TEXT_ASK_QUESTION_PROMPT = (
     "Ответ придёт сюда же."
 )
 TEXT_QUESTION_SENT = "✅ Вопрос отправлен в поддержку. Ответ придёт сюда же."
-TEXT_NEED_USERNAME = (
-    "У тебя не задан @username в Telegram. Открой Настройки → «Имя пользователя», "
-    "задай его и напиши сюда что угодно, чтобы мы попробовали снова."
-)
 
 # --- Окно на оплату: цена гарантирована ограниченное время (ARG-108) ---------
 # Не «бронь места» — мест хватает всем, кто дошёл до оплаты. Смысл дедлайна в том,
@@ -521,28 +517,39 @@ async def _find_application(session: AsyncSession, tg_id: int) -> IntakeApplicat
     ).scalars().first()
 
 
+# Итог `_rollover_stale_application` (ARG-189).
+ROLL_KEEP = "keep"  # заявка актуальна (или её нет) — работаем с ней как обычно
+ROLL_RESTARTED = "restarted"  # завели новую заявку на текущий поток — человек с анкеты
+ROLL_SERVICE = "service"  # у человека есть аккаунт — ему сервисный режим, не воронка
+
+
 async def _rollover_stale_application(
     session: AsyncSession, app: IntakeApplication | None, from_user: dict[str, Any]
-) -> tuple[IntakeApplication | None, bool]:
-    """Ленивый сброс воронки при смене потока (ARG-189): (заявка, начата_заново).
+) -> tuple[IntakeApplication | None, str]:
+    """Ленивый сброс воронки при смене потока (ARG-189): (заявка, `ROLL_*`).
 
     Заявка, которая ещё в воронке, но относится не к текущему (самому новому) потоку,
-    — хвост прошлого набора. Человек пришёл снова → заводим НОВУЮ заявку на текущий
-    поток (`retry`), как при первом `/start`; старая остаётся в архиве потока. Никаких
-    хуков на создание потока и массовых рассылок: сброс случается, когда пишет сам
-    человек. Исторические заявки без потока (`intake_id IS NULL`) считаются прошлыми.
+    — хвост прошлого набора. Что с ним делать, решает наличие аккаунта:
 
-    `confirmed` не трогаем (сервисный режим). Незавершённая заявка вернувшегося
-    (`user_id` задан) заново не начинается — у него есть аккаунт и анкета не нужна:
-    бронь прошлого потока просто сгорает, и он снова жмёт «Записаться»."""
+    - **Аккаунта нет** (`ROLL_RESTARTED`): человек пришёл снова → заводим НОВУЮ заявку на
+      текущий поток (`retry`), как при первом `/start`; старая остаётся в архиве потока.
+    - **Аккаунт есть** (`ROLL_SERVICE`) — привязан по `users.tg_id` или заявка с
+      `user_id`: воронка новичка ему не нужна, ведём в сервисный режим (вернувшийся
+      оттуда записывается кнопкой). Если у хвоста есть `user_id`, его бронь сгорает.
+
+    Никаких хуков на создание потока и массовых рассылок: сброс случается, когда пишет
+    сам человек. Исторические заявки без потока (`intake_id IS NULL`) считаются
+    прошлыми. `confirmed` не трогаем (и так сервисный режим)."""
     if app is None or not _app_in_funnel(app):
-        return app, False
+        return app, ROLL_KEEP
     current = await _current_intake(session)
     if current is None or app.intake_id == current.id:
-        return app, False
-    if app.user_id is not None:
-        await _mark_expired(session, app)
-        return app, False
+        return app, ROLL_KEEP
+    account, _ = await _service_user(session, app.tg_id)
+    if account is not None or app.user_id is not None:
+        if app.user_id is not None:
+            await _mark_expired(session, app)
+        return app, ROLL_SERVICE
     fresh = IntakeApplication(
         tg_id=app.tg_id,
         tg_username=from_user.get("username"),
@@ -558,7 +565,7 @@ async def _rollover_stale_application(
         f"прошлому потоку — начата заново на поток #{current.id}, заявка #{fresh.id}",
         flush=True,
     )
-    return fresh, True
+    return fresh, ROLL_RESTARTED
 
 
 async def _find_bound_user(session: AsyncSession, tg_id: int) -> User | None:
@@ -1048,7 +1055,10 @@ async def _handle_receipt(
 async def _create_platform_user(
     session: AsyncSession, app: IntakeApplication
 ) -> tuple[str, str | None] | None:
-    """Создать пользователя платформы. None, если у заявителя нет @username.
+    """Создать пользователя платформы. None, если нет активного набора.
+
+    Логин = @username заявителя; если он скрыт/не задан — `argo_user_<id>` по id
+    созданного аккаунта (id известен только после INSERT, поэтому сначала заглушка).
 
     Вернувшийся (у заявки уже есть `user_id`, ARG-176) нового аккаунта не получает:
     переносим существующий в текущий поток. Пароль в этом случае не выдаётся (None)."""
@@ -1070,20 +1080,24 @@ async def _create_platform_user(
         await session.flush()
         await _assign_intake_welcome_tasks(session, intake.id, user.id)
         return user.username, None
-    if not app.tg_username:
-        return None
     body = AdminCreateUserRequest(
-        username=app.tg_username,
+        username=app.tg_username or f"argo_user_pending_{app.tg_id}",
         display_name=_display_name(app),
         role="participant",
         intake_id=intake.id,
         plan_id=app.plan_id,
     )
     response = await create_user(body, session)
+    login = response.username
+    if not app.tg_username:
+        new_user = await session.get(User, response.id)
+        assert new_user is not None
+        login = new_user.username = f"argo_user_{response.id}"
+        await session.flush()
     app.user_id = response.id
     app.intake_id = intake.id
     await _assign_intake_welcome_tasks(session, intake.id, response.id)
-    return response.username, response.one_time_password
+    return login, response.one_time_password
 
 
 async def _assign_intake_welcome_tasks(
@@ -1383,9 +1397,8 @@ async def _finalize_payment(
     """Создать аккаунт участника и завершить заявку — общий хвост для кнопки
 
     «Подтвердить оплату» и для ручной команды `/confirm` (ARG — оплата мимо чека,
-    например из-за рубежа через Tribute). None — нет @username или нет активного
-    набора (см. `_create_platform_user`); вызывающий уже знает, какой из двух
-    случаев у него на руках, и формулирует сообщение админу сам.
+    например из-за рубежа через Tribute). None — нет активного набора
+    (см. `_create_platform_user`).
     HTTPException (логин занят / набор не найден на уровне create_user) не
     ловится тут — откат транзакции делает вызывающий.
     """
@@ -1436,9 +1449,8 @@ async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSessi
         return
     if created is None:
         await _answer_callback(
-            client, cb["id"], "У участника нет @username в Telegram — не могу завести логин", alert=True
+            client, cb["id"], "Нет активного набора — не могу завести аккаунт", alert=True
         )
-        await _send(client, app.tg_id, TEXT_NEED_USERNAME)
         return
 
     username, _password = created
@@ -1875,8 +1887,7 @@ async def _handle_confirm_command(
         await _send(client, chat_id, f"⚠️ Не удалось подтвердить: {html.escape(str(exc.detail))}")
         return
     if created is None:
-        # tg_username гарантированно есть — нашли заявку именно по нему; значит
-        # причина — нет активного набора (см. `_create_platform_user`).
+        # Причина — нет активного набора (см. `_create_platform_user`).
         await _send(
             client, chat_id,
             "⚠️ Нет активного набора (таблица intakes пуста) — не могу завести аккаунт.",
@@ -1965,9 +1976,12 @@ async def _handle_start(
     # привязанная вручную учётка (ARG-167) — заявку не заводим. Незавершённая заявка
     # (в т.ч. вернувшегося, пока он платит за новый поток) имеет приоритет.
     app = await _find_application(session, tg_id)
-    app, restarted = await _rollover_stale_application(session, app, from_user)
-    if restarted:
+    app, roll = await _rollover_stale_application(session, app, from_user)
+    if roll == ROLL_RESTARTED:
         await _send(client, chat_id, TEXT_START)
+        return
+    if roll == ROLL_SERVICE:
+        await _send_service_menu(client, session, chat_id, tg_id)
         return
     if not _app_in_funnel(app):
         if app is not None or await _find_bound_user(session, tg_id) is not None:
@@ -2111,9 +2125,12 @@ async def _handle_message(client: httpx.AsyncClient, session: AsyncSession, mess
         return
 
     app = await _find_application(session, tg_id)
-    app, restarted = await _rollover_stale_application(session, app, from_user)
-    if restarted:
+    app, roll = await _rollover_stale_application(session, app, from_user)
+    if roll == ROLL_RESTARTED:
         await _send(client, chat_id, TEXT_START)
+        return
+    if roll == ROLL_SERVICE:
+        await _send_service_menu(client, session, chat_id, tg_id)
         return
     if not _app_in_funnel(app):
         if app is not None or await _find_bound_user(session, tg_id) is not None:

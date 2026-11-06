@@ -3,9 +3,8 @@
 // раскладка радиусов и рамка сектора выровнены с колесом Генных Ключей
 // (features/genkeys/wheel.ts) — тот же язык, другая структура данных.
 //
-// Обход — ПРОТИВ часовой стрелки: Воздух справа (90°) → Огонь сверху (0°) →
-// Вода слева (270°) → Земля снизу (180°) — прочтение исходной схемы (стихии по
-// сторонам света, порядок эфиров идёт против часовой). Дни внутри квадранта
+// Обход — ПО часовой стрелке: Воздух слева (270°) → Огонь сверху (0°) →
+// Вода справа (90°) → Земля снизу (180°). Дни внутри квадранта
 // стихии распределяются по её фактической длине (этапы неравные — 4/6/6/5/6/1,
 // не 4×7). Дни Точки Баланса и Финала — отдельным кольцом вокруг центра.
 
@@ -47,9 +46,9 @@ export const R_SPOKE_OUT = R_FRAME_OUT - 2
 
 export const ELEMENT_ORDER: Element[] = ['air', 'fire', 'water', 'earth']
 export const ELEMENT_CARDINAL: Record<Element, number> = {
-  air: 90,
+  air: 270,
   fire: 0,
-  water: 270,
+  water: 90,
   earth: 180,
 }
 
@@ -63,24 +62,24 @@ export function stageByKind(stages: StageSpanOut[], kind: StageSpanOut['kind']) 
   return stages.find((s) => s.kind === kind)
 }
 
-// Квадрант стихии q (по ELEMENT_ORDER) начинается на 135° − 90q и идёт по
-// убыванию угла (против часовой) — см. модуль-комментарий.
-const quadrantStart = (q: number) => 135 - q * 90
+// Квадрант стихии q (по ELEMENT_ORDER) начинается на 225° + 90q и идёт по
+// возрастанию угла (по часовой) — см. модуль-комментарий.
+const quadrantStart = (q: number) => 225 + q * 90
 
 /** Угол дня `p` (0-based) внутри стихии из `n` дней в её квадранте. */
 export function elementDayAngle(elementIndex: number, dayIndexInStage: number, stageDays: number): number {
-  return quadrantStart(elementIndex) - (dayIndexInStage + 0.5) * (90 / stageDays)
+  return quadrantStart(elementIndex) + (dayIndexInStage + 0.5) * (90 / stageDays)
 }
 
 /** Угол дня `i` (0-based) на внутреннем кольце из `count` центральных дней. */
 export function centerDayAngle(dayIndex: number, count: number): number {
-  return 135 - (dayIndex + 0.5) * (360 / count)
+  return 225 + (dayIndex + 0.5) * (360 / count)
 }
 
 /** Границы 90°-сектора стихии `elementIndex` в порядке [начало, конец] по возрастанию угла. */
 export function elementSectorSpan(elementIndex: number): [number, number] {
   const start = quadrantStart(elementIndex)
-  return [start - 90, start]
+  return [start, start + 90]
 }
 
 /**
