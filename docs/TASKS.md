@@ -64,7 +64,7 @@ completed or not. Only intake (ARG-96) is dropped unconditionally for everyone.
 
 ## Assignments & lifecycle
 
-- Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels). Exception: `intake_bot.py` assigns intake-tagged welcome tasks (`tasks.intake_id` set, `type='individual'`, created with zero recipients by `scripts/provision_second_intake.py`) to each new user right after their platform account is created — see [INTAKE_BOT.md](INTAKE_BOT.md).
+- Individual tasks → `task_assignments` rows created at task creation. Common tasks → rows created **lazily on first submission** (implicit access, like channels). Exception: `intake_bot.py` assigns intake-tagged welcome tasks (`tasks.intake_id` set, `type='individual'`, created with zero recipients by `scripts/provision_second_intake.py`) to each new user right after their platform account is created — see [INTAKE_BOT.md](INTAKE_BOT.md). Welcome tasks of the third intake (ARG-174) are `common` with `intake_id` instead, so the bot assigns nothing and they follow the lazy common path.
 - `task_assignments.status`: `assigned → submitted → returned → accepted`. `late` is set on the first submission after `deadline_at`.
 - Submission history is kept (a return produces a new `task_submissions` row; the latest is the current one).
 - `tasks.sets_display_name` (default false): if set, `create_submission` overwrites `users.display_name` with the submission's trimmed text on submit. No task id/title is hardcoded — only this flag, set directly by provisioning (not exposed on `TaskCreate`).
