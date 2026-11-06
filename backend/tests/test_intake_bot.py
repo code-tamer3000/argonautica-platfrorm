@@ -1080,6 +1080,29 @@ async def test_confirm_command_reports_already_confirmed(
     assert "уже подтверждена" in client.payload("sendMessage")["text"]
 
 
+async def test_create_platform_user_without_tg_username_gets_argo_user_login(
+    session: AsyncSession,
+) -> None:
+    await get_or_create_intake(
+        session, (await session.scalar(select(func.max(Intake.starts_on))) or date.today())
+        + timedelta(days=1),
+    )
+    plan = await make_plan(session, f"Огонь-{random.randint(100, 999)}", 12000)
+    app = await make_application(session, status=STATUS_CHOOSING_PLAN, with_intake=False)
+    app.tg_username = None
+    app.plan_id = plan.id
+    session.add(app)
+    await session.flush()
+
+    created = await intake_bot._create_platform_user(session, app)
+    await session.commit()
+
+    assert created is not None
+    user = await session.get(User, app.user_id)
+    assert user is not None
+    assert user.username == f"argo_user_{user.id}" == created[0]
+
+
 async def test_confirm_command_usage_without_username(
     session: AsyncSession, monkeypatch: Any
 ) -> None:

@@ -5,7 +5,7 @@
 
 ## Model
 
-- **Closed platform, no self-signup.** Admin provisions accounts; login = Telegram username (`users.username`), `email` optional.
+- **Closed platform, no self-signup.** Admin provisions accounts; login = Telegram username (`users.username`; `argo_user_<id>` if the applicant has none), `email` optional.
 - **Two roles** (`users.role`): `participant` (KB, chats, own profile) and `admin` / author (content + moderation + everything).
 - **Per-flag grants** (not roles), admin-togglable via `PATCH /api/admin/users/{id}`:
   - `can_create_groups` (default true) — may create group rooms.

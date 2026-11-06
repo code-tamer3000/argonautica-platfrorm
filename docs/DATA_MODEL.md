@@ -21,7 +21,7 @@ Login is **`username`** (the Telegram handle; closed platform, no self-signup �
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | BIGSERIAL | PK | |
-| username | TEXT | NOT NULL, UNIQUE | login = TG handle (без `@`) |
+| username | TEXT | NOT NULL, UNIQUE | login = TG handle (без `@`); без username у заявителя — `argo_user_<id>` |
 | email | TEXT | UNIQUE, NULL | optional |
 | tg_id | BIGINT | UNIQUE, NULL | Telegram user id, привязывается **вручную** скриптом `bind_tg_id` (ARG-167) для тех, кто попал на платформу мимо воронки (админы, первый поток). По нему intake-бот находит учётку для «Сменить пароль»; у прошедших воронку источник — `intake_applications.tg_id → user_id`. Не производная от `username` (ник меняется, id — нет). Приоритетнее заявки |
 | password_hash | TEXT | NOT NULL | argon2, never plaintext |

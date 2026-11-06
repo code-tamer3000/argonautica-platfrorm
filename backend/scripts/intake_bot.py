@@ -222,10 +222,6 @@ TEXT_ASK_QUESTION_PROMPT = (
     "Ответ придёт сюда же."
 )
 TEXT_QUESTION_SENT = "✅ Вопрос отправлен в поддержку. Ответ придёт сюда же."
-TEXT_NEED_USERNAME = (
-    "У тебя не задан @username в Telegram. Открой Настройки → «Имя пользователя», "
-    "задай его и напиши сюда что угодно, чтобы мы попробовали снова."
-)
 
 # --- Окно на оплату: цена гарантирована ограниченное время (ARG-108) ---------
 # Не «бронь места» — мест хватает всем, кто дошёл до оплаты. Смысл дедлайна в том,
@@ -1059,7 +1055,10 @@ async def _handle_receipt(
 async def _create_platform_user(
     session: AsyncSession, app: IntakeApplication
 ) -> tuple[str, str | None] | None:
-    """Создать пользователя платформы. None, если у заявителя нет @username.
+    """Создать пользователя платформы. None, если нет активного набора.
+
+    Логин = @username заявителя; если он скрыт/не задан — `argo_user_<id>` по id
+    созданного аккаунта (id известен только после INSERT, поэтому сначала заглушка).
 
     Вернувшийся (у заявки уже есть `user_id`, ARG-176) нового аккаунта не получает:
     переносим существующий в текущий поток. Пароль в этом случае не выдаётся (None)."""
@@ -1081,20 +1080,24 @@ async def _create_platform_user(
         await session.flush()
         await _assign_intake_welcome_tasks(session, intake.id, user.id)
         return user.username, None
-    if not app.tg_username:
-        return None
     body = AdminCreateUserRequest(
-        username=app.tg_username,
+        username=app.tg_username or f"argo_user_pending_{app.tg_id}",
         display_name=_display_name(app),
         role="participant",
         intake_id=intake.id,
         plan_id=app.plan_id,
     )
     response = await create_user(body, session)
+    login = response.username
+    if not app.tg_username:
+        new_user = await session.get(User, response.id)
+        assert new_user is not None
+        login = new_user.username = f"argo_user_{response.id}"
+        await session.flush()
     app.user_id = response.id
     app.intake_id = intake.id
     await _assign_intake_welcome_tasks(session, intake.id, response.id)
-    return response.username, response.one_time_password
+    return login, response.one_time_password
 
 
 async def _assign_intake_welcome_tasks(
@@ -1394,9 +1397,8 @@ async def _finalize_payment(
     """Создать аккаунт участника и завершить заявку — общий хвост для кнопки
 
     «Подтвердить оплату» и для ручной команды `/confirm` (ARG — оплата мимо чека,
-    например из-за рубежа через Tribute). None — нет @username или нет активного
-    набора (см. `_create_platform_user`); вызывающий уже знает, какой из двух
-    случаев у него на руках, и формулирует сообщение админу сам.
+    например из-за рубежа через Tribute). None — нет активного набора
+    (см. `_create_platform_user`).
     HTTPException (логин занят / набор не найден на уровне create_user) не
     ловится тут — откат транзакции делает вызывающий.
     """
@@ -1447,9 +1449,8 @@ async def _handle_confirm_payment(client: httpx.AsyncClient, session: AsyncSessi
         return
     if created is None:
         await _answer_callback(
-            client, cb["id"], "У участника нет @username в Telegram — не могу завести логин", alert=True
+            client, cb["id"], "Нет активного набора — не могу завести аккаунт", alert=True
         )
-        await _send(client, app.tg_id, TEXT_NEED_USERNAME)
         return
 
     username, _password = created
@@ -1886,8 +1887,7 @@ async def _handle_confirm_command(
         await _send(client, chat_id, f"⚠️ Не удалось подтвердить: {html.escape(str(exc.detail))}")
         return
     if created is None:
-        # tg_username гарантированно есть — нашли заявку именно по нему; значит
-        # причина — нет активного набора (см. `_create_platform_user`).
+        # Причина — нет активного набора (см. `_create_platform_user`).
         await _send(
             client, chat_id,
             "⚠️ Нет активного набора (таблица intakes пуста) — не могу завести аккаунт.",
