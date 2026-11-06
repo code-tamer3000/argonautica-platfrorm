@@ -73,7 +73,7 @@ content (channels, common tasks, KB items) can be scoped to one intake — see
 **Cohort-pending gate (ARG-106).** While `today < intake.starts_on`, a participant's own
 Рубка (chat, root `/`) and Календарь screens are replaced client-side with a
 "N days until start" placeholder (`CohortPending`, N = calendar days, no time-of-day
-precision) — no backend enforcement, same trust level as any other early-availability UI
+precision), **never for `role='admin'`** — no backend enforcement, same trust level as any other early-availability UI
 state (the participant's own data, not another user's). `GET /api/auth/me` exposes
 `intake_starts_on`/`intake_welcome_message` (denormalized, same pattern as
 `AdminUserOut.intake_starts_on`) for this and for the welcome popup. The popup's "don't
