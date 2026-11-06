@@ -119,7 +119,7 @@ could not recognise them. Their Telegram id is bound by hand to `users.tg_id`
 an unknown login, an account that already has a *different* `tg_id`, and a `tg_id` already
 owned by another account in `users` or via `intake_applications.user_id`). Lookup is by
 **id only** — never by username (a Telegram handle can be changed or released). For a bound
-`tg_id`, `/start` and any message go straight to service mode («Чем помочь?» +
+`tg_id`, `/start` and any message go straight to service mode («Чем помочь, аргонавт?» +
 «Сменить пароль» / «Задать вопрос») and **no application row is created**; `_service_user` resolves the account for
 «Сменить пароль»: `users.tg_id` first, then a `confirmed` application's `user_id`. An id
 with neither is an ordinary stranger → the funnel, exactly as before. One-off invitation
@@ -144,7 +144,7 @@ login). Special conditions for them:
   экспедицию»** (`svc_en`). It creates an application for the current intake **without anketa
   and without the admin's «Принять»**: straight to `choosing_plan`, 24h window started,
   `user_id` already set to the existing account. The admin only gets an informational card
-  («🔁 Вернувшийся записался»), no buttons. Pressing again resumes the existing application;
+  («Вернувшийся записался: @tag (логин …)»), no buttons. Pressing again resumes the existing application;
   a burned one (`expired`) is reopened in the same row. An expired returning application
   sends `/start` back to the service menu, not to the anketa.
 - **Price:** `price_snapshot` is built by `_returning_prices` — **⅔ of each active plan,
@@ -167,7 +167,7 @@ inline button on funnel steps any more (ARG-94): a per-message "💬 Задат�
 competed with the buttons that actually belong to the current step. **Service mode is the
 exception:** its keyboard always carries both «🔑 Сменить пароль» and «💬 Задать вопрос»
 (nothing competes there), and every service-mode entry — `/start`, any message, the
-announce — shows the same neutral «Чем помочь?» (both intakes are over, so the old
+announce — shows the same neutral «Чем помочь, аргонавт?» (both intakes are over, so the old
 «Ты уже на борту Экспедиции… пришлём детали старта» text is gone). The command sets an ephemeral Redis flag
 (`intakebot:await_q:{tg_id}`, distinct prefix from the access bot's `bot:await_q:*` —
 separate service, separate Redis namespace) and takes priority over whatever the funnel
