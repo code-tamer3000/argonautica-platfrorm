@@ -3,6 +3,31 @@
 .summaryItem { display: flex; flex-direction: column; gap: 2px; }
 .summaryValue { font-family: var(--font-t1); font-size: 22px; line-height: 1; color: var(--text-primary); }
 .summaryValueAccent { color: var(--accent); }
+.summaryHover { position: relative; cursor: default; outline: none; }
+.kindPop {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: 0;
+  z-index: 10;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  border: 1px solid var(--divider-gold);
+  border-radius: var(--radius-card);
+  box-shadow: 0 6px 20px color-mix(in srgb, black 25%, transparent);
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.summaryHover:hover .kindPop,
+.summaryHover:focus .kindPop,
+.summaryHover:focus-within .kindPop { opacity: 1; transform: translateY(0); }
+.kindPopRow { display: flex; justify-content: space-between; gap: var(--space-4); font-size: 0.8rem; color: var(--text-secondary); }
+.kindPopValue { color: var(--text-primary); font-family: var(--font-t1); }
 .summaryLabel { font-size: 0.75rem; color: var(--text-secondary); }
 
 /* ── Канбан ── */

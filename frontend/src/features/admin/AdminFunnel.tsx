@@ -1,10 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useAdminIntakes } from '../../api/admin'
 import { useAdminApplications } from '../../api/applications'
 import { useAdminPlans } from '../../api/plans'
 import { Chip } from '../../components/Chip'
 import { EmptyState } from '../../components/EmptyState'
-import { Input } from '../../components/Input'
 import { Drawer } from '../../components/Overlay'
 import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
@@ -49,8 +48,8 @@ const TIMELINE_FIELDS: { key: keyof ApplicationOut; label: string }[] = [
 
 const KIND_LABEL: Record<ApplicantKind, string> = {
   new: 'Новые',
-  retry: 'Подавались раньше',
-  returning: 'Прошли экспедицию',
+  retry: 'Уже подавались',
+  returning: 'Уже проходили',
 }
 
 const KIND_ORDER: ApplicantKind[] = ['new', 'retry', 'returning']
@@ -77,16 +76,6 @@ function formatDatetime(iso: string | null): string {
 
 function isStuck(item: ApplicationOut): boolean {
   return !TERMINAL_STATUSES.has(item.status) && (item.days_in_stage ?? 0) > STUCK_THRESHOLD_DAYS
-}
-
-function matchesQuery(item: ApplicationOut, query: string): boolean {
-  const q = query.trim().toLowerCase()
-  if (!q) return true
-  return (
-    item.display_name.toLowerCase().includes(q) ||
-    (item.tg_username?.toLowerCase().includes(q) ?? false) ||
-    (item.about?.toLowerCase().includes(q) ?? false)
-  )
 }
 
 function ApplicationCard({ item, onOpen }: { item: ApplicationOut; onOpen: () => void }) {
@@ -215,14 +204,9 @@ export function AdminFunnel() {
   // Тарифы задают порядок групп в колонках (по цене) — берём админский список,
   // чтобы заявка на уже выключенном тарифе не теряла своё место.
   const { data: plans = [] } = useAdminPlans()
-  const [query, setQuery] = useState('')
   const [openId, setOpenId] = useState<number | null>(null)
 
   const items = data?.items ?? []
-  const filtered = useMemo(
-    () => items.filter((item) => matchesQuery(item, query)),
-    [items, query],
-  )
   const openItem = openId != null ? items.find((i) => i.id === openId) ?? null : null
 
   const byStatus = data?.by_status
@@ -238,9 +222,19 @@ export function AdminFunnel() {
       <PageHeader title="Воронка" />
 
       <div className={funnelStyles.summaryRow}>
-        <div className={funnelStyles.summaryItem}>
+        {/* Разбивка по типам заявителя раскрывается по ховеру/фокусу, чтобы не держать
+            второй ряд цифр (ARG-189). tabIndex — чтобы работало и по тапу на телефоне. */}
+        <div className={`${funnelStyles.summaryItem} ${funnelStyles.summaryHover}`} tabIndex={0}>
           <span className={funnelStyles.summaryValue}>{data?.total ?? 0}</span>
           <span className={funnelStyles.summaryLabel}>Всего заявок</span>
+          <div className={funnelStyles.kindPop} role="tooltip">
+            {KIND_ORDER.map((kind) => (
+              <div key={kind} className={funnelStyles.kindPopRow}>
+                <span>{KIND_LABEL[kind]}</span>
+                <span className={funnelStyles.kindPopValue}>{data?.by_kind?.[kind] ?? 0}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className={funnelStyles.summaryItem}>
           <span className={funnelStyles.summaryValue}>{working}</span>
@@ -278,24 +272,9 @@ export function AdminFunnel() {
         </div>
       )}
 
-      <div className={funnelStyles.summaryRow}>
-        {KIND_ORDER.map((kind) => (
-          <div key={kind} className={funnelStyles.summaryItem}>
-            <span className={funnelStyles.summaryValue}>{data?.by_kind?.[kind] ?? 0}</span>
-            <span className={funnelStyles.summaryLabel}>{KIND_LABEL[kind]}</span>
-          </div>
-        ))}
-      </div>
-
-      <Input
-        placeholder="Поиск по имени, @username или тексту анкеты"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-
       <div className={funnelStyles.board}>
         {STAGES.map((stage) => {
-          const stageItems = filtered.filter((item) => item.status === stage.status)
+          const stageItems = items.filter((item) => item.status === stage.status)
           const stageHasPlan = stageItems.some((item) => item.plan_id != null)
           return (
             <div
