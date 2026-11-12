@@ -201,6 +201,12 @@
   --kb-audio-max-width: 60%;
 }
 
+.kbMediaLead {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 /* ───── Комментарии под материалом ───── */
 .comments {
   margin-top: var(--space-8);

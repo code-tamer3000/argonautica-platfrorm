@@ -15,12 +15,7 @@ export function isCastePlateTitle(title: string): boolean {
 export function CastePlate() {
   return (
     <article className={styles.plate}>
-      <p className={styles.kicker}>Карта миров · таблица 1</p>
-      <h2 className={styles.title}>
-        Уровни развития сознания.
-        <br />
-        Современные касты
-      </h2>
+      <h2 className={styles.title}>Уровни развития сознания</h2>
       <p className={styles.lead}>
         Четыре варны — четыре стихии, четыре сенсора, четыре точки сборки.
       </p>

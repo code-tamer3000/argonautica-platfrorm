@@ -114,6 +114,18 @@ export function KbViewer() {
           Обновлено: {dayLabel(item.updated_at)}
         </div>
       </div>
+      {castePlate && item.media_asset_ids.length > 0 && (
+        <div className={`${styles.kbMedia} ${styles.kbMediaLead}`}>
+          {item.media_asset_ids.map((assetId) => (
+            <MdAttachment key={assetId} itemId={id} assetId={assetId} />
+          ))}
+        </div>
+      )}
+      {castePlate && item.playlist && (
+        <div className={`${styles.kbMedia} ${styles.kbMediaLead}`}>
+          <PlaylistCard playlist={item.playlist} />
+        </div>
+      )}
       {castePlate && <CastePlate />}
       {bodyHtml && (
         <div
@@ -121,14 +133,14 @@ export function KbViewer() {
           dangerouslySetInnerHTML={{ __html: bodyHtml }}
         />
       )}
-      {item.media_asset_ids.length > 0 && (
+      {!castePlate && item.media_asset_ids.length > 0 && (
         <div className={styles.kbMedia}>
           {item.media_asset_ids.map((assetId) => (
             <MdAttachment key={assetId} itemId={id} assetId={assetId} />
           ))}
         </div>
       )}
-      {item.playlist && (
+      {!castePlate && item.playlist && (
         <div className={styles.kbMedia}>
           <PlaylistCard playlist={item.playlist} />
         </div>

@@ -6,28 +6,17 @@
   --plate-gold: var(--accent);
   --plate-strong: var(--divider-gold-strong);
   --plate-rule: var(--divider);
-  margin-top: var(--space-2);
+  margin-top: var(--space-8);
   color: var(--plate-text);
   font-family: var(--font-t3);
 }
 
-.kicker {
-  margin: 0 0 14px;
-  font-family: var(--font-t4);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: var(--plate-gold);
-}
-
 .title {
   margin: 0;
-  max-width: 14em;
   font-family: var(--font-t1);
   font-weight: 400;
-  font-size: clamp(32px, 4vw, 42px);
-  line-height: 1.18;
+  font-size: clamp(28px, 4vw, 36px);
+  line-height: 1.2;
   color: var(--plate-bright);
 }
 
@@ -144,17 +133,14 @@
 }
 
 .stub {
-  width: 132px;
-  position: sticky;
-  left: 0;
-  background: var(--bg);
-  padding-right: 12px;
-  font-family: var(--font-t4);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  line-height: 1.35;
+  white-space: nowrap;
+  padding-right: 22px;
+  font-family: var(--font-t3);
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.5;
   color: var(--plate-muted);
   border-top-color: transparent;
 }
