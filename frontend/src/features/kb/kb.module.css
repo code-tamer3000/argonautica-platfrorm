@@ -110,6 +110,8 @@
   max-width: 800px;
 }
 
+.viewerWide { max-width: 1080px; }
+
 .viewerHead {
   margin-bottom: var(--space-6);
 }
