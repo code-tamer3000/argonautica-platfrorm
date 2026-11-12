@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useDeleteKbItem, useKbItem, useUpdateKbItem } from '../../api/kb'
+import { CastePlate, isCastePlateTitle } from './CastePlate'
 import { MdAttachment } from './MdAttachment'
 import { KbComments } from './KbComments'
 import { KbForm, type KbFormValues } from './KbForm'
@@ -45,6 +46,7 @@ export function KbViewer() {
   const bodyHtml = item.body
     ? DOMPurify.sanitize(marked.parse(item.body) as string)
     : ''
+  const castePlate = isCastePlateTitle(item.title)
 
   function handleEdit(values: KbFormValues) {
     updateItem.mutate(
@@ -89,7 +91,7 @@ export function KbViewer() {
   }
 
   return (
-    <div className={styles.viewer}>
+    <div className={castePlate ? `${styles.viewer} ${styles.viewerWide}` : styles.viewer}>
       <PageHeader title={item.title}>
         {isAdmin && !item.published && <Badge>Черновик</Badge>}
         {isAdmin && (
@@ -112,20 +114,33 @@ export function KbViewer() {
           Обновлено: {dayLabel(item.updated_at)}
         </div>
       </div>
+      {castePlate && item.media_asset_ids.length > 0 && (
+        <div className={`${styles.kbMedia} ${styles.kbMediaLead}`}>
+          {item.media_asset_ids.map((assetId) => (
+            <MdAttachment key={assetId} itemId={id} assetId={assetId} />
+          ))}
+        </div>
+      )}
+      {castePlate && item.playlist && (
+        <div className={`${styles.kbMedia} ${styles.kbMediaLead}`}>
+          <PlaylistCard playlist={item.playlist} />
+        </div>
+      )}
+      {castePlate && <CastePlate />}
       {bodyHtml && (
         <div
           className={styles.articleBody}
           dangerouslySetInnerHTML={{ __html: bodyHtml }}
         />
       )}
-      {item.media_asset_ids.length > 0 && (
+      {!castePlate && item.media_asset_ids.length > 0 && (
         <div className={styles.kbMedia}>
           {item.media_asset_ids.map((assetId) => (
             <MdAttachment key={assetId} itemId={id} assetId={assetId} />
           ))}
         </div>
       )}
-      {item.playlist && (
+      {!castePlate && item.playlist && (
         <div className={styles.kbMedia}>
           <PlaylistCard playlist={item.playlist} />
         </div>

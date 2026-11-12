@@ -110,6 +110,8 @@
   max-width: 800px;
 }
 
+.viewerWide { max-width: 1080px; }
+
 .viewerHead {
   margin-bottom: var(--space-6);
 }
@@ -197,6 +199,12 @@
   --kb-player-max-width: 100%;
   --kb-player-max-height: 480px;
   --kb-audio-max-width: 60%;
+}
+
+.kbMediaLead {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 /* ───── Комментарии под материалом ───── */

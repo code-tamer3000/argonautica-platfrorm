@@ -38,6 +38,14 @@ two-step (`components/ConfirmDialog.tsx`), never `window.confirm`. The create/ed
 (`features/kb/KbForm.tsx`) is the same component previously in the deleted
 `features/admin/AdminKb.tsx`.
 
+## Таблица каст
+
+Материал с заголовком «Современные касты» (латинская или кириллическая «С»
+в первой букве) рисует в теле страницы вёрстку двух таблиц — «Сводка осей» и
+«Матрица уровней». Текст ячеек зашит во фронтенде (`features/kb/CastePlate.tsx`),
+тело материала по-прежнему рендерится markdown-ом под таблицами. Вложения
+лекции (видео) стоят над таблицами.
+
 ## Reading (any participant)
 
 - `GET /items` — participants see only `published`; admin sees all (`media_asset_ids` batched, no N+1).
