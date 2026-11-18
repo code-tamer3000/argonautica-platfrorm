@@ -303,7 +303,7 @@ function MessageItemInner({
                 : <span className={styles.msgPlaceholder}>[стикер]</span>
             )}
 
-            {msg.refs.map((ref) => (
+            {(msg.refs ?? (msg.ref ? [msg.ref] : [])).map((ref) => (
               <button key={`${ref.kind}:${ref.id}`}
                 className={`${styles.refLink} ${!ref.available ? styles.refLinkDisabled : ''}`}
                 disabled={!ref.available}

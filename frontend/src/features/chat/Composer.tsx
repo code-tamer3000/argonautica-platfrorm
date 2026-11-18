@@ -273,7 +273,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     resetEditor(editing.content ?? '')
     setEditingKeptAttachments(editing.attachments ?? [])
     setPendingFiles([])
-    setPendingRefs((editing.refs ?? []).map(({ kind, id, title }) => ({ kind, id, title })))
+    setPendingRefs((editing.refs ?? (editing.ref ? [editing.ref] : [])).map(({ kind, id, title }) => ({ kind, id, title })))
     setPendingPlaylist(null)
     setPendingQuote(null)
     setPendingForward(null)
@@ -398,7 +398,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       ? 'text'
       : q.sticker_id != null
         ? 'sticker'
-        : q.refs.length
+        : (q.refs?.length ?? (q.ref ? 1 : 0)) > 0
           ? 'ref'
           : 'attachment'
     return {
