@@ -49,10 +49,9 @@ class Room(Base):
     is_news: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
-    # Изоляция по потоку (ARG-96): только для type='channel' (неявная видимость —
-    # «участник платформы видит все каналы»). NULL = общий для всех потоков.
-    # dm/group гейтятся явным членством и это поле игнорируют; новостной канал
-    # (is_news) НЕ бэкфиллится — остаётся кросс-поточным намеренно.
+    # Поток комнаты (ARG-193): для ordinary dm/group дополняет, но не заменяет
+    # явное членство; для channel задаёт content scope (ARG-96). NULL у dm/group
+    # означает намеренно межпоточную комнату. Для дневников и новостей остаётся NULL.
     intake_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("intakes.id")
     )

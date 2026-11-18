@@ -16,6 +16,27 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 ## Membership & access checks
 
 - `services/rooms.py` centralizes access: `load_room` + `assert_room_access`.
+- **Ordinary dm/group intake (`rooms.intake_id`, ARG-193):** the room's intake is
+  the classification source; `room_members` remains the membership/access source.
+  A non-admin only receives or opens an ordinary dm/group when the room is unscoped
+  (intentional cross-intake) or its intake matches the participant. Admin keeps
+  server-side oversight, while `RoomList` and `ForwardPicker` filter by the selected
+  admin intake. `torch_scope` always bypasses intake filtering. New groups inherit
+  the creator's intake; an admin-created group uses the selected admin intake;
+  ordinary DMs use the participant's intake (or the non-admin peer's intake for an
+  admin-created DM). Stream-task groups use `task.intake_id`.
+- **DM after an intake move:** a DM remains owned by its original intake and is
+  hidden and denied to a participant now in another intake. Since `dm_key` is
+  unique per user pair, asking to start that same DM returns the archived room;
+  creating a fresh DM for that pair needs a separate product mechanism and is not
+  part of ARG-193.
+- **Historical ordinary rooms:** before production rollout, produce and verify a
+  complete private inventory of `dm`/`group` rows with `intake_id IS NULL`, determine
+  each historical intake from confirmed creation context, then run a transactional
+  backfill. Inspect the affected rows before commit and keep a rollback plan. Do not
+  put that inventory or personal data in Linear or source control. Deployment is
+  blocked until this list is verified; a NULL value after backfill means the room is
+  intentionally cross-intake.
 - "Is the user in the room?" depends on type:
   - `dm` / `group` → a `room_members` row exists.
   - `channel` → the user is a platform participant (rule in code).

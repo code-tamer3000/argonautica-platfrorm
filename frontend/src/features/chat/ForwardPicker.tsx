@@ -29,11 +29,9 @@ interface Props {
  * (`POST .../repost?target_room_id=`), так что фильтр здесь — только UX, не граница
  * доступа.
  *
- * Дополнительно сужен до «текущего потока» (`currentIntakeId`): dm-чаты фильтруются
- * по `peer_intake_id`, новостные каналы (admin) — по `intake_id` самой комнаты —
- * иначе и admin-оверсайт, и обычный участник, переходивший между потоками, видят
- * в пикере людей/каналы не своего текущего потока (ARG-104 news per intake, dm
- * членство не завязано на intake).
+ * Дополнительно сужен до текущего потока по `room.intake_id` для обычных dm/group;
+ * комнаты «Факела» остаются межпоточными. Новостные каналы admin фильтрует тем же
+ * полем комнаты.
  */
 export function ForwardPicker({ onPick, onClose }: Props) {
   const [q, setQ] = useState('')
@@ -58,12 +56,10 @@ export function ForwardPicker({ onPick, onClose }: Props) {
     const list = (rooms ?? []).filter((r) => canPostTopLevel(r, user))
     const matches = (r: RoomOut) =>
       !needle || roomTitle(r, dmPeers, users).toLowerCase().includes(needle)
-    let dms = list.filter((r) => r.type === 'dm' && matches(r))
-    if (currentIntakeId != null) {
-      // peer_intake_id отсутствует (историческая запись без набора) — не прячем.
-      dms = dms.filter((r) => r.peer_intake_id == null || r.peer_intake_id === currentIntakeId)
-    }
-    const groupRooms = list.filter((r) => r.type === 'group' && matches(r))
+    const inRoomIntake = (r: RoomOut) =>
+      r.torch_scope || currentIntakeId == null || r.intake_id == null || r.intake_id === currentIntakeId
+    const dms = list.filter((r) => r.type === 'dm' && matches(r) && inRoomIntake(r))
+    const groupRooms = list.filter((r) => r.type === 'group' && matches(r) && inRoomIntake(r))
     const channels = list.filter((r) => r.type === 'channel' && !r.is_news && matches(r))
     let news = list.filter((r) => r.is_news && matches(r))
     if (isAdmin && currentIntakeId != null) {
