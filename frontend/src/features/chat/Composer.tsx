@@ -1006,10 +1006,9 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
               enterKeyHint="enter"
             />
             <div className={styles.attachWrap}>
-              {/* В режиме правки редактируются только сами медиа-вложения (docs/MESSAGES.md
-                  «Границы») — ссылка на материал/задачу и плейлист сюда не входят, поэтому
-                  меню выбора пропускаем и ведём сразу на выбор файла. */}
-              {attachMenuOpen && !editing && (
+              {/* В режиме правки доступны файлы и ссылки. Плейлист пока можно выбрать
+                  только при создании сообщения: PATCH не меняет playlist_id. */}
+              {attachMenuOpen && (
                 <>
                   {/* Клик вне меню — закрыть. */}
                   <div
@@ -1046,26 +1045,28 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
                     >
                       <IconTasks size={18} /> Задача
                     </button>
-                    <button
-                      className={styles.attachMenuItem}
-                      onClick={() => {
-                        setAttachMenuOpen(false)
-                        setPlaylistPanelOpen(true)
-                      }}
-                    >
-                      <IconMusic size={18} /> Плейлист
-                    </button>
+                    {!editing && (
+                      <button
+                        className={styles.attachMenuItem}
+                        onClick={() => {
+                          setAttachMenuOpen(false)
+                          setPlaylistPanelOpen(true)
+                        }}
+                      >
+                        <IconMusic size={18} /> Плейлист
+                      </button>
+                    )}
                   </div>
                 </>
               )}
               <button
                 className={styles.iconBtnInline}
-                onClick={() => editing ? fileInputRef.current?.click() : setAttachMenuOpen((v) => !v)}
+                onClick={() => setAttachMenuOpen((v) => !v)}
                 disabled={uploading}
                 title="Прикрепить"
                 aria-label="Прикрепить"
-                aria-haspopup={editing ? undefined : 'menu'}
-                aria-expanded={editing ? undefined : attachMenuOpen}
+                aria-haspopup="menu"
+                aria-expanded={attachMenuOpen}
               >
                 {uploading ? <Spinner size={16} /> : <IconAttach size={18} />}
               </button>
