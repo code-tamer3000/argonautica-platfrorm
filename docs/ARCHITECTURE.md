@@ -607,7 +607,7 @@ erDiagram
     }
 
     journal_programs ||--o{ journal_sections : "секции задания"
-    users ||--o{ journal_pardons : "не больше трёх"
+    users ||--o{ journal_pardons : "не больше пяти"
     users ||--o{ journal_credits : "без лимита"
     rooms ||..o{ messages : "личная комната = журнал"
 ```

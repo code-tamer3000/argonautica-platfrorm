@@ -212,7 +212,7 @@ function UserCard({
           )}
           {u.pardons_used > 0 && (
             <span className={dynStyles.pardonBadge}>
-              <IconWaves size={12} /> {u.pardons_used}/3
+              <IconWaves size={12} /> {u.pardons_used}/5
             </span>
           )}
           {u.overdue_count === 0 && u.streak > 0 && (

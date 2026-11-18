@@ -131,7 +131,7 @@ function DynamicsSection() {
 
       {/* Помилования */}
       <div className={styles.dynPardons}>
-        {[0, 1, 2].map((i) => (
+        {Array.from({ length: 5 }, (_, i) => (
           <div
             key={i}
             className={styles.dynPardonDot + ' ' + (i < dyn.pardons_used ? styles.dynPardonDotUsed : styles.dynPardonDotFree)}

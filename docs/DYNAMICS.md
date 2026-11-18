@@ -144,7 +144,7 @@ in `AdminJournal` when creating/editing a задание). When set:
 
 ## Exceptions
 
-- **journal_pardons** — a participant forgives their own missed day (`MAX_PARDONS = 3`).
+- **journal_pardons** — a participant forgives their own missed day (`MAX_PARDONS = 5`).
 - **journal_credits** — admin manually credits a day as closed (no limit; e.g. submitted outside the form, timing glitch).
 - Both `UNIQUE (user_id, date)`.
 
@@ -152,7 +152,7 @@ in `AdminJournal` when creating/editing a задание). When set:
 
 - `GET /api/dynamics/my-stats` — closed/partial day counts, streak / misses / a ±day window, computed from personal-room messages + pardons/credits. Also `overdue_tasks` (list) and `late_submissions_count` — task-overdue metrics reused from Tasks (ARG-130/ARG-128), shown alongside diary misses in `ProfileScreen`'s Dynamics block; see [TASKS.md](TASKS.md) "Просрочка задачи как метрика".
 - `GET /api/dynamics/my-days` — the full 28-day calendar of the participant's own набор (as opposed to the ±window `my-stats` returns) — feeds the Динамика block on `ProfileScreen`. `credited` is collapsed to `closed` here: a participant is never shown the difference between a day they closed themselves and one an admin credited manually (that distinction matters only to admins, see below).
-- `POST /api/dynamics/pardon` — pardon a missed day (limit 3).
+- `POST /api/dynamics/pardon` — pardon a missed day (limit 5).
 - `GET /api/dynamics/structure` — the задание active today (sections for the widget/composer).
 - `GET /api/rooms/{id}/journal-days` — `{date: [section keys]}` map for a month (keys ordered by the задание active that day).
 - `GET /api/rooms/{id}/journal-anchor?date=` — nearest journal entry to a date (own or same message id), for jumping from a calendar day tile straight to that entry in the room feed. Picks: the entry on that exact day, else the nearest **earlier** entry, else the nearest **later** one. `{message_id, date}`, both `null` if the room has no journal entries at all.

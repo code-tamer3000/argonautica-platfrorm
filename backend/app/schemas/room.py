@@ -9,9 +9,9 @@ RoomType = Literal["dm", "group", "channel"]
 
 class CreateRoomRequest(BaseModel):
     """Создание комнаты. Поля зависят от типа (валидируются в эндпоинте):
-    dm → peer_id; group/channel → name. `intake_id`/`plan_ids` — только channel,
-    админ-изоляция контента по потоку/тарифу (ARG-96); для остальных типов
-    игнорируются.
+    dm → peer_id; group/channel → name. `intake_id` у обычной группы задаёт
+    admin-контекст потока (участник не может переопределить свой поток); у channel
+    это изоляция контента (ARG-96). `plan_ids` применимы только к channel.
     """
 
     type: RoomType
@@ -100,8 +100,8 @@ class RoomOut(BaseModel):
     # комнату виджет голосования за общую фразу. None у обычных комнат.
     stream_node_id: int | None = None
     stream_task_id: int | None = None
-    # Только channel: изоляция по потоку/тарифу (ARG-96), видна только admin-у
-    # (список отдаёт эндпоинт get/create/update канала, не участнику).
+    # Поток комнаты: channel — изоляция по потоку/тарифу (ARG-96); обычные dm/group
+    # — классификация комнаты для списка и проверки доступа (ARG-193).
     intake_id: int | None = None
     plan_ids: list[int] = []
     # Только is_personal: тариф ВЛАДЕЛЬЦА дневника (не «изоляция», а denormalized

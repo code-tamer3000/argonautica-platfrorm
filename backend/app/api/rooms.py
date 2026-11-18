@@ -7,9 +7,10 @@ channel (доступ неявный — вариант А: строк член�
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import and_, delete, exists, false, func, or_, select, union, update
+from sqlalchemy import and_, delete, exists, false, func, or_, select, true, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
@@ -188,10 +189,17 @@ async def create_room(
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "Not allowed to create groups"
             )
+        room_intake_id = (
+            body.intake_id
+            if current_user.role == "admin"
+            else current_user.intake_id
+        )
+        await _assert_intake_exists(session, room_intake_id)
         room = Room(
             type="group",
             name=name,
             created_by=current_user.id,
+            intake_id=None if body.torch else room_intake_id,
             torch_scope=body.torch,
         )
         session.add(room)
@@ -274,11 +282,9 @@ async def list_rooms(
     # комнат намеренно всегда NULL, см. diary_visible/ARG-112).
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
-        # Клуб «Факел» (`Room.is_torch`, ARG-54) — singleton group-комната, но
-        # видна админу всегда, как канал: не у каждого админа есть строка
-        # членства (владелец — только первый найденный на момент создания, см.
-        # ensure_torch_room), а пункт меню обещает доступ любому админу.
-        channel_clause = or_(Room.type == "channel", Room.is_torch)
+        # Админ видит все каналы и «Факел». Обычные dm/group проходят ниже
+        # только через member_rooms, как и для остальных пользователей.
+        channel_clause: ColumnElement[bool] = or_(Room.type == "channel", Room.is_torch)
     else:
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.
@@ -357,11 +363,25 @@ async def list_rooms(
         .group_by(Message.room_id)
         .subquery()
     )
+    room_scope_clause: ColumnElement[bool] = true()
+    if current_user.role != "admin":
+        room_scope_clause = or_(
+            Room.torch_scope.is_(True),
+            Room.intake_id.is_(None),
+            Room.intake_id == current_user.intake_id,
+        )
     result = await session.execute(
         select(Room)
         .outerjoin(last_message_sq, last_message_sq.c.room_id == Room.id)
         .where(
-            or_(channel_clause, and_(Room.type != "channel", Room.id.in_(member_rooms)))
+            or_(
+                channel_clause,
+                and_(
+                    Room.type.in_(("dm", "group")),
+                    Room.id.in_(member_rooms),
+                    room_scope_clause,
+                ),
+            )
         )
         .order_by(func.coalesce(last_message_sq.c.last_at, Room.created_at).desc())
     )

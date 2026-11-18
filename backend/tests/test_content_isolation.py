@@ -11,12 +11,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.media import MediaAsset
-from app.models.room import Room
+from app.models.room import Room, RoomMember
 from app.models.user import User
 from app.services.visibility import CHEAP_TARIFF_NAME
 
 from .conftest import MakeUser, auth_headers, login
-from .test_admin_intakes import free_starts_on
+from .test_admin_intakes import create_intake, free_starts_on
 
 
 async def _headers(client: AsyncClient, user: User) -> dict[str, str]:
@@ -88,10 +88,68 @@ async def test_channel_isolated_by_intake(
     assert channel_id not in {r["id"] for r in other_listed.json()}
     other_one = await client.get(f"/api/rooms/{channel_id}", headers=other_h)
     assert other_one.status_code == 403
-
-    # Admin видит канал вне зависимости от потока.
+    # Admin сохраняет полный серверный оверсайт.
     admin_one = await client.get(f"/api/rooms/{channel_id}", headers=admin_h)
     assert admin_one.status_code == 200
+
+
+async def test_ordinary_rooms_are_bound_to_their_intake(
+    client: AsyncClient, make_user: MakeUser, session: AsyncSession
+) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await _headers(client, admin)
+    intake_a = dict(await create_intake(client, admin_h))
+    intake_b = dict(await create_intake(client, admin_h))
+    owner = await make_user(intake_id=int(intake_a["id"]))
+    outsider = await make_user(intake_id=int(intake_b["id"]))
+    owner_h = await _headers(client, owner)
+    outsider_h = await _headers(client, outsider)
+
+    group = await client.post(
+        "/api/rooms", headers=owner_h, json={"type": "group", "name": "A group"}
+    )
+    assert group.status_code == 201
+    group_id = group.json()["id"]
+    assert group.json()["intake_id"] == owner.intake_id
+    session.add(RoomMember(room_id=group_id, user_id=outsider.id, role_in_room="member"))
+    await session.commit()
+
+    owner_rooms = await client.get("/api/rooms", headers=owner_h)
+    outsider_rooms = await client.get("/api/rooms", headers=outsider_h)
+    assert group_id in {room["id"] for room in owner_rooms.json()}
+    assert group_id not in {room["id"] for room in outsider_rooms.json()}
+    assert (await client.get(f"/api/rooms/{group_id}", headers=outsider_h)).status_code == 403
+
+    # Admin-created group includes the admin as owner/member. An unrelated
+    # participant's group is hidden from admin unless explicitly joined.
+    admin_group = await client.post(
+        "/api/rooms",
+        headers=admin_h,
+        json={"type": "group", "name": "Admin group", "intake_id": owner.intake_id},
+    )
+    assert admin_group.status_code == 201
+    assert admin_group.json()["intake_id"] == owner.intake_id
+    admin_rooms = await client.get("/api/rooms", headers=admin_h)
+    assert group_id not in {room["id"] for room in admin_rooms.json()}
+    assert admin_group.json()["id"] in {room["id"] for room in admin_rooms.json()}
+    assert (await client.get(f"/api/rooms/{group_id}", headers=admin_h)).status_code == 403
+    assert (
+        await client.get(f"/api/rooms/{admin_group.json()['id']}", headers=admin_h)
+    ).status_code == 200
+
+
+async def test_dm_room_intake_comes_from_non_admin_participant(
+    client: AsyncClient, make_user: MakeUser
+) -> None:
+    admin = await make_user(role="admin")
+    participant = await make_user()
+    response = await client.post(
+        "/api/rooms",
+        headers=await _headers(client, admin),
+        json={"type": "dm", "peer_id": participant.id},
+    )
+    assert response.status_code == 201
+    assert response.json()["intake_id"] == participant.intake_id
 
 
 async def test_channel_isolated_by_plan(client: AsyncClient, make_user: MakeUser) -> None:

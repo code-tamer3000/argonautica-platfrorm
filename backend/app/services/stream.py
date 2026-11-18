@@ -465,6 +465,7 @@ async def ensure_node_room(
         type="group",
         name=f"Поток «{task.title}» · {label}",
         created_by=task.created_by,
+        intake_id=task.intake_id,
     )
     session.add(room)
     try:

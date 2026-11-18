@@ -97,7 +97,12 @@ export function NewGroupModal({ onClose, onCreated, torch = false }: Props) {
     }
     setSubmitting(true)
     try {
-      const room = await createRoom.mutateAsync({ type: 'group', name: trimmed, torch })
+      const room = await createRoom.mutateAsync({
+        type: 'group',
+        name: trimmed,
+        intake_id: !torch && me?.role === 'admin' ? adminCurrentIntakeId : undefined,
+        torch,
+      })
       // Добавляем выбранных участников (создатель уже owner на бэке).
       for (const userId of selected) {
         try {
