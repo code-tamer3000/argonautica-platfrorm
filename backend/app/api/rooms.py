@@ -282,8 +282,16 @@ async def list_rooms(
     # комнат намеренно всегда NULL, см. diary_visible/ARG-112).
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
-        # Админ видит все комнаты для оверсайта, даже без строки членства.
-        channel_clause: ColumnElement[bool] = true()
+        # Админ видит все обычные комнаты для оверсайта без строки членства.
+        # Комнаты сетки заданий остаются вне общего списка: вход туда идёт по
+        # ссылке узла из задачи, но прямое открытие администратору разрешено.
+        admin_regular_rooms = and_(
+            Room.type.in_(("dm", "group")),
+            ~exists().where(TaskStreamNode.room_id == Room.id),
+        )
+        channel_clause: ColumnElement[bool] = or_(
+            Room.type == "channel", Room.is_torch, admin_regular_rooms
+        )
     else:
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.
