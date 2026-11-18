@@ -59,7 +59,7 @@ router = APIRouter(
     dependencies=[Depends(require_ongoing_participant)],
 )
 
-MAX_PARDONS = 3
+MAX_PARDONS = 5
 
 # Пороги подсветки кандидата в Междумирье для админа (ARG-132/ARG-128
 # «Готово, когда»): ЛЮБОЕ из двух условий (ИЛИ), только на discipline_tracked

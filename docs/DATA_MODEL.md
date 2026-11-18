@@ -501,7 +501,7 @@ Homework entries are `messages` in the personal room — no entry table. The dia
 **UNIQUE:** (`program_id`, `key`), (`program_id`, `position`). **INDEX:** (`program_id`).
 
 
-**journal_pardons** — self-forgiven missed day (limit 3).
+**journal_pardons** — self-forgiven missed day (limit 5).
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
