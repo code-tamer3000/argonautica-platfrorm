@@ -95,6 +95,16 @@ async def assert_room_access(
             "Observer mode: chat is not available for you",
         )
     membership = await session.get(RoomMember, (room.id, user.id))
+    if (
+        room.type in {"dm", "group"}
+        and not room.torch_scope
+        and user.role != "admin"
+        and room.intake_id is not None
+        and room.intake_id != user.intake_id
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
+    if user.role == "admin" and room.type in {"dm", "group"}:
+        return membership
     if room.type == "channel":
         if user.role != "admin" and room.is_personal and room.created_by != user.id:
             owner = await session.get(User, room.created_by)
@@ -414,10 +424,24 @@ async def get_or_create_dm(
         # фильтрует по torch_scope) — история не теряется, просто меняет раздел.
         if torch and not existing.torch_scope:
             existing.torch_scope = True
+            existing.intake_id = None
         await session.flush()
         return existing, False
 
-    room = Room(type="dm", dm_key=dm_key, created_by=current.id, torch_scope=torch)
+    room_intake_id = None
+    if not torch:
+        if current.role == "admin":
+            if peer.role != "admin":
+                room_intake_id = peer.intake_id
+        else:
+            room_intake_id = current.intake_id
+    room = Room(
+        type="dm",
+        dm_key=dm_key,
+        created_by=current.id,
+        intake_id=room_intake_id,
+        torch_scope=torch,
+    )
     session.add(room)
     try:
         await session.flush()

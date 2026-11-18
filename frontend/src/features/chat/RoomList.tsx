@@ -78,6 +78,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
   // сервером. Выбирается ОДИН раз в /admin/expeditions, здесь только читаем.
   const currentIntakeId = useUiStore((s) => s.adminCurrentIntakeId)
   const isAdmin = me?.role === 'admin'
+  const roomIntakeId = isAdmin ? currentIntakeId : me?.intake_id ?? null
   // Чужие личные дневники несут intake_id владельца НЕ на самой комнате (та колонка
   // у personal-комнат всегда NULL, см. docs/DATA_MODEL.md) — резолвим поток через
   // admin-ручку /api/admin/users. enabled=isAdmin: для обычного участника не стреляем
@@ -138,31 +139,13 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
     const byPin = (a: RoomOut, b: RoomOut) => (a.pin_order ?? 1e9) - (b.pin_order ?? 1e9)
     dms = [...dms].sort(byPin)
     groups = [...groups].sort(byPin)
-    if (applyIntakeFilter) {
-      // dm/group не несут intake_id на самой комнате (гейтятся явным членством,
-      // не потоком, см. docs/ROOMS.md) — но admin здесь смотрит на них с точки
-      // зрения «что относится к этой экспедиции», поэтому резолвим поток стороны:
-      // для dm — собеседник, для группы — создатель.
-      //
-      // torch_scope — исключение: «Факел» кросс-поточный по конструкции
-      // (docs/TORCH.md — выпускники разных потоков в одном сообществе), и
-      // singleton-чат клуба физически создаёт ОДИН конкретный админ — фильтр
-      // по «текущей экспедиции» административного селектора вырезал бы его для
-      // всех, чей выбранный поток не совпал с потоком именно этого админа
-      // (баг, найденный на проде 2026-09-27: комната есть в API, но пропадает
-      // из «Факела», как только у смотрящего выбрана НЕ та экспедиция).
-      dms = dms.filter((r) => {
-        if (r.torch_scope) return true
-        const peerId = dmPeers[r.id] ?? r.peer_id
-        if (peerId == null) return true
-        const peerIntakeId = adminUsers.get(peerId)?.intake_id
-        return peerIntakeId == null || peerIntakeId === currentIntakeId
-      })
-      groups = groups.filter((r) => {
-        if (r.torch_scope) return true
-        const ownerIntakeId = adminUsers.get(r.created_by)?.intake_id
-        return ownerIntakeId == null || ownerIntakeId === currentIntakeId
-      })
+    if (roomIntakeId != null) {
+      // Обычные dm/group уже размечены потоком комнаты; межпоточные и комнаты
+      // «Факела» (torch_scope) намеренно остаются видимыми.
+      const inRoomIntake = (r: RoomOut) =>
+        r.torch_scope || r.intake_id == null || r.intake_id === roomIntakeId
+      dms = dms.filter(inRoomIntake)
+      groups = groups.filter(inRoomIntake)
     }
 
     // «Все дневники» делится на группы по тарифу владельца (игроки/спецотряд/
@@ -179,7 +162,7 @@ export function RoomList({ tab, onTabChange, selectedId, onSelect }: Props) {
       diaryGroups: groupDiariesByPlan(otherPersonal, plans, isAdmin),
       otherChannels: otherRegular,
     }
-  }, [rooms, q, dmPeers, users, me?.id, isAdmin, currentIntakeId, adminUsers, plans, tab])
+  }, [rooms, q, dmPeers, users, me?.id, me?.intake_id, isAdmin, roomIntakeId, currentIntakeId, adminUsers, plans, tab])
 
   const chatsEmpty = dms.length === 0 && groups.length === 0
   const channelsEmpty =
