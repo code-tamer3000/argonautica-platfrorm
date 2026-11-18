@@ -152,7 +152,7 @@ function UserCard({
   onToggleExpand: () => void
 }) {
   // Список отдаёт только ±окно вокруг сегодня; по клику подгружаем весь
-  // 28-дневный период участника отдельным запросом.
+  // Полный период экспедиции участника отдельным запросом.
   const { data: fullDays, isLoading: fullLoading } = useAdminUserDays(expanded ? u.user_id : null)
   const days = expanded && fullDays ? fullDays : u.recent_days
 
@@ -239,7 +239,7 @@ function UserCard({
       </div>
 
       <button type="button" className={dynStyles.expandBtn} onClick={onToggleExpand}>
-        {expanded ? 'Свернуть' : 'Весь период (28 дней)'}
+        {expanded ? 'Свернуть' : 'Весь период'}
       </button>
 
       {/* Кандидат на ручной перевод в Междумирье (ARG-132): тариф с учётом
@@ -294,7 +294,7 @@ export function AdminDynamics() {
     !intakesLoading && !plansLoading,
   )
   const creditDay = useAdminCreditDay()
-  // Раскрытая карточка (весь 28-дневный период) — одна за раз, схлопывается по
+  // Раскрытая карточка (весь период экспедиции) — одна за раз, схлопывается по
   // повторному клику или клику на другую.
   const [expandedUserId, setExpandedUserId] = useState<number | null>(null)
 

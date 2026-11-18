@@ -168,7 +168,7 @@ export function DashboardScreen() {
                     <span className={styles.miniStatLabel}>{plural(dyn.streak, ['день', 'дня', 'дней'])} подряд</span>
                   </div>
                   <div className={styles.miniStat}>
-                    <span className={styles.miniStatValue}>{dyn.closed_count} из 28</span>
+                    <span className={styles.miniStatValue}>{dyn.closed_count} из {dyn.program_days}</span>
                     <span className={styles.miniStatLabel}>дней закрыто</span>
                   </div>
                   <Link to="/profile" className={styles.miniStatsLink}>

@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from typing_extensions import TypedDict
 
 from app.api.deps import get_current_active_user, require_ongoing_participant
+from app.api.expedition import get_stage_spans
 from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.journal import JournalCredit, JournalPardon, JournalProgram, JournalSection
@@ -68,7 +69,9 @@ MAX_PARDONS = 5
 # отсчитывают «до Междумирья», держим числа согласованными намеренно.
 LIMBO_ELIGIBLE_OVERDUE_TASKS = 3
 LIMBO_ELIGIBLE_OVERDUE_DIARY_DAYS = 5
-PROGRAM_DAYS = 28
+# Наборы без собственного intake (исторические/демо) используют тот же
+# 28-дневный фолбэк, что и круг экспедиции без заведённого расписания.
+DEFAULT_PROGRAM_DAYS = 28
 # Окно вокруг сегодня: 5 прошлых + сегодня + 3 будущих = 9 ячеек.
 WINDOW_PAST = 5
 WINDOW_FUTURE = 3
@@ -245,7 +248,7 @@ async def load_intake_ends(session: AsyncSession) -> dict[int, date]:
 def program_start_for(
     user: User, intake_starts: dict[int, date], timeline: Timeline
 ) -> date:
-    """Начало 28-дневного окна конкретного пользователя = дата старта его набора."""
+    """Начало окна Динамики конкретного пользователя = дата старта его набора."""
     if user.intake_id is not None and user.intake_id in intake_starts:
         return intake_starts[user.intake_id]
     return _timeline_start(timeline)
@@ -254,14 +257,18 @@ def program_start_for(
 async def load_program_start(
     session: AsyncSession, user: User, timeline: Timeline
 ) -> date:
-    """`program_start_for` для одного пользователя (без выборки всех наборов)."""
+    """Начало круга пользователя, совпадающее с первой датой расписания."""
     if user.intake_id is not None:
-        starts_on = await session.scalar(
-            select(Intake.starts_on).where(Intake.id == user.intake_id)
-        )
-        if starts_on is not None:
-            return starts_on
+        spans = await get_stage_spans(session, user.intake_id)
+        if spans:
+            return spans[0].air_date
     return _timeline_start(timeline)
+
+
+async def load_program_days(session: AsyncSession, intake_id: int | None) -> int:
+    """Длительность окна Динамики совпадает с длиной круга данного набора."""
+    spans = await get_stage_spans(session, intake_id)
+    return spans[-1].day_to if spans else DEFAULT_PROGRAM_DAYS
 
 
 async def intake_window_closed(session: AsyncSession, intake_id: int | None) -> date | None:
@@ -295,11 +302,13 @@ def _calc_stats(
     timeline: Timeline,
     credits: list[date] | None = None,
     today: date | None = None,
+    program_days: int = DEFAULT_PROGRAM_DAYS,
 ) -> _StatsResult:
     # `today` подменяем только для выпускника: его динамику замораживаем на дне
     # выпуска, иначе после экспедиции у него бесконечно копились бы просрочки, а
     # стрик обнулялся бы на следующий же день.
-    today = today or _platform_today()
+    program_end = program_start + timedelta(days=program_days - 1)
+    today = min(today or _platform_today(), program_end)
     yesterday = today - timedelta(days=1)
     pardoned = set(pardons)
 
@@ -370,15 +379,16 @@ def _recent_days(
     window_start: date | None = None,
     window_end: date | None = None,
     partial: set[date] | None = None,
+    program_days: int = DEFAULT_PROGRAM_DAYS,
 ) -> list[RecentDay]:
     # `today` подменяется для выпускника — окно строим вокруг дня выпуска (см. _calc_stats).
     today = today or _platform_today()
     credited = credited or set()
     partial = partial or set()
-    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    program_end = program_start + timedelta(days=program_days - 1)
 
     # Окно по умолчанию: WINDOW_PAST дней назад → сегодня → WINDOW_FUTURE дней
-    # вперёд. Круг Экспедиции запрашивает статус ВСЕХ 28 дней разом — передаёт
+    # вперёд. Круг Экспедиции запрашивает статус всего своего периода — передаёт
     # свои границы вместо этого дефолта (см. app/services/expedition.py).
     # Хронологический порядок: старые слева, новые справа.
     window_start = window_start if window_start is not None else today - timedelta(days=WINDOW_PAST)
@@ -519,7 +529,7 @@ async def get_my_day_statuses(
 ) -> list[RecentDay]:
     """Публичная обёртка над той же арифметикой, что `my-stats`/админ-обзор, но
     для явного диапазона дат вместо ±окна вокруг сегодня — нужна Кругу Экспедиции
-    (см. app/api/dashboard.py), которому требуется статус ВСЕХ 28 дней разом.
+    (см. app/api/dashboard.py), которому требуется статус всего периода.
 
     В отличие от `get_my_stats` (закрыт выпускнику через `require_ongoing_participant`
     на уровне роутера), сюда выпускник добирается — Круг остаётся доступен после
@@ -537,7 +547,11 @@ async def get_my_day_statuses(
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+    program_days = await load_program_days(session, current_user.intake_id)
+    stats = _calc_stats(
+        per_day, pardons, program_start, timeline, credits,
+        today=as_of, program_days=program_days,
+    )
     closed_days = stats["closed_days"]
     if current_user.role == "admin":
         # Админ не ведёт Динамику (нет личного дневника) — на Круге Экспедиции
@@ -553,6 +567,7 @@ async def get_my_day_statuses(
         window_start=window_start,
         window_end=window_end,
         partial=set(stats["partial_dates"]),
+        program_days=await load_program_days(session, current_user.intake_id),
     )
 
 
@@ -574,10 +589,12 @@ async def get_my_stats(
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
+    program_days = await load_program_days(session, current_user.intake_id)
     stats = _calc_stats(
-        per_day, pardons, program_start, timeline, credits, today=window_closed_on
+        per_day, pardons, program_start, timeline, credits,
+        today=window_closed_on, program_days=program_days,
     )
-    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    program_end = program_start + timedelta(days=program_days - 1)
     overdue_tasks = await overdue_tasks_for(session, current_user)
     late_count = await late_submissions_count(session, current_user)
 
@@ -588,6 +605,7 @@ async def get_my_stats(
         pardons_remaining=max(0, MAX_PARDONS - len(pardons)),
         today_progress=stats["today_cats"],
         program_start=program_start,
+        program_days=program_days,
         window_closed=window_closed_on is not None,
         partial_count=len(stats["partial_dates"]),
         closed_count=sum(1 for d in stats["closed_days"] if program_start <= d <= program_end),
@@ -604,7 +622,7 @@ async def get_my_days(
     current_user: Annotated[User, Depends(get_current_active_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[RecentDay]:
-    """Календарь на весь период набора (28 дней) — для блока Динамики в профиле,
+    """Календарь на весь период экспедиции — для блока Динамики в профиле,
     в отличие от `my-stats`, который не отдаёт сетку дней вовсе (только числа).
 
     Зачтённый админом день (`credited`) участнику не отличим от закрытого им самим
@@ -612,7 +630,8 @@ async def get_my_days(
     """
     timeline = await load_timeline(session)
     program_start = await load_program_start(session, current_user, timeline)
-    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    program_days = await load_program_days(session, current_user.intake_id)
+    program_end = program_start + timedelta(days=program_days - 1)
     days = await get_my_day_statuses(session, current_user, program_start, program_end)
     return [
         RecentDay(date=d.date, status="closed" if d.status == "credited" else d.status)
@@ -632,12 +651,16 @@ async def use_pardon(
         )
     timeline = await load_timeline(session)
     program_start = await load_program_start(session, current_user, timeline)
+    program_days = await load_program_days(session, current_user.intake_id)
     today = _platform_today()
 
     if body.date >= today:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Помиловать можно только прошедший день")
     if body.date < program_start:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "День раньше начала программы")
+    program_end = program_start + timedelta(days=program_days - 1)
+    if body.date > program_end:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "День после окончания экспедиции")
 
     existing_pardons = await _load_pardons(session, current_user.id)
     if len(existing_pardons) >= MAX_PARDONS:
@@ -656,8 +679,10 @@ async def use_pardon(
     pardons = await _load_pardons(session, current_user.id)
     credits = await _load_credits(session, current_user.id)
     per_day = _calc_closed_days(messages)
-    stats = _calc_stats(per_day, pardons, program_start, timeline, credits)
-    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    stats = _calc_stats(
+        per_day, pardons, program_start, timeline, credits,
+        program_days=program_days,
+    )
 
     return MyDynamicsOut(
         streak=stats["streak"],
@@ -666,6 +691,7 @@ async def use_pardon(
         pardons_remaining=max(0, MAX_PARDONS - len(pardons)),
         today_progress=stats["today_cats"],
         program_start=program_start,
+        program_days=program_days,
         partial_count=len(stats["partial_dates"]),
         closed_count=sum(1 for d in stats["closed_days"] if program_start <= d <= program_end),
     )
@@ -983,8 +1009,26 @@ async def get_all_dynamics(
     signed_avatars = await presign_asset_urls(session, avatar_media_ids)
     # У каждого участника своё начало окна — дата старта его набора. Сообщения
     # тянем от самого раннего из них, дальше режем по каждому пользователю.
+    intake_ids = {u.intake_id for u in participants if u.intake_id is not None}
+    spans_by_intake = {
+        intake_id: await get_stage_spans(session, intake_id) for intake_id in intake_ids
+    }
     start_by_user = {
-        u.id: program_start_for(u, intake_starts, timeline) for u in participants
+        u.id: (
+            spans_by_intake[u.intake_id][0].air_date
+            if u.intake_id in spans_by_intake and spans_by_intake[u.intake_id]
+            else program_start_for(u, intake_starts, timeline)
+        )
+        for u in participants
+    }
+    days_by_intake = {
+        intake_id: (
+            spans[-1].day_to if spans else DEFAULT_PROGRAM_DAYS
+        )
+        for intake_id, spans in spans_by_intake.items()
+    }
+    days_by_user = {
+        u.id: days_by_intake.get(u.intake_id, DEFAULT_PROGRAM_DAYS) for u in participants
     }
     earliest_start = min(start_by_user.values())
     today = _platform_today()
@@ -1085,7 +1129,10 @@ async def get_all_dynamics(
             window_ends_on if window_ends_on and today > window_ends_on else None
         )
         as_of = graduated_on or window_closed_on or today
-        stats = _calc_stats(per_day, pardons, user_start, timeline, credits, today=as_of)
+        stats = _calc_stats(
+            per_day, pardons, user_start, timeline, credits,
+            today=as_of, program_days=days_by_user[user.id],
+        )
         recent = _recent_days(
             stats["closed_days"],
             stats["pardoned"],
@@ -1093,6 +1140,7 @@ async def get_all_dynamics(
             set(credits),
             today=as_of,
             partial=set(stats["partial_dates"]),
+            program_days=days_by_user[user.id],
         )
         journal_today = graduated_on is None and today in stats["closed_days"]
         overdue_tasks = await overdue_tasks_for(session, user)
@@ -1141,7 +1189,7 @@ async def get_all_dynamics(
 
 
 async def get_admin_user_days(session: AsyncSession, user_id: int) -> list[RecentDay]:
-    """Полный 28-дневный календарь одного участника — раскрытие карточки в
+    """Полный календарь экспедиции одного участника — раскрытие карточки в
     админской Динамике по клику (список `get_all_dynamics` отдаёт только ±окно
     вокруг сегодня, см. WINDOW_PAST/WINDOW_FUTURE)."""
     user = await session.get(User, user_id)
@@ -1149,10 +1197,10 @@ async def get_admin_user_days(session: AsyncSession, user_id: int) -> list[Recen
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Участник не найден")
 
     timeline = await load_timeline(session)
-    intake_starts = await load_intake_starts(session)
     intake_ends = await load_intake_ends(session)
-    program_start = program_start_for(user, intake_starts, timeline)
-    program_end = program_start + timedelta(days=PROGRAM_DAYS - 1)
+    program_start = await load_program_start(session, user, timeline)
+    program_days = await load_program_days(session, user.intake_id)
+    program_end = program_start + timedelta(days=program_days - 1)
 
     graduated_on = _platform_day(user.graduated_at) if user.graduated_at else None
     window_ends_on = intake_ends.get(user.intake_id) if user.intake_id else None
@@ -1168,7 +1216,10 @@ async def get_admin_user_days(session: AsyncSession, user_id: int) -> list[Recen
     credits = await _load_credits(session, user.id)
     per_day = _calc_closed_days(messages)
 
-    stats = _calc_stats(per_day, pardons, program_start, timeline, credits, today=as_of)
+    stats = _calc_stats(
+        per_day, pardons, program_start, timeline, credits,
+        today=as_of, program_days=program_days,
+    )
     return _recent_days(
         stats["closed_days"],
         stats["pardoned"],
@@ -1178,4 +1229,5 @@ async def get_admin_user_days(session: AsyncSession, user_id: int) -> list[Recen
         window_start=program_start,
         window_end=program_end,
         partial=set(stats["partial_dates"]),
+        program_days=program_days,
     )
