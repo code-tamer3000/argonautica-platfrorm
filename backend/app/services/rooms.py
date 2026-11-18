@@ -103,8 +103,6 @@ async def assert_room_access(
         and room.intake_id != user.intake_id
     ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not a member of this room")
-    if user.role == "admin" and room.type in {"dm", "group"}:
-        return membership
     if room.type == "channel":
         if user.role != "admin" and room.is_personal and room.created_by != user.id:
             owner = await session.get(User, room.created_by)

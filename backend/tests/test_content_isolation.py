@@ -120,7 +120,8 @@ async def test_ordinary_rooms_are_bound_to_their_intake(
     assert group_id not in {room["id"] for room in outsider_rooms.json()}
     assert (await client.get(f"/api/rooms/{group_id}", headers=outsider_h)).status_code == 403
 
-    # Admin creation carries the selected UI intake. Admin retains server oversight.
+    # Admin-created group includes the admin as owner/member. An unrelated
+    # participant's group is hidden from admin unless explicitly joined.
     admin_group = await client.post(
         "/api/rooms",
         headers=admin_h,
@@ -128,8 +129,12 @@ async def test_ordinary_rooms_are_bound_to_their_intake(
     )
     assert admin_group.status_code == 201
     assert admin_group.json()["intake_id"] == owner.intake_id
+    admin_rooms = await client.get("/api/rooms", headers=admin_h)
+    assert group_id not in {room["id"] for room in admin_rooms.json()}
+    assert admin_group.json()["id"] in {room["id"] for room in admin_rooms.json()}
+    assert (await client.get(f"/api/rooms/{group_id}", headers=admin_h)).status_code == 403
     assert (
-        await client.get(f"/api/rooms/{group_id}", headers=admin_h)
+        await client.get(f"/api/rooms/{admin_group.json()['id']}", headers=admin_h)
     ).status_code == 200
 
 
