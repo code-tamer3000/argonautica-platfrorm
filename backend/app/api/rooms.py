@@ -283,7 +283,7 @@ async def list_rooms(
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
         # Админ видит все комнаты для оверсайта, даже без строки членства.
-    channel_clause: ColumnElement[bool] = true()
+        channel_clause: ColumnElement[bool] = true()
     else:
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.
