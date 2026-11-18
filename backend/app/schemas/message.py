@@ -20,6 +20,22 @@ QUOTE_PREVIEW_LEN = 140
 # либо оригинал недоступен (мягко удалён).
 QuoteKind = Literal["text", "sticker", "attachment", "ref", "deleted"]
 
+MAX_MESSAGE_REFS = 6
+
+
+class MessageRefIn(BaseModel):
+    kind: RefKind
+    id: int
+
+
+def _normalize_refs(refs: list[MessageRefIn]) -> list[MessageRefIn]:
+    unique: dict[tuple[str, int], MessageRefIn] = {}
+    for ref in refs:
+        unique.setdefault((ref.kind, ref.id), ref)
+    if len(unique) > MAX_MESSAGE_REFS:
+        raise ValueError(f"At most {MAX_MESSAGE_REFS} refs per message")
+    return list(unique.values())
+
 
 class SendMessageRequest(BaseModel):
     """Отправка сообщения. content nullable, но сообщение должно нести хоть что-то:
@@ -27,7 +43,7 @@ class SendMessageRequest(BaseModel):
     quoted_message_id — ответ ЦИТАТОЙ (Telegram-style): презентационная ссылка на
     сообщение той же комнаты, ортогональная треду (не путать с reply_to_message_id,
     который означает «id корня треда»; см. docs/MESSAGES.md «Quotes»).
-    ref_kind/ref_id — опциональная ссылка на материал КБ / задачу (одна на сообщение).
+    refs — упорядоченный список ссылок на материалы КБ / задачи.
     client_id — опциональный UUID от клиентского outbox для идемпотентности повторной
     отправки (см. docs/MESSAGES.md «Send»): один и тот же на всех попытках одного
     OutboxItem, включая ручной «Повторить».
@@ -41,15 +57,19 @@ class SendMessageRequest(BaseModel):
     playlist_id: int | None = None
     reply_to_message_id: int | None = None
     quoted_message_id: int | None = None
+    refs: list["MessageRefIn"] = []
+    # Совместимость со старыми клиентами; сервер сразу нормализует в refs.
     ref_kind: RefKind | None = None
     ref_id: int | None = None
     client_id: str | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> "SendMessageRequest":
-        # Ссылка: оба поля вместе или ни одного.
         if (self.ref_kind is None) != (self.ref_id is None):
             raise ValueError("ref_kind and ref_id must be set together")
+        if self.ref_kind is not None and self.ref_id is not None:
+            self.refs.append(MessageRefIn(kind=self.ref_kind, id=self.ref_id))
+        self.refs = _normalize_refs(self.refs)
         # Повтор одного и того же ассета в списке — не ошибка клиента, а лишняя строка:
         # message_attachments уникальна по (message_id, media_asset_id), поэтому дубли
         # схлопываем здесь (иначе INSERT падал бы 500-й).
@@ -57,7 +77,7 @@ class SendMessageRequest(BaseModel):
         if len(self.attachment_ids) > MAX_ATTACHMENTS:
             raise ValueError(f"At most {MAX_ATTACHMENTS} attachments per message")
         has_text = bool(self.content and self.content.strip())
-        has_ref = self.ref_kind is not None
+        has_ref = bool(self.refs)
         if not (
             has_text
             or self.sticker_id is not None
@@ -65,7 +85,7 @@ class SendMessageRequest(BaseModel):
             or self.playlist_id is not None
             or has_ref
         ):
-            raise ValueError("Message must carry text, a sticker, attachments or a ref")
+            raise ValueError("Message must carry text, a sticker, attachments or refs")
         return self
 
 
@@ -118,7 +138,9 @@ class MessageOut(BaseModel):
     attachments: list[AttachmentOut] = []
     # Плейлист-вложение, разрешённый в готовые presigned-URL. None = вложения нет.
     playlist: PlaylistOut | None = None
-    # Ссылка на материал КБ / задачу, разрешённая для зрителя. None = ссылки нет.
+    # Упорядоченные ссылки на материалы/задачи, разрешённые для зрителя.
+    refs: list[MessageRefOut] = []
+    # Deprecated single-ref alias for old clients.
     ref: MessageRefOut | None = None
     # Цитируемое сообщение (Telegram-style «ответить»), разрешённое для зрителя.
     # None = цитаты нет. Ортогонально thread_root_id — см. docs/MESSAGES.md «Quotes».
@@ -146,6 +168,7 @@ class EditMessageRequest(BaseModel):
 
     content: str | None = None
     attachment_ids: list[int] | None = None
+    refs: list[MessageRefIn] | None = None
 
     @model_validator(mode="after")
     def _validate(self) -> "EditMessageRequest":
@@ -155,6 +178,8 @@ class EditMessageRequest(BaseModel):
             self.attachment_ids = list(dict.fromkeys(self.attachment_ids))
             if len(self.attachment_ids) > MAX_ATTACHMENTS:
                 raise ValueError(f"At most {MAX_ATTACHMENTS} attachments per message")
+        if self.refs is not None:
+            self.refs = _normalize_refs(self.refs)
         return self
 
 

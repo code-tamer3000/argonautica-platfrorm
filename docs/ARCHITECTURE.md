@@ -238,10 +238,14 @@ erDiagram
         bigint thread_root_id FK "NULL = верхний уровень"
         bigint sticker_id FK
         bigint forwarded_from_sender_id FK "репост в новости"
-        text ref_kind "kb или task"
-        bigint ref_id "цель ссылки, без FK"
         int reply_count "денормализовано на корне"
         timestamptz deleted_at "мягкое удаление"
+    }
+    message_refs {
+        bigint message_id FK
+        text kind "kb или task"
+        bigint ref_id "цель ссылки, без FK"
+        int position
     }
     message_attachments {
         bigint message_id PK
@@ -1109,7 +1113,7 @@ flowchart TB
     PN --> OB
 
     PR["Pull Request"] -->|"ci.yml: make lint + make test"| CI["GitHub Actions"]
-    DEV["ветка develop"] -->|"deploy-staging.yml: rsync + deploy-staging.sh"| stg
+    DEV["ветка ARG-194"] -->|"deploy-staging.yml: rsync + deploy-staging.sh"| stg
     MAIN["ветка main"] -->|"deploy-prod.yml: rsync + deploy.sh +<br/>restart transcode-worker + recreate nginx + smoke-check"| prd
     PR --> DEV
     DEV -->|"мёрж вручную"| MAIN

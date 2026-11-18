@@ -1147,7 +1147,7 @@ async def admin_dynamics_user_days(
     user_id: int,
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> list[RecentDay]:
-    """Полный период (28 дней) одного участника — раскрытие карточки по клику
+    """Полный период экспедиции одного участника — раскрытие карточки по клику
     (список `/dynamics` отдаёт только ±окно вокруг сегодня)."""
     return await get_admin_user_days(session, user_id)
 

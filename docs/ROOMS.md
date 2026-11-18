@@ -18,10 +18,12 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
 - `services/rooms.py` centralizes access: `load_room` + `assert_room_access`.
 - **Ordinary dm/group intake (`rooms.intake_id`, ARG-193):** the room's intake is
   the classification source; `room_members` remains the membership/access source.
-  A non-admin only receives or opens an ordinary dm/group when the room is unscoped
-  (intentional cross-intake) or its intake matches the participant. Admin keeps
-  server-side oversight, while `RoomList` and `ForwardPicker` filter by the selected
-  admin intake. `torch_scope` always bypasses intake filtering. New groups inherit
+  Every user, including admins, only receives or opens an ordinary dm/group when
+  they have a `room_members` row. Non-admins must also be in the room's intake, unless
+  the room is intentionally unscoped; admins may access member rooms across intakes.
+  The admin intake selector does not grant membership or reveal other members' rooms.
+  `torch_scope` bypasses intake filtering; admins retain the separate direct-access
+  exception for Torch and task-stream-node groups. New groups inherit
   the creator's intake; an admin-created group uses the selected admin intake;
   ordinary DMs use the participant's intake (or the non-admin peer's intake for an
   admin-created DM). Stream-task groups use `task.intake_id`.
@@ -30,15 +32,16 @@ Differences are behavior in code, not schema. Group/channel have their own `avat
   unique per user pair, asking to start that same DM returns the archived room;
   creating a fresh DM for that pair needs a separate product mechanism and is not
   part of ARG-193.
-- **Historical ordinary rooms:** before production rollout, produce and verify a
-  complete private inventory of `dm`/`group` rows with `intake_id IS NULL`, determine
-  each historical intake from confirmed creation context, then run a transactional
-  backfill. Inspect the affected rows before commit and keep a rollback plan. Do not
-  put that inventory or personal data in Linear or source control. Deployment is
-  blocked until this list is verified; a NULL value after backfill means the room is
-  intentionally cross-intake.
+- **Historical ordinary rooms (ARG-193 production backfill):** the verified inventory
+  was backfilled transactionally by confirmed historical intake; the 113 ordinary
+  dm/group rows were assigned to intakes 1–3, while 31 `torch_scope` rooms were left
+  NULL. Later corrections must follow the participants' confirmed intake when the
+  original room classification was wrong. Keep per-room inventories and personal
+  data out of Linear and source control. A remaining NULL on an ordinary room means
+  it is intentionally cross-intake.
 - "Is the user in the room?" depends on type:
-  - `dm` / `group` → a `room_members` row exists.
+  - `dm` / `group` → a `room_members` row exists (including for admins; Torch and
+    task-stream-node groups have their documented admin exception).
   - `channel` → the user is a platform participant (rule in code).
 - Member management (add/remove, owner/admin rights, idempotent, protects the last owner) for groups — both the backend endpoints and the frontend UI (`MembersDrawer.tsx`, ARG-154) expose add and remove, not just remove.
 - **Group read-only mode** (`rooms.is_readonly`, ARG-142): closes the composer to everyone but `role='admin'` in a `group` room — both top-level messages and thread replies (unlike the news channel below, threads are NOT exempt). Checked in `assert_can_post` (`app/api/messages.py`), independent of `assert_can_write`/`assert_room_access` — membership, visibility and read receipts are unaffected, only posting is closed. Toggled via `PATCH /api/rooms/{room_id}/readonly` (`{is_readonly: bool}`), admin-only — even the group's own owner cannot flip it. `RoomOut.is_readonly` lets the client hide the composer (`ChatPane.tsx`) instead of leaving a dead-end send button; the server 403s the same path regardless. Reactions and editing/deleting one's own already-sent messages are unaffected — this only gates new posts.

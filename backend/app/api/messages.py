@@ -25,7 +25,13 @@ from app.core.config import settings
 from app.db.session import after_commit, get_session
 from app.models.intake import Intake
 from app.models.media import MediaAsset
-from app.models.message import Message, MessageAttachment, MessageReaction, PinnedMessage
+from app.models.message import (
+    Message,
+    MessageAttachment,
+    MessageReaction,
+    MessageRef,
+    PinnedMessage,
+)
 from app.models.room import Room
 from app.models.sticker import Sticker
 from app.models.user import User
@@ -197,14 +203,27 @@ async def _refs_map(
     session: AsyncSession, messages: list[Message], viewer: User
 ) -> dict[tuple[str, int], MessageRefOut]:
     """Разрешить ссылки всех сообщений батчем для зрителя (title/url/available)."""
-    refs = [
-        (m.ref_kind, m.ref_id)
-        for m in messages
-        if m.ref_kind is not None and m.ref_id is not None
-    ]
-    if not refs:
+    message_ids = [m.id for m in messages]
+    if not message_ids:
         return {}
-    return await resolve_message_refs(session, refs, viewer)
+    rows = await session.execute(
+        select(MessageRef.message_id, MessageRef.kind, MessageRef.ref_id)
+        .where(MessageRef.message_id.in_(message_ids))
+        .order_by(MessageRef.position)
+    )
+    associations = rows.all()
+    refs = [(kind, ref_id) for _, kind, ref_id in associations]
+    if not refs:
+        for message in messages:
+            setattr(message, "_resolved_refs", [])
+        return {}
+    resolved = await resolve_message_refs(session, refs, viewer)
+    by_message: dict[int, list[MessageRefOut]] = {}
+    for message_id, kind, ref_id in associations:
+        by_message.setdefault(message_id, []).append(resolved[(kind, ref_id)])
+    for message in messages:
+        setattr(message, "_resolved_refs", by_message.get(message.id, []))
+    return resolved
 
 
 async def _quotes_map(
@@ -231,8 +250,9 @@ def _to_out(
     out.attachment_ids = [att.asset_id for att in attachments]
     if message.playlist_id is not None and playlists is not None:
         out.playlist = playlists.get(message.playlist_id)
-    if message.ref_kind is not None and message.ref_id is not None and refs is not None:
-        out.ref = refs.get((message.ref_kind, message.ref_id))
+    if refs is not None:
+        out.refs = list(getattr(message, "_resolved_refs", []))
+        out.ref = out.refs[0] if out.refs else None
     if reaction is not None:
         out.reaction_count, out.reacted_by_me = reaction
     if message.quoted_message_id is not None and quotes is not None:
@@ -342,8 +362,8 @@ async def send_message(
 
     # Ссылка на материал/задачу: цель должна существовать и быть видимой отправителю
     # (анти-IDOR — нельзя сослаться на черновик КБ / чужую задачу).
-    if body.ref_kind is not None and body.ref_id is not None:
-        await assert_ref_visible(session, body.ref_kind, body.ref_id, current_user)
+    for ref in body.refs:
+        await assert_ref_visible(session, ref.kind, ref.id, current_user)
 
     # Плоскость тредов (п.2): привязка всегда к КОРНЮ. Отвечают на ответ —
     # берём его thread_root_id, не его id.
@@ -373,8 +393,6 @@ async def send_message(
         playlist_id=body.playlist_id,
         thread_root_id=thread_root_id,
         quoted_message_id=body.quoted_message_id,
-        ref_kind=body.ref_kind,
-        ref_id=body.ref_id,
         client_id=body.client_id,
     )
     try:
@@ -410,6 +428,12 @@ async def send_message(
         session.add(
             MessageAttachment(message_id=message.id, media_asset_id=media_asset_id)
         )
+    for position, ref in enumerate(body.refs):
+        session.add(
+            MessageRef(
+                message_id=message.id, kind=ref.kind, ref_id=ref.id, position=position
+            )
+        )
 
     # Денормализация на корне — «N ответов» без пересчёта.
     if thread_root_id is not None:
@@ -436,10 +460,8 @@ async def send_message(
     ws_out = _to_out(
         message, resolved.get(message.id, []), quotes=quotes, playlists=playlists
     )
-    if message.ref_kind is not None and message.ref_id is not None:
-        ws_out.ref = await resolve_ref_for_broadcast(
-            session, message.ref_kind, message.ref_id
-        )
+    ws_out.refs = [await resolve_ref_for_broadcast(session, ref.kind, ref.id) for ref in body.refs]
+    ws_out.ref = ws_out.refs[0] if ws_out.refs else None
     _redact_quote_preview(room, ws_out)
     # Сайд-эффекты — только после успешного commit (иначе «отправлено, но
     # потерялось»: событие ушло в WS, а транзакция откатилась). См. after_commit.
@@ -538,15 +560,29 @@ async def forward_message(
         playlist_id=source.playlist_id,
         # Цепочка пересылок сохраняет ПЕРВОГО автора, а не промежуточного пересыльщика.
         forwarded_from_sender_id=source.forwarded_from_sender_id or source.sender_id,
-        # Ссылка на материал/задачу переносится вместе с пересылкой.
-        ref_kind=source.ref_kind,
-        ref_id=source.ref_id,
         # quoted_message_id НЕ переносим: форвард уходит в другую комнату, а цитата
         # по конструкции указывает внутрь СВОЕЙ (см. message_quotes.py) — перенос
         # сломал бы этот инвариант.
     )
     session.add(forwarded)
     await session.flush()
+
+    source_refs = (
+        await session.execute(
+            select(MessageRef)
+            .where(MessageRef.message_id == source.id)
+            .order_by(MessageRef.position)
+        )
+    ).scalars().all()
+    for position, ref in enumerate(source_refs):
+        session.add(
+            MessageRef(
+                message_id=forwarded.id,
+                kind=ref.kind,
+                ref_id=ref.ref_id,
+                position=position,
+            )
+        )
 
     for media_asset_id in attachment_ids:
         session.add(
@@ -560,10 +596,11 @@ async def forward_message(
     refs = await _refs_map(session, [forwarded], current_user)
     out = _to_out(forwarded, resolved.get(forwarded.id, []), refs, playlists=playlists)
     ws_out = _to_out(forwarded, resolved.get(forwarded.id, []), playlists=playlists)
-    if forwarded.ref_kind is not None and forwarded.ref_id is not None:
-        ws_out.ref = await resolve_ref_for_broadcast(
-            session, forwarded.ref_kind, forwarded.ref_id
-        )
+    ws_out.refs = [
+        await resolve_ref_for_broadcast(session, ref.kind, ref.ref_id)
+        for ref in source_refs
+    ]
+    ws_out.ref = ws_out.refs[0] if ws_out.refs else None
     target_id = target.id
     event = ws_schemas.message_new_event(
         ws_out, _redacted_variant(target, ws_out.content)
@@ -725,7 +762,7 @@ async def edit_message(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sticker messages cannot be edited")
 
     fields_set = body.model_fields_set
-    if not fields_set & {"content", "attachment_ids"}:
+    if not fields_set & {"content", "attachment_ids", "refs"}:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Nothing to edit")
 
     if "content" in fields_set:
@@ -764,6 +801,20 @@ async def edit_message(
                 MessageAttachment(message_id=message.id, media_asset_id=media_asset_id)
             )
 
+    if "refs" in fields_set:
+        for ref in body.refs or []:
+            await assert_ref_visible(session, ref.kind, ref.id, current_user)
+        await session.execute(delete(MessageRef).where(MessageRef.message_id == message.id))
+        for position, ref in enumerate(body.refs or []):
+            session.add(
+                MessageRef(
+                    message_id=message.id,
+                    kind=ref.kind,
+                    ref_id=ref.id,
+                    position=position,
+                )
+            )
+
     message.edited_at = datetime.now(UTC)
     await session.flush()
 
@@ -777,11 +828,15 @@ async def edit_message(
         or message.sticker_id is not None
         or remaining_attachments
         or message.playlist_id is not None
-        or message.ref_kind is not None
+        or await session.scalar(
+            select(func.count())
+            .select_from(MessageRef)
+            .where(MessageRef.message_id == message.id)
+        )
     ):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "Message must carry text, a sticker, attachments or a ref",
+        "Message must carry text, a sticker, attachments or refs",
         )
 
     await session.refresh(message)
@@ -805,10 +860,19 @@ async def edit_message(
         quotes=quotes,
         playlists=playlists,
     )
-    if message.ref_kind is not None and message.ref_id is not None:
-        ws_out.ref = await resolve_ref_for_broadcast(
-            session, message.ref_kind, message.ref_id
+    # Re-load ordered refs for a common, privacy-safe broadcast payload.
+    edited_refs = (
+        await session.execute(
+            select(MessageRef)
+            .where(MessageRef.message_id == message.id)
+            .order_by(MessageRef.position)
         )
+    ).scalars().all()
+    ws_out.refs = [
+        await resolve_ref_for_broadcast(session, ref.kind, ref.ref_id)
+        for ref in edited_refs
+    ]
+    ws_out.ref = ws_out.refs[0] if ws_out.refs else None
     _redact_quote_preview(room, ws_out)
     event = ws_schemas.message_edited_event(
         ws_out, _redacted_variant(room, ws_out.content)

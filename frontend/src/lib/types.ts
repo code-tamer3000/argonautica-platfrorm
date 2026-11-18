@@ -238,9 +238,8 @@ export interface MessageOut {
   attachments: AttachmentOut[]
   // Плейлист-вложение (см. PlaylistOut). null/undefined = вложения нет.
   playlist?: PlaylistOut | null
-  // Ссылка на материал КБ / задачу (одна на сообщение). null = ссылки нет.
-  // title/available резолвит сервер для текущего зрителя.
-  ref?: MessageRefOut | null
+  // Ссылки на материалы/задачи в порядке выбора. Сервер резолвит доступ для зрителя.
+  refs: MessageRefOut[]
   // Цитируемое сообщение (Telegram-style «ответить»). null = цитаты нет.
   // Ортогонально thread_root_id — см. docs/MESSAGES.md «Quotes».
   quote?: QuotedMessageOut | null
@@ -484,7 +483,7 @@ export interface PlanPublicOut {
   name: string
 }
 
-/** Набор (когорта): дата старта задаёт начало 28-дневного окна Динамики.
+/** Набор (когорта): дата старта задаёт начало окна Динамики.
  * `ends_on` — дата закрытия окна: после неё Динамика становится read-only архивом (ARG-96). */
 export interface IntakeOut {
   id: number
@@ -512,12 +511,13 @@ export interface MyDynamicsOut {
   pardons_remaining: number
   today_progress: string[]
   program_start: string
+  program_days: number
   // Окно набора закрыто (ARG-96): статистика заморожена, форма отправки/помилования скрыта.
   window_closed: boolean
   // Дней, где что-то написано, но не все разделы активного задания — просрочку/стрик
   // не снимает (см. docs/DYNAMICS.md), только отдельный счётчик для интерфейса.
   partial_count: number
-  // Сколько дней из 28-дневного периода набора уже закрыто (свои + зачтённые админом).
+  // Сколько дней периода экспедиции уже закрыто (свои + зачтённые админом).
   closed_count: number
   // Просроченные задачи (дедлайн прошёл, не сдано/не принято) — ARG-130/ARG-128.
   overdue_tasks: OverdueTaskOut[]

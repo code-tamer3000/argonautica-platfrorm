@@ -15,6 +15,7 @@ export const messagesKey = (roomId: number) => ['messages', roomId] as const
 export type MessagesData = InfiniteData<MessageOut[], number>
 
 const PAGE = 40
+export const MAX_MESSAGE_REFS = 6
 
 // Лента: бэкенд отдаёт верхний уровень, newest-first. Курсор `before` = id для старых.
 export function useMessages(roomId: number) {
@@ -48,9 +49,8 @@ export interface SendBody {
   // Ответ ЦИТАТОЙ (Telegram-style) — ортогонально reply_to_message_id (id корня
   // треда). См. lib/types.ts QuotedMessageOut / docs/MESSAGES.md «Quotes».
   quoted_message_id?: number
-  // Ссылка на материал КБ / задачу (одна на сообщение). Оба поля вместе.
-  ref_kind?: RefKind
-  ref_id?: number
+  // Упорядоченный список ссылок, полностью заменяет список при отправке.
+  refs?: { kind: RefKind; id: number }[]
   // Идемпотентность повторной отправки через outbox (см. lib/outbox.ts): один и тот
   // же UUID на всех попытках одного OutboxItem, включая ручной retry() — сервер
   // дедуплицирует по (sender_id, room_id, client_id) и не создаёт вторую строку,
@@ -75,6 +75,7 @@ export function useSendMessage(roomId: number) {
 export interface EditBody {
   content?: string | null
   attachment_ids?: number[]
+  refs?: { kind: RefKind; id: number }[]
 }
 
 export function useEditMessage(roomId: number) {

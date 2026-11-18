@@ -28,15 +28,6 @@ class Message(Base):
             "thread_root_id",
             "created_at",
         ),
-        # Ссылка на материал КБ / задачу: оба поля вместе или ни одного.
-        CheckConstraint(
-            "(ref_kind IS NULL) = (ref_id IS NULL)",
-            name="ck_messages_ref_pair",
-        ),
-        CheckConstraint(
-            "ref_kind IS NULL OR ref_kind IN ('kb', 'task')",
-            name="ck_messages_ref_kind",
-        ),
         # Идемпотентность повторной отправки (outbox retry после потерянного
         # ответа, см. docs/MESSAGES.md «Send»): NULL никогда не конфликтует с NULL
         # в UNIQUE (стандартное поведение SQL), поэтому прямых мутаций без
@@ -81,11 +72,6 @@ class Message(Base):
     forwarded_from_sender_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("users.id")
     )
-    # Ссылка на материал КБ / задачу (одна на сообщение). Без FK: цель может быть
-    # мягко удалена / снята с публикации — резолвим лениво, висячая ссылка отдаётся
-    # как «недоступна». ref_kind ∈ {'kb','task'}; оба поля вместе (CHECK выше).
-    ref_kind: Mapped[str | None] = mapped_column(Text)
-    ref_id: Mapped[int | None] = mapped_column(BigInteger)
     # Идемпотентность отправки (см. uq_messages_sender_room_client ниже): UUID,
     # который клиентский outbox несёт неизменным на всех попытках одного item'а.
     # NULL у прямых мутаций (тред-ответы, репост, дневник) — они не через outbox.
@@ -111,6 +97,23 @@ class MessageAttachment(Base):
     media_asset_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("media_assets.id"), primary_key=True
     )
+
+
+class MessageRef(Base):
+    """Упорядоченные ссылки сообщения на материалы БЗ/задачи; без FK к цели."""
+
+    __tablename__ = "message_refs"
+    __table_args__ = (
+        CheckConstraint("kind IN ('kb', 'task')", name="ck_message_refs_kind"),
+        Index("ix_message_refs_target", "kind", "ref_id"),
+    )
+
+    message_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)
+    ref_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class PinnedMessage(Base):

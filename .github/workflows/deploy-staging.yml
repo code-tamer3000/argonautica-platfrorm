@@ -1,11 +1,11 @@
 name: Deploy → staging
 
-# Тестовый стенд из develop. Автодеплой на каждый push/мёрж в develop.
+# Тестовый стенд из ветки ARG-194. Автодеплой на каждый push в эту ветку.
 # Тот же сервер, что и прод, но отдельный каталог /opt/platform-staging и отдельный
 # compose-проект platform-staging — прод не затрагивается.
 on:
   push:
-    branches: [develop]
+    branches: [mobilmego/arg-194-chati-neskolko-materialov-bz-v-odnom]
   workflow_dispatch:   # ручной перезапуск при необходимости
 
 # Не наслаивать деплои: новый push отменяет предыдущий прогон.

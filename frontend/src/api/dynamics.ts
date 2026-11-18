@@ -15,7 +15,7 @@ export function useMyDynamics(options?: { enabled?: boolean }) {
   })
 }
 
-/** Календарь на весь период набора (28 дней) — блок Динамики в профиле.
+/** Календарь на весь период экспедиции — блок Динамики в профиле.
  * В отличие от `useMyDynamics`, `credited` здесь неотличим от `closed` (см. бэкенд). */
 export function useMyDynamicsDays(options?: { enabled?: boolean }) {
   return useQuery({
@@ -25,7 +25,7 @@ export function useMyDynamicsDays(options?: { enabled?: boolean }) {
   })
 }
 
-/** Полный период (28 дней) одного участника — раскрытие карточки в админской
+/** Полный период экспедиции одного участника — раскрытие карточки в админской
  * Динамике по клику (список `useAdminDynamics` отдаёт только ±окно). */
 export function useAdminUserDays(userId: number | null) {
   return useQuery({
