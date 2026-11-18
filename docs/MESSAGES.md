@@ -74,12 +74,12 @@ A second, lighter way to reply — **orthogonal to threads**, not a replacement.
 
 ## Refs (link to a KB item / task)
 
-- A message may carry **one** reference to a **KB item** or a **task** (`messages.ref_kind ∈ {'kb','task'}` + `ref_id`, both or neither — CHECK in [DATA_MODEL.md](DATA_MODEL.md)), **alongside** any media/text/sticker. No FK on the target: it's resolved lazily, so a deleted/unpublished target degrades to «недоступно» rather than breaking the message.
-- **Send** (`SendMessageRequest.ref_kind`/`ref_id`) checks the target is **visible to the sender** (anti-IDOR): KB → `published` or admin; task → `assert_task_visible` (common→all; individual→assignee/admin; pair→member). Not visible/existent → 404 (a draft's existence isn't revealed). A ref satisfies "must carry something" on its own.
-- **Read** — `MessageOut.ref` (`{kind, id, title, url, available}`) is resolved **per viewer** (`resolve_message_refs`): a viewer without access to the target gets `available=false` and a placeholder title (no leak). `url` is `/kb/{id}` or `/tasks/{id}`; the client only navigates, target screens re-check access server-side.
-- **WS `message.new`/`message.edited`** carry a **conservatively-resolved** ref (`resolve_ref_for_broadcast`): the real title is exposed only for a universally-visible target (published KB / common task), else a placeholder with `available=false` — the payload is one body for all subscribers, so it must not reveal a draft/individual title. Authorized viewers get the correct title on the next feed load.
-- **Forwarding** copies `ref_kind`/`ref_id` alongside media.
-- Editing a message changes only text; the ref is fixed at send time (like attachments).
+- A message may carry up to **six ordered references** to KB items or tasks in `message_refs(message_id, kind, ref_id, position)`, alongside media/text/sticker. There is no FK on the target: a deleted/unpublished target resolves to «недоступно» rather than breaking the message. Duplicate `(kind,id)` pairs are removed while preserving selection order.
+- **Send** accepts `refs: [{kind,id}]` and checks every target is **visible to the sender** (anti-IDOR): KB → `published` or admin; task → `assert_task_visible` (common→all; individual→assignee/admin; pair→member). Not visible/existent → 404 (a draft's existence isn't revealed). At least one ref can satisfy "must carry something".
+- **Read** — `MessageOut.refs` (`{kind, id, title, url, available}[]`) is resolved **per viewer** (`resolve_message_refs`): a viewer without access to a target gets `available=false` and a placeholder title. `url` is `/kb/{id}` or `/tasks/{id}`; target screens re-check access server-side.
+- **PATCH** replaces the list only when `refs` is present; omission leaves it unchanged and `refs: []` removes all. `message.new`/`message.edited` broadcast one conservative list: titles are exposed only for universally-visible targets (published KB / common task), else placeholders prevent leaks.
+- **Forwarding** copies all ordered refs alongside media. The migration moves existing `messages.ref_kind/ref_id` into position 0.
+- Editing a message can replace the full ref list independently of its text and attachments.
 
 ## Forwarding messages
 

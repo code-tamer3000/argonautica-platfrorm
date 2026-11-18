@@ -282,8 +282,6 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | sticker_id | BIGINT | FK stickers, NULL | if message is a sticker |
 | playlist_id | BIGINT | FK playlists, NULL | playlist attachment (ARG-139, see "Playlist" below); one per message, immutable |
 | forwarded_from_sender_id | BIGINT | FK users, NULL | forwarding: original author. See [MESSAGES.md](MESSAGES.md) |
-| ref_kind | TEXT | NULL, CHECK | ссылка на материал/задачу: `'kb'` \| `'task'`. No FK (target resolved lazily). See [MESSAGES.md](MESSAGES.md) |
-| ref_id | BIGINT | NULL | kb_item / task id; paired with `ref_kind` |
 | reply_count | INT | NOT NULL, default 0 | denormalized on root |
 | last_reply_at | TIMESTAMPTZ | NULL | denormalized on root |
 | created_at | TIMESTAMPTZ | NOT NULL | |
@@ -291,7 +289,13 @@ Central table; threads live here too. See [MESSAGES.md](MESSAGES.md).
 | deleted_at | TIMESTAMPTZ | NULL | soft delete |
 
 **Index:** (`room_id`, `thread_root_id`, `created_at`). No index on `quoted_message_id` — the only read path resolves previews by `id IN (...)` on the page's messages (PK lookup); there is no "who quoted this" query in the product.
-**CHECK:** `ck_messages_ref_pair` — `(ref_kind IS NULL) = (ref_id IS NULL)` (both or neither); `ck_messages_ref_kind` — `ref_kind IN ('kb','task')`.
+References are stored in ordered message_refs(message_id, kind, ref_id, position); the target has no FK, preserving history when a target is deleted. See MESSAGES.md.
+
+## message_refs
+Ordered KB/task links attached to a message. `message_id` references messages;
+`kind` is `kb` or `task`; `ref_id` intentionally has no FK to the target.
+The composite primary key prevents duplicate links, and `position` preserves
+selection order. A message may have at most six refs.
 
 ## message_attachments
 | Field | Type | Constraints | Notes |

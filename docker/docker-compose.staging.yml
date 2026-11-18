@@ -1,4 +1,4 @@
-# Тестовый стенд (staging) из ветки develop. ПОЛНОСТЬЮ изолирован от прод-стека
+# Тестовый стенд (staging) из ветки ARG-194. ПОЛНОСТЬЮ изолирован от прод-стека
 # (docker-compose.prod.yml): отдельное имя проекта → своя сеть, свои контейнеры и свой
 # namespace volume'ов (platform-staging_*). Прод-данные НЕ затрагиваются.
 #
@@ -19,7 +19,7 @@
 #   - свой (упрощённый, HTTP-only) nginx-шаблон (docker/nginx-staging).
 #
 # Первый запуск / bootstrap — см. шапку docker/deploy-staging.sh.
-# Деплой новой версии: docker/deploy-staging.sh (вызывается из CI на push в develop).
+# Деплой новой версии: docker/deploy-staging.sh (вызывается из CI при push в ветку ARG-194).
 
 x-backend: &backend
   build:

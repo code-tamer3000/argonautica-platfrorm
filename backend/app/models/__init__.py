@@ -18,7 +18,7 @@ from app.models.journal import (
 )
 from app.models.kb import KbCategory, KbComment, KbItem, KbItemMedia, KbItemPlan
 from app.models.media import MediaAsset
-from app.models.message import Message, MessageAttachment, PinnedMessage
+from app.models.message import Message, MessageAttachment, MessageRef, PinnedMessage
 from app.models.notification import Notification
 from app.models.plan import Plan
 from app.models.playlist import Playlist, PlaylistTrack
@@ -45,6 +45,7 @@ __all__ = [
     "RoomPlan",
     "Message",
     "MessageAttachment",
+    "MessageRef",
     "PinnedMessage",
     "MediaAsset",
     "Stickerpack",

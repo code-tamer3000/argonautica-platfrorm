@@ -57,8 +57,10 @@ export interface OutboxItem {
   // прикреплён без сети). Пусто у обычных сообщений, где ассеты уже в MinIO. Воркер
   // резолвит их в реальные asset_id и наполняет body.attachment_ids (см. drain).
   pendingUploads?: PendingUploadRef[]
-  // Ссылка (материал/задача) для оптимистичного показа кнопки «Перейти к…» сразу.
-  // title берём из пикера; сервер перерезолвит `ref` (title/available) на чтении.
+  // Ссылки для оптимистичного показа кнопок «Перейти к…» сразу.
+  // title берём из пикера; сервер перерезолвит refs при чтении.
+  optimisticRefs?: MessageRefOut[]
+  /** Legacy IndexedDB item written before multi-ref messages shipped. */
   optimisticRef?: MessageRefOut
   // Снимок цитируемого сообщения (Telegram-style «ответить») для мгновенной
   // отрисовки плашки, ДО ответа сервера. Сервер на чтении перерезолвит `quote`
@@ -230,7 +232,7 @@ export function optimisticMessage(item: OutboxItem): MessageOut {
     edited_at: null,
     attachment_ids: item.body.attachment_ids ?? [],
     attachments: item.attachments,
-    ref: item.optimisticRef ?? null,
+    refs: item.optimisticRefs ?? (item.optimisticRef ? [item.optimisticRef] : []),
     quote: item.optimisticQuote ?? null,
     reaction_count: 0,
     reacted_by_me: false,
@@ -250,7 +252,7 @@ export function enqueue(
   body: SendBody,
   senderId: number,
   locals: LocalAttachment[] = [],
-  optimisticRef?: MessageRefOut,
+  optimisticRefs?: MessageRefOut[] | MessageRefOut,
   journal?: { category: string },
   optimisticQuote?: QuotedMessageOut,
 ): string {
@@ -277,7 +279,7 @@ export function enqueue(
     createdAt: new Date().toISOString(),
     attachments,
     blobAssetIds,
-    optimisticRef,
+    optimisticRefs: optimisticRefs ? (Array.isArray(optimisticRefs) ? optimisticRefs : [optimisticRefs]) : [],
     optimisticQuote,
     journal,
     tempId: nextTempId(),
@@ -300,7 +302,7 @@ export function enqueueMedia(
   body: SendBody,
   senderId: number,
   uploads: PendingUpload[],
-  optimisticRef?: MessageRefOut,
+  optimisticRefs?: MessageRefOut[] | MessageRefOut,
   journal?: { category: string },
   optimisticQuote?: QuotedMessageOut,
 ): string {
@@ -339,7 +341,7 @@ export function enqueueMedia(
     attachments,
     blobAssetIds: [],
     pendingUploads,
-    optimisticRef,
+    optimisticRefs: optimisticRefs ? (Array.isArray(optimisticRefs) ? optimisticRefs : [optimisticRefs]) : [],
     optimisticQuote,
     journal,
     tempId: nextTempId(),

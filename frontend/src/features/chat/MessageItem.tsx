@@ -303,25 +303,20 @@ function MessageItemInner({
                 : <span className={styles.msgPlaceholder}>[стикер]</span>
             )}
 
-            {msg.ref && (
-              // Ссылка на материал/задачу — кнопка перед текстом. Недоступную зрителю
-              // цель (черновик / чужая задача / удалённая) не даём открыть.
-              <button
-                className={`${styles.refLink} ${!msg.ref.available ? styles.refLinkDisabled : ''}`}
-                disabled={!msg.ref.available}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  if (msg.ref?.available) navigate(msg.ref.url)
-                }}
+            {msg.refs.map((ref) => (
+              <button key={`${ref.kind}:${ref.id}`}
+                className={`${styles.refLink} ${!ref.available ? styles.refLinkDisabled : ''}`}
+                disabled={!ref.available}
+                onClick={(e) => { e.stopPropagation(); if (ref.available) navigate(ref.url) }}
               >
-                {msg.ref.kind === 'kb' ? <IconBook size={16} /> : <IconTasks size={16} />}
+                {ref.kind === 'kb' ? <IconBook size={16} /> : <IconTasks size={16} />}
                 <span className={styles.refLinkText}>
-                  {msg.ref.available
-                    ? `Перейти к ${msg.ref.kind === 'kb' ? 'материалу' : 'задаче'}: ${msg.ref.title}`
-                    : `${msg.ref.kind === 'kb' ? 'Материал' : 'Задача'} недоступен`}
+                  {ref.available
+                    ? `Перейти к ${ref.kind === 'kb' ? 'материалу' : 'задаче'}: ${ref.title}`
+                    : `${ref.kind === 'kb' ? 'Материал' : 'Задача'} недоступен`}
                 </span>
               </button>
-            )}
+            ))}
 
             {msg.content && (
               markdownHtml != null ? (
