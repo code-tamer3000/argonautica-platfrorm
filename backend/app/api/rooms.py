@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import and_, delete, exists, false, func, or_, select, true, union, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.selectable import CompoundSelect
 
 from app.api.deps import get_current_active_user, require_admin
@@ -282,7 +283,7 @@ async def list_rooms(
     ranks: dict[int, int] = {}
     if current_user.role == "admin":
         # Админ видит все комнаты для оверсайта, даже без строки членства.
-        channel_clause = true()
+    channel_clause: ColumnElement[bool] = true()
     else:
         # ranks нужен ниже для dm_write_locked (ARG-110, часть B) — на видимость
         # дневников (сразу под этим комментарием) больше не влияет.
@@ -361,7 +362,7 @@ async def list_rooms(
         .group_by(Message.room_id)
         .subquery()
     )
-    room_scope_clause = true()
+    room_scope_clause: ColumnElement[bool] = true()
     if current_user.role != "admin":
         room_scope_clause = or_(
             Room.torch_scope.is_(True),
