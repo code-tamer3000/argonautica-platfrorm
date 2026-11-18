@@ -1113,7 +1113,7 @@ flowchart TB
     PN --> OB
 
     PR["Pull Request"] -->|"ci.yml: make lint + make test"| CI["GitHub Actions"]
-    DEV["ветка develop"] -->|"deploy-staging.yml: rsync + deploy-staging.sh"| stg
+    DEV["ветка ARG-194"] -->|"deploy-staging.yml: rsync + deploy-staging.sh"| stg
     MAIN["ветка main"] -->|"deploy-prod.yml: rsync + deploy.sh +<br/>restart transcode-worker + recreate nginx + smoke-check"| prd
     PR --> DEV
     DEV -->|"мёрж вручную"| MAIN

@@ -27,7 +27,7 @@
 | Branch | Environment | Server | Trigger |
 |---|---|---|---|
 | `main` | Production | `45.151.102.255` (`platform.argonautica-systems.ru`) | merge → GitHub Actions (`deploy-prod.yml`) → rsync + `docker/deploy.sh` |
-| `develop` | Staging | same host, `/opt/platform-staging`, **`https://staging.argonautica-systems.ru`**, isolated compose project behind the prod gateway | push → `Deploy → staging` → `deploy-staging.sh` |
+| `mobilmego/arg-194-chati-neskolko-materialov-bz-v-odnom` | Staging | same host, `/opt/platform-staging`, **`https://staging.argonautica-systems.ru`**, isolated compose project behind the prod gateway | push → `Deploy → staging` → `deploy-staging.sh` |
 | PR (any) | — | — | CI: ruff + mypy + pytest (`ci.yml`) |
 
 - Staging is isolated (separate compose project, own network/volumes/`.env`/`JWT_SECRET`), no blue-green, **no `bot` service** (a second long-poller on the prod token would break the prod bot — see [TELEGRAM_BOT.md](TELEGRAM_BOT.md)). Staging *does* run `intake-bot` (ARG-92, `backend/scripts/intake_bot.py`) — a separate intake/payment funnel bot on its **own** Telegram token, so it doesn't touch the prod bot's `getUpdates` poller; the two are unrelated services.
