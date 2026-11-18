@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   buildJournalContent,
   forwardMessage,
+  MAX_MESSAGE_REFS,
   useEditMessage,
   useSendMessage,
   type SendBody,
@@ -60,8 +61,8 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // офлайн так же, как текст. Ответ в тред — свой кэш (не лента комнаты), там outbox
   // не заведён → заливаем синхронно при отправке (см. submit).
   const [pendingFiles, setPendingFiles] = useState<PendingUpload[]>([])
-  // Одна прикреплённая ссылка на материал/задачу (title — для чипа/оптимистичного показа).
-  const [pendingRef, setPendingRef] = useState<PickedRef | null>(null)
+  // Список прикреплённых ссылок в порядке выбора.
+  const [pendingRefs, setPendingRefs] = useState<PickedRef[]>([])
   // Плейлист-вложение (docs/FILES.md «Плейлист») — уже созданный на сервере
   // (PlaylistComposer грузит треки и создаёт плейлист сам, синхронно, без
   // офлайн-очереди — как pendingRef, просто отправляем готовый id).
@@ -216,7 +217,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       prevThreadRootId.current = threadRootId
       resetEditor('')
       setPendingFiles([])
-      setPendingRef(null)
+      setPendingRefs([])
     }
   }, [threadRootId, resetEditor])
 
@@ -272,7 +273,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     resetEditor(editing.content ?? '')
     setEditingKeptAttachments(editing.attachments ?? [])
     setPendingFiles([])
-    setPendingRef(null)
+    setPendingRefs((editing.refs ?? []).map(({ kind, id, title }) => ({ kind, id, title })))
     setPendingPlaylist(null)
     setPendingQuote(null)
     setPendingForward(null)
@@ -285,6 +286,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     resetEditor('')
     setPendingFiles([])
     setEditingKeptAttachments([])
+    setPendingRefs([])
     editingMsgIdRef.current = null
   }, [setPendingEdit, resetEditor])
 
@@ -376,9 +378,9 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     enqueueTopLevel({}, [pending])
   }
 
-  // Ссылка в тело запроса (ref_kind/ref_id). Пусто, если ссылки нет.
-  function refBody(ref: PickedRef | null): Partial<SendBody> {
-    return ref ? { ref_kind: ref.kind, ref_id: ref.id } : {}
+  // Ссылки в тело запроса. Пусто, если список не содержит элементов.
+  function refBody(refs: PickedRef[]): Partial<SendBody> {
+    return refs.length ? { refs: refs.map(({ kind, id }) => ({ kind, id })) } : {}
   }
 
   // Цитата в тело запроса. quoted_message_id ОРТОГОНАЛЕН reply_to_message_id
@@ -396,7 +398,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       ? 'text'
       : q.sticker_id != null
         ? 'sticker'
-        : q.ref
+        : q.refs.length
           ? 'ref'
           : 'attachment'
     return {
@@ -416,15 +418,9 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
 
   // Оптимистичный MessageRefOut (для мгновенного показа кнопки в бабле). title —
   // из пикера; available:true оптимистично (сервер перерезолвит на чтении).
-  function optimisticRefOf(ref: PickedRef | null): MessageRefOut | undefined {
-    if (!ref) return undefined
-    return {
-      kind: ref.kind,
-      id: ref.id,
-      title: ref.title,
-      url: ref.kind === 'kb' ? `/kb/${ref.id}` : `/tasks/${ref.id}`,
-      available: true,
-    }
+  function optimisticRefsOf(refs: PickedRef[]): MessageRefOut[] {
+    return refs.map((ref) => ({ kind: ref.kind, id: ref.id, title: ref.title,
+      url: ref.kind === 'kb' ? `/kb/${ref.id}` : `/tasks/${ref.id}`, available: true }))
   }
 
   // Синхронно залить прикреплённые описатели и вернуть их asset_id. Используется на
@@ -445,17 +441,17 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   function enqueueTopLevel(
     body: SendBody,
     uploads: PendingUpload[],
-    ref: PickedRef | null = null,
+    refs: PickedRef[] = [],
     quoted: MessageOut | null = null,
   ) {
     if (!user) {
       send.mutate(body) // без пользователя (не должно случаться) — прямой путь
       return
     }
-    const optRef = optimisticRefOf(ref)
+    const optRefs = optimisticRefsOf(refs)
     const optQuote = optimisticQuoteOf(quoted)
-    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads, optRef, undefined, optQuote)
-    else outboxEnqueue(roomId, body, user.id, [], optRef, undefined, optQuote)
+    if (uploads.length) enqueueMedia(roomId, body, user.id, uploads, optRefs, undefined, optQuote)
+    else outboxEnqueue(roomId, body, user.id, [], optRefs, undefined, optQuote)
     void clearDraft(roomId)
   }
 
@@ -473,7 +469,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     // (editingKeptAttachments), просто переносятся своими id.
     if (editing) {
       const keptIds = editingKeptAttachments.map((a) => a.asset_id)
-      if (!content && keptIds.length === 0 && pendingFiles.length === 0) {
+      if (!content && keptIds.length === 0 && pendingFiles.length === 0 && pendingRefs.length === 0) {
         toast('Сообщение должно нести текст или вложение', 'error')
         return
       }
@@ -486,7 +482,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         return
       }
       editMutation.mutate(
-        { id: editing.id, content: content || null, attachment_ids: [...keptIds, ...newIds] },
+        { id: editing.id, content: content || null, attachment_ids: [...keptIds, ...newIds], refs: pendingRefs.map(({kind, id}) => ({kind, id})) },
         {
           onSuccess: () => cancelEdit(),
           onError: (err) =>
@@ -499,17 +495,17 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
     // Ответ в тред: прямой mutate (тред-реплики не живут в оптимистичной ленте
     // комнаты). Вложения тут заливаем синхронно — офлайн-outbox сюда не заведён.
     if (inThread && threadRootId != null) {
-      if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
+      if (!content && pendingFiles.length === 0 && pendingRefs.length === 0 && !pendingPlaylist) return
       const uploads = pendingFiles
-      const ref = pendingRef
+      const refs = pendingRefs
       const q = quote
       const playlist = pendingPlaylist
       resetEditor('')
       setPendingFiles([])
-      setPendingRef(null)
+      setPendingRefs([])
       setPendingQuote(null)
       setPendingPlaylist(null)
-      const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(ref), ...quoteBody(q) }
+      const body: SendBody = { reply_to_message_id: threadRootId, ...refBody(refs), ...quoteBody(q) }
       if (content) body.content = content
       if (playlist) body.playlist_id = playlist.id
       try {
@@ -537,27 +533,27 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         toast('Прикрепите фото или видео к этому разделу', 'info')
         return
       }
-      if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
+      if (!content && pendingFiles.length === 0 && pendingRefs.length === 0 && !pendingPlaylist) return
       const uploads = pendingFiles
-      const ref = pendingRef
+      const refs = pendingRefs
       const q = quote
       const playlist = pendingPlaylist
       resetEditor('')
       setPendingFiles([])
-      setPendingRef(null)
+      setPendingRefs([])
       setPendingQuote(null)
       setPendingPlaylist(null)
       const body: SendBody = {
-        content: buildJournalContent(journalMeta, content), ...refBody(ref), ...quoteBody(q),
+        content: buildJournalContent(journalMeta, content), ...refBody(refs), ...quoteBody(q),
       }
       if (playlist) body.playlist_id = playlist.id
-      const optRef = optimisticRefOf(ref)
+      const optRefs = optimisticRefsOf(refs)
       const optQuote = optimisticQuoteOf(q)
       if (user) {
         if (uploads.length) {
-          enqueueMedia(roomId, body, user.id, uploads, optRef, { category: journalKey }, optQuote)
+          enqueueMedia(roomId, body, user.id, uploads, optRefs, { category: journalKey }, optQuote)
         } else {
-          outboxEnqueue(roomId, body, user.id, [], optRef, { category: journalKey }, optQuote)
+          outboxEnqueue(roomId, body, user.id, [], optRefs, { category: journalKey }, optQuote)
         }
       }
       return
@@ -584,13 +580,13 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       setPendingForward(null)
       setReposting(false)
       const uploads = pendingFiles
-      const ref = pendingRef
+      const refs = pendingRefs
       const playlist = pendingPlaylist
       resetEditor('')
       setPendingFiles([])
-      setPendingRef(null)
+      setPendingRefs([])
       setPendingPlaylist(null)
-      const body: SendBody = { ...refBody(ref) }
+      const body: SendBody = { ...refBody(refs) }
       if (content) body.content = content
       if (playlist) body.playlist_id = playlist.id
       try {
@@ -599,24 +595,24 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         toast(err instanceof Error ? err.message : 'Не удалось загрузить вложение', 'error')
         return
       }
-      if (body.content || body.attachment_ids?.length || body.playlist_id || ref) {
-        enqueueTopLevel(body, [], ref)
+      if (body.content || body.attachment_ids?.length || body.playlist_id || refs.length) {
+        enqueueTopLevel(body, [], refs)
       }
       toast('Переслано')
       return
     }
 
-    if (!content && pendingFiles.length === 0 && !pendingRef && !pendingPlaylist) return
+    if (!content && pendingFiles.length === 0 && pendingRefs.length === 0 && !pendingPlaylist) return
     const uploads = pendingFiles
-    const ref = pendingRef
+    const refs = pendingRefs
     const q = quote
     const playlist = pendingPlaylist
     resetEditor('')
     setPendingFiles([])
-    setPendingRef(null)
+    setPendingRefs([])
     setPendingQuote(null)
     setPendingPlaylist(null)
-    const body: SendBody = { ...refBody(ref), ...quoteBody(q) }
+    const body: SendBody = { ...refBody(refs), ...quoteBody(q) }
     // Прицепленный вопрос комнаты (ARG-171) — заголовок над ответом.
     const promptHeader = promptActive ? `🔥 ${pendingPrompt!.text}` : null
     if (promptHeader) {
@@ -626,7 +622,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
       body.content = content
     }
     if (playlist) body.playlist_id = playlist.id
-    enqueueTopLevel(body, uploads, ref, q)
+    enqueueTopLevel(body, uploads, refs, q)
   }
 
   function onKey(e: KeyboardEvent<HTMLDivElement>) {
@@ -733,7 +729,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   // вложения даёт понятный тост и оставляет текст в поле (см. submit()), вместо
   // того чтобы подменять кнопку отправки микрофоном, будто отправить нечем.
   const canSend =
-    !!text.trim() || pendingFiles.length > 0 || !!repost || !!pendingRef || !!pendingPlaylist
+    !!text.trim() || pendingFiles.length > 0 || !!repost || pendingRefs.length > 0 || !!pendingPlaylist
   // Отдельно от canSend: только «есть набранный текст», а не вложения/репост —
   // сворачиваем кнопку стикера именно во время набора, не из-за прикреплённого файла.
   const hasText = !!text.trim()
@@ -891,19 +887,13 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         </div>
       )}
 
-      {pendingRef && (
+      {pendingRefs.length > 0 && (
         <div className={styles.pendingAtt}>
-          <span className={styles.pendingChip}>
-            {pendingRef.kind === 'kb' ? <IconBook size={13} /> : <IconTasks size={13} />}
-            <span className={styles.pendingChipLabel}>{pendingRef.title}</span>
-            <button
-              className={styles.pendingChipX}
-              onClick={() => setPendingRef(null)}
-              aria-label="Убрать ссылку"
-            >
-              ✕
-            </button>
-          </span>
+          {pendingRefs.map((ref) => <span className={styles.pendingChip} key={`${ref.kind}:${ref.id}`}>
+            {ref.kind === 'kb' ? <IconBook size={13} /> : <IconTasks size={13} />}
+            <span className={styles.pendingChipLabel}>{ref.title}</span>
+            <button className={styles.pendingChipX} onClick={() => setPendingRefs((prev) => prev.filter((item) => item.kind !== ref.kind || item.id !== ref.id))} aria-label="Убрать ссылку">✕</button>
+          </span>)}
         </div>
       )}
 
@@ -940,7 +930,14 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
           initialTab={refPickerTab}
           onClose={() => setRefPickerOpen(false)}
           onPick={(ref) => {
-            setPendingRef(ref)
+            setPendingRefs((prev) => {
+              if (prev.some((item) => item.kind === ref.kind && item.id === ref.id)) return prev
+              if (prev.length >= MAX_MESSAGE_REFS) {
+                toast(`Можно прикрепить не больше ${MAX_MESSAGE_REFS} ссылок`, 'info')
+                return prev
+              }
+              return [...prev, ref]
+            })
             setRefPickerOpen(false)
           }}
         />

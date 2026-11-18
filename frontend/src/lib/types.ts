@@ -238,9 +238,8 @@ export interface MessageOut {
   attachments: AttachmentOut[]
   // Плейлист-вложение (см. PlaylistOut). null/undefined = вложения нет.
   playlist?: PlaylistOut | null
-  // Ссылка на материал КБ / задачу (одна на сообщение). null = ссылки нет.
-  // title/available резолвит сервер для текущего зрителя.
-  ref?: MessageRefOut | null
+  // Ссылки на материалы/задачи в порядке выбора. Сервер резолвит доступ для зрителя.
+  refs: MessageRefOut[]
   // Цитируемое сообщение (Telegram-style «ответить»). null = цитаты нет.
   // Ортогонально thread_root_id — см. docs/MESSAGES.md «Quotes».
   quote?: QuotedMessageOut | null

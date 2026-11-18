@@ -310,3 +310,47 @@ async def test_repost_carries_ref(
     assert reposted["ref"]["id"] == item["id"]
     assert reposted["ref"]["kind"] == "kb"
     assert reposted["ref"]["available"] is True
+
+
+async def test_multiple_refs_order_dedup_and_patch_replacement(
+    client: AsyncClient,
+    make_user: MakeUser,
+    make_room: MakeRoom,
+    add_membership: AddMembership,
+) -> None:
+    admin = await make_user(role="admin")
+    room = await make_room(created_by=admin.id)
+    await add_membership(room.id, admin.id, "owner")
+    headers = await _headers(client, admin)
+    first = await _kb_item(client, headers, title="Первый", published=True)
+    second = await _kb_item(client, headers, title="Второй", published=True)
+
+    code, message = await _send(
+        client,
+        headers,
+        room.id,
+        content="Материалы",
+        refs=[
+            {"kind": "kb", "id": first["id"]},
+            {"kind": "kb", "id": second["id"]},
+            {"kind": "kb", "id": first["id"]},
+        ],
+    )
+    assert code == 201, message
+    assert [ref["id"] for ref in message["refs"]] == [first["id"], second["id"]]
+
+    edited = await client.patch(
+        f"/api/rooms/{room.id}/messages/{message['id']}",
+        headers=headers,
+        json={"refs": [{"kind": "kb", "id": second["id"]}]},
+    )
+    assert edited.status_code == 200, edited.text
+    assert [ref["id"] for ref in edited.json()["refs"]] == [second["id"]]
+
+    cleared = await client.patch(
+        f"/api/rooms/{room.id}/messages/{message['id']}",
+        headers=headers,
+        json={"refs": []},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["refs"] == []

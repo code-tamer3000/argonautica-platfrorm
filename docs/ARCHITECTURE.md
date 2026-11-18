@@ -238,10 +238,14 @@ erDiagram
         bigint thread_root_id FK "NULL = верхний уровень"
         bigint sticker_id FK
         bigint forwarded_from_sender_id FK "репост в новости"
-        text ref_kind "kb или task"
-        bigint ref_id "цель ссылки, без FK"
         int reply_count "денормализовано на корне"
         timestamptz deleted_at "мягкое удаление"
+    }
+    message_refs {
+        bigint message_id FK
+        text kind "kb или task"
+        bigint ref_id "цель ссылки, без FK"
+        int position
     }
     message_attachments {
         bigint message_id PK

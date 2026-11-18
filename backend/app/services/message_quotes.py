@@ -17,7 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.message import Message
+from app.models.message import Message, MessageRef
 from app.schemas.message import QUOTE_PREVIEW_LEN, QuotedMessageOut
 from app.services.text_marks import truncate_for_quote
 
@@ -32,12 +32,12 @@ async def assert_quote_target(
     return target
 
 
-def _quote_kind(message: Message) -> str:
+def _quote_kind(message: Message, has_refs: bool) -> str:
     if message.content:
         return "text"
     if message.sticker_id is not None:
         return "sticker"
-    if message.ref_kind is not None:
+    if has_refs:
         return "ref"
     return "attachment"
 
@@ -45,7 +45,7 @@ def _quote_kind(message: Message) -> str:
 async def resolve_message_quotes(
     session: AsyncSession, quoted_ids: list[int], room_id: int
 ) -> dict[int, QuotedMessageOut]:
-    """quoted_message_id -> QuotedMessageOut, батчем (без N+1), одним SELECT.
+    """quoted_message_id -> QuotedMessageOut, батчем (без N+1).
 
     Отсутствующая строка / чужая комната / мягко удалённая — единообразно отдаётся
     как "deleted" (текст/автор не утекают), фронт рисует «Сообщение удалено».
@@ -57,6 +57,10 @@ async def resolve_message_quotes(
         select(Message).where(Message.id.in_(unique), Message.room_id == room_id)
     )
     found: dict[int, Message] = {m.id: m for m in rows.scalars().all()}
+    ref_rows = await session.execute(
+        select(MessageRef.message_id).where(MessageRef.message_id.in_(unique))
+    )
+    message_ids_with_refs = set(ref_rows.scalars().all())
 
     result: dict[int, QuotedMessageOut] = {}
     for qid in unique:
@@ -75,7 +79,7 @@ async def resolve_message_quotes(
             id=target.id,
             sender_id=target.sender_id,
             preview=truncate_for_quote(target.content, QUOTE_PREVIEW_LEN),
-            kind=_quote_kind(target),
+            kind=_quote_kind(target, target.id in message_ids_with_refs),
             thread_root_id=target.thread_root_id,
             deleted=False,
         )
