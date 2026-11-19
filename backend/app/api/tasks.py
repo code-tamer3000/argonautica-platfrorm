@@ -1007,16 +1007,32 @@ async def list_tasks(
             required_ids = await required_task_ids_snapshot(session, current_user)
             where.append(Task.id.in_(my_submitted) | Task.id.in_(required_ids))
         else:
-            my_individual = select(TaskAssignment.task_id).where(
+            my_assigned_tasks = select(TaskAssignment.task_id).where(
                 TaskAssignment.user_id == current_user.id
+            )
+            completed_common = exists(
+                select(1).where(
+                    TaskAssignment.task_id == Task.id,
+                    TaskAssignment.user_id == current_user.id,
+                    TaskAssignment.status.in_(GRADUATE_VISIBLE_STATUSES),
+                )
             )
             # common-задача — с двойным фильтром поток+тариф (ARG-96, через тот же
             # _visible_common_where что и compute_progress/attention_count — не
             # дублируем условие второй раз, иначе Междумирье легко забыть починить
-            # в одном месте и не в другом, как уже случилось здесь); своё
-            # индивидуальное назначение видно независимо от него.
+            # в одном месте и не в другом, как уже случилось здесь). Завершённая
+            # common остаётся видимой после смены тарифа, но только в своём потоке;
+            # явные назначения остальных типов тоже не зависят от потока.
             visible_common = and_(*_visible_common_where(current_user))
-            where.append(visible_common | (Task.id.in_(my_individual)))
+            where.append(
+                visible_common
+                | and_(
+                    Task.type == "common",
+                    or_(Task.intake_id.is_(None), Task.intake_id == current_user.intake_id),
+                    completed_common,
+                )
+                | and_(Task.type != "common", Task.id.in_(my_assigned_tasks))
+            )
             # Отложенная публикация (база заданий): запланированная задача не
             # видна не-админу, включая свою individual/pair/stream — common уже
             # закрыт внутри _visible_common_where, здесь добиваем остальные типы.
