@@ -175,6 +175,10 @@ async def assert_task_visible(
     if not is_published(task):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
     if task.type == "common":
+        # Завершение сохраняет доступ после смены тарифа, но не после перевода
+        # в другой поток: старые общие задачи не должны протаскиваться между когортами.
+        if not intake_visible(task.intake_id, user):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
         # Уже сдал/приняли, пока держал нужный тариф — доступ остаётся, даже если
         # тариф потом сменили (назначение сильнее тарифа — тот же принцип, что и
         # у individual/pair/stream, см. module docstring services/visibility.py).
@@ -189,10 +193,7 @@ async def assert_task_visible(
         )
         if already_done is not None:
             return
-        # Двойной фильтр поток+тариф (ARG-96): common-задача чужого потока/тарифа
-        # для участника не видна (403) — тем же принципом, что и каналы.
-        if not intake_visible(task.intake_id, user):
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
+        # Тариф остаётся вторым гейтом для незавершённой задачи.
         if not await plan_visible(
             session, TaskPlan.plan_id, TaskPlan.task_id, task.id, _effective_plan_id(user)
         ):
