@@ -35,12 +35,14 @@ export function Attachment({
   attachment,
   assetId,
   kbItemId,
+  voiceWaveform,
 }: {
   attachment?: AttachmentOut
   assetId?: number
   // Задано только когда вложение показывается внутри материала БЗ (ARG-118) —
   // включает запоминание позиции просмотра для видео. См. VideoPlayer.
   kbItemId?: number
+  voiceWaveform?: boolean
 }) {
   // Хук вызывается всегда (правила hooks), но простаивает, если данные уже есть.
   const query = useMediaUrl(attachment ? null : assetId ?? null)
@@ -77,7 +79,7 @@ export function Attachment({
       </span>
     )
   const { url, thumbUrl, previewUrl, kind, width, height, duration, transcodeStatus } = resolved
-  if (kind === 'audio') return <VoicePlayer src={url} duration={duration} />
+  if (kind === 'audio') return <VoicePlayer src={url} duration={duration} waveform={voiceWaveform} />
   if (kind === 'image')
     return (
       <ImageAttachment

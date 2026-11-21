@@ -102,6 +102,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
           src={voiceUrl}
           duration={recorded.duration}
           className={styles.voicePreview}
+          waveform
         />
         <button
           className={styles.sendBtn}

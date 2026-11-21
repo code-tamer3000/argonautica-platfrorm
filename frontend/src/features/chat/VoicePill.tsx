@@ -6,8 +6,8 @@ import styles from './VoicePill.module.css'
 // Adapted from React Bits Voice Pill (https://reactbits.dev/c/micro/voice-pill).
 const HOLD_AFTER = 300
 const CANCEL_DISTANCE = 64
-const SAMPLE_MS = 64
-const BAR_STEP = 3
+const SAMPLE_MS = 80
+const MAX_BARS = 96
 
 interface Props {
   active: boolean
@@ -44,59 +44,52 @@ export function VoicePill({
     }
 
     const ctx = canvas.getContext('2d')
-    const ratio = Math.min(2, window.devicePixelRatio || 1)
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
-    canvas.width = Math.round(width * ratio)
-    canvas.height = Math.round(height * ratio)
-    if (ctx) {
-      ctx.scale(ratio, ratio)
-      ctx.fillStyle = getComputedStyle(timer).color
-    }
-
     const levels: number[] = []
-    const limit = Math.ceil(width / BAR_STEP)
-    let envelope = 0
-    let peak = 0
-    let lastFrame = startedAt
-    let lastSample = startedAt - SAMPLE_MS
-    let frameId: number
-    const draw = (now: number) => {
-      const time = formatTime(now - startedAt)
-      if (timer.textContent !== time) timer.textContent = time
-
-      const level = readLevel()
-      const elapsed = Math.max(0, Math.min(50, now - lastFrame))
-      const response = level > envelope ? 40 : 240
-      envelope += (level - envelope) * (1 - Math.exp(-elapsed / response))
-      lastFrame = now
-      peak = Math.max(peak, envelope)
-
-      if (now - lastSample >= SAMPLE_MS) {
-        levels.push(peak)
-        if (levels.length > limit) levels.shift()
-        lastSample = now
-        peak = 0
-      }
-
+    let level = 0
+    let width = 0
+    let height = 0
+    const resize = () => {
+      width = canvas.clientWidth
+      height = canvas.clientHeight
+      const ratio = Math.min(2, window.devicePixelRatio || 1)
+      canvas.width = Math.round(width * ratio)
+      canvas.height = Math.round(height * ratio)
       if (ctx) {
-        ctx.clearRect(0, 0, width, height)
-        const shift = (now - lastSample) / SAMPLE_MS * BAR_STEP
-        for (let i = 0; i < levels.length; i += 1) {
-          const value = levels[levels.length - 1 - i]
-          const x = width - (i + 1) * BAR_STEP - shift
-          const barHeight = Math.max(2, (0.1 + 0.9 * value) * height)
-          const fade = Math.min(1, Math.max(0, x / (width * 0.55)))
-          ctx.globalAlpha = (0.35 + 0.65 * value) * fade * fade * (3 - 2 * fade)
-          ctx.fillRect(x, (height - barHeight) / 2, 2, barHeight)
-        }
+        ctx.scale(ratio, ratio)
+        ctx.fillStyle = getComputedStyle(canvas).color
       }
+    }
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize)
+    observer?.observe(canvas)
+    resize()
 
-      frameId = requestAnimationFrame(draw)
+    const draw = () => {
+      if (document.hidden) return
+      const time = formatTime(performance.now() - startedAt)
+      if (timer.textContent !== time) timer.textContent = time
+      if (!ctx || width < 4) return
+
+      level = Math.max(readLevel(), level * 0.72)
+      levels.push(level)
+      if (levels.length > MAX_BARS) levels.shift()
+
+      const count = Math.min(MAX_BARS, Math.floor(width / 4))
+      const step = width / count
+      ctx.clearRect(0, 0, width, height)
+      for (let i = 0; i < count; i += 1) {
+        const value = levels[levels.length - 1 - i]
+        const barHeight = value === undefined ? 2 : Math.max(2, value * height)
+        ctx.globalAlpha = value === undefined ? 0.25 : 0.6 + 0.4 * value
+        ctx.fillRect(width - (i + 0.5) * step - 1, (height - barHeight) / 2, 2, barHeight)
+      }
     }
 
-    frameId = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(frameId)
+    draw()
+    const interval = window.setInterval(draw, SAMPLE_MS)
+    return () => {
+      window.clearInterval(interval)
+      observer?.disconnect()
+    }
   }, [active, startedAt, readLevel])
 
   function clearPress() {

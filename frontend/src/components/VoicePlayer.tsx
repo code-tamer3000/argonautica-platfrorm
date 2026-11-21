@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useVoiceWaveform } from '../hooks/useVoiceWaveform'
 import { useMediaSession } from '../stores/mediaSession'
 import { IconPause, IconPlay } from './icons'
 import styles from './voicePlayer.module.css'
@@ -10,6 +11,7 @@ interface Props {
   /** Длина записи в секундах из media_assets — показываем до загрузки метаданных. */
   duration?: number | null
   className?: string
+  waveform?: boolean
 }
 
 function fmt(sec: number, long: boolean): string {
@@ -31,7 +33,8 @@ function fmt(sec: number, long: boolean): string {
  */
 let voicePlayerSeq = 0
 
-export function VoicePlayer({ src, duration, className }: Props) {
+export function VoicePlayer({ src, duration, className, waveform }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(0)
@@ -97,11 +100,32 @@ export function VoicePlayer({ src, duration, className }: Props) {
   }
 
   const max = total || duration || 0
-  const pct = max > 0 ? (current / max) * 100 : 0
+  const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0
   const long = max >= 3600
+  const bars = useVoiceWaveform(rootRef, waveform ? src : null, max)
+  const gradientId = useId()
+  const wavePath = useMemo(() => bars?.map((level, i) => {
+    const x = i * 4 + 2
+    const half = Math.round(1 + level * 19) / 2
+    return `M${x} ${12 - half}v${2 * half}`
+  }).join(' '), [bars])
+  const time = `${fmt(current, long)} / ${fmt(max, long)}`
+  const seekControl = (
+    <input
+      type="range"
+      className={styles.seek}
+      min={0}
+      max={max || 1}
+      step={0.1}
+      value={current}
+      onChange={seek}
+      style={{ ['--pct' as string]: `${pct}%` }}
+      aria-label="Позиция воспроизведения"
+    />
+  )
 
   return (
-    <div className={`${styles.wrap} ${className ?? ''}`}>
+    <div ref={rootRef} className={`${styles.wrap} ${className ?? ''}`} data-waveform={waveform || undefined}>
       <audio ref={audioRef} src={src} preload="metadata" />
       <button
         type="button"
@@ -111,18 +135,35 @@ export function VoicePlayer({ src, duration, className }: Props) {
       >
         {playing ? <IconPause size={18} /> : <IconPlay size={18} />}
       </button>
-      <input
-        type="range"
-        className={styles.seek}
-        min={0}
-        max={max || 1}
-        step={0.1}
-        value={current}
-        onChange={seek}
-        style={{ ['--pct' as string]: `${pct}%` }}
-        aria-label="Позиция воспроизведения"
-      />
-      <span className={styles.time}>{fmt(current || 0, long)} / {fmt(max, long)}</span>
+      {waveform ? (
+        <div className={styles.timeline}>
+          <div className={styles.waveTrack} data-ready={wavePath ? '' : undefined}>
+            {bars && wavePath && (
+              <svg
+                className={styles.wave}
+                viewBox={`0 0 ${bars.length * 4} 24`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <defs>
+                  <linearGradient id={gradientId}>
+                    <stop offset={`${pct}%`} stopColor="var(--accent)" />
+                    <stop offset={`${pct}%`} stopColor="var(--text-secondary)" stopOpacity={0.55} />
+                  </linearGradient>
+                </defs>
+                <path d={wavePath} fill="none" stroke={`url(#${gradientId})`} strokeWidth={2} strokeLinecap="round" />
+              </svg>
+            )}
+            {seekControl}
+          </div>
+          <span className={styles.time}>{time}</span>
+        </div>
+      ) : (
+        <>
+          {seekControl}
+          <span className={styles.time}>{time}</span>
+        </>
+      )}
       <button
         type="button"
         className={styles.rateBtn}
