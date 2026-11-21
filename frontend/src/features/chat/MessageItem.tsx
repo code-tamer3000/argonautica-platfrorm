@@ -266,10 +266,10 @@ function MessageItemInner({
                 {tiles.length > 0 && <MediaGroup items={tiles} />}
                 {msg.attachments?.length
                   ? loose.map(att => (
-                      <Attachment key={att.asset_id} attachment={att} />
+                      <Attachment key={att.asset_id} attachment={att} voiceWaveform />
                     ))
                   : msg.attachment_ids.map(id => (
-                      <Attachment key={id} assetId={id} />
+                      <Attachment key={id} assetId={id} voiceWaveform />
                     ))}
               </div>
             )}

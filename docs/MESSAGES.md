@@ -71,6 +71,7 @@ A second, lighter way to reply — **orthogonal to threads**, not a replacement.
 - `MessageOut.reaction_count` (total) / `reacted_by_me` (for the requesting viewer) are computed at read time from `message_reactions`, batched per page/thread (no N+1) — same style as `unread_reply_count`.
 - No standalone reactions list and no cleanup on message soft-delete: a deleted message just drops out of every feed query, so orphaned reaction rows are harmless.
 - Toggle UX: tap adds your reaction; tapping your own already-placed reaction removes it (like Telegram). Entry points: the reaction chip once `reaction_count > 0`, or "Поставить/убрать реакцию" in the message action menu to place the first one.
+- When your reaction changes, the star pulses and the confirmed count rolls up or down. After you remove the last reaction, the chip disappears at the end of the animation. With reduced motion enabled, the count updates immediately.
 
 ## Refs (link to a KB item / task)
 
@@ -91,6 +92,8 @@ A second, lighter way to reply — **orthogonal to threads**, not a replacement.
 
 ## Voice messages
 
+- In the chat composer and thread replies, the mic expands across the input row with a timer and live waveform. A tap starts recording and a second tap stops it. Touch taps start on release so the microphone permission prompt cannot interrupt a tap in progress. A sustained hold records until release. Drag left during a press or press Escape on the focused control to discard the recording. Successful stops open a preview with separate send and delete buttons.
+- The preview and chat voice messages show a seekable waveform measured from decoded audio. Playback highlights whole bars as it crosses them. Waveforms load when the player is visible and are cached in memory. The player uses its standard seek bar until a waveform is available, including for unsupported files and recordings over ten minutes or 12 MiB.
 - Recorded audio is a normal attachment with `media_assets.kind='audio'`, same presigned flow. Uploaded as-is (WebM/Opus or AAC/MP4, whatever the sender's `MediaRecorder` produced) and normalized to AAC/M4A server-side in the background (same transcode worker/queue as video) so it plays on every recipient's device, iPhone included — see [FILES.md](FILES.md) "Audio transcode".
 
 ## Playlist attachment (ARG-139)

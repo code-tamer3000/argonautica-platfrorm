@@ -1,0 +1,186 @@
+.pill {
+  --vp-slot: 44px;
+  --vp-clock: 44px;
+  --vp-slide: 0px;
+  --vp-cancel: 0;
+
+  position: relative;
+  display: grid;
+  grid-area: 1 / 2;
+  align-items: center;
+  justify-items: end;
+  isolation: isolate;
+  width: var(--vp-slot);
+  min-width: 0;
+  height: var(--vp-slot);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-t4);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pill:focus-visible {
+  outline: 2px solid var(--voice-signal);
+  outline-offset: 1px;
+}
+
+.pill:disabled {
+  cursor: default;
+}
+
+.pill:disabled:not([data-active]) {
+  opacity: 0.55;
+}
+
+.pill[data-active] {
+  grid-column: 1 / -1;
+  align-self: stretch;
+  width: 100%;
+  height: auto;
+  min-height: var(--vp-slot);
+  color: var(--voice-signal);
+}
+
+.capsule {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--voice-border);
+  border-radius: inherit;
+  background: var(--voice-bg);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 180ms var(--ease-out-soft), opacity 120ms ease;
+  pointer-events: none;
+}
+
+.pill[data-active] .capsule {
+  opacity: 1;
+  transform: scaleX(1);
+}
+
+.time,
+.wave,
+.cancel {
+  position: absolute;
+  pointer-events: none;
+}
+
+.time,
+.cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  font-size: var(--text-label-md);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.time {
+  inset: 0 var(--vp-slot) 0 auto;
+  width: var(--vp-clock);
+}
+
+.wave {
+  top: 50%;
+  left: var(--space-3);
+  width: max(0px, calc(100% - var(--vp-slot) - var(--vp-clock) - var(--space-3)));
+  height: 24px;
+  color: var(--voice-signal);
+  transform: translateY(-50%);
+}
+
+.time,
+.wave {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.pill[data-active] .time,
+.pill[data-active] .wave {
+  opacity: calc(1 - var(--vp-cancel));
+}
+
+.cancel {
+  inset: 0 var(--vp-slot) 0 var(--space-3);
+  gap: var(--space-1);
+  opacity: var(--vp-cancel);
+}
+
+.glyph {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-inline-end: 2px;
+  border: 1px solid var(--color-frame-deep);
+  border-radius: 50%;
+  background: var(--bg-deep);
+  pointer-events: none;
+  transform: translateX(var(--vp-slide));
+  transition: transform 160ms var(--ease-out-soft), background-color 150ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pill:not([data-active]):not(:disabled):hover .glyph {
+    background: var(--voice-bg);
+  }
+}
+
+.pill[data-active] .glyph {
+  border-color: transparent;
+  background: transparent;
+}
+
+.pill[data-pressed] .glyph {
+  transform: translateX(var(--vp-slide)) scale(0.95);
+}
+
+.pill[data-sliding] .glyph {
+  transition: none;
+}
+
+.glyph > * {
+  grid-area: 1 / 1;
+  transition: opacity 160ms ease;
+}
+
+.mic {
+  display: inline-flex;
+}
+
+.stop {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: currentColor;
+  opacity: 0;
+}
+
+.pill[data-active] .mic {
+  opacity: 0;
+}
+
+.pill[data-active] .stop {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capsule,
+  .time,
+  .wave,
+  .glyph,
+  .glyph > * {
+    transition: none;
+  }
+}
