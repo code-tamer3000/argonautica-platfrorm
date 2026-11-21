@@ -106,7 +106,7 @@
 }
 
 .pill[data-active] .time,
-.pill[data-recording] .wave {
+.pill[data-active] .wave {
   opacity: calc(1 - var(--vp-cancel));
 }
 

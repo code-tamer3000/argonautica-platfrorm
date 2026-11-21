@@ -79,7 +79,7 @@ export function Attachment({
       </span>
     )
   const { url, thumbUrl, previewUrl, kind, width, height, duration, transcodeStatus } = resolved
-  if (kind === 'audio') return <VoicePlayer src={url} duration={duration} waveform={voiceWaveform} />
+  if (kind === 'audio') return <VoicePlayer src={url} duration={duration} waveform={voiceWaveform ? 'message' : undefined} />
   if (kind === 'image')
     return (
       <ImageAttachment

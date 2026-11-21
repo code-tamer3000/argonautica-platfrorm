@@ -152,6 +152,11 @@
   pointer-events: none;
 }
 
+.wrap[data-waveform='message'] .waveBars {
+  stroke-width: 1.25px;
+  vector-effect: non-scaling-stroke;
+}
+
 @media (max-width: 768px) {
   .wrap { max-width: 100%; }
 }

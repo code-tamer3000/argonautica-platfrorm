@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useVoiceWaveform } from '../hooks/useVoiceWaveform'
 import { useMediaSession } from '../stores/mediaSession'
 import { IconPause, IconPlay } from './icons'
@@ -11,7 +11,7 @@ interface Props {
   /** Длина записи в секундах из media_assets — показываем до загрузки метаданных. */
   duration?: number | null
   className?: string
-  waveform?: boolean
+  waveform?: 'message' | 'preview'
 }
 
 function fmt(sec: number, long: boolean): string {
@@ -21,6 +21,12 @@ function fmt(sec: number, long: boolean): string {
   const s = Math.floor(sec % 60)
   if (long) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function playedBarPercent(position: number, duration: number, barCount: number) {
+  if (!duration || !barCount) return 0
+  const played = Math.floor(Math.min(1, Math.max(0, position / duration)) * barCount)
+  return (played / barCount) * 100
 }
 
 /**
@@ -36,6 +42,8 @@ let voicePlayerSeq = 0
 export function VoicePlayer({ src, duration, className, waveform }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
+  const playedStopRef = useRef<SVGStopElement>(null)
+  const unplayedStopRef = useRef<SVGStopElement>(null)
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(0)
   // Длину знаем из media_assets сразу; уточняем по loadedmetadata (точнее).
@@ -103,12 +111,43 @@ export function VoicePlayer({ src, duration, className, waveform }: Props) {
   const pct = max > 0 ? Math.min(100, (current / max) * 100) : 0
   const long = max >= 3600
   const bars = useVoiceWaveform(rootRef, waveform ? src : null, max)
+  const barCount = bars?.length ?? 0
   const gradientId = useId()
   const wavePath = useMemo(() => bars?.map((level, i) => {
     const x = i * 4 + 2
     const half = Math.round(1 + level * 19) / 2
     return `M${x} ${12 - half}v${2 * half}`
   }).join(' '), [bars])
+
+  useLayoutEffect(() => {
+    const audio = audioRef.current
+    const played = playedStopRef.current
+    const unplayed = unplayedStopRef.current
+    if (!audio || !played || !unplayed || !barCount) return
+
+    const paint = (time: number) => {
+      const offset = `${playedBarPercent(time, max, barCount)}%`
+      if (played.getAttribute('offset') !== offset) {
+        played.setAttribute('offset', offset)
+        unplayed.setAttribute('offset', offset)
+      }
+    }
+    if (!playing) {
+      paint(current)
+      return
+    }
+
+    // timeupdate is too infrequent to show each bar of a short message.
+    // Only touch the SVG when playback actually crosses a bar.
+    let frame: number
+    const tick = () => {
+      paint(audio.currentTime)
+      frame = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(frame)
+  }, [playing, current, max, barCount])
+
   const time = `${fmt(current, long)} / ${fmt(max, long)}`
   const seekControl = (
     <input
@@ -141,17 +180,17 @@ export function VoicePlayer({ src, duration, className, waveform }: Props) {
             {bars && wavePath && (
               <svg
                 className={styles.wave}
-                viewBox={`0 0 ${bars.length * 4} 24`}
+                viewBox={`0 0 ${barCount * 4} 24`}
                 preserveAspectRatio="none"
                 aria-hidden="true"
               >
                 <defs>
-                  <linearGradient id={gradientId}>
-                    <stop offset={`${pct}%`} stopColor="var(--voice-signal)" />
-                    <stop offset={`${pct}%`} stopColor="var(--text-secondary)" stopOpacity={0.55} />
+                  <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x2={barCount * 4}>
+                    <stop ref={playedStopRef} offset="0%" stopColor="var(--voice-signal)" />
+                    <stop ref={unplayedStopRef} offset="0%" stopColor="var(--text-secondary)" stopOpacity={0.55} />
                   </linearGradient>
                 </defs>
-                <path d={wavePath} fill="none" stroke={`url(#${gradientId})`} strokeWidth={2} strokeLinecap="round" />
+                <path className={styles.waveBars} d={wavePath} fill="none" stroke={`url(#${gradientId})`} strokeWidth={2} strokeLinecap="round" />
               </svg>
             )}
             {seekControl}

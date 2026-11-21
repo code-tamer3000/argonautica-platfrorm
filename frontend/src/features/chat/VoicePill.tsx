@@ -1,6 +1,6 @@
 import { ArrowLeft01Icon, Mic01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react'
 import styles from './VoicePill.module.css'
 
 // Adapted from React Bits Voice Pill (https://reactbits.dev/c/micro/voice-pill).
@@ -8,6 +8,16 @@ const HOLD_AFTER = 300
 const CANCEL_DISTANCE = 64
 const SAMPLE_MS = 80
 const MAX_BARS = 96
+
+interface Press {
+  id: number
+  x: number
+  at: number
+  touch: boolean
+  ownsRecording: boolean
+  began: boolean
+  holdTimer?: number
+}
 
 interface Props {
   active: boolean
@@ -31,10 +41,11 @@ export function VoicePill({
   const rootRef = useRef<HTMLButtonElement>(null)
   const timeRef = useRef<HTMLSpanElement>(null)
   const waveRef = useRef<HTMLCanvasElement>(null)
-  const pressRef = useRef<{ id: number; x: number; at: number; started: boolean } | null>(null)
+  const pressRef = useRef<Press | null>(null)
+  const lastPointerUp = useRef(-Infinity)
   const [pressed, setPressed] = useState(false)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const timer = timeRef.current
     const canvas = waveRef.current
     if (!timer || !canvas) return
@@ -42,38 +53,14 @@ export function VoicePill({
       timer.textContent = '0:00'
       return
     }
-    if (startedAt === null) return
-
     const ctx = canvas.getContext('2d')
     const levels: number[] = []
     let level = 0
     let width = 0
     let height = 0
-    const resize = () => {
-      width = canvas.clientWidth
-      height = canvas.clientHeight
-      const ratio = Math.min(2, window.devicePixelRatio || 1)
-      canvas.width = Math.round(width * ratio)
-      canvas.height = Math.round(height * ratio)
-      if (ctx) {
-        ctx.scale(ratio, ratio)
-        ctx.fillStyle = getComputedStyle(canvas).color
-      }
-    }
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize)
-    observer?.observe(canvas)
-    resize()
 
-    const draw = () => {
-      if (document.hidden) return
-      const time = formatTime(performance.now() - startedAt)
-      if (timer.textContent !== time) timer.textContent = time
+    const paint = () => {
       if (!ctx || width < 4) return
-
-      level = Math.max(readLevel(), level * 0.72)
-      levels.push(level)
-      if (levels.length > MAX_BARS) levels.shift()
-
       const count = Math.min(MAX_BARS, Math.floor(width / 4))
       const step = width / count
       ctx.clearRect(0, 0, width, height)
@@ -85,15 +72,46 @@ export function VoicePill({
       }
     }
 
+    const resize = () => {
+      width = canvas.clientWidth
+      height = canvas.clientHeight
+      const ratio = Math.min(2, window.devicePixelRatio || 1)
+      canvas.width = Math.round(width * ratio)
+      canvas.height = Math.round(height * ratio)
+      if (ctx) {
+        ctx.scale(ratio, ratio)
+        ctx.fillStyle = getComputedStyle(canvas).color
+      }
+      paint()
+    }
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize)
+    observer?.observe(canvas)
+    resize()
+
+    const draw = () => {
+      if (document.hidden || startedAt === null) return
+      const time = formatTime(performance.now() - startedAt)
+      if (timer.textContent !== time) timer.textContent = time
+      if (!ctx || width < 4) return
+
+      level = Math.max(readLevel(), level * 0.72)
+      levels.push(level)
+      if (levels.length > MAX_BARS) levels.shift()
+      paint()
+    }
+
     draw()
-    const interval = window.setInterval(draw, SAMPLE_MS)
+    const interval = startedAt === null ? undefined : window.setInterval(draw, SAMPLE_MS)
     return () => {
       window.clearInterval(interval)
       observer?.disconnect()
     }
   }, [active, startedAt, readLevel])
 
+  useEffect(() => () => window.clearTimeout(pressRef.current?.holdTimer), [])
+
   function clearPress() {
+    window.clearTimeout(pressRef.current?.holdTimer)
     pressRef.current = null
     setPressed(false)
     const root = rootRef.current
@@ -106,11 +124,12 @@ export function VoicePill({
 
   useEffect(() => {
     if (!pressed) return
-    if (!active || disabled) {
+    if (disabled) {
       clearPress()
       return
     }
-    if (startedAt === null) return
+    const press = pressRef.current
+    if (!press?.ownsRecording || startedAt === null) return
 
     function cancel() {
       clearPress()
@@ -121,7 +140,7 @@ export function VoicePill({
       if (document.hidden) cancel()
     }
 
-    window.addEventListener('blur', cancel)
+    if (!press.touch) window.addEventListener('blur', cancel)
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('blur', cancel)
@@ -131,40 +150,70 @@ export function VoicePill({
 
   function onPointerDown(event: PointerEvent<HTMLButtonElement>) {
     if (disabled || pressRef.current || !event.isPrimary || event.button !== 0) return
-    pressRef.current = { id: event.pointerId, x: event.clientX, at: performance.now(), started: !active }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    const touch = event.pointerType === 'touch'
+    const press: Press = {
+      id: event.pointerId, x: event.clientX, at: event.timeStamp, touch,
+      ownsRecording: !active, began: !active && !touch,
+    }
+    pressRef.current = press
+    if (!touch) event.currentTarget.setPointerCapture(event.pointerId)
     setPressed(true)
-    if (!active) onStart()
+    if (active) return
+    if (!touch) {
+      onStart()
+      return
+    }
+
+    // A touch tap starts on release. Only a sustained hold can open the mic
+    // while a finger is down, since the permission prompt can interrupt a press.
+    press.holdTimer = window.setTimeout(() => {
+      if (pressRef.current !== press) return
+      press.began = true
+      onStart()
+    }, HOLD_AFTER)
   }
 
   function onPointerMove(event: PointerEvent<HTMLButtonElement>) {
     const press = pressRef.current
-    if (press?.id !== event.pointerId || !active) return
+    if (press?.id !== event.pointerId) return
     const root = event.currentTarget
     const pull = Math.max(0, press.x - event.clientX)
     if (pull < 4 && root.dataset.sliding === undefined) return
     if (pull >= CANCEL_DISTANCE) {
       clearPress()
-      onCancel()
+      if (active) onCancel()
       return
     }
+    if (!active) return
     root.dataset.sliding = ''
     root.style.setProperty('--vp-slide', `-${pull}px`)
     root.style.setProperty('--vp-cancel', String(pull / CANCEL_DISTANCE))
   }
 
   function onPointerUp(event: PointerEvent<HTMLButtonElement>) {
+    if (event.isPrimary) lastPointerUp.current = event.timeStamp
     const press = pressRef.current
     if (press?.id !== event.pointerId) return
     clearPress()
+    if (press.ownsRecording && !press.began) {
+      onStart()
+      return
+    }
+
     onRelease()
-    if (active && (!press.started || performance.now() - press.at >= HOLD_AFTER)) onStop()
+    // A system permission prompt can outlast the gesture. In that case
+    // leave the new recording latched so the prompt does not discard it.
+    const held = event.timeStamp - press.at >= HOLD_AFTER
+    if (active && (!press.ownsRecording || (held && startedAt !== null))) onStop()
   }
 
   function onPointerCancel(event: PointerEvent<HTMLButtonElement>) {
-    if (pressRef.current?.id !== event.pointerId) return
+    const press = pressRef.current
+    if (press?.id !== event.pointerId) return
     clearPress()
-    if (active) onCancel()
+    if (!press.ownsRecording) return
+    if (!press.touch) onCancel()
+    else if (startedAt !== null) onStop()
   }
 
   return (
@@ -177,7 +226,6 @@ export function VoicePill({
       aria-pressed={active}
       title={active ? 'Остановить запись' : 'Записать голосовое'}
       data-active={active ? '' : undefined}
-      data-recording={startedAt !== null ? '' : undefined}
       data-pressed={pressed ? '' : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -187,11 +235,16 @@ export function VoicePill({
       onClick={(event) => {
         // Pointer clicks are handled on pointerdown/up. Keep keyboard and AT activation.
         if (event.detail !== 0 || pressRef.current) return
+        if ('pointerType' in event.nativeEvent && event.nativeEvent.pointerType) return
+        if (event.timeStamp - lastPointerUp.current < 500) return
         if (active) onStop()
         else onStart()
       }}
       onKeyDown={(event) => {
-        if (event.repeat && (event.key === 'Enter' || event.key === ' ')) event.preventDefault()
+        if (event.key === 'Enter' || event.key === ' ') {
+          lastPointerUp.current = -Infinity
+          if (event.repeat) event.preventDefault()
+        }
         if (active && event.key === 'Escape') {
           event.preventDefault()
           event.stopPropagation()
