@@ -1,17 +1,12 @@
-import { useEffect, useState } from 'react'
-import { IconClose, IconMic, IconSend, IconTrash } from '../../components/icons'
+import { useEffect, useLayoutEffect, useState } from 'react'
+import { IconClose, IconSend } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { VoicePlayer } from '../../components/VoicePlayer'
 import { preparePendingVoice, type PendingUpload } from '../../lib/mediaUpload'
 import { useVoiceRecorder } from '../../hooks/useVoiceRecorder'
 import { toast } from '../../stores/toast'
+import { VoicePill } from './VoicePill'
 import styles from './chat.module.css'
-
-function fmtDur(sec: number): string {
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
 
 interface Props {
   /**
@@ -26,29 +21,32 @@ interface Props {
 }
 
 /**
- * Запись + предпрослушивание + отправка голосового. Общий для основного композера
- * и панели треда — оба вызывают `onSend(assetId)`, а как именно слать (top-level или
- * reply_to) решает вызывающая сторона.
- *
- * Состояния: idle → микрофон; recording → таймер + стоп/отмена; recorded → плеер +
- * отправить/удалить. Пока идёт запись/превью, вызывающий скрывает своё поле ввода.
+ * Запись и предпрослушивание голосового в основном композере и треде.
+ * Маршрут отправки выбирает вызывающая сторона.
  */
 export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
   const voice = useVoiceRecorder()
+  const { state, reset } = voice
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
 
-  const active = voice.state === 'recording' || voice.state === 'recorded'
-  useEffect(() => {
+  const recording = state.phase === 'requesting' || state.phase === 'recording'
+  const recorded = state.phase === 'recorded' ? state.voice : null
+  const active = state.phase !== 'idle'
+  useLayoutEffect(() => {
     onActiveChange?.(active)
   }, [active, onActiveChange])
 
   useEffect(() => {
-    if (!voice.recorded) return
-    const url = URL.createObjectURL(voice.recorded.blob)
+    if (disabled && recording) reset()
+  }, [disabled, recording, reset])
+
+  useLayoutEffect(() => {
+    if (!recorded) return
+    const url = URL.createObjectURL(recorded.blob)
     setVoiceUrl(url)
     return () => URL.revokeObjectURL(url)
-  }, [voice.recorded])
+  }, [recorded])
 
   // Ошибку записи (нет доступа к микрофону и т.п.) показываем тостом — иначе клик
   // по кнопке выглядит «мёртвым».
@@ -56,7 +54,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
     if (voice.error) toast(voice.error, 'error')
   }, [voice.error])
 
-  async function start() {
+  function start() {
     if (!voice.supported) {
       toast(
         'Запись голоса недоступна: нужен HTTPS (или localhost) и доступ к микрофону',
@@ -64,21 +62,21 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
       )
       return
     }
-    await voice.start()
+    void voice.start()
   }
 
   function discard() {
     setVoiceUrl(null)
-    voice.reset()
+    reset()
   }
 
   async function submit() {
-    if (!voice.recorded || sending) return
+    if (!recorded || sending) return
     setSending(true)
     try {
       // Только локальная упаковка (без сети) — сама заливка идёт в родителе (outbox
       // для верхнего уровня). Так голосовое ставится в очередь и офлайн.
-      const pending = await preparePendingVoice(voice.recorded.blob, voice.recorded.duration)
+      const pending = await preparePendingVoice(recorded.blob, recorded.duration)
       onSend(pending)
       discard()
     } catch (err) {
@@ -88,34 +86,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
     }
   }
 
-  if (voice.state === 'recording') {
-    return (
-      <div className={styles.voiceBar}>
-        <span className={styles.recDot} aria-hidden />
-        <span className={styles.recLabel}>Запись…</span>
-        <span className={styles.recTime}>{fmtDur(voice.elapsed)}</span>
-        <div className={styles.voiceBarSpacer} />
-        <button
-          className={styles.iconBtn}
-          onClick={discard}
-          title="Отменить"
-          aria-label="Отменить запись"
-        >
-          <IconTrash size={18} />
-        </button>
-        <button
-          className={styles.sendBtn}
-          onClick={() => voice.stop()}
-          title="Остановить"
-          aria-label="Остановить запись"
-        >
-          <IconSend size={20} />
-        </button>
-      </div>
-    )
-  }
-
-  if (voice.state === 'recorded' && voiceUrl) {
+  if (recorded && voiceUrl) {
     return (
       <div className={styles.voiceBar}>
         <button
@@ -129,8 +100,9 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
         </button>
         <VoicePlayer
           src={voiceUrl}
-          duration={voice.recorded?.duration}
+          duration={recorded.duration}
           className={styles.voicePreview}
+          waveform="preview"
         />
         <button
           className={styles.sendBtn}
@@ -145,16 +117,16 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
     )
   }
 
-  // idle: одна кнопка-микрофон.
   return (
-    <button
-      className={styles.iconBtn}
-      onClick={start}
-      disabled={disabled}
-      title="Записать голосовое"
-      aria-label="Записать голосовое"
-    >
-      <IconMic size={18} />
-    </button>
+    <VoicePill
+      active={active}
+      startedAt={state.phase === 'recording' ? state.startedAt : null}
+      disabled={disabled || (active && !recording)}
+      readLevel={voice.readLevel}
+      onStart={start}
+      onStop={voice.stop}
+      onCancel={reset}
+      onRelease={voice.resumeMeter}
+    />
   )
 }

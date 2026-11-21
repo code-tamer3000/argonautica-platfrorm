@@ -448,14 +448,22 @@ a.mention:hover { text-decoration: underline; }
 .uploadBar { flex: 1; height: 4px; background: var(--bg-deep); border-radius: 2px; overflow: hidden; }
 .uploadBarFill { width: 100%; height: 100%; background: var(--accent); border-radius: 2px; transform-origin: left; transition: transform 120ms ease; }
 .uploadPct { font-family: var(--font-t4); font-size: var(--text-label-md); color: var(--text-muted); min-width: 34px; text-align: right; }
-.composerRow { display: flex; align-items: flex-end; gap: var(--space-2); }
+.composerRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: end;
+  gap: var(--space-2);
+}
+.composerRow[data-voice-active] .inputShell { visibility: hidden; }
+.composerRow > .sendBtn { grid-area: 1 / 2; }
 
 /* Обёртка поля: стикер и скрепка живут ВНУТРИ рамки (слева/справа от текста), а не
    рядом отдельными 44px-кнопками — иначе на узком экране полю остаётся меньше
    половины ширины строки. Рамка/фон/скругление, которые раньше были на самом поле,
    переехали сюда — .composerInput внутри прозрачный. */
 .inputShell {
-  flex: 1; min-width: 0; display: flex; align-items: flex-end; gap: 2px;
+  grid-area: 1 / 1;
+  min-width: 0; display: flex; align-items: flex-end; gap: 2px;
   padding: 2px; min-height: 44px;
   background: var(--bg-deep); border: 1px solid var(--color-frame-deep);
   border-radius: var(--radius-card); transition: var(--transition-base);
@@ -465,20 +473,12 @@ a.mention:hover { text-decoration: underline; }
   box-shadow: 0 0 0 1px var(--divider-gold);
 }
 
-/* Панель записи/предпрослушивания голосового — на месте строки ввода. */
-.voiceBar { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); min-height: 44px; }
-.voiceBarSpacer { flex: 1; }
+/* Панель предпрослушивания голосового — на месте строки ввода. */
+.voiceBar {
+  grid-area: 1 / 1 / 2 / -1; align-self: stretch;
+  min-width: 0; display: flex; align-items: center; gap: var(--space-2); min-height: 44px;
+}
 .voicePreview { flex: 1; min-width: 0; max-width: none; }
-.recLabel { font-family: var(--font-t3); font-size: var(--text-body-sm); color: var(--text-secondary); }
-.recTime {
-  font-family: var(--font-t4); font-size: var(--text-label-md);
-  color: var(--text-muted); font-variant-numeric: tabular-nums;
-}
-.recDot {
-  width: 10px; height: 10px; flex: none; border-radius: 50%;
-  background: var(--blood-bright); animation: arg-rec-pulse 1.2s ease-in-out infinite;
-}
-@keyframes arg-rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 /* contentEditable (не textarea) — WYSIWYG-поле композера: жирный/курсив/подчёркнутый
    реально применяются к тексту через execCommand (useRichFormatting.tsx), без видимых
    маркеров **, *, ++ по ходу набора. Авторост высоты — сам по себе (блочный div растёт
@@ -943,7 +943,7 @@ a.mention:hover { text-decoration: underline; }
 .iconBtn:disabled { opacity: 0.6; cursor: default; }
 
 /* Стикер/скрепка ВНУТРИ .inputShell — без рамки, компактнее .iconBtn, который снаружи
-   строки (микрофон/корзина у VoiceComposer) должен остаться на своих 44px. */
+   строки (удаление записи в VoiceComposer) остаётся на своих 44px. */
 .iconBtnInline {
   display: inline-flex; align-items: center; justify-content: center;
   flex: 0 0 auto; width: 40px; height: 40px;

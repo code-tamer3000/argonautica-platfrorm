@@ -35,8 +35,8 @@
   -webkit-appearance: none;
   background: linear-gradient(
     to right,
-    var(--accent) 0%,
-    var(--accent) var(--pct, 0%),
+    var(--seek-progress, var(--accent)) 0%,
+    var(--seek-progress, var(--accent)) var(--pct, 0%),
     var(--color-frame-deep) var(--pct, 0%),
     var(--color-frame-deep) 100%
   );
@@ -48,7 +48,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--accent-bright);
+  background: var(--seek-thumb, var(--accent-bright));
   cursor: pointer;
 }
 .seek::-moz-range-thumb {
@@ -56,7 +56,7 @@
   height: 12px;
   border: none;
   border-radius: 50%;
-  background: var(--accent-bright);
+  background: var(--seek-thumb, var(--accent-bright));
   cursor: pointer;
 }
 
@@ -82,6 +82,80 @@
   cursor: pointer;
 }
 .rateBtn:hover { border-color: var(--accent); color: var(--accent-bright); }
+
+.wrap[data-waveform] {
+  --seek-progress: var(--voice-signal);
+  min-height: 48px;
+  background: var(--voice-bg);
+  border-color: var(--voice-border);
+  border-radius: 999px;
+}
+
+.wrap[data-waveform] .playBtn {
+  color: var(--color-bezdna);
+}
+
+:global(:root:not([data-theme='light'])) .wrap[data-waveform] {
+  --seek-thumb: var(--voice-signal);
+}
+
+:global(:root:not([data-theme='light'])) .wrap[data-waveform] .rateBtn:hover {
+  border-color: var(--voice-border);
+  color: var(--text-primary);
+}
+
+.timeline {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.timeline .time {
+  line-height: 1;
+}
+
+.waveTrack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 23px;
+  min-width: 0;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.waveTrack .seek {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+.waveTrack[data-ready] .seek {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  opacity: 0;
+}
+
+.waveTrack:has(.seek:focus-visible) {
+  outline: 1px solid var(--voice-signal);
+  outline-offset: 2px;
+  border-radius: var(--radius-btn);
+}
+
+.wave {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.wrap[data-waveform='message'] .waveBars {
+  stroke-width: 1.25px;
+  vector-effect: non-scaling-stroke;
+}
 
 @media (max-width: 768px) {
   .wrap { max-width: 100%; }

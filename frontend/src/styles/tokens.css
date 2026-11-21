@@ -66,6 +66,10 @@
   --divider-gold:    rgba(194, 154, 72, 0.25);
   --divider-gold-strong: rgba(194, 154, 72, 0.55);
 
+  --voice-bg:        var(--color-frame);
+  --voice-border:    var(--color-frame-deep);
+  --voice-signal:    var(--text-secondary);
+
   /* Базовые аватарки (без фото): фон-подложка + цвет инициалов. Тёмная тема — как было. */
   --avatar-bg:       var(--color-more-glub);
   --avatar-fg:       var(--color-kost-dim);
@@ -131,6 +135,10 @@
   /* Разделители-золото — тёплые и заметные, но не «режущие» */
   --divider-gold:         rgba(190, 147, 48, 0.28);
   --divider-gold-strong:  rgba(190, 147, 48, 0.55);
+
+  --voice-bg:         var(--bg-sea-soft);
+  --voice-border:     var(--divider-gold);
+  --voice-signal:     var(--accent);
 
   /* Базовые аватарки: тёплая песочная подложка + золотые инициалы (в тон системе),
      без тёмно-зелёного пятна, которое раньше выбивалось на светлом фоне. */
