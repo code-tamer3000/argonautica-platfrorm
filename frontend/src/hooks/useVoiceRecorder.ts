@@ -1,61 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// Кодек по убыванию предпочтения. opus в webm/ogg — компактный и широко поддержан;
-// mp4/aac — фолбэк для Safari, где webm/opus записи может не быть.
-const CANDIDATES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
-  'audio/ogg;codecs=opus',
-  'audio/mp4',
-]
+// Opus предпочтителен, MP4/AAC нужен для Safari.
+const CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
 
-function pickMime(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') return undefined
-  return CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m))
-}
-
-export interface RecordedVoice {
+interface RecordedVoice {
   blob: Blob
-  /** Длительность в секундах (по таймеру записи). */
   duration: number
 }
 
-export type RecorderState = 'idle' | 'recording' | 'recorded'
+type RecorderState =
+  | { phase: 'idle' | 'requesting' | 'stopping' }
+  | { phase: 'recording'; startedAt: number }
+  | { phase: 'recorded'; voice: RecordedVoice }
 
-export interface VoiceRecorder {
-  state: RecorderState
-  /** Прошедшее время записи, сек (для таймера в UI). */
-  elapsed: number
-  /** Готовая запись (state === 'recorded'). */
-  recorded: RecordedVoice | null
-  supported: boolean
-  error: string | null
-  start: () => Promise<void>
-  /** Остановить запись; blob появится в `recorded`. */
-  stop: () => void
-  /** Сбросить запись (удалить, вернуться в idle). */
-  reset: () => void
+interface Session {
+  chunks: BlobPart[]
+  startedAt: number
+  stoppedAt?: number
+  stream?: MediaStream
+  recorder?: MediaRecorder
+  context?: AudioContext
+  readLevel?: () => number
 }
 
-/**
- * Запись голосового через MediaRecorder. Поток: start (запрос микрофона) →
- * recording (тикает elapsed) → stop → recorded (blob + duration).
- *
- * Длительность считаем по таймеру записи, а не по blob: webm без явного размера
- * часто отдаёт duration=Infinity в <audio>, а нам нужно точное число для
- * media_assets.duration ещё до заливки.
- */
-export function useVoiceRecorder(): VoiceRecorder {
-  const [state, setState] = useState<RecorderState>('idle')
-  const [elapsed, setElapsed] = useState(0)
-  const [recorded, setRecorded] = useState<RecordedVoice | null>(null)
-  const [error, setError] = useState<string | null>(null)
+function connectMeter(context: AudioContext, stream: MediaStream) {
+  const analyser = context.createAnalyser()
+  analyser.fftSize = 256
+  analyser.smoothingTimeConstant = 0
+  context.createMediaStreamSource(stream).connect(analyser)
+  const bins = new Uint8Array(analyser.frequencyBinCount)
 
-  const recRef = useRef<MediaRecorder | null>(null)
-  const chunksRef = useRef<BlobPart[]>([])
-  const streamRef = useRef<MediaStream | null>(null)
-  const startedAtRef = useRef(0)
-  const timerRef = useRef<number | null>(null)
+  return () => {
+    analyser.getByteFrequencyData(bins)
+    let level = 0
+    for (let i = 1; i < 33; i += 1) level += bins[i]
+    return Math.min(1, (level * 2.2) / (32 * 255))
+  }
+}
+
+export function useVoiceRecorder() {
+  const [state, setState] = useState<RecorderState>({ phase: 'idle' })
+  const [error, setError] = useState<string | null>(null)
+  const sessionRef = useRef<Session | null>(null)
 
   const supported =
     typeof MediaRecorder !== 'undefined' &&
@@ -63,77 +49,109 @@ export function useVoiceRecorder(): VoiceRecorder {
     !!navigator.mediaDevices?.getUserMedia
 
   const cleanup = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
+    const session = sessionRef.current
+    sessionRef.current = null
+    if (!session) return
+    if (session.recorder) {
+      session.recorder.ondataavailable = null
+      session.recorder.onstop = null
+      session.recorder.onerror = null
+      if (session.recorder.state !== 'inactive') session.recorder.stop()
     }
-    streamRef.current?.getTracks().forEach((t) => t.stop())
-    streamRef.current = null
-    recRef.current = null
+    session.stream?.getTracks().forEach((track) => track.stop())
+    void session.context?.close().catch(() => {})
   }, [])
 
   useEffect(() => cleanup, [cleanup])
 
-  const start = useCallback(async () => {
-    if (!supported) {
-      setError('Запись голоса не поддерживается этим браузером')
-      return
-    }
+  const reset = useCallback(() => {
+    cleanup()
     setError(null)
+    setState({ phase: 'idle' })
+  }, [cleanup])
+
+  function resumeMeter() {
+    const context = sessionRef.current?.context
+    if (context?.state === 'suspended') void context.resume().catch(() => {})
+  }
+
+  async function start() {
+    if (sessionRef.current) return
+    const session: Session = { chunks: [], startedAt: 0 }
+    sessionRef.current = session
+    setError(null)
+    setState({ phase: 'requesting' })
+
+    // Создаём контекст во время жеста. Если Web Audio недоступен, запись всё равно работает.
+    try {
+      session.context = new AudioContext()
+      resumeMeter()
+    } catch {
+      // MediaRecorder не зависит от Web Audio.
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      streamRef.current = stream
-      const mimeType = pickMime()
-      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      chunksRef.current = []
-      rec.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data)
+      if (sessionRef.current !== session) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
       }
-      rec.onstop = () => {
-        const duration = (Date.now() - startedAtRef.current) / 1000
-        const blob = new Blob(chunksRef.current, {
-          type: rec.mimeType || mimeType || 'audio/webm',
+      session.stream = stream
+      const mimeType = CANDIDATES.find((mime) => MediaRecorder.isTypeSupported(mime))
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      session.recorder = recorder
+      recorder.ondataavailable = ({ data }) => {
+        if (data.size) session.chunks.push(data)
+      }
+      recorder.onstop = () => {
+        if (sessionRef.current !== session) return
+        const duration = ((session.stoppedAt ?? performance.now()) - session.startedAt) / 1000
+        const blob = new Blob(session.chunks, {
+          type: recorder.mimeType || mimeType || 'audio/webm',
         })
         cleanup()
-        // Пустышка (мгновенное нажатие/отпускание) — не считаем записью.
-        if (blob.size === 0 || duration < 0.4) {
-          setState('idle')
-          setElapsed(0)
+        // Очень короткая запись может не содержать звуковых данных.
+        if (!blob.size || duration < 0.4) {
+          setState({ phase: 'idle' })
           return
         }
-        setRecorded({ blob, duration })
-        setState('recorded')
+        setState({ phase: 'recorded', voice: { blob, duration } })
       }
-      recRef.current = rec
-      startedAtRef.current = Date.now()
-      setElapsed(0)
-      rec.start()
-      setState('recording')
-      timerRef.current = window.setInterval(() => {
-        setElapsed((Date.now() - startedAtRef.current) / 1000)
-      }, 200)
+      recorder.onerror = () => {
+        reset()
+        setError('Не удалось записать голосовое')
+      }
+      if (session.context) {
+        try {
+          session.readLevel = connectMeter(session.context, stream)
+        } catch {
+          // Предпрослушивание и отправка доступны даже без волны.
+        }
+      }
+      recorder.start()
+      session.startedAt = performance.now()
+      setState({ phase: 'recording', startedAt: session.startedAt })
     } catch {
-      cleanup()
+      if (sessionRef.current !== session) return
+      reset()
       setError('Нет доступа к микрофону')
-      setState('idle')
     }
-  }, [supported, cleanup])
+  }
 
-  const stop = useCallback(() => {
-    const rec = recRef.current
-    if (rec && rec.state !== 'inactive') rec.stop()
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current)
-      timerRef.current = null
+  function stop() {
+    const session = sessionRef.current
+    if (!session) return
+    if (!session.recorder) {
+      reset()
+      return
     }
-  }, [])
+    if (session.recorder.state === 'inactive') return
+    session.stoppedAt = performance.now()
+    session.recorder.stop()
+    setState({ phase: 'stopping' })
+  }
 
-  const reset = useCallback(() => {
-    setRecorded(null)
-    setElapsed(0)
-    setError(null)
-    setState('idle')
-  }, [])
+  const readLevel = useCallback(() => sessionRef.current?.readLevel?.() ?? 0, [])
 
-  return { state, elapsed, recorded, supported, error, start, stop, reset }
+  return { state, supported, error, start, stop, reset, readLevel, resumeMeter }
 }

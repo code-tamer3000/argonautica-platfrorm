@@ -77,7 +77,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
   const [refPickerTab, setRefPickerTab] = useState<'kb' | 'task'>('kb')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [uploading, setUploading] = useState(false)
-  // Идёт запись/превью голосового → прячем текстовый ряд (VoiceComposer сам его рисует).
+  // Во время записи и предпрослушивания скрываем текстовый ряд.
   const [voiceActive, setVoiceActive] = useState(false)
   // Идёт отправка пересылки (форвард создаётся до комментария).
   const [reposting, setReposting] = useState(false)
@@ -953,10 +953,7 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         onChange={handleFileChange}
       />
 
-      {/* Единый composerRow. VoiceComposer держим смонтированным ВСЕГДА (иначе при
-          старте записи он бы пересоздался и потерял состояние). Пока идёт запись/
-          превью (voiceActive) — прячем остальные контролы, VoiceComposer сам
-          растягивается в панель. */}
+      {/* Во время записи VoicePill остаётся справа, пока капсула раскрывается влево. */}
       <div className={styles.composerRow}>
         {!voiceActive && (
           <div className={styles.inputShell}>

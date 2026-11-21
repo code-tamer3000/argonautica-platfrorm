@@ -91,6 +91,7 @@ A second, lighter way to reply — **orthogonal to threads**, not a replacement.
 
 ## Voice messages
 
+- In the chat composer and thread replies, the mic expands into a Voice Pill with a timer and live waveform. A tap starts recording and a second tap stops it. Holding the mic records until release. Drag left during a press or press Escape on the focused control to discard the recording. Successful stops open a preview with separate send and delete buttons.
 - Recorded audio is a normal attachment with `media_assets.kind='audio'`, same presigned flow. Uploaded as-is (WebM/Opus or AAC/MP4, whatever the sender's `MediaRecorder` produced) and normalized to AAC/M4A server-side in the background (same transcode worker/queue as video) so it plays on every recipient's device, iPhone included — see [FILES.md](FILES.md) "Audio transcode".
 
 ## Playlist attachment (ARG-139)
