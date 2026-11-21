@@ -6,14 +6,13 @@
 
   position: relative;
   display: grid;
+  grid-area: 1 / 2;
   align-items: center;
   justify-items: end;
   isolation: isolate;
-  flex: 0 0 auto;
   width: var(--vp-slot);
   min-width: 0;
   height: var(--vp-slot);
-  margin-inline-start: auto;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -29,26 +28,33 @@
 }
 
 .pill:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--voice-signal);
   outline-offset: 1px;
 }
 
 .pill:disabled {
-  opacity: 0.55;
   cursor: default;
 }
 
+.pill:disabled:not([data-active]) {
+  opacity: 0.55;
+}
+
 .pill[data-active] {
-  flex: 1 1 auto;
-  color: var(--accent);
+  grid-column: 1 / -1;
+  align-self: stretch;
+  width: 100%;
+  height: auto;
+  min-height: var(--vp-slot);
+  color: var(--voice-signal);
 }
 
 .capsule {
   position: absolute;
   inset: 0;
-  border: 1px solid var(--divider-gold);
+  border: 1px solid var(--voice-border);
   border-radius: inherit;
-  background: var(--bg-sea-soft);
+  background: var(--voice-bg);
   opacity: 0;
   transform: scaleX(0);
   transform-origin: right center;
@@ -85,11 +91,12 @@
 }
 
 .wave {
-  top: 10px;
+  top: 50%;
   left: var(--space-3);
   width: max(0px, calc(100% - var(--vp-slot) - var(--vp-clock) - var(--space-3)));
   height: 24px;
-  color: var(--accent);
+  color: var(--voice-signal);
+  transform: translateY(-50%);
 }
 
 .time,
@@ -126,7 +133,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .pill:not([data-active]):not(:disabled):hover .glyph {
-    background: var(--bg-sea-soft);
+    background: var(--voice-bg);
   }
 }
 

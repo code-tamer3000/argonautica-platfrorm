@@ -953,123 +953,121 @@ export function Composer({ roomId, revealOnMount, threadRootId = null, threadRoo
         onChange={handleFileChange}
       />
 
-      {/* Во время записи VoicePill остаётся справа, пока капсула раскрывается влево. */}
-      <div className={styles.composerRow}>
-        {!voiceActive && (
-          <div className={styles.inputShell}>
-            {/* Пока печатаем — на мобиле сворачиваем кнопку стикера анимацией (width→0),
-                отдавая освободившееся место полю ввода. На десктопе класс без эффекта
-                (правило только внутри мобильного media query в chat.module.css). Стикер
-                сам не редактируется (docs/MESSAGES.md) — кнопку в режиме правки прячем. */}
-            {!editing && (
-              <button
-                className={`${styles.iconBtnInline} ${styles.stickerBtn} ${hasText ? styles.stickerBtnHidden : ''}`}
-                onClick={() => setPickerOpen(v => !v)}
-                title="Стикер"
-                aria-label="Стикер"
-                tabIndex={hasText ? -1 : 0}
-                aria-hidden={hasText}
-              >
-                <IconSticker size={20} />
-              </button>
+      {/* Поле сохраняет высоту строки, пока поверх него открыта запись. */}
+      <div className={styles.composerRow} data-voice-active={(!editing && voiceActive) || undefined}>
+        <div className={styles.inputShell}>
+          {/* Пока печатаем — на мобиле сворачиваем кнопку стикера анимацией (width→0),
+              отдавая освободившееся место полю ввода. На десктопе класс без эффекта
+              (правило только внутри мобильного media query в chat.module.css). Стикер
+              сам не редактируется (docs/MESSAGES.md) — кнопку в режиме правки прячем. */}
+          {!editing && (
+            <button
+              className={`${styles.iconBtnInline} ${styles.stickerBtn} ${hasText ? styles.stickerBtnHidden : ''}`}
+              onClick={() => setPickerOpen(v => !v)}
+              title="Стикер"
+              aria-label="Стикер"
+              tabIndex={hasText ? -1 : 0}
+              aria-hidden={hasText}
+            >
+              <IconSticker size={20} />
+            </button>
+          )}
+          {/* contentEditable, не textarea — жирный/курсив/подчёркнутый видны сразу по
+              месту (execCommand, см. useRichFormatting.tsx), без сырых маркеров **, *, ++
+              в процессе набора. DOM не контролируется через value — React его не
+              перерисовывает (см. editorRef/resetEditor выше), иначе курсор скакал бы
+              на каждый ре-рендер. */}
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Сообщение"
+            data-placeholder={
+              editing
+                ? 'Текст сообщения…'
+                : inThread
+                  ? 'Ответить в тред…'
+                  : repost
+                    ? 'Добавить сообщение к пересылке…'
+                    : 'Сообщение…'
+            }
+            className={styles.composerInput}
+            onInput={onEditorInput}
+            onKeyDown={onKey}
+            onPaste={onPaste}
+            onFocus={() => { fmt.onFocus(); if (!inThread) onFocusInput?.() }}
+            onBlur={fmt.onBlur}
+            enterKeyHint="enter"
+          />
+          <div className={styles.attachWrap}>
+            {/* В режиме правки доступны файлы и ссылки. Плейлист пока можно выбрать
+                только при создании сообщения: PATCH не меняет playlist_id. */}
+            {attachMenuOpen && (
+              <>
+                {/* Клик вне меню — закрыть. */}
+                <div
+                  className={styles.attachBackdrop}
+                  onClick={() => setAttachMenuOpen(false)}
+                />
+                <div className={styles.attachMenu} role="menu">
+                  <button
+                    className={styles.attachMenuItem}
+                    onClick={() => {
+                      setAttachMenuOpen(false)
+                      fileInputRef.current?.click()
+                    }}
+                  >
+                    <IconFile size={18} /> Файл
+                  </button>
+                  <button
+                    className={styles.attachMenuItem}
+                    onClick={() => {
+                      setAttachMenuOpen(false)
+                      setRefPickerTab('kb')
+                      setRefPickerOpen(true)
+                    }}
+                  >
+                    <IconBook size={18} /> Материал
+                  </button>
+                  <button
+                    className={styles.attachMenuItem}
+                    onClick={() => {
+                      setAttachMenuOpen(false)
+                      setRefPickerTab('task')
+                      setRefPickerOpen(true)
+                    }}
+                  >
+                    <IconTasks size={18} /> Задача
+                  </button>
+                  {!editing && (
+                    <button
+                      className={styles.attachMenuItem}
+                      onClick={() => {
+                        setAttachMenuOpen(false)
+                        setPlaylistPanelOpen(true)
+                      }}
+                    >
+                      <IconMusic size={18} /> Плейлист
+                    </button>
+                  )}
+                </div>
+              </>
             )}
-            {/* contentEditable, не textarea — жирный/курсив/подчёркнутый видны сразу по
-                месту (execCommand, см. useRichFormatting.tsx), без сырых маркеров **, *, ++
-                в процессе набора. DOM не контролируется через value — React его не
-                перерисовывает (см. editorRef/resetEditor выше), иначе курсор скакал бы
-                на каждый ре-рендер. */}
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              role="textbox"
-              aria-multiline="true"
-              aria-label="Сообщение"
-              data-placeholder={
-                editing
-                  ? 'Текст сообщения…'
-                  : inThread
-                    ? 'Ответить в тред…'
-                    : repost
-                      ? 'Добавить сообщение к пересылке…'
-                      : 'Сообщение…'
-              }
-              className={styles.composerInput}
-              onInput={onEditorInput}
-              onKeyDown={onKey}
-              onPaste={onPaste}
-              onFocus={() => { fmt.onFocus(); if (!inThread) onFocusInput?.() }}
-              onBlur={fmt.onBlur}
-              enterKeyHint="enter"
-            />
-            <div className={styles.attachWrap}>
-              {/* В режиме правки доступны файлы и ссылки. Плейлист пока можно выбрать
-                  только при создании сообщения: PATCH не меняет playlist_id. */}
-              {attachMenuOpen && (
-                <>
-                  {/* Клик вне меню — закрыть. */}
-                  <div
-                    className={styles.attachBackdrop}
-                    onClick={() => setAttachMenuOpen(false)}
-                  />
-                  <div className={styles.attachMenu} role="menu">
-                    <button
-                      className={styles.attachMenuItem}
-                      onClick={() => {
-                        setAttachMenuOpen(false)
-                        fileInputRef.current?.click()
-                      }}
-                    >
-                      <IconFile size={18} /> Файл
-                    </button>
-                    <button
-                      className={styles.attachMenuItem}
-                      onClick={() => {
-                        setAttachMenuOpen(false)
-                        setRefPickerTab('kb')
-                        setRefPickerOpen(true)
-                      }}
-                    >
-                      <IconBook size={18} /> Материал
-                    </button>
-                    <button
-                      className={styles.attachMenuItem}
-                      onClick={() => {
-                        setAttachMenuOpen(false)
-                        setRefPickerTab('task')
-                        setRefPickerOpen(true)
-                      }}
-                    >
-                      <IconTasks size={18} /> Задача
-                    </button>
-                    {!editing && (
-                      <button
-                        className={styles.attachMenuItem}
-                        onClick={() => {
-                          setAttachMenuOpen(false)
-                          setPlaylistPanelOpen(true)
-                        }}
-                      >
-                        <IconMusic size={18} /> Плейлист
-                      </button>
-                    )}
-                  </div>
-                </>
-              )}
-              <button
-                className={styles.iconBtnInline}
-                onClick={() => setAttachMenuOpen((v) => !v)}
-                disabled={uploading}
-                title="Прикрепить"
-                aria-label="Прикрепить"
-                aria-haspopup="menu"
-                aria-expanded={attachMenuOpen}
-              >
-                {uploading ? <Spinner size={16} /> : <IconAttach size={18} />}
-              </button>
-            </div>
+            <button
+              className={styles.iconBtnInline}
+              onClick={() => setAttachMenuOpen((v) => !v)}
+              disabled={uploading}
+              title="Прикрепить"
+              aria-label="Прикрепить"
+              aria-haspopup="menu"
+              aria-expanded={attachMenuOpen}
+            >
+              {uploading ? <Spinner size={16} /> : <IconAttach size={18} />}
+            </button>
           </div>
-        )}
+        </div>
         {/* Режим правки — своя кнопка «Сохранить» вместо отправки/голоса (стикер и
             голосовое к правке не относятся, см. «Границы» выше). */}
         {editing ? (

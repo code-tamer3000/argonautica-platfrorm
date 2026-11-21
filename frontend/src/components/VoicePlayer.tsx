@@ -147,7 +147,7 @@ export function VoicePlayer({ src, duration, className, waveform }: Props) {
               >
                 <defs>
                   <linearGradient id={gradientId}>
-                    <stop offset={`${pct}%`} stopColor="var(--accent)" />
+                    <stop offset={`${pct}%`} stopColor="var(--voice-signal)" />
                     <stop offset={`${pct}%`} stopColor="var(--text-secondary)" stopOpacity={0.55} />
                   </linearGradient>
                 </defs>

@@ -38,10 +38,11 @@ export function VoicePill({
     const timer = timeRef.current
     const canvas = waveRef.current
     if (!timer || !canvas) return
-    if (startedAt === null) {
-      if (active) timer.textContent = '0:00'
+    if (!active) {
+      timer.textContent = '0:00'
       return
     }
+    if (startedAt === null) return
 
     const ctx = canvas.getContext('2d')
     const levels: number[] = []

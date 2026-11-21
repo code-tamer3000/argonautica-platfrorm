@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { IconClose, IconSend } from '../../components/icons'
 import { Spinner } from '../../components/Spinner'
 import { VoicePlayer } from '../../components/VoicePlayer'
@@ -33,7 +33,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
   const recording = state.phase === 'requesting' || state.phase === 'recording'
   const recorded = state.phase === 'recorded' ? state.voice : null
   const active = state.phase !== 'idle'
-  useEffect(() => {
+  useLayoutEffect(() => {
     onActiveChange?.(active)
   }, [active, onActiveChange])
 
@@ -41,7 +41,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
     if (disabled && recording) reset()
   }, [disabled, recording, reset])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!recorded) return
     const url = URL.createObjectURL(recorded.blob)
     setVoiceUrl(url)
@@ -119,7 +119,7 @@ export function VoiceComposer({ onSend, onActiveChange, disabled }: Props) {
 
   return (
     <VoicePill
-      active={recording}
+      active={active}
       startedAt={state.phase === 'recording' ? state.startedAt : null}
       disabled={disabled || (active && !recording)}
       readLevel={voice.readLevel}
