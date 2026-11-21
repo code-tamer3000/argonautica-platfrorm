@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Конфиг из env (дефолты совпадают с .env.example)
+# Конфиг из env (дефолты совпадают с env/env.example)
 # ---------------------------------------------------------------------------
 POSTGRES_USER="${POSTGRES_USER:-app}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-change_me}"
