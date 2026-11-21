@@ -99,16 +99,6 @@
   --seek-thumb: var(--voice-signal);
 }
 
-:global(:root:not([data-theme='light'])) .wrap[data-waveform] .playBtn {
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-}
-
-:global(:root:not([data-theme='light'])) .wrap[data-waveform] .playBtn:hover {
-  background: var(--voice-border);
-  color: var(--text-primary);
-}
-
 :global(:root:not([data-theme='light'])) .wrap[data-waveform] .rateBtn:hover {
   border-color: var(--voice-border);
   color: var(--text-primary);
