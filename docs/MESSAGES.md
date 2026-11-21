@@ -71,6 +71,7 @@ A second, lighter way to reply — **orthogonal to threads**, not a replacement.
 - `MessageOut.reaction_count` (total) / `reacted_by_me` (for the requesting viewer) are computed at read time from `message_reactions`, batched per page/thread (no N+1) — same style as `unread_reply_count`.
 - No standalone reactions list and no cleanup on message soft-delete: a deleted message just drops out of every feed query, so orphaned reaction rows are harmless.
 - Toggle UX: tap adds your reaction; tapping your own already-placed reaction removes it (like Telegram). Entry points: the reaction chip once `reaction_count > 0`, or "Поставить/убрать реакцию" in the message action menu to place the first one.
+- When your reaction changes, the star pulses and the confirmed count rolls up or down. After you remove the last reaction, the chip disappears at the end of the animation. With reduced motion enabled, the count updates immediately.
 
 ## Refs (link to a KB item / task)
 

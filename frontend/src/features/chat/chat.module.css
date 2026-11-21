@@ -808,6 +808,8 @@ a.mention:hover { text-decoration: underline; }
    терялась на обеих темах; крупнее иконка + тёплый золотой бордер по умолчанию
    (не только на hover) держат чип читаемым и в тёмной, и в светлой теме. */
 .reactionChip {
+  --reaction-pulse-duration: 560ms;
+  --reaction-roll-delay: 224ms;
   display: inline-flex; align-items: center; gap: 6px; margin-top: var(--space-1);
   padding: 3px 10px; border-radius: var(--radius-pill);
   border: 1px solid var(--divider-gold-strong); background: var(--bg-surface);
@@ -821,6 +823,38 @@ a.mention:hover { text-decoration: underline; }
   color: var(--accent-bright);
 }
 .reactionIcon { width: 22px; height: 22px; object-fit: contain; }
+.reactionIconPulsing { animation: reactionStarPulse var(--reaction-pulse-duration) both; }
+
+@keyframes reactionStarPulse {
+  0% { transform: scale(1); animation-timing-function: var(--ease-out-soft); }
+  40% { transform: scale(0.3); animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1); }
+  100% { transform: scale(1); }
+}
+
+.reactionCount { display: inline-flex; font-variant-numeric: tabular-nums; }
+.reactionCountRoll { display: inline-grid; overflow: hidden; --reaction-roll-distance: 100%; }
+.reactionCountRoll[data-direction='up'] { --reaction-roll-distance: -100%; }
+.reactionCountRoll > span {
+  grid-area: 1 / 1;
+  animation: reactionCountOut calc(var(--reaction-pulse-duration) - var(--reaction-roll-delay))
+    var(--ease-out-soft) var(--reaction-roll-delay) both;
+}
+.reactionCountRoll > span + span { animation-name: reactionCountIn; }
+
+@keyframes reactionCountOut {
+  to { transform: translateY(var(--reaction-roll-distance)); }
+}
+@keyframes reactionCountIn {
+  from { transform: translateY(calc(-1 * var(--reaction-roll-distance))); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reactionChip:active:not(:disabled) .reactionIcon { transform: scale(0.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reactionChip { --reaction-roll-delay: 0ms; }
+}
+
 /* Светлая тема: та же светлая золотая звезда на кремовом фоне бледнее, чем на
    тёмном грунте — притемняем и добавляем насыщенности, в тёмной теме не трогаем. */
 :global([data-theme='light']) .reactionIcon { filter: brightness(0.72) saturate(1.2) contrast(1.1); }
