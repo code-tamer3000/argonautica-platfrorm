@@ -391,13 +391,13 @@ async def get_or_create_assignment(
 
 
 def task_status(
-    task: Task, assignment: TaskAssignment | None, now: datetime
+    task_type: str, deadline: datetime | None, status: str | None, now: datetime
 ) -> str | None:
-    status = assignment.status if assignment else None
-    if task.type == "structure" and task.deadline_at:
-        if status == "submitted" and now < task.deadline_at:
+    """A structure's stored submission becomes reviewable at its deadline."""
+    if task_type == "structure" and deadline:
+        if status == "submitted" and now < deadline:
             return "in_progress"
-        if status is None and now >= task.deadline_at:
+        if status is None and now >= deadline:
             return "missed"
     return status
 

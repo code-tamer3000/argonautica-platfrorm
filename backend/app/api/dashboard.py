@@ -45,7 +45,9 @@ router = APIRouter(
 UPCOMING_EVENTS_LIMIT = 3
 NOTIFICATIONS_LIMIT = 5
 # Незавершённые статусы (не 'accepted'); common без назначения — my_status is None.
-ACTIVE_TASK_STATUSES: tuple[str | None, ...] = (None, "assigned", "returned", "in_progress", "missed")
+ACTIVE_TASK_STATUSES: tuple[str | None, ...] = (
+    None, "assigned", "returned", "in_progress", "missed",
+)
 
 
 async def _build_expedition(session: AsyncSession, current_user: User) -> ExpeditionOut | None:

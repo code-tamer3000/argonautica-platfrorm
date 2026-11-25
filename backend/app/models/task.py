@@ -43,7 +43,8 @@ class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('common', 'individual', 'pair', 'stream', 'structure')", name="task_type_valid"
+            "type IN ('common', 'individual', 'pair', 'stream', 'structure')",
+            name="task_type_valid",
         ),
     )
 

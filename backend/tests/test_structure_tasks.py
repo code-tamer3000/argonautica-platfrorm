@@ -46,6 +46,8 @@ async def test_structure_lifecycle(client: AsyncClient, make_user: MakeUser) -> 
     row = next(t for t in profile["tasks"] if t["task_id"] == tid)
     assert [e["answers"]["event"] for e in row["entries"]] == ["Первая", "Вторая"]
     assert row["questions"] == questions
+    assert row["status"] == "in_progress"
+
     async def queued() -> list:
         response = await client.get("/api/admin/review-queue", headers=admin_h)
         assert response.status_code == 200, response.text

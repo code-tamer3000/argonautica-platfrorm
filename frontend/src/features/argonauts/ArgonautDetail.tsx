@@ -41,7 +41,7 @@ function TaskRow({ task }: { task: ArgonautTaskOut }) {
           {task.status === 'accepted' ? (
             <Chip kind="accepted">Принята</Chip>
           ) : (
-            <Chip kind="unreviewed">{task.questions && task.deadline_at && Date.parse(task.deadline_at) > Date.now() ? 'В работе' : 'На проверке'}</Chip>
+            <Chip kind="unreviewed">{task.status === 'in_progress' ? 'В работе' : 'На проверке'}</Chip>
           )}
           {task.deadline_at && <span className={styles.taskDeadline}>{dateTimeMsk(task.deadline_at)}</span>}
         </span>

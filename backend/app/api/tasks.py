@@ -979,23 +979,6 @@ async def update_cross_task(
         )
 
     changes = body.model_dump(exclude_unset=True)
-    if task.type == "structure":
-        await session.refresh(task, with_for_update=True)
-        questions = (
-            body.questions if "questions" in changes
-            else [StructureQuestion.model_validate(q) for q in task.questions or []]
-        )
-        validate_structure(changes.get("intake_id", task.intake_id),
-                           changes.get("deadline_at", task.deadline_at), questions)
-        if "questions" in changes and changes["questions"] != task.questions:
-            started = await session.scalar(
-                select(TaskAssignment.id).where(TaskAssignment.task_id == task.id).limit(1)
-            )
-            if started is not None:
-                raise HTTPException(409, "После первой записи вопросы изменить нельзя")
-            task.questions = changes["questions"]
-    elif "questions" in changes:
-        raise HTTPException(422, "Only structure tasks have questions")
     for field in ("title", "body", "deadline_at"):
         if field in changes:
             setattr(cross, field, changes[field])
@@ -1111,7 +1094,9 @@ async def list_tasks(
                     Task.type.in_(("common", "structure")),
                     or_(Task.intake_id.is_(None), Task.intake_id == intake_id),
                 ),
-                and_(Task.type.not_in(("common", "structure")), or_(cohort_assignee, ~any_assignee)),
+                and_(
+                    Task.type.not_in(("common", "structure")), or_(cohort_assignee, ~any_assignee)
+                ),
             )
         )
     stmt = (
@@ -1211,7 +1196,9 @@ async def list_tasks(
             attachments=task_attachments.get(t.id, []),
             playlist=task_playlists.get(t.playlist_id) if t.playlist_id else None,
             pairs=pairs_by_task.get(t.id),
-            my_status=task_status(t, my_assignments.get(t.id), now),
+            my_status=task_status(
+                t.type, t.deadline_at, a.status if (a := my_assignments.get(t.id)) else None, now
+            ),
             late=bool(a.late) if (a := my_assignments.get(t.id)) else False,
             deadline_soon=deadline_soon(
                 effective_deadline(t, my_assignments.get(t.id)), now, days
@@ -1302,7 +1289,7 @@ async def get_task(
         playlist=task_playlist,
         pairs=await _visible_pairs_for(session, task, current_user),
         stream=await _visible_stream_for(session, task, current_user),
-        my_status=task_status(task, my, now),
+        my_status=task_status(task.type, task.deadline_at, my.status if my else None, now),
         late=bool(my.late) if my else False,
         deadline_soon=deadline_soon(
             effective_deadline(task, my), now, settings.task_deadline_soon_days
@@ -1515,6 +1502,7 @@ async def list_task_assignments(
             for a in sorted(rows, key=lambda a: a.id)
         ]
 
+    now = datetime.now(UTC)
     # common: полный ростер видящих + LEFT JOIN уже созданных назначений.
     plan_ids = await _task_plan_ids(session, task.id)
     filters: list[ColumnElement[bool]] = [
@@ -1545,7 +1533,7 @@ async def list_task_assignments(
             user_id=u.id,
             display_name=u.display_name,
             avatar_url=avatar_url(u, signed),
-            status=a.status if a else None,
+            status=task_status(task.type, task.deadline_at, a.status if a else None, now),
             late=bool(a.late) if a else False,
             reviewed_at=a.reviewed_at if a else None,
             submission_count=sub_counts.get(a.id, 0) if a else 0,

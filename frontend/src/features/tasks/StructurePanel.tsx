@@ -5,9 +5,12 @@ import {
 } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { Modal } from '../../components/Overlay'
-import { dateTimeMsk } from '../../lib/format'
 import { toast } from '../../stores/toast'
 import styles from '../cabin/cabin.module.css'
+
+const entryDate = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'Europe/Moscow', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+})
 
 export function EntryList({ questions, entries }: {
   questions: StructureQuestion[]
@@ -18,7 +21,7 @@ export function EntryList({ questions, entries }: {
     {entries.map((entry, i) => {
       const title = firstText ? entry.answers?.[firstText.id] : null
       return <details key={entry.id} className={styles.dateGroup}>
-        <summary className={styles.entrySummary}>{title ?? `Запись ${i + 1} · ${dateTimeMsk(entry.created_at)}`}</summary>
+        <summary className={styles.entrySummary}>{title ?? `Запись ${i + 1} · ${entryDate.format(new Date(entry.created_at))}`}</summary>
         <dl className={styles.entryAnswers}>
           {questions.map(q => <div key={q.id}>
             <dt>{q.label}</dt><dd>{entry.answers?.[q.id]}{q.kind === 'scale' && ' / 10'}</dd>
@@ -49,7 +52,7 @@ export function StructureReview({ taskId, track }: { taskId: number; track: Task
 function EntryForm({ task, close }: { task: TaskWithStatusOut; close: () => void }) {
   const [answers, setAnswers] = useState<Record<string, string | number>>({})
   const add = useAddStructureEntry(task.id)
-  return <Modal title="Добавить запись" onClose={close}>
+  return <Modal title="Добавить запись" onClose={close} closeOnBackdrop={false}>
     <form className={styles.list} onSubmit={e => {
       e.preventDefault()
       add.mutate(answers, { onSuccess: close, onError: err => toast(err.message, 'error') })

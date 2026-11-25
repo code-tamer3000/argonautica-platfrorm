@@ -1,7 +1,8 @@
 """Questionnaires for repeatable task entries."""
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
+
+from alembic import op
 
 revision = "d70e925b531f"
 down_revision = "c8d2a4f6b901"

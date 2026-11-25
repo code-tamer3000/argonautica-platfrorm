@@ -120,7 +120,7 @@ export interface ArgonautsListOut {
   roster: ArgonautOut[]
 }
 
-export type ArgonautTaskStatus = 'accepted' | 'submitted'
+export type ArgonautTaskStatus = 'accepted' | 'submitted' | 'in_progress'
 
 export interface ArgonautTaskOut {
   questions?: import('../api/tasks').StructureQuestion[] | null

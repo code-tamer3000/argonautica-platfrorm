@@ -56,6 +56,7 @@
 сам открывал список; теперь не открывает вовсе (симметрично с тем, что ему закрыты
 «Все дневники», см. `is_cheap_tariff`).
 """
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -77,7 +78,7 @@ from app.schemas.argonaut import (
 )
 from app.schemas.structure import StructureEntryOut
 from app.services.media import presign_asset_urls
-from app.services.tasks import published_where
+from app.services.tasks import published_where, task_status
 from app.services.users import avatar_url, plan_names
 from app.services.visibility import (
     CHEAP_TARIFF_NAME,
@@ -430,6 +431,7 @@ async def get_argonaut(
             Task.deadline_at,
             TaskAssignment.reviewed_at,
             Task.questions,
+            Task.type,
         )
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
@@ -443,7 +445,7 @@ async def get_argonaut(
     )
     task_rows = rows.all()
     submission_bodies = await _latest_submission_bodies(
-        session, [row[2] for row in task_rows]
+        session, [row[2] for row in task_rows if not row[6]]
     )
     structure_ids = [row[2] for row in task_rows if row[6]]
     entries: dict[int, list[StructureEntryOut]] = {}
@@ -456,18 +458,19 @@ async def get_argonaut(
             entries.setdefault(record.assignment_id, []).append(StructureEntryOut(
                 id=record.id, created_at=record.created_at, answers=record.answers or {}
             ))
+    now = datetime.now(UTC)
     tasks = [
         ArgonautTaskOut(
             task_id=task_id,
             title=title,
-            status=task_status,
+            status=task_status(kind, deadline_at, stored_status, now) or stored_status,
             deadline_at=deadline_at,
             reviewed_at=reviewed_at,
             submission_text=submission_bodies.get(assignment_id),
             questions=questions,
             entries=entries.get(assignment_id, []),
         )
-        for task_id, title, assignment_id, task_status, deadline_at, reviewed_at, questions
+        for task_id, title, assignment_id, stored_status, deadline_at, reviewed_at, questions, kind
         in task_rows
     ]
     tasks_done = sum(1 for t in tasks if t.status == "accepted")
