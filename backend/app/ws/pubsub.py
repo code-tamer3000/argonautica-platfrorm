@@ -125,7 +125,7 @@ async def _run_listener(ready: asyncio.Event) -> None:
         raise
     finally:
         with contextlib.suppress(Exception):
-            await pubsub.aclose()  # type: ignore[no-untyped-call]
+            await pubsub.aclose()
 
 
 async def ensure_listener_started() -> None:

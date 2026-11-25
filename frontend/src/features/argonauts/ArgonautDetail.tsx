@@ -14,6 +14,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { Spinner } from '../../components/Spinner'
 import { useIsOfflineEmpty, useIsOfflineFailure } from '../../hooks/useOfflineEmpty'
 import { useAuth } from '../auth/AuthContext'
+import { EntryList } from '../tasks/StructurePanel'
 import { TaskComposer } from '../tasks/TaskComposer'
 import { ApiError } from '../../lib/apiClient'
 import { dateTimeMsk } from '../../lib/format'
@@ -40,14 +41,16 @@ function TaskRow({ task }: { task: ArgonautTaskOut }) {
           {task.status === 'accepted' ? (
             <Chip kind="accepted">Принята</Chip>
           ) : (
-            <Chip kind="unreviewed">На проверке</Chip>
+            <Chip kind="unreviewed">{task.status === 'in_progress' ? 'В работе' : 'На проверке'}</Chip>
           )}
           {task.deadline_at && <span className={styles.taskDeadline}>{dateTimeMsk(task.deadline_at)}</span>}
         </span>
       </button>
       {open && (
         <div className={styles.taskSubmission}>
-          {task.submission_text ? (
+          {task.questions ? (
+            <EntryList questions={task.questions} entries={task.entries ?? []} />
+          ) : task.submission_text ? (
             <div className={styles.taskSubmissionText}>{task.submission_text}</div>
           ) : (
             <div className={styles.taskSubmissionEmpty}>Текст сдачи недоступен.</div>

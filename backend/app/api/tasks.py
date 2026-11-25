@@ -40,6 +40,7 @@ from app.models.task import (
     TaskSubmissionMedia,
 )
 from app.models.user import User
+from app.schemas.structure import StructureQuestion
 from app.schemas.task import (
     AdminAssignmentOut,
     AssignmentDeadlineUpdate,
@@ -98,6 +99,7 @@ from app.services.tasks import (
     recompute_pair_completion,
     required_task_ids_snapshot,
     sync_task_calendar_event,
+    task_status,
 )
 from app.services.users import avatar_url
 from app.ws import schemas as ws_schemas
@@ -119,6 +121,15 @@ _PATCHABLE_FIELDS = {
     "publish_at",
     "required_for_graduation",
 }
+
+
+def validate_structure(
+    intake_id: int | None, deadline: datetime | None, questions: list[StructureQuestion] | None
+) -> None:
+    if intake_id is None or deadline is None or deadline.tzinfo is None or not questions:
+        raise HTTPException(422, "Укажите поток, дедлайн и вопросы")
+    if len({q.id for q in questions}) != len(questions):
+        raise HTTPException(422, "Идентификаторы вопросов должны быть уникальны")
 
 
 async def _assert_kb_item_exists(session: AsyncSession, kb_item_id: int | None) -> None:
@@ -190,6 +201,11 @@ async def create_task(
         # Свой плейлист или уже доступный админу (пикер «выбрать существующий»).
         await load_attachable_playlist(session, body.playlist_id, current_admin)
 
+    if body.type == "structure":
+        validate_structure(body.intake_id, body.deadline_at, body.questions)
+    elif body.questions is not None:
+        raise HTTPException(422, "Only structure tasks have questions")
+
     pairs_input: list[list[int]] = []
     stream_user_ids: list[int] = []
     if body.type == "individual":
@@ -220,6 +236,7 @@ async def create_task(
 
     task = Task(
         type=body.type,
+        questions=[q.model_dump() for q in body.questions] if body.questions else None,
         title=body.title,
         body=body.body,
         kb_item_id=body.kb_item_id,
@@ -320,6 +337,7 @@ async def create_task(
     return TaskOut(
         id=task.id,
         type=task.type,
+        questions=task.questions,
         title=task.title,
         body=task.body,
         kb_item_id=task.kb_item_id,
@@ -348,6 +366,23 @@ async def update_task(
     task = await load_task(session, task_id)
 
     changes = body.model_dump(exclude_unset=True)
+    if task.type == "structure":
+        await session.refresh(task, with_for_update=True)
+        questions = (
+            body.questions if "questions" in changes
+            else [StructureQuestion.model_validate(q) for q in task.questions or []]
+        )
+        validate_structure(changes.get("intake_id", task.intake_id),
+                           changes.get("deadline_at", task.deadline_at), questions)
+        if "questions" in changes and changes["questions"] != task.questions:
+            started = await session.scalar(
+                select(TaskAssignment.id).where(TaskAssignment.task_id == task.id).limit(1)
+            )
+            if started is not None:
+                raise HTTPException(409, "После первой записи вопросы изменить нельзя")
+            task.questions = changes["questions"]
+    elif "questions" in changes:
+        raise HTTPException(422, "Only structure tasks have questions")
     # Черновик → публикация. Запоминаем ДО применения изменений: получателям
     # такая задача ни разу не показывалась, поэтому им уходит task.created
     # (как при обычном создании), а не task.updated про «изменилось условие».
@@ -414,6 +449,7 @@ async def update_task(
     return TaskOut(
         id=task.id,
         type=task.type,
+        questions=task.questions,
         title=task.title,
         body=task.body,
         kb_item_id=task.kb_item_id,
@@ -477,6 +513,11 @@ async def review_assignment(
     is_cross_author = task.pair_id is not None and task.created_by == current_user.id
     if current_user.role != "admin" and not is_cross_author:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to review")
+
+    if task.type == "structure":
+        await session.refresh(task, with_for_update=True)
+        if body.action != "accept" or not task.deadline_at or datetime.now(UTC) < task.deadline_at:
+            raise HTTPException(409, "Структуру можно только принять после дедлайна")
 
     # И accept, и return требуют хотя бы одну сдачу — принять/вернуть нечего,
     # если участник ничего не сдавал (иначе assignment зависает в 'accepted'
@@ -1027,11 +1068,11 @@ async def list_tasks(
             where.append(
                 visible_common
                 | and_(
-                    Task.type == "common",
+                    Task.type.in_(("common", "structure")),
                     or_(Task.intake_id.is_(None), Task.intake_id == current_user.intake_id),
                     completed_common,
                 )
-                | and_(Task.type != "common", Task.id.in_(my_assigned_tasks))
+                | and_(Task.type.not_in(("common", "structure")), Task.id.in_(my_assigned_tasks))
             )
             # Отложенная публикация (база заданий): запланированная задача не
             # видна не-админу, включая свою individual/pair/stream — common уже
@@ -1050,10 +1091,12 @@ async def list_tasks(
         where.append(
             or_(
                 and_(
-                    Task.type == "common",
+                    Task.type.in_(("common", "structure")),
                     or_(Task.intake_id.is_(None), Task.intake_id == intake_id),
                 ),
-                and_(Task.type != "common", or_(cohort_assignee, ~any_assignee)),
+                and_(
+                    Task.type.not_in(("common", "structure")), or_(cohort_assignee, ~any_assignee)
+                ),
             )
         )
     stmt = (
@@ -1125,7 +1168,7 @@ async def list_tasks(
     participant_counts: dict[int, int] = {
         t.id: await participant_count(session, t, plan_ids=task_plans.get(t.id, []))
         for t in tasks
-        if t.type == "common"
+        if t.type in ("common", "structure")
     }
 
     # Пары для парных заданий (участник видит свою, админ — все).
@@ -1140,6 +1183,7 @@ async def list_tasks(
         TaskWithStatusOut(
             id=t.id,
             type=t.type,
+            questions=t.questions,
             title=t.title,
             body=t.body,
             kb_item_id=t.kb_item_id,
@@ -1152,7 +1196,9 @@ async def list_tasks(
             attachments=task_attachments.get(t.id, []),
             playlist=task_playlists.get(t.playlist_id) if t.playlist_id else None,
             pairs=pairs_by_task.get(t.id),
-            my_status=(a.status if (a := my_assignments.get(t.id)) else None),
+            my_status=task_status(
+                t.type, t.deadline_at, a.status if (a := my_assignments.get(t.id)) else None, now
+            ),
             late=bool(a.late) if (a := my_assignments.get(t.id)) else False,
             deadline_soon=deadline_soon(
                 effective_deadline(t, my_assignments.get(t.id)), now, days
@@ -1164,7 +1210,10 @@ async def list_tasks(
             ),
             submitted_count=submitted_counts.get(t.id, 0),
             accepted_count=accepted_counts.get(t.id, 0),
-            unreviewed_count=unreviewed_counts.get(t.id, 0),
+            unreviewed_count=(
+                0 if t.type == "structure" and t.deadline_at and t.deadline_at > now
+                else unreviewed_counts.get(t.id, 0)
+            ),
             total_recipients=(
                 assignee_counts.get(t.id, 0)
                 if t.type in ("individual", "pair", "stream")
@@ -1226,6 +1275,7 @@ async def get_task(
     return TaskWithStatusOut(
         id=task.id,
         type=task.type,
+        questions=task.questions,
         title=task.title,
         body=task.body,
         kb_item_id=task.kb_item_id,
@@ -1239,7 +1289,7 @@ async def get_task(
         playlist=task_playlist,
         pairs=await _visible_pairs_for(session, task, current_user),
         stream=await _visible_stream_for(session, task, current_user),
-        my_status=my.status if my else None,
+        my_status=task_status(task.type, task.deadline_at, my.status if my else None, now),
         late=bool(my.late) if my else False,
         deadline_soon=deadline_soon(
             effective_deadline(task, my), now, settings.task_deadline_soon_days
@@ -1247,7 +1297,10 @@ async def get_task(
         assignee_count=(total if task.type in ("individual", "pair") else None),
         submitted_count=submitted,
         accepted_count=accepted,
-        unreviewed_count=unreviewed,
+        unreviewed_count=(
+            0 if task.type == "structure" and task.deadline_at and task.deadline_at > now
+            else unreviewed
+        ),
         total_recipients=(
             total
             if task.type in ("individual", "pair", "stream")
@@ -1284,6 +1337,9 @@ async def list_task_submissions(
         .all()
     )
 
+    if task.type == "structure" and current_user.role != "admin":
+        assignments = [a for a in assignments if a.user_id == current_user.id]
+
     if task.type == "individual" and current_user.role != "admin":
         # Обычно участник видит только свой трек. Исключение: автор перекрёстной
         # задачи (выдал её партнёру) — видит трек партнёра, чтобы её проверить.
@@ -1318,6 +1374,8 @@ async def create_submission(
     )
     task = await load_task(session, task_id)
     await assert_task_visible(session, task, current_user)
+    if task.type == "structure":
+        raise HTTPException(400, "Заполните форму записи")
     assignment = await get_or_create_assignment(session, task, current_user)
     assert_can_write_or_backfill(current_user, assignment)
 
@@ -1410,7 +1468,7 @@ async def list_task_assignments(
     )
     sub_counts: dict[int, int] = {aid: count for aid, count in sub_count_rows.all()}
 
-    if task.type != "common":
+    if task.type not in ("common", "structure"):
         rows = (
             await session.execute(
                 select(TaskAssignment).where(TaskAssignment.task_id == task.id)
@@ -1444,6 +1502,7 @@ async def list_task_assignments(
             for a in sorted(rows, key=lambda a: a.id)
         ]
 
+    now = datetime.now(UTC)
     # common: полный ростер видящих + LEFT JOIN уже созданных назначений.
     plan_ids = await _task_plan_ids(session, task.id)
     filters: list[ColumnElement[bool]] = [
@@ -1474,7 +1533,7 @@ async def list_task_assignments(
             user_id=u.id,
             display_name=u.display_name,
             avatar_url=avatar_url(u, signed),
-            status=a.status if a else None,
+            status=task_status(task.type, task.deadline_at, a.status if a else None, now),
             late=bool(a.late) if a else False,
             reviewed_at=a.reviewed_at if a else None,
             submission_count=sub_counts.get(a.id, 0) if a else 0,
@@ -1570,6 +1629,7 @@ async def _track_out(
                 assignment_id=assignment.id,
                 user_id=assignment.user_id,
                 body=s.body,
+                answers=s.answers,
                 created_at=s.created_at,
                 attachments=attachments.get(s.id, []),
             )

@@ -12,6 +12,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.schemas.structure import StructureEntryOut, StructureQuestion
+
 
 class ArgonautOut(BaseModel):
     """Одна плитка ростера."""
@@ -54,6 +56,8 @@ class ArgonautTaskOut(BaseModel):
     # None, если сдачи нет (не должно случаться для accepted/submitted, но
     # схема не завязана на это гарантией).
     submission_text: str | None = None
+    questions: list[StructureQuestion] | None = None
+    entries: list[StructureEntryOut] = []
 
 
 class ArgonautDetailOut(BaseModel):
