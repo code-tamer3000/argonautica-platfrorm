@@ -618,7 +618,7 @@ async def task_recipients(session: AsyncSession, task: Task) -> list[int]:
     """
     if task.type == "structure":
         plans = select(TaskPlan.plan_id).where(TaskPlan.task_id == task.id)
-        ids = await session.scalars(
+        members = await session.scalars(
             select(User.id).where(
                 User.intake_id == task.intake_id,
                 User.role == "participant",
@@ -626,7 +626,7 @@ async def task_recipients(session: AsyncSession, task: Task) -> list[int]:
                 or_(~plans.exists(), User.plan_id.in_(plans)),
             )
         )
-        return list(set(ids.all()) | set(await _admin_ids(session)))
+        return list(set(members.all()) | set(await _admin_ids(session)))
 
     if task.type == "common":
         rows = await session.execute(select(User.id))

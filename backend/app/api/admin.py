@@ -915,7 +915,7 @@ async def review_queue(
     )
     if intake_id is not None:
         stmt = stmt.where(User.intake_id == intake_id)
-    rows = (await session.execute(stmt)).all()
+    rows = (await session.execute(stmt)).tuples().all()
 
     signed = await presign_asset_urls(
         session,
