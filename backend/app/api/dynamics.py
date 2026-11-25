@@ -1009,9 +1009,9 @@ async def get_all_dynamics(
     signed_avatars = await presign_asset_urls(session, avatar_media_ids)
     # У каждого участника своё начало окна — дата старта его набора. Сообщения
     # тянем от самого раннего из них, дальше режем по каждому пользователю.
-    intake_ids = {u.intake_id for u in participants if u.intake_id is not None}
+    participant_intakes = {u.intake_id for u in participants if u.intake_id is not None}
     spans_by_intake = {
-        intake_id: await get_stage_spans(session, intake_id) for intake_id in intake_ids
+        intake_id: await get_stage_spans(session, intake_id) for intake_id in participant_intakes
     }
     start_by_user = {
         u.id: (
@@ -1028,7 +1028,8 @@ async def get_all_dynamics(
         for intake_id, spans in spans_by_intake.items()
     }
     days_by_user = {
-        u.id: days_by_intake.get(u.intake_id, DEFAULT_PROGRAM_DAYS) for u in participants
+        u.id: days_by_intake[u.intake_id] if u.intake_id is not None else DEFAULT_PROGRAM_DAYS
+        for u in participants
     }
     earliest_start = min(start_by_user.values())
     today = _platform_today()

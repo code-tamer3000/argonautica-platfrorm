@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.media import AttachmentOut, PlaylistOut
+from app.schemas.structure import Questions, StructureQuestion
 
 
 class PairInput(BaseModel):
@@ -31,7 +32,8 @@ class TaskCreate(BaseModel):
     `participant_ids` — минимум двое (проверяется в эндпоинте, там же валидируется
     существование юзеров)."""
 
-    type: Literal["common", "individual", "pair", "stream"]
+    type: Literal["common", "individual", "pair", "stream", "structure"]
+    questions: Questions | None = None
     title: str
     body: str | None = None  # markdown
     kb_item_id: int | None = None
@@ -63,6 +65,7 @@ class TaskUpdate(BaseModel):
     Тип и адресаты в MVP неизменяемы."""
 
     model_config = ConfigDict(extra="forbid")
+    questions: Questions | None = None
 
     title: str | None = None
     body: str | None = None
@@ -88,6 +91,7 @@ class TaskOut(BaseModel):
 
     id: int
     type: str
+    questions: list[StructureQuestion] | None = None
     title: str
     body: str | None
     kb_item_id: int | None
@@ -281,6 +285,7 @@ class CrossTaskUpdate(BaseModel):
     """Правка выданной перекрёстной задачи (пока нет сдач)."""
 
     model_config = ConfigDict(extra="forbid")
+    questions: Questions | None = None
 
     title: str | None = None
     body: str | None = None
@@ -326,6 +331,7 @@ class SubmissionOut(BaseModel):
     # чтобы фронт сразу показал попап-предупреждение без второго запроса.
     late: bool = False
     late_submissions_count: int = 0
+    answers: dict[str, str | int] | None = None
 
 
 class TaskTrackOut(BaseModel):
@@ -420,6 +426,7 @@ class TaskLibraryItemOut(BaseModel):
 
     id: int
     type: str
+    questions: list[StructureQuestion] | None = None
     title: str
     body: str | None
     kb_item_id: int | None = None

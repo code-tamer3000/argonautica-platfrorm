@@ -95,7 +95,7 @@ def _visible_common_where(user: User) -> tuple[ColumnElement[bool], ...]:
     пока не наступил её publish_at.
     """
     return (
-        Task.type == "common",
+        Task.type.in_(("common", "structure")),
         or_(Task.intake_id.is_(None), Task.intake_id == user.intake_id),
         plan_visibility_clause(
             TaskPlan.plan_id, TaskPlan.task_id, Task.id, _effective_plan_id(user)
@@ -174,7 +174,7 @@ async def assert_task_visible(
     # что и остальные "скрытые до срока" сущности (не "нет прав", а "ещё нет").
     if not is_published(task):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Task not found")
-    if task.type == "common":
+    if task.type in ("common", "structure"):
         # Завершение сохраняет доступ после смены тарифа, но не после перевода
         # в другой поток: старые общие задачи не должны протаскиваться между когортами.
         if not intake_visible(task.intake_id, user):
@@ -370,7 +370,7 @@ async def get_or_create_assignment(
     )
     if assignment is not None:
         return assignment
-    if task.type != "common":
+    if task.type not in ("common", "structure"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this task")
 
     assignment = TaskAssignment(task_id=task.id, user_id=user.id)
@@ -388,6 +388,18 @@ async def get_or_create_assignment(
         )
         assert assignment is not None
     return assignment
+
+
+def task_status(
+    task_type: str, deadline: datetime | None, status: str | None, now: datetime
+) -> str | None:
+    """A structure's stored submission becomes reviewable at its deadline."""
+    if task_type == "structure" and deadline:
+        if status == "submitted" and now < deadline:
+            return "in_progress"
+        if status is None and now >= deadline:
+            return "missed"
+    return status
 
 
 def deadline_soon(deadline_at: datetime | None, now: datetime, days: int) -> bool:
@@ -604,6 +616,18 @@ async def task_recipients(session: AsyncSession, task: Task) -> list[int]:
     задачи это выдавший участник, у него нет назначения) + админы; pair → оба
     участника всех пар задания + админы; stream → все участники сетки + админы.
     """
+    if task.type == "structure":
+        plans = select(TaskPlan.plan_id).where(TaskPlan.task_id == task.id)
+        members = await session.scalars(
+            select(User.id).where(
+                User.intake_id == task.intake_id,
+                User.role == "participant",
+                User.is_observer.is_(False),
+                or_(~plans.exists(), User.plan_id.in_(plans)),
+            )
+        )
+        return list(set(members.all()) | set(await _admin_ids(session)))
+
     if task.type == "common":
         rows = await session.execute(select(User.id))
         return list(rows.scalars().all())

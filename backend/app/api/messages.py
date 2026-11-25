@@ -215,14 +215,14 @@ async def _refs_map(
     refs = [(kind, ref_id) for _, kind, ref_id in associations]
     if not refs:
         for message in messages:
-            setattr(message, "_resolved_refs", [])
+            setattr(message, "_resolved_refs", [])  # noqa: B010 — transient viewer-specific data
         return {}
     resolved = await resolve_message_refs(session, refs, viewer)
     by_message: dict[int, list[MessageRefOut]] = {}
     for message_id, kind, ref_id in associations:
         by_message.setdefault(message_id, []).append(resolved[(kind, ref_id)])
     for message in messages:
-        setattr(message, "_resolved_refs", by_message.get(message.id, []))
+        setattr(message, "_resolved_refs", by_message.get(message.id, []))  # noqa: B010
     return resolved
 
 

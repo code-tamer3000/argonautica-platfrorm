@@ -52,7 +52,7 @@ function TaskRow({ task }: { task: TaskWithStatusOut }) {
       <span className={styles.itemBody}>
         <span className={styles.itemTitle}>{task.title}</span>
         <span className={styles.itemMeta}>
-          {returned ? 'вернули на доработку' : overdue ? 'ещё можно сдать' : 'не сдано'}
+          {task.my_status === 'in_progress' ? 'можно добавить запись' : task.my_status === 'missed' ? 'нет записей' : returned ? 'вернули на доработку' : overdue ? 'ещё можно сдать' : 'не сдано'}
         </span>
       </span>
       {returned ? (

@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import ColumnElement, and_, delete, exists, func, or_, select, union, update
+from sqlalchemy import ColumnElement, and_, case, delete, exists, func, or_, select, union, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import CompoundSelect
@@ -893,6 +893,7 @@ async def review_queue(
         .correlate(TaskAssignment)
         .scalar_subquery()
     )
+    ready_at = case((Task.type == "structure", Task.deadline_at), else_=latest_submission_at)
     stmt = (
         select(
             TaskAssignment,
@@ -902,17 +903,19 @@ async def review_queue(
             User,
             Plan.id,
             Plan.name,
-            latest_submission_at.label("submitted_at"),
+            ready_at.label("submitted_at"),
         )
         .join(Task, Task.id == TaskAssignment.task_id)
         .join(User, User.id == TaskAssignment.user_id)
         .outerjoin(Plan, Plan.id == User.plan_id)
         .where(TaskAssignment.status == "submitted", Task.deleted_at.is_(None))
-        .order_by(latest_submission_at.asc())
+        .where(or_(Task.type != "structure", and_(Task.deadline_at <= func.now(),
+                                                 published_where())))
+        .order_by(ready_at.asc())
     )
     if intake_id is not None:
         stmt = stmt.where(User.intake_id == intake_id)
-    rows = (await session.execute(stmt)).all()
+    rows = (await session.execute(stmt)).tuples().all()
 
     signed = await presign_asset_urls(
         session,
@@ -1031,6 +1034,7 @@ async def list_task_library(
             TaskLibraryItemOut(
                 id=t.id,
                 type=t.type,
+                questions=t.questions,
                 title=t.title,
                 body=t.body,
                 kb_item_id=t.kb_item_id,
@@ -1070,7 +1074,7 @@ async def republish_task(
     409, если семейство этой задачи уже переиздано на целевой поток.
     """
     source = await load_task(session, task_id)
-    if source.type in ("pair", "stream") or source.pair_id is not None:
+    if source.type not in ("individual", "common") or source.pair_id is not None:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "Pair/stream tasks and cross-tasks cannot be republished; use «Создать на основе»",

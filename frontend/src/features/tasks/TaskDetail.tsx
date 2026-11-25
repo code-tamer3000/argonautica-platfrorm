@@ -36,6 +36,7 @@ import { Attachment } from '../chat/Attachment'
 import { PairPanel } from './PairPanel'
 import { StreamPanel } from './stream/StreamPanel'
 import { TaskComposer } from './TaskComposer'
+import { StructurePanel } from './StructurePanel'
 import { isoToLocalInput, localInputToIso } from './TaskForm'
 import styles from './tasks.module.css'
 
@@ -186,6 +187,7 @@ const TYPE_LABEL: Record<TaskType, string> = {
   individual: 'Индивидуальная',
   pair: 'Парная',
   stream: 'Поток',
+  structure: 'Структура',
 }
 
 const TRACK_STATUS_LABEL: Record<string, string> = {
@@ -325,6 +327,9 @@ export function TaskDetail() {
 
       {/* Парное задание: панель пары(-ей) вместо стандартной сдачи/треков.
           Сама сдача/приёмка живёт в перекрёстных задачах (открываются по ссылке). */}
+      {task.type === 'structure' && (
+        <StructurePanel task={task} tracks={list} isAdmin={isAdmin} canWrite={!isGraduated} />
+      )}
       {task.type === 'pair' && (
         <PairPanel taskId={id} pairs={task.pairs ?? []} isAdmin={isAdmin} />
       )}
@@ -337,7 +342,7 @@ export function TaskDetail() {
 
       {/* Участник: композер сдачи + свой статус (админ и автор перекрёстной задачи
           сами её не сдают — только проверяют). */}
-      {task.type !== 'pair' && task.type !== 'stream' && !canReview && (
+      {(task.type === 'common' || task.type === 'individual') && !canReview && (
         <section className={styles.section}>
           {myTrack && (
             <div className={styles.myStatusRow}>
@@ -365,7 +370,7 @@ export function TaskDetail() {
           сразу видно и они не тонули среди уже принятых. Свой возвращённый трек уже
           показан выше (ReturnedFeedback) — секцию для него не дублируем; если после
           фильтра участнику показывать больше нечего, секцию не рендерим вовсе. */}
-      {task.type !== 'pair' && task.type !== 'stream' && (canReview || sectionTracks.length > 0) && (
+      {(task.type === 'common' || task.type === 'individual') && (canReview || sectionTracks.length > 0) && (
         <TracksSection
           title={task.type === 'common' && !isAdmin ? 'Работы участников' : 'Сдачи'}
           tracks={sectionTracks}
