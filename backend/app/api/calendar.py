@@ -8,9 +8,7 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_
-from sqlalchemy import delete as sa_delete
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin, require_participant
@@ -56,7 +54,7 @@ async def _assert_plans_exist(session: AsyncSession, plan_ids: list[int]) -> Non
 async def _set_event_plans(session: AsyncSession, event_id: int, plan_ids: list[int]) -> None:
     """Полностью заменить набор тарифов события."""
     await session.execute(
-        sa_delete(CalendarEventPlan).where(CalendarEventPlan.calendar_event_id == event_id)
+        delete(CalendarEventPlan).where(CalendarEventPlan.calendar_event_id == event_id)
     )
     for plan_id in dict.fromkeys(plan_ids):
         session.add(CalendarEventPlan(calendar_event_id=event_id, plan_id=plan_id))
@@ -186,7 +184,7 @@ async def delete_event(
     if event is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Event not found")
     await session.execute(
-        sa_delete(CalendarEventPlan).where(CalendarEventPlan.calendar_event_id == event_id)
+        delete(CalendarEventPlan).where(CalendarEventPlan.calendar_event_id == event_id)
     )
     await session.delete(event)
     await session.flush()
