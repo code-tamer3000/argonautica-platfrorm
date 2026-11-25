@@ -34,6 +34,7 @@ const TYPE_TABS: { value: TypeFilter; label: string }[] = [
   { value: 'common', label: 'Общие' },
   { value: 'individual', label: 'Индивидуальные' },
   { value: 'pair', label: 'Парные' },
+  { value: 'structure', label: 'Структура' },
   { value: 'stream', label: 'Поток' },
 ]
 
@@ -208,6 +209,7 @@ export function AdminTasks() {
     createTask.mutate(
       {
         type: values.type,
+        questions: values.type === 'structure' ? values.questions : undefined,
         title: values.title,
         body: values.body || null,
         deadline_at: values.deadline_at,
@@ -222,8 +224,8 @@ export function AdminTasks() {
         participant_ids: values.type === 'stream' ? values.participant_ids : undefined,
         media_asset_ids: values.media.map((m) => m.id),
         playlist_id: values.playlist?.id ?? null,
-        intake_id: values.type === 'common' ? values.intake_id : undefined,
-        plan_ids: values.type === 'common' ? values.plan_ids : undefined,
+        intake_id: (values.type === 'common' || values.type === 'structure') ? values.intake_id : undefined,
+        plan_ids: (values.type === 'common' || values.type === 'structure') ? values.plan_ids : undefined,
       },
       {
         onSuccess: () => {
@@ -241,6 +243,7 @@ export function AdminTasks() {
     updateTask.mutate(
       {
         id: editTask.id,
+        questions: editTask.type === 'structure' ? values.questions : undefined,
         title: values.title,
         body: values.body || null,
         deadline_at: values.deadline_at,
@@ -249,8 +252,8 @@ export function AdminTasks() {
         kb_item_id: values.kb_item_id,
         media_asset_ids: values.media.map((m) => m.id),
         playlist_id: values.playlist?.id ?? null,
-        intake_id: editTask.type === 'common' ? values.intake_id : undefined,
-        plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
+        intake_id: (editTask.type === 'common' || editTask.type === 'structure') ? values.intake_id : undefined,
+        plan_ids: (editTask.type === 'common' || editTask.type === 'structure') ? values.plan_ids : undefined,
       },
       {
         onSuccess: () => {

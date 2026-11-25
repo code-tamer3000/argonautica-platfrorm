@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useKbItems } from '../../api/kb'
 import { useAdminIntakes, useAdminUsers, useAdminUsersMap } from '../../api/admin'
 import { useAdminPlans } from '../../api/plans'
-import type { TaskOut, TaskType } from '../../api/tasks'
+import type { StructureQuestion, TaskOut, TaskType } from '../../api/tasks'
 import { Button } from '../../components/Button'
 import { MediaComposer, type MediaChip } from '../../components/MediaComposer'
 import type { PlaylistOut } from '../../lib/types'
@@ -17,6 +17,7 @@ export const TYPE_LABEL: Record<TaskType, string> = {
   individual: 'Индивидуальная',
   pair: 'Парная',
   stream: 'Поток',
+  structure: 'Структура',
 }
 
 /** `YYYY-MM-DD` → «2 июня 2026». Дата набора календарная, без часовых поясов. */
@@ -30,6 +31,7 @@ function intakeDate(startsOn: string): string {
 
 export interface TaskFormValues {
   type: TaskType
+  questions: StructureQuestion[]
   title: string
   body: string
   deadline_at: string | null
@@ -71,6 +73,7 @@ export function localInputToIso(value: string): string | null {
 // TaskLibraryItemOut (переиздание/«Создать на основе» из базы заданий).
 export type TaskFormInitial = Pick<
   TaskOut,
+  | 'questions'
   | 'type'
   | 'title'
   | 'body'
@@ -96,6 +99,8 @@ interface TaskFormProps {
 export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskFormProps) {
   const editing = !!initial && !createFromInitial
   const [type, setType] = useState<TaskType>(initial?.type ?? 'common')
+  const newQuestion = (): StructureQuestion => ({ id: crypto.randomUUID(), label: '', kind: 'text' })
+  const [questions, setQuestions] = useState<StructureQuestion[]>(() => initial?.questions ?? [newQuestion()])
   const [title, setTitle] = useState(initial?.title ?? '')
   const [body, setBody] = useState(initial?.body ?? '')
   const [deadline, setDeadline] = useState(isoToLocalInput(initial?.deadline_at ?? null))
@@ -211,6 +216,7 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
     e.preventDefault()
     onSubmit({
       type,
+      questions,
       title,
       body,
       deadline_at: localInputToIso(deadline),
@@ -222,7 +228,7 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
       participant_ids: streamers,
       media,
       playlist,
-      intake_id: taskIntakeId,
+      intake_id: type === 'structure' ? taskIntakeId ?? activeIntake?.id ?? null : taskIntakeId,
       plan_ids: taskPlanIds,
     })
   }
@@ -269,6 +275,11 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
               />
               Поток (турнирная сетка)
             </label>
+            <label className={styles.checkLabel}>
+              <input type="radio" name="task-type" checked={type === 'structure'}
+                onChange={() => setType('structure')} />
+              Структура
+            </label>
           </div>
         </div>
       )}
@@ -298,10 +309,11 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
       </div>
 
       <label className={styles.label}>
-        Дедлайн (необязательно)
+        {type === 'structure' ? 'Дедлайн' : 'Дедлайн (необязательно)'}
         <input
           className={styles.input}
           type="datetime-local"
+          required={type === 'structure'}
           value={deadline}
           onChange={(e) => setDeadline(e.target.value)}
         />
@@ -347,16 +359,40 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
         </select>
       </label>
 
-      {type === 'common' && (
+      {type === 'structure' && (
+        <fieldset className={styles.formRow}>
+          <legend>Вопросы формы</legend>
+          {questions.map((q, i) => (
+            <div key={q.id} className={styles.formRow}>
+              <label>Вопрос {i + 1}
+                <input className={styles.input} required value={q.label}
+                  onChange={(e) => setQuestions(questions.map(row => row.id === q.id ? { ...row, label: e.target.value } : row))} />
+              </label>
+              <label>Ответ
+                <select className={styles.input} value={q.kind} onChange={(e) =>
+                  setQuestions(questions.map(row => row.id === q.id ? { ...row, kind: e.target.value === 'text' ? 'text' : 'scale' } : row))}>
+                  <option value="text">Текст</option><option value="scale">Шкала от 1 до 10</option>
+                </select>
+              </label>
+              {questions.length > 1 && <button type="button" onClick={() =>
+                setQuestions(questions.filter(row => row.id !== q.id))}>Удалить вопрос</button>}
+            </div>
+          ))}
+          <button type="button" onClick={() => setQuestions([...questions, newQuestion()])}>Добавить вопрос</button>
+        </fieldset>
+      )}
+
+      {(type === 'common' || type === 'structure') && (
         <>
           <label className={styles.label}>
             Изоляция: набор
             <select
               className={styles.input}
-              value={taskIntakeId ?? ''}
+              value={taskIntakeId ?? (type === 'structure' ? activeIntake?.id : '') ?? ''}
+              required={type === 'structure'}
               onChange={(e) => setTaskIntakeId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">Общая для всех потоков</option>
+              {type !== 'structure' && <option value="">Общая для всех потоков</option>}
               {intakes.map((intake) => (
                 <option key={intake.id} value={intake.id}>
                   {intake.starts_on} – {intake.ends_on}

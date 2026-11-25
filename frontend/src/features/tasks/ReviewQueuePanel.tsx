@@ -3,6 +3,7 @@ import { usePlans } from '../../api/plans'
 import { useReviewQueue, useTaskSubmissions, type ReviewQueueItemOut } from '../../api/tasks'
 import { Avatar } from '../../components/Avatar'
 import { Spinner } from '../../components/Spinner'
+import { StructureReview } from './StructurePanel'
 import { TrackCard } from './TaskDetail'
 import styles from './tasks.module.css'
 
@@ -11,6 +12,7 @@ const TASK_TYPE_LABEL: Record<string, string> = {
   individual: 'Индивидуальная',
   pair: 'Парная',
   stream: 'Поток',
+  structure: 'Структура',
 }
 
 const NO_PLAN_KEY = 'none'
@@ -54,7 +56,9 @@ function QueueRow({ item }: { item: ReviewQueueItemOut }) {
             <div className="center" style={{ padding: 'var(--space-3)' }}><Spinner size={16} /></div>
           ) : (
             <div className={styles.section} style={{ marginTop: 0, paddingTop: 0, borderTop: 'none' }}>
-              <TrackCard track={track} taskId={item.task_id} isAdmin />
+              {item.task_type === 'structure'
+                ? <StructureReview taskId={item.task_id} track={track} />
+                : <TrackCard track={track} taskId={item.task_id} isAdmin />}
             </div>
           )}
         </div>

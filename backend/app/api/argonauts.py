@@ -75,7 +75,9 @@ from app.schemas.argonaut import (
     ArgonautsListOut,
     ArgonautTaskOut,
 )
+from app.schemas.structure import StructureEntryOut
 from app.services.media import presign_asset_urls
+from app.services.tasks import published_where
 from app.services.users import avatar_url, plan_names
 from app.services.visibility import (
     CHEAP_TARIFF_NAME,
@@ -154,10 +156,11 @@ def _completed_common_where(
         Task.intake_id.is_(None), Task.intake_id == scope_intake_id
     )
     if current_user.role == "admin":
-        return (Task.type == "common", intake_clause)
+        return (Task.type.in_(("common", "structure")), intake_clause)
     return (
-        Task.type == "common",
+        Task.type.in_(("common", "structure")),
         intake_clause,
+        or_(Task.type != "structure", published_where()),
         or_(
             TaskAssignment.user_id == current_user.id,
             plan_visibility_clause(
@@ -426,6 +429,7 @@ async def get_argonaut(
             TaskAssignment.status,
             Task.deadline_at,
             TaskAssignment.reviewed_at,
+            Task.questions,
         )
         .select_from(TaskAssignment)
         .join(Task, Task.id == TaskAssignment.task_id)
@@ -441,6 +445,17 @@ async def get_argonaut(
     submission_bodies = await _latest_submission_bodies(
         session, [row[2] for row in task_rows]
     )
+    structure_ids = [row[2] for row in task_rows if row[6]]
+    entries: dict[int, list[StructureEntryOut]] = {}
+    if structure_ids:
+        records = await session.scalars(
+            select(TaskSubmission).where(TaskSubmission.assignment_id.in_(structure_ids))
+            .order_by(TaskSubmission.created_at, TaskSubmission.id)
+        )
+        for record in records:
+            entries.setdefault(record.assignment_id, []).append(StructureEntryOut(
+                id=record.id, created_at=record.created_at, answers=record.answers or {}
+            ))
     tasks = [
         ArgonautTaskOut(
             task_id=task_id,
@@ -449,8 +464,11 @@ async def get_argonaut(
             deadline_at=deadline_at,
             reviewed_at=reviewed_at,
             submission_text=submission_bodies.get(assignment_id),
+            questions=questions,
+            entries=entries.get(assignment_id, []),
         )
-        for task_id, title, assignment_id, task_status, deadline_at, reviewed_at in task_rows
+        for task_id, title, assignment_id, task_status, deadline_at, reviewed_at, questions
+        in task_rows
     ]
     tasks_done = sum(1 for t in tasks if t.status == "accepted")
     feat_task_id, expedition_feat, feat_status = await _expedition_feat(

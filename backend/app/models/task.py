@@ -21,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -42,11 +43,12 @@ class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
         CheckConstraint(
-            "type IN ('common', 'individual', 'pair', 'stream')", name="task_type_valid"
+            "type IN ('common', 'individual', 'pair', 'stream', 'structure')", name="task_type_valid"
         ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    questions: Mapped[list[dict[str, str]] | None] = mapped_column(JSONB)
     type: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str | None] = mapped_column(Text)  # markdown
@@ -399,6 +401,8 @@ class TaskAssignment(Base):
 
 class TaskSubmission(Base):
     """Одна сдача по назначению. История сдач сохраняется (возврат → новая сдача)."""
+
+    answers: Mapped[dict[str, str | int] | None] = mapped_column(JSONB)
 
     __tablename__ = "task_submissions"
     __table_args__ = (

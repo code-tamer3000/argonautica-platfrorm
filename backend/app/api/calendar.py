@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_admin, require_participant
@@ -24,7 +24,7 @@ from app.schemas.calendar import (
     CalendarEventOut,
     CalendarEventUpdate,
 )
-from app.services.tasks import participant_count, published_where
+from app.services.tasks import _visible_common_where, participant_count, published_where
 from app.services.visibility import intake_visible, plan_visibility_clause, plan_visible
 
 # Календарь — часть активной работы участника; наблюдателю закрыт.
@@ -219,7 +219,11 @@ async def list_events(
         )
         any_assignee = exists(select(1).where(TaskAssignment.task_id == Task.id))
         cohort_task_ids = select(Task.id).where(
-            or_(Task.type == "common", cohort_assignee, ~any_assignee)
+            or_(
+                and_(Task.type == "structure", Task.intake_id == intake_id),
+                and_(Task.type != "structure", or_(Task.type == "common", cohort_assignee,
+                                                   ~any_assignee)),
+            )
         )
         stmt = stmt.where(
             or_(
@@ -249,7 +253,11 @@ async def list_events(
         # Отложенная публикация (база заданий): дедлайн запланированной задачи
         # не торчит в календаре не-админа раньше, чем задача сама станет видна.
         visible_task_ids = select(Task.id).where(
-            or_(Task.type == "common", Task.id.in_(my_individual_tasks)),
+            or_(
+                Task.type == "common",
+                and_(Task.type == "structure", *_visible_common_where(current_user)),
+                and_(Task.type != "structure", Task.id.in_(my_individual_tasks)),
+            ),
             published_where(),
         )
         stmt = stmt.where(
@@ -334,7 +342,7 @@ async def _enrich_task_events(
             for tid, pid in plan_rows.all():
                 task_plans.setdefault(tid, []).append(pid)
             for t in task_rows:
-                if t.type == "common":
+                if t.type in ("common", "structure"):
                     total = await participant_count(
                         session, t, plan_ids=task_plans.get(t.id, [])
                     )

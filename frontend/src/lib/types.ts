@@ -123,6 +123,8 @@ export interface ArgonautsListOut {
 export type ArgonautTaskStatus = 'accepted' | 'submitted'
 
 export interface ArgonautTaskOut {
+  questions?: import('../api/tasks').StructureQuestion[] | null
+  entries?: import('../api/tasks').StructureEntry[]
   task_id: number
   title: string
   status: ArgonautTaskStatus

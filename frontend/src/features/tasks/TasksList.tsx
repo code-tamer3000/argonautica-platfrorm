@@ -33,6 +33,8 @@ import styles from './tasks.module.css'
 
 const STATUS_LABEL: Record<Exclude<MyTaskStatus, null>, string> = {
   assigned: 'Назначена',
+  in_progress: 'В работе',
+  missed: 'Не выполнено',
   submitted: 'На проверке',
   returned: 'Возвращена',
   accepted: 'Принята',
@@ -96,7 +98,7 @@ function TaskCard({
             приходит (published_where, docs/TASKS.md «Черновик»). Чип нужен,
             чтобы в общем списке она не читалась как обычная опубликованная. */}
         {task.is_draft && <Chip kind="unreviewed">Черновик</Chip>}
-        {task.my_status && (
+        {task.my_status && !(isAdmin && task.type === 'structure') && (
           <Chip kind={statusChipKind(task.my_status)}>
             {STATUS_LABEL[task.my_status]}
           </Chip>
@@ -244,7 +246,7 @@ export function TasksList() {
   // задаче типа pair (сама задача пары), поэтому перекрёстность решает не type.
   const crossItems = deadlineItems.filter((t) => t.pair_id != null)
   const mainItems = deadlineItems.filter((t) => t.pair_id == null)
-  const commonItems = mainItems.filter((t) => t.type === 'common')
+  const commonItems = mainItems.filter((t) => t.type === 'common' || t.type === 'structure')
   const individualItems = mainItems.filter((t) => t.type === 'individual')
   const groupItems = mainItems.filter((t) => t.type === 'pair' || t.type === 'stream')
 
@@ -296,6 +298,7 @@ export function TasksList() {
     createTask.mutate(
       {
         type: values.type,
+        questions: values.type === 'structure' ? values.questions : undefined,
         title: values.title,
         body: values.body || null,
         deadline_at: values.deadline_at,
@@ -310,8 +313,8 @@ export function TasksList() {
         participant_ids: values.type === 'stream' ? values.participant_ids : undefined,
         media_asset_ids: values.media.map((m) => m.id),
         playlist_id: values.playlist?.id ?? null,
-        intake_id: values.type === 'common' ? values.intake_id : undefined,
-        plan_ids: values.type === 'common' ? values.plan_ids : undefined,
+        intake_id: (values.type === 'common' || values.type === 'structure') ? values.intake_id : undefined,
+        plan_ids: (values.type === 'common' || values.type === 'structure') ? values.plan_ids : undefined,
       },
       {
         onSuccess: () => {
@@ -328,6 +331,7 @@ export function TasksList() {
     updateTask.mutate(
       {
         id: editTask.id,
+        questions: editTask.type === 'structure' ? values.questions : undefined,
         title: values.title,
         body: values.body || null,
         deadline_at: values.deadline_at,
@@ -336,8 +340,8 @@ export function TasksList() {
         kb_item_id: values.kb_item_id,
         media_asset_ids: values.media.map((m) => m.id),
         playlist_id: values.playlist?.id ?? null,
-        intake_id: editTask.type === 'common' ? values.intake_id : undefined,
-        plan_ids: editTask.type === 'common' ? values.plan_ids : undefined,
+        intake_id: (editTask.type === 'common' || editTask.type === 'structure') ? values.intake_id : undefined,
+        plan_ids: (editTask.type === 'common' || editTask.type === 'structure') ? values.plan_ids : undefined,
       },
       {
         onSuccess: () => {

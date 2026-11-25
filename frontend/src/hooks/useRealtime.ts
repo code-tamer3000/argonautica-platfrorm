@@ -8,6 +8,7 @@ import {
   replaceMessage,
   updateAttachment,
 } from '../api/cache'
+import { argonautsKey } from '../api/argonauts'
 import { dashboardKey } from '../api/dashboard'
 import { journalStructureKey } from '../api/journal'
 import { notificationsKey } from '../api/notifications'
@@ -283,6 +284,8 @@ export function useRealtime(): void {
           qc.invalidateQueries({ queryKey: dashboardKey })
           break
         case 'submission.new':
+          qc.invalidateQueries({ queryKey: argonautsKey })
+          qc.invalidateQueries({ queryKey: ['admin', 'tasks'] })
           // Новая сдача (для админа/автора общей задачи) — обновить треки и списки.
           qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })
           qc.invalidateQueries({ queryKey: taskKey(e.task_id) })
@@ -290,6 +293,7 @@ export function useRealtime(): void {
           qc.invalidateQueries({ queryKey: dashboardKey })
           break
         case 'submission.status': {
+          qc.invalidateQueries({ queryKey: argonautsKey })
           // Ревью прошло: статус назначения изменился (принято/возвращено) — на
           // Круге Экспедиции это может раскрыть замок стихии (см. app/api/expedition.py).
           qc.invalidateQueries({ queryKey: taskSubmissionsKey(e.task_id) })

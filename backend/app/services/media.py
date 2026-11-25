@@ -518,7 +518,7 @@ async def assert_media_access(
             return True
         if not is_published(task):
             return False
-        if task.type == "common":
+        if task.type in ("common", "structure"):
             if not intake_visible(task.intake_id, user):
                 return False
             return await plan_visible(

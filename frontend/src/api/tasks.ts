@@ -6,12 +6,25 @@ import type { AttachmentOut, PlaylistOut } from '../lib/types'
 
 // --- Контракт бэкенда (поля = ответы API) ---
 
-export type TaskType = 'common' | 'individual' | 'pair' | 'stream'
-export type MyTaskStatus = 'assigned' | 'submitted' | 'returned' | 'accepted' | null
+export type TaskType = 'common' | 'individual' | 'pair' | 'stream' | 'structure'
+export type MyTaskStatus = 'in_progress' | 'missed' | 'assigned' | 'submitted' | 'returned' | 'accepted' | null
+
+export interface StructureQuestion {
+  id: string
+  label: string
+  kind: 'text' | 'scale'
+}
+
+export interface StructureEntry {
+  id: number
+  created_at: string
+  answers?: Record<string, string | number> | null
+}
 
 export interface TaskOut {
   id: number
   type: TaskType
+  questions?: StructureQuestion[] | null
   title: string
   body: string | null
   kb_item_id: number | null
@@ -142,7 +155,7 @@ export interface TaskListOut {
   attention_count: number
 }
 
-export interface SubmissionOut {
+export interface SubmissionOut extends StructureEntry {
   id: number
   assignment_id: number
   user_id: number
@@ -241,6 +254,7 @@ export interface PairInput {
 
 export interface TaskCreateBody {
   type: TaskType
+  questions?: StructureQuestion[] | null
   title: string
   body?: string | null
   kb_item_id?: number | null
@@ -263,6 +277,7 @@ export interface TaskCreateBody {
 }
 
 export interface TaskUpdateBody {
+  questions?: StructureQuestion[]
   title?: string
   body?: string | null
   deadline_at?: string | null
@@ -326,6 +341,20 @@ export function useTaskSubmissions(id: number) {
     queryKey: taskSubmissionsKey(id),
     queryFn: () => http.get<TaskTrackOut[]>(`/api/tasks/${id}/submissions`),
     enabled: id > 0,
+  })
+}
+
+export function useAddStructureEntry(id: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (answers: Record<string, string | number>) =>
+      http.post<SubmissionOut>(`/api/tasks/${id}/entries`, { answers }),
+    onSuccess: () => {
+      for (const queryKey of [tasksKey, taskKey(id), taskSubmissionsKey(id),
+        adminAssignmentsKey(id), ADMIN_TASK_LIBRARY_PREFIX, ['argonauts']]) {
+        qc.invalidateQueries({ queryKey })
+      }
+    },
   })
 }
 
@@ -409,6 +438,7 @@ export function useReviewQueue() {
   const current = useUiStore((s) => s.adminCurrentIntakeId)
   return useQuery({
     queryKey: [...reviewQueueKey, current] as const,
+    refetchInterval: 30_000,
     queryFn: () =>
       http.get<ReviewQueueItemOut[]>(
         current != null ? `/api/admin/review-queue?intake_id=${current}` : '/api/admin/review-queue',
@@ -620,6 +650,7 @@ export function useDeletePair(taskId: number) {
 export interface TaskLibraryItemOut {
   id: number
   type: TaskType
+  questions?: StructureQuestion[] | null
   title: string
   body: string | null
   kb_item_id: number | null
