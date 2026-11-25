@@ -1028,7 +1028,8 @@ async def get_all_dynamics(
         for intake_id, spans in spans_by_intake.items()
     }
     days_by_user = {
-        u.id: days_by_intake.get(u.intake_id, DEFAULT_PROGRAM_DAYS) for u in participants
+        u.id: days_by_intake[u.intake_id] if u.intake_id is not None else DEFAULT_PROGRAM_DAYS
+        for u in participants
     }
     earliest_start = min(start_by_user.values())
     today = _platform_today()
