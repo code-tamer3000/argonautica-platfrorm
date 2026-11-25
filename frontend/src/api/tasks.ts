@@ -435,9 +435,11 @@ export const reviewQueueKey = ['admin', 'review-queue'] as const
 /** Все сдачи в статусе «на проверке» по всем задачам сразу (ARG-134) — раздел
  * «Проверка» в админке, вместо обхода карточек задач по очереди. */
 export function useReviewQueue() {
+  const { user } = useAuth()
   const current = useUiStore((s) => s.adminCurrentIntakeId)
   return useQuery({
     queryKey: [...reviewQueueKey, current] as const,
+    enabled: user?.role === 'admin',
     refetchInterval: 30_000,
     queryFn: () =>
       http.get<ReviewQueueItemOut[]>(

@@ -85,7 +85,7 @@ export type TaskFormInitial = Pick<
   | 'playlist'
   | 'intake_id'
   | 'plan_ids'
->
+> & { submitted_count?: number }
 
 interface TaskFormProps {
   initial?: TaskFormInitial
@@ -360,7 +360,7 @@ export function TaskForm({ initial, createFromInitial = false, onSubmit }: TaskF
       </label>
 
       {type === 'structure' && (
-        <fieldset className={styles.formRow}>
+        <fieldset className={styles.formRow} disabled={editing && (initial?.submitted_count ?? 0) > 0}>
           <legend>Вопросы формы</legend>
           {questions.map((q, i) => (
             <div key={q.id} className={styles.formRow}>

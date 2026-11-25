@@ -73,3 +73,35 @@ async def test_structure_lifecycle(client: AsyncClient, make_user: MakeUser) -> 
     assert (await client.post(review, json={"action": "return"}, headers=admin_h)).status_code == 409
     assert (await client.post(review, json={"action": "accept"}, headers=admin_h)).status_code == 200
     assert await queued() == []
+
+
+async def test_scale_only_structure_is_tariff_scoped(client: AsyncClient, make_user: MakeUser) -> None:
+    admin = await make_user(role="admin")
+    admin_h = await headers(client, admin)
+    plan = await client.post("/api/admin/plans", headers=admin_h,
+                             json={"name": "Доступ к структуре", "price": 1000})
+    assert plan.status_code == 201, plan.text
+    pid = plan.json()["id"]
+    writer = await make_user(plan_id=pid)
+    other = await make_user(intake_id=writer.intake_id)
+    writer_h = await headers(client, writer)
+    other_h = await headers(client, other)
+    created = await client.post("/api/tasks", headers=admin_h, json={
+        "title": "Оценка дня", "type": "structure", "intake_id": writer.intake_id,
+        "plan_ids": [pid], "deadline_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+        "questions": [{"id": "score", "label": "Оценка", "kind": "scale"}],
+    })
+    assert created.status_code == 201, created.text
+    tid = created.json()["id"]
+    response = await client.post(f"/api/tasks/{tid}/entries", headers=writer_h,
+                                 json={"answers": {"score": 10}})
+    assert response.status_code == 201, response.text
+    assert (await client.get(f"/api/tasks/{tid}", headers=other_h)).status_code == 403
+    assert (await client.post(f"/api/tasks/{tid}/entries", headers=other_h,
+                              json={"answers": {"score": 1}})).status_code == 403
+    profile = await client.get(f"/api/argonauts/{writer.id}", headers=other_h)
+    assert profile.status_code == 200
+    assert tid not in [t["task_id"] for t in profile.json()["tasks"]]
+    roster = await client.get(f"/api/tasks/{tid}/assignments", headers=admin_h)
+    assert writer.id in [a["user_id"] for a in roster.json()]
+    assert other.id not in [a["user_id"] for a in roster.json()]
