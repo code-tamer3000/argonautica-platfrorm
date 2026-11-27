@@ -8,7 +8,7 @@
 - `docker/docker-compose.prod.yml`, `docker/docker-compose.staging.yml`
 - `docker/deploy.sh`, `docker/deploy-staging.sh`, `docker/backup.sh`
 - `docker/nginx/**`, `docker/nginx-staging/**`, and any `certs/`
-- `.env` and `.env.*` (secrets — never commit; only `.env.example` is tracked)
+- `.env` and `.env.*` (secrets — never commit; templates are tracked in `env/`: `env.example`, `env.staging.example`, `env.test`)
 - `.github/workflows/*` unless the task is explicitly about CI/CD
 
 ## Topology

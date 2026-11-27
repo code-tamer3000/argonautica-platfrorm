@@ -8,7 +8,7 @@ PostgreSQL · Redis · FastAPI (REST + WebSocket) · React/Vite (PWA) · MinIO �
 Docker Compose. Деплой — blue-green.
 
 ## Быстрый старт (dev)
-1. `cp .env.example .env` и заполнить значения.
+1. `cp env/env.example .env` и заполнить значения (шаблоны лежат в `env/`, реальный `.env` — в корне).
 2. `docker compose -f docker/docker-compose.yml up -d` — поднимет Postgres, Redis, MinIO.
    - MinIO-консоль: http://localhost:9001
 3. Backend (`backend/`): создать venv, поставить зависимости, `alembic upgrade head`, запустить uvicorn.
